@@ -90,7 +90,7 @@
     "swagger-ui-express": "^5.0.1",
     "swig": "^1.4.2",
     "ts-jest": "^29.2.6",
-    "winston": "^3.16.0",
+    "winston": "^3.18.3",
     "zxcvbn": "^4.4.2"
   },
   "devDependencies": {
