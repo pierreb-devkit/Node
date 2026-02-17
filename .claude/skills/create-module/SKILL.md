@@ -77,7 +77,7 @@ Provide a summary:
 - ✅ Module created at: `modules/{new-module-name}`
 - ✅ Renamed tokens: `tasks` → `{new-module-name}`, etc.
 - ✅ Verification: lint passed, tests passed
-- 📝 Next steps: Customize the schema, update business logic in services, register routes in `lib/services/express.js` if needed
+- 📝 Next steps: Customize the schema, update business logic in services. Routes are auto-discovered via glob `modules/*/routes/*.js` — no registration needed
 
 ## Module Structure
 

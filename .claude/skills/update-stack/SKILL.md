@@ -53,6 +53,7 @@ npm test
 | `modules/home/`        | Prefer stack (core module)                    |
 | `modules/auth/`        | Prefer stack (security — take updates)        |
 | `modules/users/`       | Prefer stack unless customized                |
+| `modules/uploads/`     | Prefer stack unless customized                |
 | Custom modules         | Always keep downstream                        |
 | `package.json`         | Merge carefully, keep both dependency sets    |
 
