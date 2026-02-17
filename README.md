@@ -15,7 +15,7 @@ Designed to be cloned into downstream projects and kept up-to-date via `git merg
 | Subject      | Informations                                                                                                                                                                                                                                                                                                           |
 | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Architecture | Layered Architecture : everything is separated in layers, and the upper layers are abstractions of the lower ones, that's why every layer should only reference the immediate lower layer (vertical modules architecture with Repository and Services Pattern)                                                          |
-| Server       | [Node >= 20 LTS](https://nodejs.org/en/) - [Express](https://github.com/expressjs/express) - [Helmet](https://github.com/helmetjs/helmet) - [CORS](https://github.com/expressjs/cors) <br> [gulp](https://github.com/gulpjs/gulp) - [nodemon](https://github.com/remy/nodemon)                                        |
+| Server       | [Node >= 20 LTS](https://nodejs.org/en/) - [Express](https://github.com/expressjs/express) - [Helmet](https://github.com/helmetjs/helmet) - [CORS](https://github.com/expressjs/cors) <br> [nodemon](https://github.com/remy/nodemon)                                                                            |
 | Database     | [MongoDB](https://www.mongodb.com/) - [Mongoose](https://github.com/Automattic/mongoose) - GridFS upload <br> [Sequelize](https://github.com/sequelize/sequelize) - PostgreSQL, MySQL, SQLite (option) <br> [JOI](https://github.com/hapijs/joi) - Models & Repository validation                                      |
 | Security     | [passport-jwt](https://github.com/themikenicholson/passport-jwt) - JWT Stateless <br> [bcrypt](https://en.wikipedia.org/wiki/Bcrypt) - [zxcvbn](https://github.com/dropbox/zxcvbn) - Passwords <br> SSL - Express / Reverse Proxy                                                                                     |
 | API          | [jsend](https://github.com/omniti-labs/jsend) - Default response wrapper: status, message, data or error                                                                                                                                                                                                              |
@@ -98,6 +98,8 @@ npm run lint:fix          # Auto-fix code quality issues
 ```bash
 npm run seed:dev          # Seed development database
 npm run seed:prod         # Seed production database
+npm run seed:user         # Seed default user/admin only (no drop)
+npm run seed:mongodrop    # Drop database (with confirmation)
 ```
 
 ### Commits & Releases
