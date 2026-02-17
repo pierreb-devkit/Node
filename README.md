@@ -67,7 +67,7 @@ Runs the server at `http://localhost:3000/`. For auto-reload during development,
 **CORS Note:** When connecting to the Vue stack, ensure CORS is configured:
 
 ```bash
-NODE_cors_origin=['http://localhost:8080'] npm start
+DEVKIT_NODE_cors_origin=['http://localhost:8080'] npm start
 ```
 
 ### Production
@@ -113,17 +113,17 @@ GITHUB_TOKEN=xxx npm run release:auto             # Semantic release (CI)
 
 Configuration files live in `config/defaults/`. The `development.js` file is the base; other files in that folder override it.
 
-Environment variables prefixed with `NODE_` are merged on top . The variable path maps directly to the config object key:
+Environment variables prefixed with `DEVKIT_NODE_` are merged on top . The variable path maps directly to the config object key:
 
 ```bash
-NODE_app_title='my app'               # sets config.app.title
-NODE_db_uri='mongodb://...'           # sets config.db.uri
+DEVKIT_NODE_app_title='my app'               # sets config.app.title
+DEVKIT_NODE_db_uri='mongodb://...'           # sets config.db.uri
 ```
 
 ## :whale: Docker
 
 ```bash
-docker run --env NODE_db_uri=mongodb://host.docker.internal/NodeDev --env NODE_host=0.0.0.0 --rm -p 3000:3000 pierreb/node
+docker run --env DEVKIT_NODE_db_uri=mongodb://host.docker.internal/NodeDev --env DEVKIT_NODE_host=0.0.0.0 --rm -p 3000:3000 pierreb/node
 ```
 
 Build yourself:
