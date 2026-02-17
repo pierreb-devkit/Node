@@ -22,7 +22,7 @@ Designed to be cloned into downstream projects and kept up-to-date via `git merg
 | Upload       | [Mongo GridFS](https://docs.mongodb.com/manual/core/gridfs/) - [Multer](https://github.com/expressjs/multer) - [Sharp](https://github.com/lovell/sharp) - Image stream, all content types                                                                                                                             |
 | Testing      | [Jest](https://github.com/facebook/jest) - [SuperTest](https://github.com/visionmedia/supertest) - Coverage & Watch                                                                                                                                                                                                   |
 | CI           | [GitHub Actions](https://github.com/pierreb-devkit/Node/actions)                                                                                                                                                                                                                                                       |
-| Linter       | [ESLint](https://github.com/eslint/eslint) ecmaVersion 10 (2019)                                                                                                                                                                                                                                                       |
+| Linter       | [ESLint](https://github.com/eslint/eslint) ecmaVersion latest                                                                                                                                                                                                                                                          |
 | Developer    | [Dependabot](https://dependabot.com/) - [Snyk](https://snyk.io/test/github/pierreb-devkit/node) <br> [semantic-release](https://github.com/semantic-release/semantic-release) - [commitlint](https://github.com/conventional-changelog/commitlint) - [commitizen](https://github.com/commitizen/cz-cli)               |
 | Dependencies | [npm](https://www.npmjs.com)                                                                                                                                                                                                                                                                                           |
 | Deliver      | Docker & Docker-compose                                                                                                                                                                                                                                                                                                 |
@@ -62,7 +62,7 @@ npm install
 npm start
 ```
 
-Runs dev server with auto-reload at `http://localhost:3000/`
+Runs the server at `http://localhost:3000/`. For auto-reload during development, use `npm run debug` (nodemon).
 
 **CORS Note:** When connecting to the Vue stack, ensure CORS is configured:
 
@@ -89,7 +89,8 @@ Tests are organized per module in `modules/*/tests/`
 ### Code Quality
 
 ```bash
-npm run lint              # Check code quality
+npm run test:lint         # Check code quality (read-only)
+npm run lint              # Check and auto-fix code quality issues
 ```
 
 ### Database Seeding

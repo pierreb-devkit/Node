@@ -29,7 +29,7 @@ Routes → Controllers → Services → Repositories → Models
 - **Controllers** (`controllers/`): Handle HTTP req/res, call services, format responses via `lib/helpers/responses.js`
 - **Services** (`services/`): Business logic, call repositories, throw `AppError` for domain errors
 - **Repositories** (`repositories/`): Database access only, use Joi schemas for validation
-- **Models** (`models/`): Mongoose schema definition
+- **Models** (`models/`): Mongoose schema definition (`*.model.mongoose.js`) and Joi schema (`*.schema.js`)
 
 ### 3. Apply modularity rules
 
@@ -39,13 +39,13 @@ Routes → Controllers → Services → Repositories → Models
   - Place it in `lib/helpers/` or `lib/services/`
   - Provide **explicit justification** for why it must be shared
 - Keep these inside the module (`modules/{module}/**`):
-  - Controllers, services, repositories, models, policies, routes, tests
+  - Controllers, services, repositories, models, schemas, policies, routes, tests
 
 ### 4. Use existing helpers
 
 Before writing new utilities, check:
 
-- `lib/helpers/responses.js` — JSend response wrapper (`success`, `error`)
+- `lib/helpers/responses.js` — JSend response wrapper
 - `lib/helpers/AppError.js` — Custom error class for domain errors
 - `lib/helpers/errors.js` — Error formatting utilities
 - `lib/helpers/joi.js` — Shared Joi validation helpers
@@ -54,19 +54,19 @@ Before writing new utilities, check:
 
 ### 5. Follow API response format
 
-All API responses must use the JSend wrapper:
+All API responses must use the JSend wrapper from `lib/helpers/responses.js`:
 
 ```js
 // Success
-res.status(200).json(responses.success(data));
-// Error (caught by controller)
-res.status(err.status).json(responses.error(err.message, err.errors));
+responses.success(res, 'task list')(data);
+// Error
+responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
 ```
 
 ### 6. Run verify
 
 ```bash
-npm run lint
+npm run test:lint
 npm test
 ```
 

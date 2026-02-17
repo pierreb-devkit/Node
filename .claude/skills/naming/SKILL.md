@@ -11,33 +11,37 @@ Audit or apply the project's file and folder naming conventions.
 
 ### Folders
 
-| Location        | Case       | Example                          |
-| --------------- | ---------- | -------------------------------- |
-| Top-level dirs  | kebab-case | `lib/`, `modules/`, `config/`    |
-| Module dirs     | kebab-case | `modules/tasks/`, `modules/home/`|
+| Location        | Case        | Example                           |
+| --------------- | ----------- | --------------------------------- |
+| Top-level dirs  | kebab-case  | `lib/`, `modules/`, `config/`     |
+| Module dirs     | kebab-case  | `modules/tasks/`, `modules/home/` |
 | Module sub-dirs | fixed names | `controllers/`, `services/`, `repositories/`, `models/`, `policies/`, `routes/`, `tests/`, `config/`, `doc/` |
 
 ### Files
 
-| Type        | Pattern                        | Example                          |
-| ----------- | ------------------------------ | -------------------------------- |
-| Controller  | `{module}.{name}.controller.js`| `tasks.crud.controller.js`       |
-| Service     | `{module}.{name}.service.js`   | `tasks.crud.service.js`          |
-| Repository  | `{module}.repository.js`       | `tasks.repository.js`            |
-| Model       | `{module}.model.js`            | `tasks.model.js`                 |
-| Policy      | `{module}.{name}.policy.js`    | `tasks.crud.policy.js`           |
-| Router      | `{module}.routes.js`           | `tasks.routes.js`                |
-| Test        | `{module}.{type}.tests.js`     | `tasks.integration.tests.js`     |
-| Config      | `{name}.js`                    | `app.js`, `default.js`           |
+| Type            | Pattern                               | Example                                                    |
+| --------------- | ------------------------------------- | ---------------------------------------------------------- |
+| Controller      | `{module}[.{name}].controller.js`     | `tasks.controller.js`                                      |
+| Service         | `{module}[.{name}].service.js`        | `tasks.service.js`, `tasks.data.service.js`                |
+| Repository      | `{module}.repository.js`              | `tasks.repository.js`                                      |
+| Mongoose Model  | `{module}.model.mongoose.js`          | `tasks.model.mongoose.js`                                  |
+| Sequelize Model | `{module}.model.sequelize.js`         | `tasks.model.sequelize.js`                                 |
+| Schema          | `{module}.schema.js`                  | `tasks.schema.js`                                          |
+| Policy          | `{module}[.{name}].policy.js`         | `tasks.policy.js`                                          |
+| Router          | `{module}.routes.js`                  | `tasks.routes.js`                                          |
+| Test            | `{module}.{type}.tests.js`            | `tasks.integration.tests.js`, `tasks.unit.tests.js`        |
+| Config          | `{name}.js`                           | `app.js`, `default.js`                                     |
+
+> `[.{name}]` is optional — the reference `tasks` module uses the short form (e.g., `tasks.controller.js`, `tasks.service.js`).
 
 ### Naming Tokens
 
 From a module name (e.g., `my-feature`):
 
 - **kebab-case**: `my-feature` (folder names, file prefixes, route paths)
-- **PascalCase**: `MyFeature` (class names, Mongoose model names)
+- **PascalCase**: `MyFeature` (Mongoose model names, class names)
 - **lowerCamelCase**: `myFeature` (variable names, function names, JS exports)
-- **UPPER_SNAKE_CASE**: `MY_FEATURE` (constants, env keys)
+- **UPPER_SNAKE_CASE**: `MY_FEATURE` (constants)
 
 ## Layer Order
 
