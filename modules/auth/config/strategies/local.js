@@ -21,7 +21,7 @@ export default () => {
           return done(null, false, {
             message: 'Invalid email or password',
           });
-        } catch (err) {
+        } catch (_err) {
           return done();
         }
       },
