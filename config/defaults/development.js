@@ -1,10 +1,10 @@
 const config = {
   app: {
-    title: 'WeAreOpenSource Node - Development Environment',
+    title: 'Devkit Node - Development Environment',
     description: 'Node - Boilerplate Back : Express, Jwt, Mongo, Sequelize (Beta) ',
     keywords: 'node, express, mongo, jwt, sequelize, stack, boilerplate',
-    googleAnalyticsTrackingID: 'WAOS_NODE_app_googleAnalyticsTrackingID',
-    contact: 'waos.me@gmail.com',
+    googleAnalyticsTrackingID: 'NODE_app_googleAnalyticsTrackingID',
+    contact: 'contact@example.com',
   },
   swagger: {
     enable: true,
@@ -21,7 +21,7 @@ const config = {
     timeout: 2 * 60 * 1000,
   },
   db: {
-    uri: 'mongodb://127.0.0.1:27017/WaosNodeDev',
+    uri: 'mongodb://127.0.0.1:27017/NodeDev',
     debug: true,
     options: {
       user: '',
@@ -94,14 +94,14 @@ const config = {
     {
       // generate releases and changelogs list auto /api/core/changelogs /api/core/releases
       title: 'Node',
-      owner: 'weareopensource',
+      owner: 'pierreb-devkit',
       repo: 'node',
       changelog: 'CHANGELOG.md',
       token: null,
     },
     {
       title: 'Vue',
-      owner: 'weareopensource',
+      owner: 'pierreb-devkit',
       repo: 'vue',
       changelog: 'CHANGELOG.md',
       token: null,
@@ -165,12 +165,12 @@ const config = {
     expiresIn: 7 * 24 * 60 * 60, // token expire in x sec
   },
   mailer: {
-    from: 'WAOS_NODE_mailer_from',
+    from: 'NODE_mailer_from',
     options: {
-      service: 'WAOS_NODE_mailer_options_service',
+      service: 'NODE_mailer_options_service',
       auth: {
-        user: 'WAOS_NODE_mailer_options_auth_user',
-        pass: 'WAOS_NODE_mailer_options_auth_pass',
+        user: 'NODE_mailer_options_auth_user',
+        pass: 'NODE_mailer_options_auth_pass',
       },
     },
   },

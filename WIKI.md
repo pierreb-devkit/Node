@@ -6,18 +6,18 @@ Welcome to the Node wiki! Here you will find various information about this repo
 
 #### Node Wiki
 
-* [Api](https://github.com/weareopensource/Node/blob/master/WIKI.md#API)
-  * [Success](https://github.com/weareopensource/Node/blob/master/WIKI.md#Success)
-  * [Errors](https://github.com/weareopensource/Node/blob/master/WIKI.md#Errors)
-  * [Authentification](https://github.com/weareopensource/Node/blob/master/WIKI.md#Authentification)
-* [SSL](https://github.com/weareopensource/Node/blob/master/WIKI.md#SSL)
+* [Api](https://github.com/pierreb-devkit/Node/blob/master/WIKI.md#API)
+  * [Success](https://github.com/pierreb-devkit/Node/blob/master/WIKI.md#Success)
+  * [Errors](https://github.com/pierreb-devkit/Node/blob/master/WIKI.md#Errors)
+  * [Authentification](https://github.com/pierreb-devkit/Node/blob/master/WIKI.md#Authentification)
+* [SSL](https://github.com/pierreb-devkit/Node/blob/master/WIKI.md#SSL)
 
-#### WAOS
 
-* [Mindset and what we would like to create](https://weareopensource.me/)
-* [How to start a project and maintain updates from stacks](https://blog.weareopensource.me/start-a-project-and-maintain-updates/)
-* [Global roadmap and  ideas about stacks](https://github.com/weareopensource/weareopensource.github.io/projects/1)
-* [How to contribute and help us](https://blog.weareopensource.me/how-to-contribute/)
+
+* [Mindset and what we would like to create](https://github.com/pierreb-devkit)
+* [How to start a project and maintain updates from stacks](
+* [Global roadmap and  ideas about stacks](https://github.com/orgs/pierreb-devkit/projects)
+* [How to contribute and help us](
 
 # Node WIKI
 

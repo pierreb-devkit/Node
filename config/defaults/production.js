@@ -4,7 +4,7 @@ const config = await import('./development.js');
 
 export default _.merge(config.default, {
   app: {
-    title: 'WeAreOpenSource Node - Production Environment',
+    title: 'Devkit Node - Production Environment',
   },
   api: {
     host: '0.0.0.0',

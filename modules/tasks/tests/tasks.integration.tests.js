@@ -145,7 +145,7 @@ describe('Tasks integration tests:', () => {
     test('should not be able to get a task with a bad invented id', async () => {
       // delete task
       try {
-        const result = await agent.get('/api/tasks/waos56397898004243871228').expect(404);
+        const result = await agent.get('/api/tasks/node56397898004243871228').expect(404);
         expect(result.body.type).toBe('error');
         expect(result.body.message).toBe('Not Found');
         expect(result.body.description).toBe('No Task with that identifier has been found');
