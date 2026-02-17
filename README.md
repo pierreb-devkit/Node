@@ -1,146 +1,184 @@
-[![CI](https://github.com/weareopensource/Node/actions/workflows/CI.yml/badge.svg)](https://github.com/weareopensource/Node/actions/workflows/CI.yml) [![Coveralls Status](https://badges.weareopensource.me/coveralls/github/weareopensource/Node.svg?style=flat-square)](https://coveralls.io/github/weareopensource/Node) [![Code Climate](https://badges.weareopensource.me/codeclimate/maintainability-percentage/weareopensource/Node.svg?style=flat-square)](https://codeclimate.com/github/weareopensource/Node/maintainability)
-[![Dependabot badge](https://badges.weareopensource.me/badge/Dependabot-enabled-2768cf.svg?style=flat-square)](https://dependabot.com)
-[![Known Vulnerabilities](https://snyk.io/test/github/weareopensource/node/badge.svg?style=flat-square)](https://snyk.io/test/github/weareopensource/node) [![Docker Pulls](https://badges.weareopensource.me/docker/pulls/pierrebrisorgueil/node?style=flat-square)](https://hub.docker.com/repository/docker/pierrebrisorgueil/node)
+[![CI](https://github.com/pierreb-devkit/Node/actions/workflows/CI.yml/badge.svg)](https://github.com/pierreb-devkit/Node/actions/workflows/CI.yml)
+[![Dependabot badge](https://img.shields.io/badge/Dependabot-enabled-2768cf.svg?style=flat-square)](https://dependabot.com)
+[![Known Vulnerabilities](https://snyk.io/test/github/pierreb-devkit/node/badge.svg?style=flat-square)](https://snyk.io/test/github/pierreb-devkit/node)
 
-# :globe_with_meridians: [WeAreOpenSource](https://weareopensource.me) Node
+# :globe_with_meridians: [Devkit](https://github.com/pierreb-devkit) Node
 
 ## :book: Presentation
 
-This project is a Node stack that can be ran as a standalone BackEnd. Or in a fullstack with another repo of your choice (ex: [Vue](https://github.com/weareopensource/Vue), [Swift](https://github.com/weareopensource/Swift)).
+A Node / Express / Mongoose / JWT stack that can be run as a standalone backend or in a fullstack setup with another repo (ex: [Vue](https://github.com/pierreb-devkit/Vue), [Swift](https://github.com/pierreb-devkit/Swift)).
 
-Quick links :
-
-- [Mindset and what we would like to create](https://weareopensource.me/)
-- [How to start a project and maintain updates from stacks](https://blog.weareopensource.me/start-a-project-and-maintain-updates/)
-- [Global roadmap and ideas about stacks](https://github.com/orgs/weareopensource/projects/3)
-- [How to contribute and help us](https://blog.weareopensource.me/how-to-contribute/)
-
-# :computer: Node / Express / Mongoose - Sequelize Orm
-
-- [**Knowledges JS**](https://blog.weareopensource.me/js-knwoledges/)
-- [**Demo**](https://node.weareopensource.me) (or working with [Vue](https://github.com/weareopensource/Vue) stack [here](https://vue.weareopensource.me), email: *test@waos.me*, password: _TestWaos@2019_)
+Designed to be cloned into downstream projects and kept up-to-date via `git merge` from the stack repo.
 
 ## :package: Technology Overview
 
-| Subject          | Informations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Available**    |
-| Architecture     | Layered Architecture : everything is separated in layers, and the upper layers are abstractions of the lower ones, that's why every layer should only reference the immediate lower layer (vertical modules architecture with Repository and Services Pattern)                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| Server           | [Node >= v14 LTS](https://nodejs.org/en/) <br> [Express](https://github.com/expressjs/express) - [body-parser](https://github.com/expressjs/body-parser) - [compression](https://github.com/expressjs/compression) - [CORS](https://github.com/expressjs/cors) - [method-override](https://github.com/expressjs/method-override) <br> [gulp 4](https://github.com/gulpjs/gulp) - [nodemon](https://github.com/remy/nodemon)                                                                                                                                                                                                                                                                             |
-| DataBase         | [Mongo 4.x LTS](https://www.mongodb.com/download-center/community) - [mongoose](https://github.com/Automattic/mongoose) - _User, Crud, Seed, Gridf upload, Options (auth, ssl ..)_ <br> [Sequelize](https://github.com/sequelize/sequelize) - _PostgreSQL, MySQL, SQLit 4.x (option - crud Task example)_ <br> [JOI](https://github.com/hapijs/joi) - _Models & Repository for database code abstraction_                                                                                                                                                                                                                                                                                               |
-| Testing          | [Jest](https://github.com/facebook/jest) - [SuperTest](https://github.com/visionmedia/supertest) - _Coverage & Watch_ <br> _example of mocha with gulp available_                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| Security         | [passport-jwt](https://github.com/themikenicholson/passport-jwt) - _JWT Stateless_ <br> [bcrypt](https://en.wikipedia.org/wiki/Bcrypt) - [zxcvbn](https://github.com/dropbox/zxcvbn) - _Passwords_ <br> [SSL](https://github.com/weareopensource/Node/blob/master/WIKI.md#SSL) - _Express / Reverse Proxy (must be activated, otherwise => plain text password)_                                                                                                                                                                                                                                                                                                                                        |
-| API              | [jsend](https://github.com/omniti-labs/jsend) - _Default answer wrapper (helper) : status, message, data or error_ <br> _Helper: default errors handling : formatted by the controller, Custom ES6 errors for other layers_                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| Upload           | [Mongo gridfs](https://docs.mongodb.com/manual/core/gridfs/) - [mongoose-gridfs](https://github.com/lykmapipo/mongoose-gridfs) - [Multer](https://github.com/expressjs/multer) - [Sharp](https://github.com/lovell/sharp) - _Image stream example, all contentType, image video .._                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| Logs             | [winston](https://github.com/winstonjs/winston) - [morgan](https://github.com/expressjs/morgan) _custom example available_                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| CI               | [Github Action](https://github.com/weareopensource/Node/actions)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| Linter           | [ESLint](https://github.com/eslint/eslint) - _ecmaVersion 10 (2019)_                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| Developer        | [Coveralls](https://coveralls.io/github/weareopensource/Node) - [Code Climate](https://codeclimate.com/github/weareopensource/Node) - [Dependency status](https://david-dm.org/weareopensource/node) - [Dependabot](https://dependabot.com/) - [Snyk](https://snyk.io/test/github/weareopensource/node) <br> [standard-version](https://github.com/conventional-changelog/standard-version) / [semantic-release](https://github.com/semantic-release/semantic-release) - [commitlint](https://github.com/conventional-changelog/commitlint) - [commitizen](https://github.com/commitizen/cz-cli) - [@weareopensource/conventional-changelog](https://github.com/weareopensource/conventional-changelog) |
-| Dependencies     | [npm](https://www.npmjs.com)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| Deliver          | Docker & Docker-compose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| **In reflexion** |
-| Documentation    | Swagger <br> Docco                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| Developer        | uses v8's builtin `debug` and `inspect` options                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| API              | evolution & version guideline                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Subject      | Informations                                                                                                                                                                                                                                                                                                           |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Architecture | Layered Architecture : everything is separated in layers, and the upper layers are abstractions of the lower ones, that's why every layer should only reference the immediate lower layer (vertical modules architecture with Repository and Services Pattern)                                                          |
+| Server       | [Node >= 20 LTS](https://nodejs.org/en/) - [Express](https://github.com/expressjs/express) - [Helmet](https://github.com/helmetjs/helmet) - [CORS](https://github.com/expressjs/cors) <br> [gulp](https://github.com/gulpjs/gulp) - [nodemon](https://github.com/remy/nodemon)                                        |
+| Database     | [MongoDB](https://www.mongodb.com/) - [Mongoose](https://github.com/Automattic/mongoose) - GridFS upload <br> [Sequelize](https://github.com/sequelize/sequelize) - PostgreSQL, MySQL, SQLite (option) <br> [JOI](https://github.com/hapijs/joi) - Models & Repository validation                                      |
+| Security     | [passport-jwt](https://github.com/themikenicholson/passport-jwt) - JWT Stateless <br> [bcrypt](https://en.wikipedia.org/wiki/Bcrypt) - [zxcvbn](https://github.com/dropbox/zxcvbn) - Passwords <br> SSL - Express / Reverse Proxy                                                                                     |
+| API          | [jsend](https://github.com/omniti-labs/jsend) - Default response wrapper: status, message, data or error                                                                                                                                                                                                              |
+| Upload       | [Mongo GridFS](https://docs.mongodb.com/manual/core/gridfs/) - [Multer](https://github.com/expressjs/multer) - [Sharp](https://github.com/lovell/sharp) - Image stream, all content types                                                                                                                             |
+| Testing      | [Jest](https://github.com/facebook/jest) - [SuperTest](https://github.com/visionmedia/supertest) - Coverage & Watch                                                                                                                                                                                                   |
+| CI           | [GitHub Actions](https://github.com/pierreb-devkit/Node/actions)                                                                                                                                                                                                                                                       |
+| Linter       | [ESLint](https://github.com/eslint/eslint) ecmaVersion 10 (2019)                                                                                                                                                                                                                                                       |
+| Developer    | [Dependabot](https://dependabot.com/) - [Snyk](https://snyk.io/test/github/pierreb-devkit/node) <br> [semantic-release](https://github.com/semantic-release/semantic-release) - [commitlint](https://github.com/conventional-changelog/commitlint) - [commitizen](https://github.com/commitizen/cz-cli)               |
+| Dependencies | [npm](https://www.npmjs.com)                                                                                                                                                                                                                                                                                           |
+| Deliver      | Docker & Docker-compose                                                                                                                                                                                                                                                                                                 |
 
 ## :tada: Features Overview
 
 ### Core
 
-- **User** : classic register / auth or oAuth(microsoft, google) - profile management (update, avatar upload ...)
+- **User** : classic register / auth or oAuth (Google, Apple) - profile management (update, avatar upload)
 - **User data privacy** : delete all - get all - send all by mail
 - **Admin** : list users - get user - edit user - delete user
 
 ### Examples
 
 - **Tasks** : list - get - add - edit - delete
-- **Files Uploads** : get stream - add - delete - get image stream & sharp operations
+- **File Uploads** : get stream - add - delete - image stream & sharp operations
 
 ## :pushpin: Prerequisites
 
-Make sure you have installed all of the following prerequisites on your development machine:
-
 - Git - [Download & Install Git](https://git-scm.com/downloads)
-- Node.js (10.x) - [Download & Install Node.js](https://nodejs.org/en/download/)
+- Node.js (20.x or 22.x) - [Download & Install Node.js](https://nodejs.org/en/download/)
+  - Recommended: Use [nvm](https://github.com/nvm-sh/nvm) for Node version management
+- MongoDB - [Download & Install MongoDB](https://www.mongodb.com/try/download/community)
 
 ## :boom: Installation
 
-It's straightforward (you can use yarn if you want)
-
 ```bash
-git clone https://github.com/weareopensource/node.git && cd Node
-npm i
+git clone https://github.com/pierreb-devkit/Node.git && cd Node
+npm install
 ```
 
 ## :runner: Running Your Application
 
 ### Development
 
-- `npm start` or `npm run serve` to run a dev server. Available at `http://localhost:3000/`.
+```bash
+npm start
+```
+
+Runs dev server with auto-reload at `http://localhost:3000/`
+
+**CORS Note:** When connecting to the Vue stack, ensure CORS is configured:
+
+```bash
+WAOS_NODE_cors_origin=['http://localhost:8080'] npm start
+```
 
 ### Production
 
-- `npm run prod` to run a prod server. Available at `http://localhost:3000/`
-
-### others
-
-- debug : `npm run debug`
-- test : `npm test`
-- test Watch : `npm run test:watch`
-- test Coverage : `npm run test:coverage`
-- seed development= `npm run seed:dev`
-- seed Production = `npm run seed:prod`
-- seed Dump Mongo (Dev Team sample) = `npm run seed:mongodump` **be careful to not upload sample in public repo**
-- seed Restore Mongo (Dev Team sample) = `npm run seed:mongorestore` **create or update data based on \_id, no purge**
-- seed Drop Mongo = `npm run seed:mongodrop`
-- generate SSL certs : `npm run generate:sslCerts`
-- lint : `npm run lint`
-- commit : `npm run commit`
-- release : `npm run release -- --first-release` **standard version, changelog, tag & choose version number : -- --release-as 1.1.1**
-- release:auto : `GITHUB_TOKEN=XXXXX npm run release:auto` **semantic release, changelog, tag, release** _require repositoryUrl conf in package.json_
-
-## :whale: Docker Way
-
-### docker
-
-- `docker run --env WAOS_NODE_db_uri=mongodb://host.docker.internal/WaosNodeDev --env WAOS_NODE_host=0.0.0.0 --rm -p 3000:3000 weareopensource/node`
-
-if you want to build yourself : `docker build -t weareopensource/node .`
-
-### docker-compose
-
-- `docker-compose up`
-
-### Configuration
-
-The default configuration is : `config/defaults/development.js`
-The other configurations : `config/defaults/*.js` overwrite the default configuration, you can create your own.
-
-We take into account all system environment variables defined under the form WAOS*VUE*<path_toVariable>. A script turns under the hood those system environment variables into an object, infering paths from the varialbles name, merged to the configuration defined on `config/defaults` to regenerate the config.
-
-So configuration avalable on `config/defaults/development` file are overidable. You can for instance define the app name by defining those system environment variables :
-
-```
-WAOS_NODE_app_title='my app =)'
+```bash
+npm run prod
 ```
 
-## :pencil2: [Contribute](https://blog.weareopensource.me/how-to-contribute/)
+### Testing
+
+```bash
+npm test                  # Run all tests
+npm run test:watch        # Run tests in watch mode
+npm run test:coverage     # Generate coverage report
+```
+
+Tests are organized per module in `modules/*/tests/`
+
+### Code Quality
+
+```bash
+npm run lint              # Check code quality
+```
+
+### Database Seeding
+
+```bash
+npm run seed:dev          # Seed development database
+npm run seed:prod         # Seed production database
+```
+
+### Commits & Releases
+
+```bash
+npm run commit                                    # Commit with commitizen
+npm run release -- --first-release                # First release
+npm run release -- --release-as 1.1.1             # Release specific version
+GITHUB_TOKEN=xxx npm run release:auto             # Semantic release (CI)
+```
+
+## :wrench: Configuration
+
+Configuration files live in `config/defaults/`. The `development.js` file is the base; other files in that folder override it.
+
+Environment variables prefixed with `WAOS_NODE_` are merged on top. The variable path maps directly to the config object key:
+
+```bash
+WAOS_NODE_app_title='my app'               # sets config.app.title
+WAOS_NODE_db_uri='mongodb://...'           # sets config.db.uri
+```
+
+## :whale: Docker
+
+```bash
+docker run --env WAOS_NODE_db_uri=mongodb://host.docker.internal/NodeDev --env WAOS_NODE_host=0.0.0.0 --rm -p 3000:3000 pierreb/node
+```
+
+Build yourself:
+
+```bash
+docker build -t pierreb/node .
+```
+
+With [Vue](https://github.com/pierreb-devkit/Vue) stack as frontend:
+
+```bash
+docker-compose up
+```
+
+## :robot: Claude Code Setup
+
+This stack ships with an embedded [Claude Code](https://claude.ai/claude-code) configuration in the `.claude/` folder — works immediately after cloning, no additional setup needed.
+
+### Available Skills
+
+| Skill            | Description                                              |
+| ---------------- | -------------------------------------------------------- |
+| `/verify`        | Run quality loop (lint + tests)                          |
+| `/create-module` | Create new module by duplicating the `tasks` template    |
+| `/feature`       | Implement feature following layered architecture rules   |
+| `/update-stack`  | Merge stack updates into downstream projects             |
+| `/naming`        | Check or apply file and folder naming conventions        |
+
+### Layered Architecture Rules
+
+- Layer order is strict: **Routes → Controllers → Services → Repositories → Models**
+- Controllers must not call repositories directly — always go through services
+- Each module is self-contained in `modules/{name}/`
+- Shared code goes in `lib/helpers/` or `lib/services/` with explicit justification
+- Tests are organized per module: `modules/*/tests/`
+
+### Stack Merge Workflow
+
+```bash
+git remote add devkit-node https://github.com/pierreb-devkit/Node.git
+git fetch devkit-node
+git merge devkit-node/master
+```
+
+## :pencil2: Contribute
+
+Open issues and pull requests on [GitHub](https://github.com/pierreb-devkit/Node).
 
 ## :scroll: History
 
-This work is based on [MEAN.js](http://meanjs.org) and more precisely on a fork of the developers named [Riess.js](https://github.com/lirantal/Riess.js). The work being stopped we wished to take it back, we want to create updated stack with same mindset "simple", "easy to use". The toolbox needed to start projects, but not only with Node and Angular ...
-
-## :globe_with_meridians: [We Are Open Source, Who we are ?](https://weareopensource.me)
-
-Today, we dreams to create Backs/Fronts, aligns on feats, in multiple languages, in order to allow anyone to compose fullstack on demand (React, Angular, VusJS, Node, Nest, Swift, Go).
-Feel free to discuss, share other kind of bricks, and invite whoever you want with this mindset to come help us.
-
-Feel free to help us ! :)
+This work is based on [MEAN.js](http://meanjs.org) and more precisely on a fork named [Riess.js](https://github.com/lirantal/Riess.js). The goal is a simple, easy-to-use toolbox to start and maintain fullstack projects across multiple languages (Vue, Node, Swift ...).
 
 ## :clipboard: Licence
 
-[![Packagist](https://badges.weareopensource.me/packagist/l/doctrine/orm.svg?style=flat-square)](/LICENSE.md)
+[![License](https://img.shields.io/packagist/l/doctrine/orm.svg?style=flat-square)](/LICENSE.md)
 
 ## :link: Links
 
-[![Blog](https://badges.weareopensource.me/badge/Read-our%20Blog-1abc9c.svg?style=flat-square)](https://blog.weareopensource.me) [![Slack](https://badges.weareopensource.me/badge/Chat-on%20our%20Slack-d0355b.svg?style=flat-square)](https://join.slack.com/t/weareopensource/shared_invite/zt-62p1qxna-PEQn289qx6mmHobzKW8QFw) [![Discord](https://badges.weareopensource.me/badge/Chat-on%20our%20Discord-516DB9.svg?style=flat-square)](https://discord.gg/U2a2vVm) [![Mail](https://badges.weareopensource.me/badge/Contact-us%20by%20mail-00a8ff.svg?style=flat-square)](mailto:brisorgueilp@gmail.com?subject=Contact)
+[![Mail](https://img.shields.io/badge/Contact-us%20by%20mail-00a8ff.svg?style=flat-square)](mailto:brisorgueilp@gmail.com?subject=Contact)

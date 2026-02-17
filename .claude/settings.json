@@ -1,0 +1,133 @@
+{
+  "mcpServers": {},
+  "permissions": {
+    "files": {
+      "deny": [
+        ".env",
+        ".env.*",
+        "secrets/**",
+        "**/*.pem",
+        "**/*.key",
+        "**/*.enc",
+        "**/credentials.json",
+        "**/credentials.yml",
+        "**/credentials.yaml",
+        "**/*-key.json",
+        "**/*_rsa",
+        "**/*_dsa",
+        "**/*_ecdsa",
+        "**/*_ed25519"
+      ]
+    },
+    "bash": {
+      "allow": [
+        {
+          "command": "git status",
+          "prompt": "Check git status"
+        },
+        {
+          "command": "git diff",
+          "prompt": "View git diff"
+        },
+        {
+          "command": "git diff *",
+          "prompt": "View git diff for specific files"
+        },
+        {
+          "command": "git log",
+          "prompt": "View git log"
+        },
+        {
+          "command": "git log *",
+          "prompt": "View git log with options"
+        },
+        {
+          "command": "git show *",
+          "prompt": "Show git commit details"
+        },
+        {
+          "command": "npm start",
+          "prompt": "Start dev server"
+        },
+        {
+          "command": "npm run debug",
+          "prompt": "Start debug server"
+        },
+        {
+          "command": "npm run prod",
+          "prompt": "Start production server"
+        },
+        {
+          "command": "npm test",
+          "prompt": "Run tests"
+        },
+        {
+          "command": "npm run test:watch",
+          "prompt": "Run tests in watch mode"
+        },
+        {
+          "command": "npm run test:coverage",
+          "prompt": "Generate test coverage"
+        },
+        {
+          "command": "npm run lint",
+          "prompt": "Check code quality"
+        },
+        {
+          "command": "npm run seed:dev",
+          "prompt": "Seed development database"
+        },
+        {
+          "command": "npm run commit",
+          "prompt": "Commit with commitizen"
+        },
+        {
+          "command": "docker-compose up",
+          "prompt": "Start docker-compose services"
+        },
+        {
+          "command": "docker-compose up -d",
+          "prompt": "Start docker-compose in background"
+        },
+        {
+          "command": "docker-compose down",
+          "prompt": "Stop docker-compose services"
+        },
+        {
+          "command": "docker-compose ps",
+          "prompt": "Show docker-compose status"
+        }
+      ],
+      "deny": [
+        {
+          "pattern": "rm -rf *",
+          "reason": "Destructive command"
+        },
+        {
+          "pattern": "sudo *",
+          "reason": "Requires elevated privileges"
+        },
+        {
+          "pattern": "curl * | *sh",
+          "reason": "Arbitrary code execution risk"
+        },
+        {
+          "pattern": "wget * | *sh",
+          "reason": "Arbitrary code execution risk"
+        },
+        {
+          "pattern": "git push *",
+          "reason": "Automatic push not allowed"
+        },
+        {
+          "pattern": "npm publish",
+          "reason": "Package publishing requires explicit approval"
+        },
+        {
+          "pattern": "npm run seed:mongodrop",
+          "reason": "Destructive database operation"
+        }
+      ]
+    }
+  }
+}
