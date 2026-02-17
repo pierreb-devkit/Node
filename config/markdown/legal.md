@@ -1,9 +1,9 @@
-- Legal information – weareopensource.me
+- Legal information – github.com/pierreb-devkit
 - Headquarters: firstname lastname xx street xxxx, xxxx Paris
 - Email: xxx@xxxx.xxx
 - Phone: +33 (0)xxx xxx xxx
 - French trade register number: xxxxxx
 - VAT identification number: xxxxxx
-- Site created by: weareopensource.me
+- Site created by: github.com/pierreb-devkit
 - Publication manager: firstname lastname, xxx@xxx.xxx
 - Hosts: xxxxxxxxx

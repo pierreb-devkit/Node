@@ -1,5 +1,5 @@
 {
-  "name": "@weareopensource/node",
+  "name": "@pierreb-devkit/node",
   "description": "Node - Boilerplate Back : Express, Jwt, Mongo, Sequelize (Beta)  (Based on meanjs and riess.js)",
   "version": "0.4.0",
   "type": "module",
@@ -13,11 +13,11 @@
     "boilerplate"
   ],
   "private": false,
-  "author": "https://github.com/weareopensource/Node/graphs/contributors",
+  "author": "https://github.com/pierreb-devkit/Node/graphs/contributors",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/weareopensource/Node.git"
+    "url": "https://github.com/pierreb-devkit/Node.git"
   },
   "engines": {
     "node": ">=20.10.0"
@@ -25,7 +25,7 @@
   "scripts": {
     "start": "node server.js",
     "debug": "nodemon --inspect server.js",
-    "prod": "cross-env NODE_ENV=production node start server.js --name=waosNode",
+    "prod": "cross-env NODE_ENV=production node start server.js --name=node",
     "test": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules gulp test",
     "test:watch": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules  gulp testWatch",
     "test:coverage": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules gulp testCoverage",
@@ -124,7 +124,7 @@
       }
     ],
     "ci": false,
-    "repositoryUrl": "https://github.com/weareopensource/Node.git",
+    "repositoryUrl": "https://github.com/pierreb-devkit/Node.git",
     "plugins": [
       "@semantic-release/commit-analyzer",
       "@semantic-release/release-notes-generator",

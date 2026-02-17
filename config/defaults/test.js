@@ -4,7 +4,7 @@ const config = await import('./development.js');
 
 export default _.merge(config.default, {
   app: {
-    title: 'WeAreOpenSource Node - Test Environment',
+    title: 'Devkit Node - Test Environment',
   },
   api: {
     port: 3001,
