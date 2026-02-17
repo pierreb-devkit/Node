@@ -66,7 +66,7 @@ responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
 ### 6. Run verify
 
 ```bash
-npm run test:lint
+npm run lint
 npm test
 ```
 

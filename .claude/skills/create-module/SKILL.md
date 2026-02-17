@@ -66,7 +66,7 @@ Use safe search+replace to avoid false positives:
 ### 7. Run verify
 
 ```bash
-npm run test:lint
+npm run lint
 npm test
 ```
 

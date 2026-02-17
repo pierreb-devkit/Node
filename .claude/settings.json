@@ -74,6 +74,10 @@
           "prompt": "Check code quality"
         },
         {
+          "command": "npm run lint:fix",
+          "prompt": "Auto-fix code quality issues"
+        },
+        {
           "command": "npm run seed:dev",
           "prompt": "Seed development database"
         },

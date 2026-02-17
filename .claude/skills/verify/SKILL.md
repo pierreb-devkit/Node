@@ -9,7 +9,7 @@ Run lint → tests and report results.
 
 ## Steps
 
-1. Run `npm run test:lint` to check code quality (read-only, no auto-fix)
+1. Run `npm run lint` to check code quality (read-only, no auto-fix)
 2. Run `npm test` to run all tests
 3. Summarize results:
    - ✅ All checks passed → ready to commit
@@ -17,7 +17,7 @@ Run lint → tests and report results.
 
 ## Notes
 
-- Use `npm run test:lint` (not `npm run lint`) — `lint` auto-fixes files which is not suitable for verification
+- Use `npm run lint` (not `npm run lint:fix`) — `lint:fix` auto-fixes files which is not suitable for verification
 - Does not run tests in watch mode (use `npm run test:watch` manually for that)
 - Does not run coverage (use `npm run test:coverage` manually for that)
 - Does not commit or push changes
