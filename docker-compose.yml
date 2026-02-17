@@ -14,8 +14,8 @@ services:
     depends_on:
       - mongo
     environment:
-      - 'NODE_db_uri=mongodb://mongo:27017/NodeDev'
-      - 'NODE_host=0.0.0.0'
+      - 'DEVKIT_NODE_db_uri=mongodb://mongo:27017/NodeDev'
+      - 'DEVKIT_NODE_host=0.0.0.0'
 
   mongo:
     container_name: mongo

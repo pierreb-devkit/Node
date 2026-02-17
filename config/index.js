@@ -21,10 +21,10 @@ const initGlobalConfig = async () => {
     console.error(chalk.red(`+ Error: No configuration file found for "${process.env.NODE_ENV}" environment using development instead. (${_path})`));
     defaultConfig = await import(path.join(process.cwd(), './config', 'defaults', 'development.js'));
   }
-  // Get the config from  process.env.NODE_*
+  // Get the config from  process.env.DEVKIT_NODE_*
   let environmentVars = _.mapKeys(
-    _.pickBy(process.env, (_value, key) => key.startsWith('NODE_') && key !== 'NODE_ENV'),
-    (_v, k) => k.split('_').slice(1).join('.'),
+    _.pickBy(process.env, (_value, key) => key.startsWith('DEVKIT_NODE_')),
+    (_v, k) => k.split('_').slice(2).join('.'),
   );
   // convert string array from sys  to real array
   environmentVars = _.mapValues(environmentVars, (v) => (v[0] === '[' && v[v.length - 1] === ']' ? v.replace(/'/g, '').slice(1, -1).split(',') : v));

@@ -3,7 +3,7 @@ const config = {
     title: 'Devkit Node - Development Environment',
     description: 'Node - Boilerplate Back : Express, Jwt, Mongo, Sequelize (Beta) ',
     keywords: 'node, express, mongo, jwt, sequelize, stack, boilerplate',
-    googleAnalyticsTrackingID: 'NODE_app_googleAnalyticsTrackingID',
+    googleAnalyticsTrackingID: 'DEVKIT_NODE_app_googleAnalyticsTrackingID',
     contact: 'contact@example.com',
   },
   swagger: {
@@ -165,12 +165,12 @@ const config = {
     expiresIn: 7 * 24 * 60 * 60, // token expire in x sec
   },
   mailer: {
-    from: 'NODE_mailer_from',
+    from: 'DEVKIT_NODE_mailer_from',
     options: {
-      service: 'NODE_mailer_options_service',
+      service: 'DEVKIT_NODE_mailer_options_service',
       auth: {
-        user: 'NODE_mailer_options_auth_user',
-        pass: 'NODE_mailer_options_auth_pass',
+        user: 'DEVKIT_NODE_mailer_options_auth_user',
+        pass: 'DEVKIT_NODE_mailer_options_auth_pass',
       },
     },
   },
