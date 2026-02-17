@@ -89,8 +89,8 @@ Tests are organized per module in `modules/*/tests/`
 ### Code Quality
 
 ```bash
-npm run test:lint         # Check code quality (read-only)
-npm run lint              # Check and auto-fix code quality issues
+npm run lint              # Check code quality (read-only)
+npm run lint:fix          # Auto-fix code quality issues
 ```
 
 ### Database Seeding
