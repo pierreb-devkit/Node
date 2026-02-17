@@ -15,7 +15,7 @@ Designed to be cloned into downstream projects and kept up-to-date via `git merg
 | Subject      | Informations                                                                                                                                                                                                                                                                                                           |
 | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Architecture | Layered Architecture : everything is separated in layers, and the upper layers are abstractions of the lower ones, that's why every layer should only reference the immediate lower layer (vertical modules architecture with Repository and Services Pattern)                                                          |
-| Server       | [Node >= 20 LTS](https://nodejs.org/en/) - [Express](https://github.com/expressjs/express) - [Helmet](https://github.com/helmetjs/helmet) - [CORS](https://github.com/expressjs/cors) <br> [nodemon](https://github.com/remy/nodemon)                                                                            |
+| Server       | [Node >= 22 LTS](https://nodejs.org/en/) - [Express](https://github.com/expressjs/express) - [Helmet](https://github.com/helmetjs/helmet) - [CORS](https://github.com/expressjs/cors) <br> [nodemon](https://github.com/remy/nodemon)                                                                            |
 | Database     | [MongoDB](https://www.mongodb.com/) - [Mongoose](https://github.com/Automattic/mongoose) - GridFS upload <br> [Sequelize](https://github.com/sequelize/sequelize) - PostgreSQL, MySQL, SQLite (option) <br> [JOI](https://github.com/hapijs/joi) - Models & Repository validation                                      |
 | Security     | [passport-jwt](https://github.com/themikenicholson/passport-jwt) - JWT Stateless <br> [bcrypt](https://en.wikipedia.org/wiki/Bcrypt) - [zxcvbn](https://github.com/dropbox/zxcvbn) - Passwords <br> SSL - Express / Reverse Proxy                                                                                     |
 | API          | [jsend](https://github.com/omniti-labs/jsend) - Default response wrapper: status, message, data or error                                                                                                                                                                                                              |
@@ -43,7 +43,7 @@ Designed to be cloned into downstream projects and kept up-to-date via `git merg
 ## :pushpin: Prerequisites
 
 - Git - [Download & Install Git](https://git-scm.com/downloads)
-- Node.js (20.x or 22.x) - [Download & Install Node.js](https://nodejs.org/en/download/)
+- Node.js (22.x or 24.x) - [Download & Install Node.js](https://nodejs.org/en/download/)
   - Recommended: Use [nvm](https://github.com/nvm-sh/nvm) for Node version management
 - MongoDB - [Download & Install MongoDB](https://www.mongodb.com/try/download/community)
 
