@@ -44,7 +44,7 @@ Search and replace the following tokens across the new module:
 
 Files to check in `modules/{new-module-name}/`:
 
-- File names (controllers, services, repositories, models, policies, routes, tests)
+- File names (controllers, services, repositories, models, schemas, policies, routes, tests)
 - Mongoose model name and collection name
 - Route paths and prefixes
 - Joi validation schemas
@@ -66,7 +66,7 @@ Use safe search+replace to avoid false positives:
 ### 7. Run verify
 
 ```bash
-npm run lint
+npm run test:lint
 npm test
 ```
 
@@ -77,26 +77,30 @@ Provide a summary:
 - ✅ Module created at: `modules/{new-module-name}`
 - ✅ Renamed tokens: `tasks` → `{new-module-name}`, etc.
 - ✅ Verification: lint passed, tests passed
-- 📝 Next steps: Customize the model schema, update business logic in services, register routes in `lib/services/express.js` if needed
+- 📝 Next steps: Customize the schema, update business logic in services, register routes in `lib/services/express.js` if needed
 
 ## Module Structure
 
 ```
 modules/{new-module-name}/
 ├── controllers/
-│   └── {module}.crud.controller.js
+│   └── {module}.controller.js
 ├── services/
-│   └── {module}.crud.service.js
+│   └── {module}.service.js
+│   └── {module}.data.service.js
 ├── repositories/
 │   └── {module}.repository.js
 ├── models/
-│   └── {module}.model.js
+│   └── {module}.model.mongoose.js
+│   └── {module}.model.sequelize.js  (optional)
+│   └── {module}.schema.js
 ├── policies/
-│   └── {module}.crud.policy.js
+│   └── {module}.policy.js
 ├── routes/
 │   └── {module}.routes.js
 └── tests/
-    └── {module}.integration.tests.js
+    ├── {module}.integration.tests.js
+    └── {module}.unit.tests.js
 ```
 
 ## Notes
@@ -104,3 +108,4 @@ modules/{new-module-name}/
 - Preserves the layered architecture: controllers → services → repositories → models
 - Follows modularity rules: keeps the module self-contained
 - Policy functions control route authorization — update them for your use case
+- Remove `{module}.model.sequelize.js` if not using SQL
