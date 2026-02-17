@@ -133,6 +133,9 @@ export default {
   // The test environment that will be used for testing
   testEnvironment: 'node',
 
+  // Global timeout for tests and hooks (integration tests bootstrap MongoDB + Express)
+  testTimeout: 15000,
+
   // Options that will be passed to the testEnvironment
   // testEnvironmentOptions: {},
 
