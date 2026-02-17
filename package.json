@@ -25,7 +25,7 @@
   "scripts": {
     "start": "node server.js",
     "debug": "nodemon --inspect server.js",
-    "prod": "cross-env NODE_ENV=production node start server.js --name=node",
+    "prod": "cross-env NODE_ENV=production node server.js --name=node",
     "test": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
     "test:watch": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --watch --runInBand",
     "test:coverage": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --coverage --runInBand",

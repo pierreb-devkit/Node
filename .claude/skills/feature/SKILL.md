@@ -72,6 +72,6 @@ npm test
 
 ## Notes
 
-- Config is loaded from `config/` and overridable via `DEVKIT_NODE_*` env vars 
+- Config is loaded from `config/` and overridable via `DEVKIT_NODE_*` env vars
 - Authentication is handled via Passport JWT middleware — don't reimplement
 - All policies must use `lib/middlewares/policy.js` patterns

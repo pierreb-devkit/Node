@@ -15,9 +15,7 @@ Welcome to the Node wiki! Here you will find various information about this repo
 
 
 * [Mindset and what we would like to create](https://github.com/pierreb-devkit)
-* [How to start a project and maintain updates from stacks](
-* [Global roadmap and  ideas about stacks](https://github.com/orgs/pierreb-devkit/projects)
-* [How to contribute and help us](
+* [Global roadmap and ideas about stacks](https://github.com/orgs/pierreb-devkit/projects)
 
 # Node WIKI
 
