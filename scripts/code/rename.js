@@ -14,7 +14,7 @@ const replaceStringsInFile = async (fileName, replacements) => {
 
     // Remplacer les chaînes
     let result = data;
-    // eslint-disable-next-line no-restricted-syntax
+     
     for (const [oldString, newString] of Object.entries(replacements)) {
       const regex = new RegExp(oldString, 'g');
       result = result.replace(regex, newString);

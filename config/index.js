@@ -14,7 +14,7 @@ import configHelper from '../lib/helpers/config.js';
 
 const initGlobalConfig = async () => {
   // Get the current config
-  const _path = path.join(process.cwd(), './config', 'defaults', `${process.env.NODE_ENV}.js` || 'development.js');
+  const _path = path.join(process.cwd(), './config', 'defaults', `${process.env.NODE_ENV || 'development'}.js`);
   let defaultConfig;
   if (fs.existsSync(`${_path}`)) defaultConfig = await import(_path);
   else {

@@ -59,7 +59,7 @@ const validateResetToken = async (req, res) => {
     const user = await UserService.getBrut({ resetPasswordToken: req.params.token });
     if (!user || !user.email) return res.redirect('/api/password/reset/invalid');
     res.redirect(`/api/password/reset/${req.params.token}`);
-  } catch (err) {
+  } catch (_err) {
     return res.redirect('/api/password/reset/invalid');
   }
 };

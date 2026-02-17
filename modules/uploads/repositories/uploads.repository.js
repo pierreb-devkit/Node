@@ -69,10 +69,10 @@ const remove = async (upload) => {
 const deleteMany = async (filter) => {
   const uploads = await list(filter);
   let deletedCount = 0;
-  // eslint-disable-next-line no-restricted-syntax
+   
   for (const upload of uploads) {
     try {
-      // eslint-disable-next-line no-await-in-loop
+       
       await bucket.delete(upload._id);
       deletedCount += 1;
     } catch (err) {
@@ -103,10 +103,10 @@ const purge = async (kind, collection, key) => {
     { $match: { references: [] } },
   ]);
   let deletedCount = 0;
-  // eslint-disable-next-line no-restricted-syntax
+   
   for (const upload of toDelete) {
     try {
-      // eslint-disable-next-line no-await-in-loop
+       
       await bucket.delete(upload._id);
       deletedCount += 1;
     } catch (err) {

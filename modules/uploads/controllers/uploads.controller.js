@@ -21,8 +21,9 @@ const get = async (req, res) => {
     stream.on('error', (err) => {
       responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
     });
-    res.set('Content-Type', req.upload.contentType);
-    res.set('Content-Length', req.upload.length);
+    const contentType = req.upload.contentType || req.upload.metadata?.contentType || 'application/octet-stream';
+    res.set('Content-Type', contentType);
+    if (req.upload.length) res.set('Content-Length', req.upload.length);
     stream.pipe(res);
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
@@ -41,7 +42,8 @@ const getSharp = async (req, res) => {
     stream.on('error', (err) => {
       responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
     });
-    res.set('Content-Type', req.upload.contentType);
+    const contentType = req.upload.contentType || req.upload.metadata?.contentType || 'application/octet-stream';
+    res.set('Content-Type', contentType);
     switch (req.sharpOption) {
       case 'blur':
         stream.pipe(sharp().resize(req.sharpSize).blur(config.uploads.sharp.blur)).pipe(res);
