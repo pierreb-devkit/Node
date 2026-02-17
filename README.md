@@ -113,7 +113,7 @@ GITHUB_TOKEN=xxx npm run release:auto             # Semantic release (CI)
 
 Configuration files live in `config/defaults/`. The `development.js` file is the base; other files in that folder override it.
 
-Environment variables prefixed with `DEVKIT_NODE_` are merged on top . The variable path maps directly to the config object key:
+Environment variables prefixed with `DEVKIT_NODE_` are merged on top. The variable path maps directly to the config object key:
 
 ```bash
 DEVKIT_NODE_app_title='my app'               # sets config.app.title
