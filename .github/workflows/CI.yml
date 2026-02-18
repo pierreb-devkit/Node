@@ -10,29 +10,23 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    strategy:
-      matrix:
-        node-version: [22.x, 24.x]
-        mongodb-version: ['7.0']
-
     steps:
       - uses: actions/checkout@v4
-      - name: Use Node.js ${{ matrix.node-version }}
+      - name: Use Node.js LTS
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: lts/*
           cache: 'npm'
-      - name: Start Mongo ${{ matrix.mongodb-version }}
+      - name: Start MongoDB LTS
         uses: supercharge/mongodb-github-action@1.12.1
         with:
-          mongodb-version: ${{ matrix.mongodb-version }}
+          mongodb-version: '7.0'
       - name: Run tests
         run: |
           npm install
           npm run lint
           npm run test:coverage
       - name: Upload coverage reports to Codecov
-        if: matrix.node-version == '22.x'
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
