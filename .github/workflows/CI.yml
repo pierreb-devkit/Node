@@ -7,7 +7,7 @@ on:
     branches: [master]
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
 
     strategy:
@@ -28,10 +28,11 @@ jobs:
           mongodb-version: ${{ matrix.mongodb-version }}
       - name: Run tests
         run: |
-          npm i
+          npm install
           npm run lint
           npm run test:coverage
       - name: Upload coverage reports to Codecov
+        if: matrix.node-version == '22.x'
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
