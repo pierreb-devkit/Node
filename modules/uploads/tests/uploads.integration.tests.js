@@ -4,7 +4,7 @@
 import request from 'supertest';
 import path from 'path';
 
-import { beforeAll } from '@jest/globals';
+import { jest, beforeAll } from '@jest/globals';
 import { bootstrap } from '../../../lib/app.js';
 import mongooseService from '../../../lib/services/mongoose.js';
 
@@ -13,6 +13,7 @@ import mongooseService from '../../../lib/services/mongoose.js';
  */
 describe('Uploads integration tests:', () => {
   let UserService;
+  let UploadsService;
   let UploadsDataService;
   let UploadRepository;
   let agent;
@@ -26,11 +27,13 @@ describe('Uploads integration tests:', () => {
     try {
       const init = await bootstrap();
       UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
+      UploadsService = (await import(path.resolve('./modules/uploads/services/uploads.service.js'))).default;
       UploadsDataService = (await import(path.resolve('./modules/uploads/services/uploads.data.service.js'))).default;
       UploadRepository = (await import(path.resolve('./modules/uploads/repositories/uploads.repository.js'))).default;
       agent = request.agent(init.app);
     } catch (err) {
       console.log(err);
+      expect(err).toBeFalsy();
     }
   });
 
@@ -239,6 +242,38 @@ describe('Uploads integration tests:', () => {
       }
     });
 
+    test('should return 422 when get stream fails', async () => {
+      jest.spyOn(UploadsService, 'getStream').mockRejectedValueOnce(new Error('DB error'));
+      const result = await agent.get(`/api/uploads/${upload1}`).expect(422);
+      expect(result.body.type).toBe('error');
+      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.description).toBe('DB error.');
+    });
+
+    test('should return 422 when getSharp stream fails', async () => {
+      jest.spyOn(UploadsService, 'getStream').mockRejectedValueOnce(new Error('DB error'));
+      const result = await agent.get(`/api/uploads/images/${upload1}`).expect(422);
+      expect(result.body.type).toBe('error');
+      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.description).toBe('DB error.');
+    });
+
+    test('should return 422 when remove fails', async () => {
+      jest.spyOn(UploadsService, 'remove').mockRejectedValueOnce(new Error('DB error'));
+      const result = await agent.delete(`/api/uploads/${upload1}`).expect(422);
+      expect(result.body.type).toBe('error');
+      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.description).toBe('DB error.');
+    });
+
+    test('should return 500 when uploadByName middleware throws', async () => {
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      jest.spyOn(UploadsService, 'get').mockRejectedValueOnce(new Error('DB error'));
+      const result = await agent.get(`/api/uploads/${upload1}`).expect(500);
+      expect(result.body.message).toBe('DB error');
+      consoleSpy.mockRestore();
+    });
+
     afterEach(async () => {
       try {
         if (upload1) await agent.delete(`/api/uploads/${upload1}`).expect(200);
@@ -320,14 +355,17 @@ describe('Uploads integration tests:', () => {
   describe('Cron', () => {
     test('should be able to purge data not linked to another entity', async () => {
       try {
-        const _user2 = _user;
+        const _user2 = { ..._user };
         _user2.email = 'upload2@test.com';
         const resultUser = await agent.post('/api/auth/signup').send(_user2).expect(200);
         const user = resultUser.body.user;
-        await agent.post('/api/users/avatar').attach('img', './modules/users/tests/img/default.jpeg').expect(200);
+        const uploadResult = await agent.post('/api/users/avatar').attach('img', './modules/users/tests/img/default.jpeg').expect(200);
+        const orphanAvatar = uploadResult.body.data.avatar;
         await UserService.remove(user);
         const result = await UploadRepository.purge('avatar', 'users', 'avatar');
-        expect(result.deletedCount).toBe(1);
+        expect(result.deletedCount).toBeGreaterThanOrEqual(1);
+        const removedUpload = await UploadRepository.get(orphanAvatar);
+        expect(removedUpload).toBeFalsy();
       } catch (err) {
         expect(err).toBeFalsy();
         console.log(err);
@@ -341,6 +379,7 @@ describe('Uploads integration tests:', () => {
       await mongooseService.disconnect();
     } catch (err) {
       console.log(err);
+      expect(err).toBeFalsy();
     }
   });
 });

@@ -10,22 +10,13 @@ import config from '../../../config/index.js';
 import configHelper from '../../../lib/helpers/config.js';
 import logger from '../../../lib/services/logger.js';
 import mongooseService from '../../../lib/services/mongoose.js';
+import expressService from '../../../lib/services/express.js';
 import errors from '../../../lib/helpers/errors.js';
-
-import { bootstrap } from '../../../lib/app.js';
 
 /**
  * Unit tests
  */
 describe('Core unit tests:', () => {
-  beforeAll(async () => {
-    try {
-      await bootstrap();
-    } catch (err) {
-      console.log(err);
-    }
-  });
-
   let userFromSeedConfig;
   let adminFromSeedConfig;
   let tasksFromSeedConfig;
@@ -110,12 +101,10 @@ describe('Core unit tests:', () => {
   describe('Logger', () => {
     beforeEach(() => {
       originalLogConfig = _.clone(config.log, true);
-      // mock();
     });
 
     afterEach(() => {
       config.log = originalLogConfig;
-      // mock.restore();
     });
 
     it('should retrieve the log format from the logger configuration', () => {
@@ -161,7 +150,7 @@ describe('Core unit tests:', () => {
     });
 
     it('should not create a file transport object if critical options are missing: filename', () => {
-      // manually set the config stream fileName option to an empty string
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       config.log = {
         format: 'combined',
         options: {
@@ -174,10 +163,11 @@ describe('Core unit tests:', () => {
 
       const fileTransport = logger.setupFileLogger(config);
       expect(fileTransport).toBe(false);
+      consoleSpy.mockRestore();
     });
 
     it('should not create a file transport object if critical options are missing: directory', () => {
-      // manually set the config stream fileName option to an empty string
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       config.log = {
         format: 'combined',
         options: {
@@ -190,6 +180,7 @@ describe('Core unit tests:', () => {
 
       const fileTransport = logger.setupFileLogger(config);
       expect(fileTransport).toBe(false);
+      consoleSpy.mockRestore();
     });
   });
 
@@ -232,10 +223,127 @@ describe('Core unit tests:', () => {
     });
   });
 
-  // Mongoose disconnect
-  afterAll(() =>
-    mongooseService.disconnect().catch((e) => {
-      console.log(e);
-    }),
-  );
+  describe('Config helpers', () => {
+    it('should return URL as-is when globPattern is a URL', async () => {
+      const result = await configHelper.getGlobbedPaths('http://example.com/resource');
+      expect(result).toContain('http://example.com/resource');
+    });
+
+    it('should apply string excludes when provided to getGlobbedPaths', async () => {
+      const result = await configHelper.getGlobbedPaths('modules/core/tests/*.js', 'modules/core/tests/');
+      expect(Array.isArray(result)).toBe(true);
+    });
+
+    it('should log a warning and disable ssl when cert files are missing', () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      const fakeConfig = { secure: { ssl: true, key: './nonexistent.pem', cert: './nonexistent2.pem' } };
+      configHelper.initSecureMode(fakeConfig);
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Certificate file'));
+      expect(fakeConfig.secure.ssl).toBe(false);
+      consoleSpy.mockRestore();
+    });
+
+    it('should return true early when ssl is not configured', () => {
+      const result = configHelper.initSecureMode({ secure: { ssl: false } });
+      expect(result).toBe(true);
+    });
+  });
+
+  describe('Express service', () => {
+    it('should set app.locals.secure when ssl is enabled', () => {
+      const originalSecure = config.secure;
+      config.secure = { ssl: true };
+      const mockApp = { locals: {}, use: jest.fn() };
+      expressService.initLocalVariables(mockApp);
+      expect(mockApp.locals.secure).toBe(true);
+      config.secure = originalSecure;
+    });
+
+    it('should not set app.locals.secure when ssl is disabled', () => {
+      const originalSecure = config.secure;
+      config.secure = { ssl: false };
+      const mockApp = { locals: {}, use: jest.fn() };
+      expressService.initLocalVariables(mockApp);
+      expect(mockApp.locals.secure).toBeUndefined();
+      config.secure = originalSecure;
+    });
+
+    it('should call next() when error middleware receives no error', () => {
+      const mockApp = { use: jest.fn() };
+      expressService.initErrorRoutes(mockApp);
+      const middleware = mockApp.use.mock.calls[0][0];
+      const mockNext = jest.fn();
+      const mockRes = { status: jest.fn().mockReturnThis(), send: jest.fn() };
+      middleware(null, {}, mockRes, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    it('should respond with 500 when error has no status code', () => {
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const mockApp = { use: jest.fn() };
+      expressService.initErrorRoutes(mockApp);
+      const middleware = mockApp.use.mock.calls[0][0];
+      const mockNext = jest.fn();
+      const mockSend = jest.fn();
+      const mockStatus = jest.fn().mockReturnValue({ send: mockSend });
+      const mockRes = { status: mockStatus };
+      const err = new Error('test error');
+      middleware(err, {}, mockRes, mockNext);
+      expect(mockStatus).toHaveBeenCalledWith(500);
+      consoleSpy.mockRestore();
+    });
+
+    it('should respond with the error status code when provided', () => {
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const mockApp = { use: jest.fn() };
+      expressService.initErrorRoutes(mockApp);
+      const middleware = mockApp.use.mock.calls[0][0];
+      const mockSend = jest.fn();
+      const mockStatus = jest.fn().mockReturnValue({ send: mockSend });
+      const mockRes = { status: mockStatus };
+      const err = new Error('not found');
+      err.status = 404;
+      middleware(err, {}, mockRes, jest.fn());
+      expect(mockStatus).toHaveBeenCalledWith(404);
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('Mongoose service', () => {
+    it('should invoke callback after loading models', async () => {
+      const callback = jest.fn();
+      await mongooseService.loadModels(callback);
+      expect(callback).toHaveBeenCalled();
+    });
+  });
+
+  describe('Auth service', () => {
+    let AuthService;
+
+    beforeAll(async () => {
+      AuthService = (await import(path.resolve('./modules/auth/services/auth.service.js'))).default;
+    });
+
+    it('should return null when removeSensitive is called with a non-object', () => {
+      expect(AuthService.removeSensitive(null)).toBeNull();
+      expect(AuthService.removeSensitive('string')).toBeNull();
+      expect(AuthService.removeSensitive(undefined)).toBeNull();
+    });
+
+    it('should return picked fields when removeSensitive is called with a valid user', () => {
+      const fakeUser = { id: '1', email: 'a@b.com', password: 'secret', firstName: 'A' };
+      const result = AuthService.removeSensitive(fakeUser);
+      expect(result).toBeDefined();
+      expect(result.password).toBeUndefined();
+    });
+
+    it('should throw when checkPassword is called with a weak password', () => {
+      expect(() => AuthService.checkPassword('password')).toThrow();
+    });
+
+    it('should return the password when checkPassword is called with a strong password', () => {
+      const strong = 'C0rr3ct!H0rs3B@tt3ry';
+      expect(AuthService.checkPassword(strong)).toBe(strong);
+    });
+  });
 });

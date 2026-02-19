@@ -4,7 +4,7 @@
 import request from 'supertest';
 import path from 'path';
 
-import { afterAll, beforeAll } from '@jest/globals';
+import { jest, afterAll, beforeAll } from '@jest/globals';
 import { bootstrap } from '../../../lib/app.js';
 import mongooseService from '../../../lib/services/mongoose.js';
 
@@ -13,6 +13,7 @@ import mongooseService from '../../../lib/services/mongoose.js';
  */
 describe('Tasks integration tests:', () => {
   let UserService;
+  let TasksService;
   let TasksDataService;
   let agent;
   let user;
@@ -26,10 +27,12 @@ describe('Tasks integration tests:', () => {
     try {
       const init = await bootstrap();
       UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
+      TasksService = (await import(path.resolve('./modules/tasks/services/tasks.service.js'))).default;
       TasksDataService = (await import(path.resolve('./modules/tasks/services/tasks.data.service.js'))).default;
       agent = request.agent(init.app);
     } catch (err) {
       console.log(err);
+      expect(err).toBeFalsy();
     }
   });
 
@@ -380,12 +383,90 @@ describe('Tasks integration tests:', () => {
     });
   });
 
+  describe('Errors', () => {
+    let errorUser;
+    let errorTask;
+
+    beforeAll(async () => {
+      try {
+        const result = await agent.post('/api/auth/signup').send({
+          firstName: 'Error',
+          lastName: 'Task',
+          email: 'taskerror@test.com',
+          password: 'W@os.jsI$Aw3$0m3',
+          provider: 'local',
+        }).expect(200);
+        errorUser = result.body.user;
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+      try {
+        const taskResult = await agent.post('/api/tasks').send({ title: 'errtask', description: 'err desc' }).expect(200);
+        errorTask = taskResult.body.data;
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should return 422 when list fails', async () => {
+      jest.spyOn(TasksService, 'list').mockRejectedValueOnce(new Error('DB error'));
+      const result = await agent.get('/api/tasks').expect(422);
+      expect(result.body.type).toBe('error');
+      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.description).toBe('DB error.');
+    });
+
+    test('should return 422 when create fails', async () => {
+      jest.spyOn(TasksService, 'create').mockRejectedValueOnce(new Error('DB error'));
+      const result = await agent.post('/api/tasks').send({ title: 'test', description: 'desc' }).expect(422);
+      expect(result.body.type).toBe('error');
+      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.description).toBe('DB error.');
+    });
+
+    test('should return 422 when update fails', async () => {
+      jest.spyOn(TasksService, 'update').mockRejectedValueOnce(new Error('DB error'));
+      const result = await agent.put(`/api/tasks/${errorTask.id}`).send({ title: 'upd', description: 'desc' }).expect(422);
+      expect(result.body.type).toBe('error');
+      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.description).toBe('DB error.');
+    });
+
+    test('should return 422 when remove fails', async () => {
+      jest.spyOn(TasksService, 'remove').mockRejectedValueOnce(new Error('DB error'));
+      const result = await agent.delete(`/api/tasks/${errorTask.id}`).expect(422);
+      expect(result.body.type).toBe('error');
+      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.description).toBe('DB error.');
+    });
+
+    test('should return 422 when stats returns an error', async () => {
+      jest.spyOn(TasksService, 'stats').mockResolvedValueOnce({ err: new Error('DB error') });
+      const result = await agent.get('/api/tasks/stats').expect(422);
+      expect(result.body.type).toBe('error');
+      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.description).toBe('DB error.');
+    });
+
+    afterAll(async () => {
+      try {
+        await agent.delete(`/api/tasks/${errorTask.id}`);
+      } catch (_) { /* cleanup – ignore errors */ }
+      try {
+        await UserService.remove(errorUser);
+      } catch (_) { /* cleanup – ignore errors */ }
+    });
+  });
+
   // Mongoose disconnect
   afterAll(async () => {
     try {
       await mongooseService.disconnect();
     } catch (err) {
       console.log(err);
+      expect(err).toBeFalsy();
     }
   });
 });

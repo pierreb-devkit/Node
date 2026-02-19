@@ -21,13 +21,27 @@ export default {
   // collectCoverage: true,
 
   // An array of glob patterns indicating a set of files for which coverage information should be collected
-  // collectCoverageFrom: [
-  //   '<rootDir>/server.js',
-  //   '<rootDir>/config/**/*.js',
-  //   '<rootDir>/modules/*/**/*.js',
-  // ],
+  collectCoverageFrom: [
+    '<rootDir>/lib/**/*.js',
+    '<rootDir>/modules/**/*.js',
+    // Exclude schema/model definitions — no business logic, just DB structure
+    '!<rootDir>/modules/**/*.model.mongoose.js',
+    '!<rootDir>/modules/**/*.model.sequelize.js',
+    // Exclude static config files — just object exports, nothing to test
+    '!<rootDir>/config/defaults/**/*.js',
+    // Exclude entry point
+    '!<rootDir>/server.js',
+    // Exclude Sequelize service — MySQL support is disabled/commented out in app.js
+    '!<rootDir>/lib/services/sequelize.js',
+    // Exclude OAuth strategy configs — no business logic, just passport.use() calls;
+    // real OAuth credentials required to test, which are not available in CI
+    '!<rootDir>/modules/auth/config/strategies/apple.js',
+    '!<rootDir>/modules/auth/config/strategies/google.js',
+    // Exclude dead code — never imported anywhere in the codebase
+    '!<rootDir>/modules/users/services/users.data.service.js',
+  ],
   // The directory where Jest should output its coverage files
-  // coverageDirectory: 'coverage',
+  coverageDirectory: 'coverage',
 
   // An array of regexp pattern strings used to skip coverage collection
   // coveragePathIgnorePatterns: [
@@ -35,15 +49,17 @@ export default {
   // ],
 
   // A list of reporter names that Jest uses when writing coverage reports
-  // coverageReporters: [
-  //   'json',
-  //   //   "text",
-  //   'lcov',
-  // //   "clover"
-  // ],
+  coverageReporters: ['json', 'lcov', 'clover', 'text'],
 
   // An object that configures minimum threshold enforcement for coverage results
-  // coverageThreshold: null,
+  coverageThreshold: {
+    global: {
+      statements: 85,
+      branches: 75,
+      functions: 85,
+      lines: 85,
+    },
+  },
 
   // Make calling deprecated APIs throw helpful error messages
   // errorOnDeprecated: false,

@@ -1,49 +1,56 @@
 /**
  * Module dependencies.
  */
+import { jest } from '@jest/globals';
+import axios from 'axios';
+import path from 'path';
 import request from 'supertest';
 
 import { bootstrap } from '../../../lib/app.js';
 import mongooseService from '../../../lib/services/mongoose.js';
+import config from '../../../config/index.js';
 /**
  * Unit tests
  */
 describe('Home integration tests:', () => {
   let agent;
+  let HomeService;
 
   //  init
   beforeAll(async () => {
+    // Mock GitHub API calls to avoid real network requests in tests
+    jest.spyOn(axios, 'get').mockImplementation(async (url) => {
+      if (url.includes('/releases')) {
+        return { data: [{ name: 'v1.0.0', prerelease: false, published_at: '2024-01-01T00:00:00Z' }] };
+      }
+      if (url.includes('/contents/')) {
+        return { data: { content: Buffer.from('# Changelog\n## v1.0.0\n- First release').toString('base64') } };
+      }
+      throw new Error(`Unexpected GitHub API URL: ${url}`);
+    });
     try {
       const init = await bootstrap();
+      HomeService = (await import(path.resolve('./modules/home/services/home.service.js'))).default;
       agent = request.agent(init.app);
     } catch (err) {
       console.log(err);
+      expect(err).toBeFalsy();
     }
   });
 
   describe('Logout', () => {
     test('should be able to get releases', async () => {
-      try {
-        const result = await agent.get('/api/home/releases').expect(200);
-        expect(result.body.type).toBe('success');
-        expect(result.body.message).toBe('releases');
-        expect(result.body.data).toBeInstanceOf(Array);
-      } catch (err) {
-        // expect(err).toBeFalsy(); depends of chain api calls without key
-        console.log(err);
-      }
+      const result = await agent.get('/api/home/releases').expect(200);
+      expect(result.body.type).toBe('success');
+      expect(result.body.message).toBe('releases');
+      expect(result.body.data).toBeInstanceOf(Array);
     });
 
     test('should be able to get changelogs', async () => {
-      try {
-        const result = await agent.get('/api/home/changelogs').expect(200);
-        expect(result.body.type).toBe('success');
-        expect(result.body.message).toBe('changelogs');
-        expect(result.body.data).toBeInstanceOf(Array);
-      } catch (err) {
-        // expect(err).toBeFalsy(); depends of chain api calls without key
-        console.log(err);
-      }
+      const result = await agent.get('/api/home/changelogs').expect(200);
+      expect(result.body.type).toBe('success');
+      expect(result.body.message).toBe('changelogs');
+      expect(result.body.data).toBeInstanceOf(Array);
     });
 
     test('should be able to get team members', async () => {
@@ -83,14 +90,79 @@ describe('Home integration tests:', () => {
         expect(err).toBeFalsy();
       }
     });
+
+    test('should return 422 when GitHub API fails for releases', async () => {
+      axios.get.mockRejectedValueOnce(new Error('GitHub API unavailable'));
+      const result = await agent.get('/api/home/releases').expect(422);
+      expect(result.body.type).toBe('error');
+      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.description).toBe('GitHub API unavailable.');
+    });
+
+    test('should return 422 when GitHub API fails for changelogs', async () => {
+      axios.get.mockRejectedValueOnce(new Error('GitHub API unavailable'));
+      const result = await agent.get('/api/home/changelogs').expect(422);
+      expect(result.body.type).toBe('error');
+      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.description).toBe('GitHub API unavailable.');
+    });
+
+    test('should use Authorization header when a token is configured for releases', async () => {
+      const originalRepos = config.repos;
+      axios.get.mockClear();
+      // Temporarily set a fake token to cover the token-truthy branch in home.service releases()
+      config.repos = originalRepos.map((repo) => ({ ...repo, token: 'fake-test-token' }));
+      const result = await agent.get('/api/home/releases').expect(200);
+      expect(result.body.type).toBe('success');
+      const releaseCalls = axios.get.mock.calls.filter(([url]) => url.includes('/releases'));
+      expect(releaseCalls.length).toBeGreaterThan(0);
+      releaseCalls.forEach(([, options]) => {
+        expect(options.headers.Authorization).toBe('token fake-test-token');
+      });
+      config.repos = originalRepos;
+    });
+
+    test('should use Authorization header when a token is configured for changelogs', async () => {
+      const originalRepos = config.repos;
+      axios.get.mockClear();
+      config.repos = originalRepos.map((repo) => ({ ...repo, token: 'fake-test-token' }));
+      const result = await agent.get('/api/home/changelogs').expect(200);
+      expect(result.body.type).toBe('success');
+      const changelogCalls = axios.get.mock.calls.filter(([url]) => url.includes('/contents/'));
+      expect(changelogCalls.length).toBeGreaterThan(0);
+      changelogCalls.forEach(([, options]) => {
+        expect(options.headers.Authorization).toBe('token fake-test-token');
+      });
+      config.repos = originalRepos;
+    });
+  });
+
+  describe('Errors', () => {
+    test('should return 422 when team service fails', async () => {
+      jest.spyOn(HomeService, 'team').mockRejectedValueOnce(new Error('DB error'));
+      const result = await agent.get('/api/home/team').expect(422);
+      expect(result.body.type).toBe('error');
+      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.description).toBe('DB error.');
+    });
+
+    test('should handle error in pageByName when page service fails', async () => {
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      jest.spyOn(HomeService, 'page').mockRejectedValueOnce(new Error('DB error'));
+      const result = await agent.get('/api/home/pages/terms').expect(500);
+      expect(result.body.message).toBe('DB error');
+      consoleSpy.mockRestore();
+    });
   });
 
   // Mongoose disconnect
   afterAll(async () => {
+    jest.restoreAllMocks();
     try {
       await mongooseService.disconnect();
     } catch (err) {
       console.log(err);
+      expect(err).toBeFalsy();
     }
   });
 });

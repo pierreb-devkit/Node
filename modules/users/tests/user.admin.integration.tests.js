@@ -4,6 +4,7 @@
 import request from 'supertest';
 import path from 'path';
 import _ from 'lodash';
+import { jest } from '@jest/globals';
 
 import { bootstrap } from '../../../lib/app.js';
 import mongooseService from '../../../lib/services/mongoose.js';
@@ -28,6 +29,7 @@ describe('User admin integration tests:', () => {
       agent = request.agent(init.app);
     } catch (err) {
       console.log(err);
+      expect(err).toBeFalsy();
     }
   });
 
@@ -291,6 +293,62 @@ describe('User admin integration tests:', () => {
       }
     });
 
+    test('should return 404 when getting a user with a non-existent id if admin', async () => {
+      _userEdited.roles = ['user', 'admin'];
+
+      try {
+        const result = await agent.post('/api/auth/signup').send(_userEdited).expect(200);
+        userEdited = result.body.user;
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      try {
+        // Valid ObjectId format but non-existent user
+        const result = await agent.get('/api/users/000000000000000000000000').expect(404);
+        expect(result.body.message).toBe('Not Found');
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      try {
+        await UserService.remove(userEdited);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should return 422 when pagination params exceed maximum of 3', async () => {
+      _userEdited.roles = ['user', 'admin'];
+
+      try {
+        const result = await agent.post('/api/auth/signup').send(_userEdited).expect(200);
+        userEdited = result.body.user;
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      try {
+        // 4 params separated by & exceeds the allowed max of 3
+        const result = await agent.get('/api/users/page/0&10&search&extra').expect(422);
+        expect(result.body.message).toBeDefined();
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      try {
+        await UserService.remove(userEdited);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
     afterEach(async () => {
       // del user
       try {
@@ -301,12 +359,81 @@ describe('User admin integration tests:', () => {
     });
   });
 
+  describe('Errors', () => {
+    let adminUser;
+    let targetUser;
+
+    beforeAll(async () => {
+      try {
+        const targetResult = await agent.post('/api/auth/signup').send({
+          firstName: 'Target',
+          lastName: 'Error',
+          email: 'admintarget@test.com',
+          password: 'W@os.jsI$Aw3$0m3',
+          provider: 'local',
+        }).expect(200);
+        targetUser = targetResult.body.user;
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+      try {
+        const adminResult = await agent.post('/api/auth/signup').send({
+          firstName: 'Admin',
+          lastName: 'Error',
+          email: 'adminerror@test.com',
+          password: 'W@os.jsI$Aw3$0m3',
+          provider: 'local',
+          roles: ['user', 'admin'],
+        }).expect(200);
+        adminUser = adminResult.body.user;
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should return 422 when list fails', async () => {
+      jest.spyOn(UserService, 'list').mockRejectedValueOnce(new Error('DB error'));
+      const result = await agent.get('/api/users').expect(422);
+      expect(result.body.type).toBe('error');
+      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.description).toBe('DB error.');
+    });
+
+    test('should return 422 when admin update fails', async () => {
+      jest.spyOn(UserService, 'update').mockRejectedValueOnce(new Error('DB error'));
+      const result = await agent.put(`/api/users/${targetUser._id}`).send({ firstName: 'X' }).expect(422);
+      expect(result.body.type).toBe('error');
+      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.description).toBe('DB error.');
+    });
+
+    test('should return 422 when admin remove fails', async () => {
+      jest.spyOn(UserService, 'remove').mockRejectedValueOnce(new Error('DB error'));
+      const result = await agent.delete(`/api/users/${targetUser._id}`).expect(422);
+      expect(result.body.type).toBe('error');
+      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.description).toBe('DB error.');
+    });
+
+    afterAll(async () => {
+      try {
+        await UserService.remove(targetUser);
+      } catch (_) { /* cleanup – ignore errors */ }
+      try {
+        await UserService.remove(adminUser);
+      } catch (_) { /* cleanup – ignore errors */ }
+    });
+  });
+
   // Mongoose disconnect
   afterAll(async () => {
     try {
       await mongooseService.disconnect();
     } catch (err) {
       console.log(err);
+      expect(err).toBeFalsy();
     }
   });
 });
