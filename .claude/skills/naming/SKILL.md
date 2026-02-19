@@ -45,6 +45,6 @@ From a module name (e.g., `my-feature`):
 
 ## Layer Order
 
-Controllers → Services → Repositories → Models
+Routes → Controllers → Services → Repositories → Models
 
 Never skip layers. Controllers must not call repositories directly.

@@ -143,7 +143,7 @@ docker-compose up
 
 ## :robot: AI Setup
 
-This stack ships with configurations for Claude Code, GitHub Copilot, and OpenAI Codex — all work immediately after cloning.
+This stack ships preconfigured instruction and prompt files for Claude Code, GitHub Copilot, and OpenAI Codex. Each tool requires its own client installation and authentication — the repository provides the configuration so it works out-of-the-box once the tool is set up.
 
 | Tool              | Config                                                              |
 | ----------------- | ------------------------------------------------------------------- |
