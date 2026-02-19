@@ -141,19 +141,25 @@ With [Vue](https://github.com/pierreb-devkit/Vue) stack as frontend:
 docker-compose up
 ```
 
-## :robot: Claude Code Setup
+## :robot: AI Setup
 
-This stack ships with an embedded [Claude Code](https://claude.ai/claude-code) configuration in the `.claude/` folder — works immediately after cloning, no additional setup needed.
+This stack ships with configurations for Claude Code, GitHub Copilot, and OpenAI Codex — all work immediately after cloning.
 
-### Available Skills
+| Tool              | Config                                                              |
+| ----------------- | ------------------------------------------------------------------- |
+| Claude Code       | `.claude/` — skills embedded, works on clone                        |
+| GitHub Copilot    | `.github/copilot-instructions.md` + `.github/prompts/`              |
+| OpenAI Codex      | `AGENTS.md`                                                         |
 
-| Skill            | Description                                              |
-| ---------------- | -------------------------------------------------------- |
-| `/verify`        | Run quality loop (lint + tests)                          |
-| `/create-module` | Create new module by duplicating the `tasks` template    |
-| `/feature`       | Implement feature following layered architecture rules   |
-| `/update-stack`  | Merge stack updates into downstream projects             |
-| `/naming`        | Check or apply file and folder naming conventions        |
+### Claude Code — Available Skills
+
+| Skill            | Description                                           |
+| ---------------- | ----------------------------------------------------- |
+| `/verify`        | Run quality loop (lint + tests)                       |
+| `/create-module` | Create new module by duplicating the `tasks` template |
+| `/feature`       | Implement feature following layered architecture rules|
+| `/update-stack`  | Merge stack updates into downstream projects          |
+| `/naming`        | Check or apply file and folder naming conventions     |
 
 ### Layered Architecture Rules
 
