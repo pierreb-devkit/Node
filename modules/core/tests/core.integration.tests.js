@@ -3,6 +3,7 @@
  */
 import path from 'path';
 
+import { jest } from '@jest/globals';
 import config from '../../../config/index.js';
 import mongooseService from '../../../lib/services/mongoose.js';
 import seed from '../../../lib/services/seed.js';
@@ -25,6 +26,7 @@ describe('Core integration tests:', () => {
       TaskService = (await import(path.resolve('./modules/tasks/services/tasks.service.js'))).default;
     } catch (err) {
       console.log(err);
+      expect(err).toBeFalsy();
     }
   });
 
@@ -256,10 +258,44 @@ describe('Core integration tests:', () => {
     });
   });
 
+  describe('Seed service', () => {
+    it('should log results when logResults option is enabled', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+      const result = await seed.start({ logResults: true }, UserService, AuthService, TaskService);
+
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Database Seeding'));
+      expect(result).toBeInstanceOf(Array);
+      consoleSpy.mockRestore();
+    });
+
+    it('should seed a single user via seed.user()', async () => {
+      const seedUser = {
+        firstName: 'Seed',
+        lastName: 'Test',
+        email: 'seedtest@unit.com',
+        provider: 'local',
+        roles: ['user'],
+      };
+
+      const result = await seed.user(seedUser, UserService, AuthService);
+      expect(result).toBeInstanceOf(Array);
+      expect(result).toHaveLength(1);
+
+      // cleanup
+      try {
+        await UserService.remove(result[0]);
+      } catch (_) { /* cleanup – ignore errors */ }
+    });
+  });
+
   // Mongoose disconnect
-  afterAll(() =>
-    mongooseService.disconnect().catch((e) => {
+  afterAll(async () => {
+    try {
+      await mongooseService.disconnect();
+    } catch (e) {
       console.log(e);
-    }),
-  );
+      expect(e).toBeFalsy();
+    }
+  });
 });

@@ -4,6 +4,7 @@
 import request from 'supertest';
 import path from 'path';
 import _ from 'lodash';
+import { jest } from '@jest/globals';
 
 import { bootstrap } from '../../../lib/app.js';
 import mongooseService from '../../../lib/services/mongoose.js';
@@ -29,6 +30,7 @@ describe('Auth integration tests:', () => {
       agent = request.agent(init.app);
     } catch (err) {
       console.log(err);
+      expect(err).toBeFalsy();
     }
   });
 
@@ -235,6 +237,22 @@ describe('Auth integration tests:', () => {
       }
     });
 
+    test('should reject login with correct email but wrong password', async () => {
+      try {
+        const result = await agent
+          .post('/api/auth/signin')
+          .send({
+            email: credentials[0].email,
+            password: 'WrongPassword!123',
+          })
+          .expect(401);
+        expect(result.error.text).toBe('Unauthorized');
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
     test('forgot password request for non-existent email should return 400', async () => {
       try {
         const result = await agent
@@ -431,12 +449,189 @@ describe('Auth integration tests:', () => {
     });
   });
 
+  describe('OAuth profile and service branches', () => {
+    let AuthController;
+    const oauthUsers = [];
+
+    beforeAll(async () => {
+      AuthController = (await import(path.resolve('./modules/auth/controllers/auth.controller.js'))).default;
+      // clean up any leftover users from a previously failed run
+      for (const email of ['noprovider@auth-test.com', 'oauthprofile@test.com', 'oauthfind@test.com']) {
+        try {
+          const existing = await UserService.getBrut({ email });
+          if (existing) await UserService.remove(existing);
+        } catch (_) { /* cleanup – ignore errors */ }
+      }
+    });
+
+    test('should create user with default provider when none is specified', async () => {
+      const result = await UserService.create({
+        firstName: 'No',
+        lastName: 'Provider',
+        email: 'noprovider@auth-test.com',
+        password: 'P@ss!W0rd123',
+        roles: ['user'],
+        // provider intentionally omitted to trigger the default branch
+      });
+      expect(result.provider).toBe('local');
+      oauthUsers.push(result);
+    });
+
+    test('should create an OAuth user without password via checkOAuthUserProfile', async () => {
+      const profil = {
+        firstName: 'OAuth',
+        lastName: 'Test',
+        email: 'oauthprofile@test.com',
+        avatar: '',
+        providerData: { id: 'google-fake-id-999' },
+      };
+      const mockRes = { status() { return this; }, json() {}, cookie() { return this; } };
+      const result = await AuthController.checkOAuthUserProfile(profil, 'id', 'google', mockRes);
+      expect(result).toBeDefined();
+      expect(result.id).toBeDefined();
+      expect(result.email).toBe(profil.email);
+      oauthUsers.push(result);
+    });
+
+    test('should find an existing OAuth user via checkOAuthUserProfile', async () => {
+      // Create an OAuth user directly first
+      const createdUser = await UserService.create({
+        firstName: 'OAuth',
+        lastName: 'Find',
+        email: 'oauthfind@test.com',
+        provider: 'google',
+        providerData: { id: 'google-find-id-777' },
+        roles: ['user'],
+      });
+
+      const profil = {
+        firstName: 'OAuth',
+        lastName: 'Find',
+        email: 'oauthfind@test.com',
+        avatar: '',
+        providerData: { id: 'google-find-id-777' },
+      };
+      const mockRes = { status() { return this; }, json() {}, cookie() { return this; } };
+      // Second call — should find the existing user (search.length === 1 branch)
+      const found = await AuthController.checkOAuthUserProfile(profil, 'id', 'google', mockRes);
+      expect(found).toBeDefined();
+
+      // cleanup
+      try {
+        await UserService.remove(createdUser);
+      } catch (_) { /* cleanup – ignore errors */ }
+    });
+
+    afterAll(async () => {
+      for (const u of oauthUsers) {
+        try {
+          await UserService.remove(u);
+        } catch (_) { /* cleanup – ignore errors */ }
+      }
+    });
+  });
+
+  describe('Password reset endpoint', () => {
+    beforeEach(async () => {
+      credentials = [
+        {
+          email: 'resetpwd@test.com',
+          password: 'W@os.jsI$Aw3$0m3',
+        },
+      ];
+      _user = {
+        firstName: 'Reset',
+        lastName: 'User',
+        email: credentials[0].email,
+        password: credentials[0].password,
+        provider: 'local',
+      };
+      try {
+        const result = await agent.post('/api/auth/signup').send(_user).expect(200);
+        user = result.body.user;
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should return 400 when token or password fields are missing', async () => {
+      try {
+        const result = await agent.post('/api/auth/reset').send({ newPassword: 'NewP@ss123' }).expect(400);
+        expect(result.body.message).toBe('Bad Request');
+        expect(result.body.description).toBe('Password or Token fields must not be blank');
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should return 400 when reset token is invalid or not found', async () => {
+      try {
+        const result = await agent.post('/api/auth/reset').send({ token: 'invalid-token-xyz', newPassword: 'NewP@ss!Word123' }).expect(400);
+        expect(result.body.message).toBe('Bad Request');
+        expect(result.body.description).toBe('Password reset token is invalid or has expired.');
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should successfully reset password with a valid token', async () => {
+      // Trigger forgot to generate a reset token (email send fails in test env, which is expected)
+      try {
+        await agent.post('/api/auth/forgot').send({ email: credentials[0].email }).expect(400);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      // Fetch the token directly via UserService
+      let resetToken;
+      try {
+        const userWithToken = await UserService.getBrut({ email: credentials[0].email });
+        resetToken = userWithToken.resetPasswordToken;
+        expect(resetToken).toBeDefined();
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      // Reset password with the valid token
+      try {
+        const result = await agent.post('/api/auth/reset').send({ token: resetToken, newPassword: 'NewP@ss!Word123' }).expect(200);
+        expect(result.body.message).toBe('Password changed successfully');
+        expect(result.body.user).toBeDefined();
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    afterEach(async () => {
+      try {
+        await UserService.remove(user);
+      } catch (err) {
+        console.log(err);
+      }
+    });
+  });
+
+  describe('Error paths', () => {
+    test('should redirect to invalid when validateResetToken getBrut throws', async () => {
+      jest.spyOn(UserService, 'getBrut').mockRejectedValueOnce(new Error('DB error'));
+      const result = await agent.get('/api/auth/reset/sometoken').expect(302);
+      expect(result.headers.location).toBe('/api/password/reset/invalid');
+    });
+  });
+
   // Mongoose disconnect
   afterAll(async () => {
     try {
       await mongooseService.disconnect();
     } catch (err) {
       console.log(err);
+      expect(err).toBeFalsy();
     }
   });
 });
