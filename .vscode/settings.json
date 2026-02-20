@@ -2,6 +2,7 @@
   "github.copilot.chat.codeGeneration.useInstructionFiles": true,
   "github.copilot.enable": {
     "javascript": true,
-    "markdown": true
+    "markdown": true,
+    "json": true
   }
 }
