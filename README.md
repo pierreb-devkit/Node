@@ -157,7 +157,7 @@ This stack ships preconfigured instruction and prompt files for Claude Code, Git
 | ---------------- | ----------------------------------------------------- |
 | `/verify`        | Run quality loop (lint + tests)                       |
 | `/create-module` | Create new module by duplicating the `tasks` template |
-| `/feature`       | Implement feature following layered architecture rules|
+| `/feature`       | Implement feature following layered architecture rules |
 | `/update-stack`  | Merge stack updates into downstream projects          |
 | `/naming`        | Check or apply file and folder naming conventions     |
 
