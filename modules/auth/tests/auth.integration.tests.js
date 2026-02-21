@@ -493,6 +493,22 @@ describe('Auth integration tests:', () => {
       oauthUsers.push(result);
     });
 
+    test('should return 422 when checkOAuthUserProfile receives an invalid profile', async () => {
+      const invalidProfil = {
+        firstName: '', // invalid — fails min(1)
+        lastName: 'Test',
+        email: 'invalid-oauth@test.com',
+        avatar: '',
+        providerData: { id: 'google-invalid-999' },
+      };
+      const errors = [];
+      const mockRes = { status() { return this; }, json(body) { errors.push(body); }, cookie() { return this; } };
+      const result = await AuthController.checkOAuthUserProfile(invalidProfil, 'id', 'google', mockRes);
+      expect(result).toBeDefined();
+      expect(result.type).toBe('error');
+      expect(errors[0]?.message).toBe('Schema validation error');
+    });
+
     test('should find an existing OAuth user via checkOAuthUserProfile', async () => {
       // Create an OAuth user directly first
       const createdUser = await UserService.create({

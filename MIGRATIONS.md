@@ -94,3 +94,67 @@ expect(ability.can('read', '/api/tasks')).toBe(true);
 3. Remove any direct use of `policy.Acl` (it is no longer exported).
 4. If you have unit tests that call `defineAbilityFor`, add `import policy from '...policy.js'` as a top-level static import and `await` the call.
 5. Run `npm run lint && npm test` — all existing 403/200 assertions should pass unchanged.
+
+---
+
+## `@hapi/joi` → `zod@3` + `body-parser` / `swig` removed (2026-02-21)
+
+`@hapi/joi` (abandoned), `body-parser` (built into Express 4.16+), `swig` and `consolidate` (template engine, unused in API-only mode) have been removed.
+
+### What changed
+
+- `lib/helpers/joi.js` deleted → `lib/helpers/zod.js` (zxcvbn `superRefine` helper).
+- `lib/middlewares/model.js`: `getResultFromJoi(body, schema, options)` → `getResultFromZod(body, schema)` (no options arg).
+- `model.isValid(schema)` middleware interface is **unchanged** — routes do not need updating.
+- `config.joi` renamed to `config.validation`; `validationOptions` key removed (Zod handles stripping and defaults internally).
+- PUT routes should use a `.partial()` schema (`TaskUpdate`, `UserUpdate`) for partial updates.
+
+### Migration example
+
+**Before (`@hapi/joi`):**
+
+```js
+import Joi from '@hapi/joi';
+
+const TaskSchema = Joi.object().keys({
+  title: Joi.string().trim().default('').required(),
+  description: Joi.string().allow('').default('').required(),
+});
+
+export default { Task: TaskSchema };
+```
+
+**After (`zod@3`):**
+
+```js
+import { z } from 'zod';
+
+const Task = z.object({
+  title: z.string().trim().min(1),
+  description: z.string().default(''),
+}).strip();
+
+const TaskUpdate = Task.partial();
+
+export default { Task, TaskUpdate };
+```
+
+### Unit tests
+
+Replace `schema.Task.validate(data, options)` with `schema.Task.safeParse(data)`. The result shape changes:
+
+| | Joi | Zod |
+|---|---|---|
+| Success | `{ value: T, error: undefined }` | `{ success: true, data: T }` |
+| Failure | `{ value: T, error: ValidationError }` | `{ success: false, error: ZodError }` |
+
+Assertions like `expect(result.error).toBeFalsy()` / `.toBeDefined()` work unchanged. To verify field stripping, check `result.data?.unknownField` (not `result.unknownField`).
+
+### Steps for downstream projects
+
+1. `npm remove @hapi/joi body-parser swig consolidate && npm install zod@3`
+2. Rewrite `modules/*/models/*.schema.js` using the Zod pattern above.
+3. If you call `model.getResultFromJoi(body, schema, options)` directly, replace with `model.getResultFromZod(body, schema)`.
+4. Rename `config.joi` → `config.validation` in all `config/defaults/*.js`; remove `validationOptions`.
+5. Update unit tests from `.validate()` to `.safeParse()`.
+6. Run `npm run lint && npm test` — all existing 422/200 assertions should pass unchanged.

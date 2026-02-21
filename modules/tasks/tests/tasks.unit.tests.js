@@ -54,7 +54,7 @@ describe('Tasks unit tests:', () => {
     task.toto = '';
 
     const result = schema.Task.safeParse(task);
-    expect(result.toto).toBeUndefined();
+    expect(result.data?.toto).toBeUndefined();
     done();
   });
 });

@@ -138,7 +138,7 @@ const checkOAuthUserProfile = async (profil, key, provider, res) => {
     // check error
     const error = model.checkError(result);
     if (error) return responses.error(res, 422, 'Schema validation error', error)(result.error);
-    // else return req.body with the data after Joi validation
+    // else return req.body with the data after Zod validation
     return await UserService.create(result.value);
   } catch (err) {
     throw new AppError('oAuth', { code: 'CONTROLLER_ERROR', details: err.details || err });

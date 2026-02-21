@@ -148,7 +148,7 @@ describe('User unit tests:', () => {
     });
 
     test('should not allow a forbidden password.', (done) => {
-      user.password = 'azerty';
+      user.password = 'azertyui'; // in config.zxcvbn.forbiddenPasswords
 
       const result = schema.User.safeParse(user);
       expect(typeof result).toBe('object');
