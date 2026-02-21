@@ -20,6 +20,19 @@ export default _.merge(config.default, {
     certificate: './config/sslcerts/cert.pem',
     caBundle: './config/sslcerts/cabundle.crt',
   },
+  cookie: {
+    secure: true, // HTTPS only in prod
+    sameSite: 'strict',
+  },
+  rateLimit: {
+    auth: {
+      windowMs: 15 * 60 * 1000,
+      max: 10, // stricter in prod
+      message: { message: 'Too many requests, please try again later.' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    },
+  },
   log: {
     format: 'custom',
     pattern:

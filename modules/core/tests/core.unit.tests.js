@@ -12,6 +12,7 @@ import logger from '../../../lib/services/logger.js';
 import mongooseService from '../../../lib/services/mongoose.js';
 import expressService from '../../../lib/services/express.js';
 import errors from '../../../lib/helpers/errors.js';
+import policy from '../../../lib/middlewares/policy.js';
 
 /**
  * Unit tests
@@ -306,6 +307,48 @@ describe('Core unit tests:', () => {
       middleware(err, {}, mockRes, jest.fn());
       expect(mockStatus).toHaveBeenCalledWith(404);
       consoleSpy.mockRestore();
+    });
+  });
+
+  describe('Policy', () => {
+    beforeAll(async () => {
+      const [homePolicy, tasksPolicy, uploadsPolicy, usersAccountPolicy, usersAdminPolicy] = await Promise.all([
+        import('../../../modules/home/policies/home.policy.js'),
+        import('../../../modules/tasks/policies/tasks.policy.js'),
+        import('../../../modules/uploads/policies/uploads.policy.js'),
+        import('../../../modules/users/policies/users.account.policy.js'),
+        import('../../../modules/users/policies/users.admin.policy.js'),
+      ]);
+      homePolicy.default.invokeRolesPolicies();
+      tasksPolicy.default.invokeRolesPolicies();
+      uploadsPolicy.default.invokeRolesPolicies();
+      usersAccountPolicy.default.invokeRolesPolicies();
+      usersAdminPolicy.default.invokeRolesPolicies();
+    });
+
+    it('guest can read public task routes', async () => {
+      const ability = await policy.defineAbilityFor(null);
+      expect(ability.can('read', '/api/tasks')).toBe(true);
+    });
+
+    it('guest cannot create tasks', async () => {
+      const ability = await policy.defineAbilityFor(null);
+      expect(ability.can('create', '/api/tasks')).toBe(false);
+    });
+
+    it('user can manage tasks', async () => {
+      const ability = await policy.defineAbilityFor({ roles: ['user'] });
+      expect(ability.can('create', '/api/tasks')).toBe(true);
+    });
+
+    it('user cannot access admin routes', async () => {
+      const ability = await policy.defineAbilityFor({ roles: ['user'] });
+      expect(ability.can('read', '/api/users')).toBe(false);
+    });
+
+    it('admin can access admin routes', async () => {
+      const ability = await policy.defineAbilityFor({ roles: ['admin'] });
+      expect(ability.can('read', '/api/users')).toBe(true);
     });
   });
 

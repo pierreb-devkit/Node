@@ -617,6 +617,80 @@ describe('Auth integration tests:', () => {
     });
   });
 
+  describe('Security', () => {
+    const secEmail = 'security@test.com';
+    const secPassword = 'W@os.jsI$Aw3$0m3';
+    let secUser;
+
+    beforeEach(async () => {
+      try {
+        const result = await agent.post('/api/auth/signup').send({
+          firstName: 'Sec',
+          lastName: 'Test',
+          email: secEmail,
+          password: secPassword,
+          provider: 'local',
+        }).expect(200);
+        secUser = result.body.user;
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('signup cookie should have HttpOnly and SameSite=Strict flags', async () => {
+      try {
+        const result = await agent.post('/api/auth/signup').send({
+          firstName: 'Cookie',
+          lastName: 'Test',
+          email: 'cookieflag@test.com',
+          password: secPassword,
+          provider: 'local',
+        }).expect(200);
+        const tokenCookie = result.headers['set-cookie']?.find((c) => c.startsWith('TOKEN='));
+        expect(tokenCookie).toBeDefined();
+        expect(tokenCookie).toMatch(/HttpOnly/i);
+        expect(tokenCookie).toMatch(/SameSite=Strict/i);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('signin cookie should have HttpOnly and SameSite=Strict flags', async () => {
+      try {
+        const result = await agent.post('/api/auth/signin').send({ email: secEmail, password: secPassword }).expect(200);
+        const tokenCookie = result.headers['set-cookie']?.find((c) => c.startsWith('TOKEN='));
+        expect(tokenCookie).toBeDefined();
+        expect(tokenCookie).toMatch(/HttpOnly/i);
+        expect(tokenCookie).toMatch(/SameSite=Strict/i);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('rate-limited auth routes should include RateLimit response headers', async () => {
+      try {
+        const result = await agent.post('/api/auth/signin').send({ email: secEmail, password: secPassword }).expect(200);
+        expect(result.headers['ratelimit-limit']).toBeDefined();
+        expect(result.headers['ratelimit-remaining']).toBeDefined();
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    afterEach(async () => {
+      try { if (secUser) await UserService.remove(secUser); } catch (_) { /* cleanup */ }
+      try {
+        const cookieUser = await UserService.getBrut({ email: 'cookieflag@test.com' });
+        if (cookieUser) await UserService.remove(cookieUser);
+      } catch (_) { /* cleanup */ }
+      secUser = null;
+    });
+  });
+
   describe('Error paths', () => {
     test('should redirect to invalid when validateResetToken getBrut throws', async () => {
       jest.spyOn(UserService, 'getBrut').mockRejectedValueOnce(new Error('DB error'));
