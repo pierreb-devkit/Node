@@ -509,6 +509,22 @@ describe('Auth integration tests:', () => {
       expect(errors[0]?.message).toBe('Schema validation error');
     });
 
+    test('should throw AppError when create fails inside checkOAuthUserProfile', async () => {
+      const profil = {
+        firstName: 'OAuth',
+        lastName: 'Err',
+        email: 'oautherr@test.com',
+        avatar: '',
+        providerData: { id: 'google-err-000' },
+      };
+      const mockRes = { status() { return this; }, json() {}, cookie() { return this; } };
+      const createSpy = jest.spyOn(UserService, 'create').mockRejectedValueOnce(new Error('DB error'));
+      await expect(
+        AuthController.checkOAuthUserProfile(profil, 'id', 'google', mockRes),
+      ).rejects.toThrow('oAuth');
+      createSpy.mockRestore();
+    });
+
     test('should find an existing OAuth user via checkOAuthUserProfile', async () => {
       // Create an OAuth user directly first
       const createdUser = await UserService.create({
