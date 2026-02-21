@@ -4,56 +4,19 @@
 import policy from '../../../lib/middlewares/policy.js';
 
 /**
- * Invoke Tasks Permissions
+ * Invoke Users Account Permissions
  */
 const invokeRolesPolicies = () => {
-  policy.Acl.allow([
-    {
-      roles: ['user'],
-      allows: [
-        {
-          resources: '/api/users/me',
-          permissions: ['get'],
-        },
-        {
-          resources: '/api/users/terms',
-          permissions: ['get'],
-        },
-        {
-          resources: '/api/users',
-          permissions: ['put', 'delete'],
-        },
-        {
-          resources: '/api/users/password',
-          permissions: ['post'],
-        },
-        {
-          resources: '/api/users/avatar',
-          permissions: ['post', 'delete'],
-        },
-        {
-          resources: '/api/users/accounts',
-          permissions: ['post', 'delete'],
-        },
-        {
-          resources: '/api/users/data',
-          permissions: ['get', 'delete'],
-        },
-        {
-          resources: '/api/users/data/mail',
-          permissions: ['get'],
-        },
-      ],
-    },
-    {
-      roles: ['guest'],
-      allows: [
-        {
-          resources: '/api/users/stats',
-          permissions: ['get'],
-        },
-      ],
-    },
+  policy.registerRules([
+    { roles: ['user'], actions: ['read'], subject: '/api/users/me' },
+    { roles: ['user'], actions: ['read'], subject: '/api/users/terms' },
+    { roles: ['user'], actions: ['update', 'delete'], subject: '/api/users' },
+    { roles: ['user'], actions: ['create'], subject: '/api/users/password' },
+    { roles: ['user'], actions: ['create', 'delete'], subject: '/api/users/avatar' },
+    { roles: ['user'], actions: ['create', 'delete'], subject: '/api/users/accounts' },
+    { roles: ['user'], actions: ['read', 'delete'], subject: '/api/users/data' },
+    { roles: ['user'], actions: ['read'], subject: '/api/users/data/mail' },
+    { roles: ['guest'], actions: ['read'], subject: '/api/users/stats' },
   ]);
 };
 

@@ -10,6 +10,12 @@ import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
 import config from '../../../config/index.js';
 
+const tokenCookieOptions = {
+  httpOnly: true,
+  secure: config.cookie.secure,
+  sameSite: config.cookie.sameSite,
+};
+
 /**
  * @desc Endpoint to init password reset mail
  * @param {Object} req - Express request object
@@ -85,7 +91,7 @@ const reset = async (req, res) => {
     user = await UserService.update(user, edit, 'recover');
     return res
       .status(200)
-      .cookie('TOKEN', jwt.sign({ userId: user.id }, config.jwt.secret, { expiresIn: config.jwt.expiresIn }), { httpOnly: true })
+      .cookie('TOKEN', jwt.sign({ userId: user.id }, config.jwt.secret, { expiresIn: config.jwt.expiresIn }), tokenCookieOptions)
       .json({
         user,
         tokenExpiresIn: Date.now() + config.jwt.expiresIn * 1000,
@@ -129,7 +135,7 @@ const updatePassword = async (req, res) => {
     user = await UserService.update(user, { password }, 'recover');
     return res
       .status(200)
-      .cookie('TOKEN', jwt.sign({ userId: user.id }, config.jwt.secret, { expiresIn: config.jwt.expiresIn }), { httpOnly: true })
+      .cookie('TOKEN', jwt.sign({ userId: user.id }, config.jwt.secret, { expiresIn: config.jwt.expiresIn }), tokenCookieOptions)
       .json({
         user,
         tokenExpiresIn: Date.now() + config.jwt.expiresIn * 1000,

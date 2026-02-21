@@ -7,37 +7,12 @@ import policy from '../../../lib/middlewares/policy.js';
  * Invoke Tasks Permissions
  */
 const invokeRolesPolicies = () => {
-  policy.Acl.allow([
-    {
-      roles: ['user'],
-      allows: [
-        {
-          resources: '/api/tasks',
-          permissions: '*',
-        },
-        {
-          resources: '/api/tasks/:taskId',
-          permissions: '*',
-        },
-      ],
-    },
-    {
-      roles: ['guest'],
-      allows: [
-        {
-          resources: '/api/tasks/stats',
-          permissions: ['get'],
-        },
-        {
-          resources: '/api/tasks',
-          permissions: ['get'],
-        },
-        {
-          resources: '/api/tasks/:taskId',
-          permissions: ['get'],
-        },
-      ],
-    },
+  policy.registerRules([
+    { roles: ['user'], actions: 'manage', subject: '/api/tasks' },
+    { roles: ['user'], actions: 'manage', subject: '/api/tasks/:taskId' },
+    { roles: ['guest'], actions: ['read'], subject: '/api/tasks/stats' },
+    { roles: ['guest'], actions: ['read'], subject: '/api/tasks' },
+    { roles: ['guest'], actions: ['read'], subject: '/api/tasks/:taskId' },
   ]);
 };
 

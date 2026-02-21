@@ -4,27 +4,13 @@
 import policy from '../../../lib/middlewares/policy.js';
 
 /**
- * Invoke Tasks Permissions
+ * Invoke Users Admin Permissions
  */
 const invokeRolesPolicies = () => {
-  policy.Acl.allow([
-    {
-      roles: ['admin'],
-      allows: [
-        {
-          resources: '/api/users',
-          permissions: ['get'],
-        },
-        {
-          resources: '/api/users/page/:userPage',
-          permissions: ['get'],
-        },
-        {
-          resources: '/api/users/:userId',
-          permissions: ['get', 'put', 'delete'],
-        },
-      ],
-    },
+  policy.registerRules([
+    { roles: ['admin'], actions: ['read'], subject: '/api/users' },
+    { roles: ['admin'], actions: ['read'], subject: '/api/users/page/:userPage' },
+    { roles: ['admin'], actions: ['read', 'update', 'delete'], subject: '/api/users/:userId' },
   ]);
 };
 

@@ -4,31 +4,14 @@
 import policy from '../../../lib/middlewares/policy.js';
 
 /**
- * Invoke Tasks Permissions
+ * Invoke Home Permissions
  */
 const invokeRolesPolicies = () => {
-  policy.Acl.allow([
-    {
-      roles: ['guest'],
-      allows: [
-        {
-          resources: '/api/home/releases',
-          permissions: ['get'],
-        },
-        {
-          resources: '/api/home/changelogs',
-          permissions: ['get'],
-        },
-        {
-          resources: '/api/home/team',
-          permissions: ['get'],
-        },
-        {
-          resources: '/api/home/pages/:name',
-          permissions: ['get'],
-        },
-      ],
-    },
+  policy.registerRules([
+    { roles: ['guest'], actions: ['read'], subject: '/api/home/releases' },
+    { roles: ['guest'], actions: ['read'], subject: '/api/home/changelogs' },
+    { roles: ['guest'], actions: ['read'], subject: '/api/home/team' },
+    { roles: ['guest'], actions: ['read'], subject: '/api/home/pages/:name' },
   ]);
 };
 

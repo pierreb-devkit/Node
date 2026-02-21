@@ -7,20 +7,9 @@ import policy from '../../../lib/middlewares/policy.js';
  * Invoke Uploads Permissions
  */
 const invokeRolesPolicies = () => {
-  policy.Acl.allow([
-    {
-      roles: ['user', 'admin'],
-      allows: [
-        {
-          resources: '/api/uploads/:uploadName',
-          permissions: ['get', 'delete'],
-        },
-        {
-          resources: '/api/uploads/images/:imageName',
-          permissions: ['get'],
-        },
-      ],
-    },
+  policy.registerRules([
+    { roles: ['user', 'admin'], actions: ['read', 'delete'], subject: '/api/uploads/:uploadName' },
+    { roles: ['user', 'admin'], actions: ['read'], subject: '/api/uploads/images/:imageName' },
   ]);
 };
 

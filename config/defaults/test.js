@@ -20,4 +20,9 @@ export default _.merge(config.default, {
       },
     },
   },
+  rateLimit: {
+    auth: {
+      max: Number.MAX_SAFE_INTEGER, // disable rate limiting in tests
+    },
+  },
 });
