@@ -30,7 +30,7 @@ const User = z.object({
       if (val === '') return; // allow empty (OAuth users / no password set)
       zodHelpers.passwordRefinement(val, ctx);
       if (val.length < config.zxcvbn.minSize) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Password length must be at least 8 characters long' });
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Password length must be at least ${config.zxcvbn.minSize} characters long` });
       }
     }),
   resetPasswordToken: z.string().nullable().optional(),
