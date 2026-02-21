@@ -1,41 +1,49 @@
 /**
  * Module dependencies
  */
-import PlainJoi from '@hapi/joi';
+import { z } from 'zod';
 
 import config from '../../../config/index.js';
-import joiHelpers from '../../../lib/helpers/joi.js';
+import zodHelpers from '../../../lib/helpers/zod.js';
 
-const Joi = PlainJoi.extend(joiHelpers.joiZxcvbn(PlainJoi));
 const names = /^[a-zA-ZàáâäãåąčćęèéêëėįìíîïłńòóôöõøùúûüųūÿýżźñçčšžÀÁÂÄÃÅĄĆČĖĘÈÉÊËÌÍÎÏĮŁŃÒÓÔÖÕØÙÚÛÜŲŪŸÝŻŹÑßÇŒÆČŠŽ∂ð ,.'-]+$/u;
 
 /**
  * User Data Schema
  */
-const UserSchema = Joi.object().keys({
-  firstName: Joi.string().regex(names).min(1).max(50).trim().required(),
-  lastName: Joi.string().regex(names).min(1).max(50).trim().required(),
-  bio: Joi.string().max(200).trim().allow('').optional(),
-  position: Joi.string().max(50).trim().allow('').optional(),
-  email: Joi.string().email(),
-  avatar: Joi.string().trim().default('').allow(''),
-  roles: Joi.array()
-    .items(Joi.string().valid(...config.whitelists.users.roles))
-    .min(1)
-    .default(['user']),
+const User = z.object({
+  firstName: z.string().regex(names).min(1).max(50).trim(),
+  lastName: z.string().regex(names).min(1).max(50).trim(),
+  bio: z.string().max(200).trim().optional().default(''),
+  position: z.string().max(50).trim().optional().default(''),
+  email: z.string().email().optional(),
+  avatar: z.string().trim().default(''),
+  roles: z.array(z.enum(config.whitelists.users.roles)).min(1).default(['user']),
   /* Provider */
-  provider: Joi.string(),
-  providerData: Joi.object(),
+  provider: z.string().optional(),
+  providerData: z.record(z.unknown()).optional(),
   /* Password */
-  password: Joi.zxcvbn().strength(config.zxcvbn.minimumScore).min(config.zxcvbn.minSize).max(config.zxcvbn.maxSize).default(''),
-  resetPasswordToken: Joi.string().allow(null),
-  resetPasswordExpires: Joi.date().allow(null),
+  password: z.string()
+    .max(config.zxcvbn.maxSize)
+    .default('')
+    .superRefine((val, ctx) => {
+      if (val === '') return; // allow empty (OAuth users / no password set)
+      zodHelpers.passwordRefinement(val, ctx);
+      if (val.length < config.zxcvbn.minSize) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Password length must be at least 8 characters long' });
+      }
+    }),
+  resetPasswordToken: z.string().nullable().optional(),
+  resetPasswordExpires: z.coerce.date().nullable().optional(),
   // startup requirement
-  terms: Joi.date().default(null).optional(), // last check
+  terms: z.coerce.date().nullable().optional(),
   // others
-  complementary: Joi.object({}).unknown().allow(null).optional(),
-});
+  complementary: z.record(z.unknown()).nullable().optional(),
+}).strip();
+
+const UserUpdate = User.partial();
 
 export default {
-  User: UserSchema,
+  User,
+  UserUpdate,
 };

@@ -1,12 +1,7 @@
 /**
  * Module dependencies.
  */
-import _ from 'lodash';
-
-import config from '../../../config/index.js';
 import schema from '../models/tasks.schema.js';
-
-const options = _.clone(config.joi.validationOptions);
 
 /**
  * Unit tests
@@ -22,7 +17,7 @@ describe('Tasks unit tests:', () => {
   });
 
   test('should be valid a task example without problems', (done) => {
-    const result = schema.Task.validate(task, options);
+    const result = schema.Task.safeParse(task);
     expect(typeof result).toBe('object');
     expect(result.error).toBeFalsy();
     done();
@@ -31,7 +26,7 @@ describe('Tasks unit tests:', () => {
   test('should be able to show an error when trying a schema without title', (done) => {
     task.title = '';
 
-    const result = schema.Task.validate(task, options);
+    const result = schema.Task.safeParse(task);
     expect(typeof result).toBe('object');
     expect(result.error).toBeDefined();
     done();
@@ -40,7 +35,7 @@ describe('Tasks unit tests:', () => {
   test('should be able to show an error when trying a schema without description', (done) => {
     task.description = null;
 
-    const result = schema.Task.validate(task, options);
+    const result = schema.Task.safeParse(task);
     expect(typeof result).toBe('object');
     expect(result.error).toBeDefined();
     done();
@@ -49,7 +44,7 @@ describe('Tasks unit tests:', () => {
   test('should not show an error when trying a schema with user', (done) => {
     task.user = '507f1f77bcf86cd799439011';
 
-    const result = schema.Task.validate(task, options);
+    const result = schema.Task.safeParse(task);
     expect(typeof result).toBe('object');
     expect(result.error).toBeFalsy();
     done();
@@ -58,7 +53,7 @@ describe('Tasks unit tests:', () => {
   test('should be able remove unknown when trying a different schema', (done) => {
     task.toto = '';
 
-    const result = schema.Task.validate(task, options);
+    const result = schema.Task.safeParse(task);
     expect(result.toto).toBeUndefined();
     done();
   });
