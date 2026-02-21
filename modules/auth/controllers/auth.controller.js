@@ -109,9 +109,9 @@ const oauthCall = (req, res, next) => {
 
 /**
  * @desc Endpoint to save oAuthProfile
- * @param {Object} req - Express request object
- * @param {Object} providerUserProfile
- * @param {Function} done - done
+ * @param {Object} profil - OAuth user profile object
+ * @param {string} key - Provider key to lookup `providerData`
+ * @param {string} provider - OAuth provider name
  */
 const checkOAuthUserProfile = async (profil, key, provider) => {
   // check if user exist
