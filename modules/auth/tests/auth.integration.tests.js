@@ -552,7 +552,7 @@ describe('Auth integration tests:', () => {
     test('should set tokenCookieOptions and redirect on classic web oAuth success', async () => {
       const mockUserId = 'mock-oauth-user-id-123';
       const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
-        (strategy, callback) => (req, res, next) => callback(null, { id: mockUserId }),
+        (strategy, callback) => () => callback(null, { id: mockUserId }),
       );
       const cookies = {};
       const redirectCalls = [];
