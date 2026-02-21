@@ -5,6 +5,7 @@ import request from 'supertest';
 import path from 'path';
 import _ from 'lodash';
 import { jest } from '@jest/globals';
+import passport from 'passport';
 
 import { bootstrap } from '../../../lib/app.js';
 import mongooseService from '../../../lib/services/mongoose.js';
@@ -523,6 +524,52 @@ describe('Auth integration tests:', () => {
         AuthController.checkOAuthUserProfile(profil, 'id', 'google', mockRes),
       ).rejects.toThrow('oAuth');
       createSpy.mockRestore();
+    });
+
+    test('should authenticate via client-side OAuth and set tokenCookieOptions on response', async () => {
+      const oauthEmail = 'oauthcb-appauth@test.com';
+      try {
+        const result = await agent
+          .post('/api/auth/google/callback')
+          .send({ strategy: false, key: 'id', value: 'cb-app-auth-id-999', firstName: 'OAuth', lastName: 'Callback', email: oauthEmail })
+          .expect(200);
+        const tokenCookie = result.headers['set-cookie']?.find((c) => c.startsWith('TOKEN='));
+        expect(tokenCookie).toBeDefined();
+        expect(tokenCookie).toMatch(/HttpOnly/i);
+        expect(tokenCookie).toMatch(/SameSite=Strict/i);
+        expect(result.body.message).toBe('oAuth Ok');
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      } finally {
+        try {
+          const u = await UserService.getBrut({ email: oauthEmail });
+          if (u) await UserService.remove(u);
+        } catch (_) { /* cleanup */ }
+      }
+    });
+
+    test('should set tokenCookieOptions and redirect on classic web oAuth success', async () => {
+      const mockUserId = 'mock-oauth-user-id-123';
+      const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
+        (strategy, callback) => (req, res, next) => callback(null, { id: mockUserId }),
+      );
+      const cookies = {};
+      const redirectCalls = [];
+      const mockReq = { params: { strategy: 'google' }, body: {} };
+      const mockRes = {
+        cookie(name, val, opts) { cookies[name] = { val, opts }; return this; },
+        redirect(code, url) { redirectCalls.push({ code, url }); },
+      };
+
+      await AuthController.oauthCallback(mockReq, mockRes, () => {});
+
+      expect(cookies.TOKEN).toBeDefined();
+      expect(cookies.TOKEN.opts.httpOnly).toBe(true);
+      expect(cookies.TOKEN.opts.sameSite).toBe(config.cookie.sameSite);
+      expect(redirectCalls[0]).toMatchObject({ code: 302 });
+      expect(redirectCalls[0].url).toMatch(/\/token$/);
+      authenticateSpy.mockRestore();
     });
 
     test('should find an existing OAuth user via checkOAuthUserProfile', async () => {
