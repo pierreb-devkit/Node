@@ -12,6 +12,8 @@ import logger from '../../../lib/services/logger.js';
 import mongooseService from '../../../lib/services/mongoose.js';
 import expressService from '../../../lib/services/express.js';
 import errors from '../../../lib/helpers/errors.js';
+import responses from '../../../lib/helpers/responses.js';
+import AppError from '../../../lib/helpers/AppError.js';
 import policy from '../../../lib/middlewares/policy.js';
 
 /**
@@ -216,10 +218,57 @@ describe('Core unit tests:', () => {
         expect(fromMessage).toBe('error1.');
 
         const fromEmpty = errors.getMessage({});
-        expect(fromEmpty).toBe('error while retrieving the error :o : {}.');
+        expect(fromEmpty).toBe('Something went wrong.');
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
+      }
+    });
+
+    it('should sanitize unknown errors message', () => {
+      const fromUnknown = errors.getMessage({ random: 'value' });
+      expect(fromUnknown).toBe('Something went wrong.');
+    });
+  });
+
+  describe('Responses', () => {
+    it('should return explicit status and domain code in error response', () => {
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      };
+      const err = new AppError('Schema validation error', {
+        status: 422,
+        code: 'VALIDATION_ERROR',
+        details: { message: 'First name is required.' },
+      });
+
+      const result = responses.error(mockRes)(err);
+
+      expect(mockRes.status).toHaveBeenCalledWith(422);
+      expect(result.type).toBe('error');
+      expect(result.status).toBe(422);
+      expect(result.code).toBe(422);
+      expect(result.errorCode).toBe('VALIDATION_ERROR');
+      expect(result.description).toBe('First name is required.');
+    });
+
+    it('should not expose raw error payload in production mode', () => {
+      const originalNodeEnv = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'production';
+
+        const mockRes = {
+          status: jest.fn().mockReturnThis(),
+          json: jest.fn(),
+        };
+        const result = responses.error(mockRes, 422, 'Schema validation error', 'Invalid payload')({
+          details: { internal: 'secret' },
+        });
+
+        expect(result.error).toBeUndefined();
+      } finally {
+        process.env.NODE_ENV = originalNodeEnv;
       }
     });
   });
