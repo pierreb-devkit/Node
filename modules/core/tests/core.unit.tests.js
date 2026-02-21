@@ -253,6 +253,67 @@ describe('Core unit tests:', () => {
       expect(result.description).toBe('First name is required.');
     });
 
+    it('should use AppError default details array as response description', () => {
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      };
+      const err = new AppError('From default details', {
+        status: 400,
+        code: 'VALIDATION_ERROR',
+      });
+
+      const result = responses.error(mockRes)(err);
+
+      expect(result.description).toBe('From default details');
+    });
+
+    it('should fallback to error statusCode and explicit description field', () => {
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      };
+
+      const result = responses.error(mockRes, undefined, undefined, undefined)({
+        statusCode: 409,
+        code: 'CONFLICT_ERROR',
+        description: 'Conflict',
+      });
+
+      expect(mockRes.status).toHaveBeenCalledWith(409);
+      expect(result.status).toBe(409);
+      expect(result.errorCode).toBe('CONFLICT_ERROR');
+      expect(result.description).toBe('Conflict');
+    });
+
+    it('should fallback to numeric error.code as http status when needed', () => {
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      };
+
+      const result = responses.error(mockRes, undefined, undefined, undefined)({
+        code: 401,
+      });
+
+      expect(mockRes.status).toHaveBeenCalledWith(401);
+      expect(result.status).toBe(401);
+      expect(result.errorCode).toBe('SERVER_ERROR');
+    });
+
+    it('should safely serialize circular error objects in non production', () => {
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      };
+      const circular = {};
+      circular.self = circular;
+
+      const result = responses.error(mockRes, 500, 'Boom', '')(circular);
+
+      expect(result.error).toContain('Unserializable error object');
+    });
+
     it('should not expose raw error payload in production mode', () => {
       const originalNodeEnv = process.env.NODE_ENV;
       try {
