@@ -1,17 +1,20 @@
 /**
  * Module dependencies
  */
-import Joi from '@hapi/joi';
+import { z } from 'zod';
 
 /**
  *  Data Schema
  */
-const TaskSchema = Joi.object().keys({
-  title: Joi.string().trim().default('').required(),
-  description: Joi.string().allow('').default('').required(),
-  user: Joi.string().trim().default(''),
-});
+const Task = z.object({
+  title: z.string({ invalid_type_error: 'title must be a string' }).trim().min(1),
+  description: z.string().default(''),
+  user: z.string().trim().default(''),
+}).strip();
+
+const TaskUpdate = Task.partial();
 
 export default {
-  Task: TaskSchema,
+  Task,
+  TaskUpdate,
 };

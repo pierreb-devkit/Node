@@ -26,7 +26,7 @@ export default (app) => {
     .route('/api/tasks/:taskId')
     .all(passport.authenticate('jwt', { session: false }), policy.isAllowed) // policy.isOwner (require set in middleWare)
     .get(tasks.get) // get
-    .put(model.isValid(tasksSchema.Task), policy.isOwner, tasks.update) // update
+    .put(model.isValid(tasksSchema.TaskUpdate), policy.isOwner, tasks.update) // update
     .delete(model.isValid(tasksSchema.Task), policy.isOwner, tasks.remove); // delete
 
   // Finish by binding the task middleware

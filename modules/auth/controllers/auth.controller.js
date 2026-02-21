@@ -3,7 +3,6 @@
  */
 import passport from 'passport';
 import jwt from 'jsonwebtoken';
-import _ from 'lodash';
 
 import UserService from '../../users/services/users.service.js';
 import config from '../../../config/index.js';
@@ -12,6 +11,12 @@ import responses from '../../../lib/helpers/responses.js';
 import errors from '../../../lib/helpers/errors.js';
 import AppError from '../../../lib/helpers/AppError.js';
 import UsersSchema from '../../users/models/user.schema.js';
+
+const tokenCookieOptions = {
+  httpOnly: true,
+  secure: config.cookie.secure,
+  sameSite: config.cookie.sameSite,
+};
 
 /**
  * @desc Endpoint to ask the service to create a user
@@ -27,7 +32,7 @@ const signup = async (req, res) => {
     });
     return res
       .status(200)
-      .cookie('TOKEN', token, { httpOnly: true })
+      .cookie('TOKEN', token, tokenCookieOptions)
       .json({
         user,
         tokenExpiresIn: Date.now() + config.jwt.expiresIn * 1000,
@@ -53,7 +58,7 @@ const signin = async (req, res) => {
   });
   return res
     .status(200)
-    .cookie('TOKEN', token, { httpOnly: true })
+    .cookie('TOKEN', token, tokenCookieOptions)
     .json({
       user,
       tokenExpiresIn: Date.now() + config.jwt.expiresIn * 1000,
@@ -87,7 +92,7 @@ const token = async (req, res) => {
   });
   return res
     .status(200)
-    .cookie('TOKEN', token, { httpOnly: true })
+    .cookie('TOKEN', token, tokenCookieOptions)
     .json({ user, tokenExpiresIn: Date.now() + config.jwt.expiresIn * 1000 });
 };
 
@@ -129,7 +134,7 @@ const checkOAuthUserProfile = async (profil, key, provider, res) => {
       provider,
       providerData: profil.providerData || null,
     };
-    const result = model.getResultFromJoi(user, UsersSchema.User, _.clone(config.joi.validationOptions));
+    const result = model.getResultFromZod(user, UsersSchema.User);
     // check error
     const error = model.checkError(result);
     if (error) return responses.error(res, 422, 'Schema validation error', error)(result.error);
@@ -164,7 +169,7 @@ const oauthCallback = async (req, res, next) => {
       });
       return res
         .status(200)
-        .cookie('TOKEN', token, { httpOnly: true })
+        .cookie('TOKEN', token, tokenCookieOptions)
         .json({
           user,
           tokenExpiresIn: Date.now() + config.jwt.expiresIn * 1000,
@@ -190,7 +195,7 @@ const oauthCallback = async (req, res, next) => {
       const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
         expiresIn: config.jwt.expiresIn,
       });
-      res.cookie('TOKEN', token, { httpOnly: true });
+      res.cookie('TOKEN', token, tokenCookieOptions);
       res.redirect(302, `${config.cors.origin[0]}/token`);
     }
   })(req, res, next);

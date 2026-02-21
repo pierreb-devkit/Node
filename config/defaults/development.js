@@ -159,6 +159,19 @@ const config = {
     maxSize: 126, // max password size
     minimumScore: 3, // min password complexity score
   },
+  cookie: {
+    secure: false, // false in dev (HTTP localhost)
+    sameSite: 'strict',
+  },
+  rateLimit: {
+    auth: {
+      windowMs: 15 * 60 * 1000, // 15 min
+      max: 20, // 20 requests per window in dev (more lenient)
+      message: { message: 'Too many requests, please try again later.' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    },
+  },
   // jwt is for token authentification
   jwt: {
     secret: 'WaosSecretKeyExampleToChnageAbsolutely', // secret for hash
@@ -189,17 +202,10 @@ const config = {
       privateKeyLocation: null,
     },
   },
-  // joi is used to manage schema restrictions, on the top of mongo / orm
-  joi: {
+  // validation is used to manage schema restrictions, on the top of mongo / orm
+  validation: {
     // enabled HTTP methods for request data validation
     supportedMethods: ['post', 'put'],
-    // Joi validation options
-    validationOptions: {
-      abortEarly: false, // abort after the last validation error
-      allowUnknown: true, // allow unknown keys that will be ignored
-      stripUnknown: true, // remove unknown keys from the validated data
-      noDefaults: false, // automatically set to true for put method (update)
-    },
   },
   seedDB: {
     seed: true,
