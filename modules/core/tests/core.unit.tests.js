@@ -232,6 +232,23 @@ describe('Core unit tests:', () => {
   });
 
   describe('Responses', () => {
+    it('should return success payload and send HTTP 200', () => {
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      };
+      const payload = { ok: true };
+
+      const result = responses.success(mockRes, 'Done')(payload);
+
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(result).toEqual({
+        type: 'success',
+        message: 'Done',
+        data: payload,
+      });
+    });
+
     it('should return explicit status and domain code in error response', () => {
       const mockRes = {
         status: jest.fn().mockReturnThis(),
@@ -268,6 +285,20 @@ describe('Core unit tests:', () => {
       expect(result.description).toBe('From default details');
     });
 
+    it('should ignore invalid entries in details array and keep valid messages', () => {
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      };
+
+      const result = responses.error(mockRes, 400, undefined, undefined)({
+        code: 'VALIDATION_ERROR',
+        details: [null, { message: 'one' }, {}, 'two'],
+      });
+
+      expect(result.description).toBe('one, two');
+    });
+
     it('should fallback to error statusCode and explicit description field', () => {
       const mockRes = {
         status: jest.fn().mockReturnThis(),
@@ -299,6 +330,20 @@ describe('Core unit tests:', () => {
       expect(mockRes.status).toHaveBeenCalledWith(401);
       expect(result.status).toBe(401);
       expect(result.errorCode).toBe('SERVER_ERROR');
+    });
+
+    it('should fallback to 500 and empty description for unknown error shape', () => {
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      };
+
+      const result = responses.error(mockRes)({});
+
+      expect(mockRes.status).toHaveBeenCalledWith(500);
+      expect(result.status).toBe(500);
+      expect(result.message).toBe('Something went wrong.');
+      expect(result.description).toBe('');
     });
 
     it('should safely serialize circular error objects in non production', () => {
