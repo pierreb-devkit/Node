@@ -109,8 +109,8 @@ npm run seed:mongodrop    # Drop database (with confirmation)
 
 ```bash
 npm run commit                                    # Commit with commitizen
-npm run release -- --first-release                # First release
-npm run release -- --release-as 1.1.1             # Release specific version
+npm run release                                   # Interactive release (release-it)
+npm run release -- 1.1.1                          # Release specific version
 GITHUB_TOKEN=xxx npm run release:auto             # Semantic release (CI)
 ```
 
