@@ -60,7 +60,7 @@ npm install
 ### Development
 
 ```bash
-npm start
+npm start   # or: npm run dev
 ```
 
 Runs the server at `http://localhost:3000/`. For auto-reload during development, use `npm run debug` (nodemon).
@@ -80,7 +80,8 @@ npm run prod
 ### Testing
 
 ```bash
-npm test                  # Run all tests
+npm test                  # Run all tests (one-shot)
+npm run test:unit         # Run unit tests once (alias of npm test)
 npm run test:watch        # Run tests in watch mode
 npm run test:coverage     # Generate coverage report
 ```
@@ -92,6 +93,7 @@ Tests are organized per module in `modules/*/tests/`
 ```bash
 npm run lint              # Check code quality (read-only)
 npm run lint:fix          # Auto-fix code quality issues
+npm run format            # Format code with Prettier
 ```
 
 ### Database Seeding

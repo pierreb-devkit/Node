@@ -7,14 +7,16 @@
 
 ## Canonical commands
 
-- Dev: `npm start`
+- Dev: `npm start` (alias: `npm run dev`)
 - Debug: `npm run debug`
-- Tests: `npm test` (watch: `npm run test:watch`)
+- Tests: `npm test` / `npm run test:unit` (one-shot) or `npm run test:watch` (watch)
 - Coverage: `npm run test:coverage`
 - Lint: `npm run lint`
 - Lint fix: `npm run lint:fix`
+- Format: `npm run format`
 - Seed: `npm run seed:dev`
 - Commit: `npm run commit`
+- Release (CI): `npm run release:auto`
 
 ## Available prompts
 
