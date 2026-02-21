@@ -113,7 +113,7 @@ const oauthCall = (req, res, next) => {
  * @param {Object} providerUserProfile
  * @param {Function} done - done
  */
-const checkOAuthUserProfile = async (profil, key, provider, res) => {
+const checkOAuthUserProfile = async (profil, key, provider) => {
   // check if user exist
   try {
     const query = {};
@@ -137,10 +137,11 @@ const checkOAuthUserProfile = async (profil, key, provider, res) => {
     const result = model.getResultFromZod(user, UsersSchema.User);
     // check error
     const error = model.checkError(result);
-    if (error) return responses.error(res, 422, 'Schema validation error', error)(result.error);
+    if (error) throw new AppError('Schema validation error', { code: 'VALIDATION_ERROR', details: { message: error } });
     // else return req.body with the data after Zod validation
     return await UserService.create(result.value);
   } catch (err) {
+    if (err instanceof AppError) throw err;
     throw new AppError('oAuth', { code: 'CONTROLLER_ERROR', details: err.details || err });
   }
 };
@@ -163,7 +164,7 @@ const oauthCallback = async (req, res, next) => {
         providerData: {},
       };
       user.providerData[req.body.key] = req.body.value;
-      user = await checkOAuthUserProfile(user, req.body.key, strategy, res);
+      user = await checkOAuthUserProfile(user, req.body.key, strategy);
       const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
         expiresIn: config.jwt.expiresIn,
       });
@@ -177,7 +178,12 @@ const oauthCallback = async (req, res, next) => {
           message: 'oAuth Ok',
         });
     } catch (err) {
-      return responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err.details || err))(err);
+      return responses.error(
+        res,
+        422,
+        err instanceof AppError && err.code === 'VALIDATION_ERROR' ? errors.getMessage(err) : 'Unprocessable Entity',
+        errors.getMessage(err.details || err),
+      )(err);
     }
   }
   // classic web oAuth

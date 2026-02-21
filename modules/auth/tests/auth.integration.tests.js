@@ -486,15 +486,14 @@ describe('Auth integration tests:', () => {
         avatar: '',
         providerData: { id: 'google-fake-id-999' },
       };
-      const mockRes = { status() { return this; }, json() {}, cookie() { return this; } };
-      const result = await AuthController.checkOAuthUserProfile(profil, 'id', 'google', mockRes);
+      const result = await AuthController.checkOAuthUserProfile(profil, 'id', 'google');
       expect(result).toBeDefined();
       expect(result.id).toBeDefined();
       expect(result.email).toBe(profil.email);
       oauthUsers.push(result);
     });
 
-    test('should return 422 when checkOAuthUserProfile receives an invalid profile', async () => {
+    test('should throw validation AppError when checkOAuthUserProfile receives an invalid profile', async () => {
       const invalidProfil = {
         firstName: '', // invalid — fails min(1)
         lastName: 'Test',
@@ -502,12 +501,15 @@ describe('Auth integration tests:', () => {
         avatar: '',
         providerData: { id: 'google-invalid-999' },
       };
-      const errors = [];
-      const mockRes = { status() { return this; }, json(body) { errors.push(body); }, cookie() { return this; } };
-      const result = await AuthController.checkOAuthUserProfile(invalidProfil, 'id', 'google', mockRes);
-      expect(result).toBeDefined();
-      expect(result.type).toBe('error');
-      expect(errors[0]?.message).toBe('Schema validation error');
+      await expect(
+        AuthController.checkOAuthUserProfile(invalidProfil, 'id', 'google'),
+      ).rejects.toMatchObject({
+        message: 'Schema validation error',
+        code: 'VALIDATION_ERROR',
+        details: {
+          message: expect.any(String),
+        },
+      });
     });
 
     test('should throw AppError when create fails inside checkOAuthUserProfile', async () => {
@@ -518,10 +520,9 @@ describe('Auth integration tests:', () => {
         avatar: '',
         providerData: { id: 'google-err-000' },
       };
-      const mockRes = { status() { return this; }, json() {}, cookie() { return this; } };
       const createSpy = jest.spyOn(UserService, 'create').mockRejectedValueOnce(new Error('DB error'));
       await expect(
-        AuthController.checkOAuthUserProfile(profil, 'id', 'google', mockRes),
+        AuthController.checkOAuthUserProfile(profil, 'id', 'google'),
       ).rejects.toThrow('oAuth');
       createSpy.mockRestore();
     });
@@ -590,9 +591,8 @@ describe('Auth integration tests:', () => {
         avatar: '',
         providerData: { id: 'google-find-id-777' },
       };
-      const mockRes = { status() { return this; }, json() {}, cookie() { return this; } };
       // Second call — should find the existing user (search.length === 1 branch)
-      const found = await AuthController.checkOAuthUserProfile(profil, 'id', 'google', mockRes);
+      const found = await AuthController.checkOAuthUserProfile(profil, 'id', 'google');
       expect(found).toBeDefined();
 
       // cleanup
