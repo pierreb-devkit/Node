@@ -550,6 +550,24 @@ describe('Auth integration tests:', () => {
       }
     });
 
+    test('should return 422 when client-side OAuth callback receives an invalid profile', async () => {
+      const result = await agent
+        .post('/api/auth/google/callback')
+        .send({
+          strategy: false,
+          key: 'id',
+          value: 'cb-app-auth-id-invalid-999',
+          firstName: '',
+          lastName: 'Callback',
+          email: 'oauthcb-invalid@test.com',
+        })
+        .expect(422);
+
+      expect(result.body.type).toBe('error');
+      expect(result.body.message).toMatch(/^Schema validation error/);
+      expect(result.body.description).toEqual(expect.any(String));
+    });
+
     test('should set tokenCookieOptions and redirect on classic web oAuth success', async () => {
       const mockUserId = 'mock-oauth-user-id-123';
       const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
