@@ -93,7 +93,7 @@ After `gh pr ready`, enter an autonomous polling loop. Do not wait for the user 
 
 ### Loop procedure
 
-```
+```text
 REPEAT:
   1. Wait for CI            → gh pr checks <number> --watch
   2. If CI fails            → fix, commit, push, GOTO 1
