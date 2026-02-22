@@ -204,6 +204,14 @@
       ],
       "deny": [
         {
+          "pattern": "git switch main",
+          "reason": "Never work directly on main — create a feature branch"
+        },
+        {
+          "pattern": "git switch master",
+          "reason": "Never work directly on master — create a feature branch"
+        },
+        {
           "pattern": "rm -rf *",
           "reason": "Destructive command"
         },
