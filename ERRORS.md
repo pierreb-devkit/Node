@@ -12,3 +12,4 @@ Use this file as a compact memory of recurring AI mistakes.
 ## Entries
 
 - [2026-02-22] functions: new or modified functions without JSDoc header -> always add JSDoc (description + `@param` + `@returns`)
+- [2026-02-22] tests: never patch code to pass a test -> if a test is wrong, fix the test; if logic needs refactoring, refactor it
