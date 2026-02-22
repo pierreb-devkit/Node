@@ -161,6 +161,8 @@ Push restarts CI. Loop back to step 6a (watch CI → grace period → read feedb
 
 All CI checks pass **and** a complete polling pass (after the 3-min grace period) produces **zero new actionable comments** from all reviewers and bots. Only then exit the loop.
 
+**Safety limit:** stop after **10 iterations** even if comments remain — report the situation to the user to avoid infinite loops from unsatisfiable reviewers.
+
 ## 7. Conflict resolution
 
 If the branch has conflicts with the default branch (GitHub shows "This branch has conflicts" or `git status` shows conflicts):
