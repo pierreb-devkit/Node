@@ -228,6 +228,10 @@
           "reason": "Force push without lease is not allowed — use --force-with-lease"
         },
         {
+          "pattern": "git push -f",
+          "reason": "Force push without lease is not allowed — use --force-with-lease"
+        },
+        {
           "pattern": "git push -f *",
           "reason": "Force push without lease is not allowed — use --force-with-lease"
         },

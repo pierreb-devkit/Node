@@ -20,7 +20,7 @@ body:
     id: reproduce
     attributes:
       label: Steps to reproduce
-      value: |
+      placeholder: |
         1.
         2.
         3.
