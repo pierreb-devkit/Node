@@ -65,6 +65,7 @@ Use `.claude/skills/*/SKILL.md` as the primary workflow source for Claude.
 | `/feature`       | Implement a feature while enforcing module isolation  |
 | `/update-stack`  | Merge upstream stack updates into downstream projects |
 | `/naming`        | Apply or audit naming conventions                     |
+| `/pr`            | Full PR lifecycle: branch, commit, issue, monitor     |
 
 ## Embedded agent
 

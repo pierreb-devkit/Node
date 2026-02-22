@@ -2,7 +2,7 @@
 
 - What changed:
 - Why:
-- Supersedes / Related:
+- Related issues: <!-- Closes #N -->
 
 ## Scope
 
@@ -25,11 +25,12 @@
 
 ## Optional: Infra/Stack alignment details
 
+> Delete this section if not applicable.
+
 ### Before vs After (key changes only)
 
 | Area | Before | After | Notes |
 | ---- | ------ | ----- | ----- |
-|      |        |       |       |
 
 - Upstream parity target / source:
 - Automation or policy impact (CI, Dependabot, auto-merge, majors, permissions):
