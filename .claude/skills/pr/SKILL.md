@@ -88,6 +88,8 @@ Once CI passes and the PR is ready for human review, convert to ready:
 gh pr ready <number>
 ```
 
+> Note: some bots (CodeRabbit, etc.) only trigger on ready PRs, not drafts. The monitor loop in step 6 starts after this conversion.
+
 ## 6. Monitor loop
 
 Repeat until a full review pass produces **zero new actionable comments**.
