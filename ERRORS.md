@@ -11,4 +11,4 @@ Use this file as a compact memory of recurring AI mistakes.
 
 ## Entries
 
-- [2026-02-22] functions: added functions without JSDoc header -> always add JSDoc (description + @param + @return)
+- [2026-02-22] functions: added functions without JSDoc header -> always add JSDoc (description + @param + @returns)
