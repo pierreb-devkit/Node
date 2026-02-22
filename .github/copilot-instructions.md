@@ -37,6 +37,7 @@ Use `.github/prompts/*.prompt.md` for guided workflows:
 - Avoid risky renames or moves of core stack paths used by downstream merges
 - Keep changes minimal and merge-friendly for downstream projects
 - Flag security or mergeability risks explicitly in reviews
+- Every new or modified function must have a JSDoc header: one-line description, `@param` for each argument, `@returns` if the function returns a value
 
 ## Architecture and modularity
 
