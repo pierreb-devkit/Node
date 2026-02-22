@@ -1,6 +1,6 @@
 ---
 name: pr
-description: Full PR lifecycle for Devkit stacks. Use when: creating a branch for new work, committing changes, opening a pull request, or iterating on PR review feedback. Covers branch naming, commit-on-demand (never without explicit request), issue creation or linking, PR creation following .github/pull_request_template.md with correct labels, draft PR workflow, CI failure handling, conflict resolution, and a monitoring loop (Copilot, codecov, codeclimate, sonarcloud, coderabbit) that iterates until zero new review comments remain.
+description: Full PR lifecycle for Devkit stacks. Use when: creating a branch for new work, committing changes, opening a pull request, or iterating on PR review feedback. Covers branch naming, commit-on-demand (never without explicit request), issue creation or linking, PR creation following .github/pull_request_template.md with correct labels, draft PR workflow, CI failure handling, conflict resolution, and an autonomous monitoring loop that polls the PR every 3 minutes (Copilot, codecov, codeclimate, sonarcloud, coderabbit), fixes actionable comments, and iterates until zero new review comments remain.
 ---
 
 # PR Skill
@@ -8,7 +8,7 @@ description: Full PR lifecycle for Devkit stacks. Use when: creating a branch fo
 Manage the full lifecycle of a pull request: branch → commit → issue → PR (draft) → CI → ready → monitor → iterate.
 
 **Golden rules**
-- Never commit or push without an explicit user request
+- Never commit or push without an explicit user request (exception: the monitoring loop in section 6 is an autonomous workflow — once the user starts it, commits/pushes within the loop are implicitly authorized)
 - Never work directly on `main` / `master`
 - Never use `--no-verify`
 
@@ -87,35 +87,47 @@ gh pr ready <number>
 
 > Note: some bots (CodeRabbit, etc.) only trigger on ready PRs, not drafts. The monitor loop in step 6 starts after this conversion.
 
-## 6. Monitor loop
+## 6. Monitor loop (autonomous)
 
-Repeat until a full review pass produces **zero new actionable comments**.
+After `gh pr ready`, enter an autonomous polling loop. Do not wait for the user — drive the loop yourself until the stop condition is met.
+
+### Loop procedure
+
+```
+REPEAT:
+  1. Wait for CI            → gh pr checks <number> --watch
+  2. If CI fails            → fix, commit, push, GOTO 1
+  3. Grace period           → sleep 180  (3 min — lets bots post)
+  4. Read all feedback      → query PR comments (see 6b)
+  5. If actionable comments → fix all, commit, reply, resolve, push, GOTO 1
+  6. If zero new actionable → STOP ✓
+```
 
 ### 6a. Wait for CI — fix failures first
-
-After opening the PR or pushing fixes, wait for CI checks:
 
 ```bash
 gh pr checks <number> --watch
 ```
 
-**If any check fails or warns** → treat failures and bot warnings (e.g. CodeRabbit "Description check") as actionable. Fix the issue, commit, push, and re-run `--watch`. Do not read review feedback until all CI checks pass with no warnings on required sections.
-
-Once all checks pass, wait **4–5 minutes** — bots that react to CI results (codecov, codeclimate, sonarcloud) post shortly after. Then read all feedback.
+**If any check fails or warns** → treat failures and bot warnings (e.g. CodeRabbit "Description check") as actionable. Fix the issue, commit, push, and restart from the top of the loop. Do not read review feedback until all CI checks pass.
 
 ### 6b. Read all feedback
 
-```bash
-gh pr view <number> --json number,title,reviews,comments
-```
-
-Read bot comments (codecov, codeclimate, sonarcloud, coderabbit):
+After CI passes and the 3-minute grace period:
 
 ```bash
 OWNER=$(gh repo view --json owner -q .owner.login)
 REPO=$(gh repo view --json name -q .name)
-gh api repos/$OWNER/$REPO/issues/<number>/comments --paginate
-gh api repos/$OWNER/$REPO/pulls/<number>/comments --paginate
+PR=<number>
+
+# Reviews and PR-level comments
+gh pr view $PR --json number,title,reviews,comments
+
+# Inline review comments (codecov, codeclimate, coderabbit, copilot…)
+gh api repos/$OWNER/$REPO/pulls/$PR/comments --paginate
+
+# Bot / issue comments (codecov summary, sonarcloud, etc.)
+gh api repos/$OWNER/$REPO/issues/$PR/comments --paginate
 ```
 
 **Actionable** (must fix): change requests, bug reports, missing tests, security issues, failing suggestions with code.
@@ -128,7 +140,8 @@ Fix all actionable comments in one batch, then:
 
 1. Commit all fixes in one commit: `npm run commit`
 2. For each fixed comment: reply citing the commit SHA
-3. For each fixed comment: resolve the thread
+3. For each fixed comment: resolve the thread via GraphQL
+4. Push: `git push -u origin HEAD`
 
 One commit per pass keeps the history clean while keeping each fix traceable to a SHA.
 
@@ -136,17 +149,17 @@ See `references/monitoring.md` for the exact gh API / GraphQL commands.
 
 ### 6d. Coverage gaps
 
-When codecov or codeclimate reports missing coverage: add the missing tests, run `/verify`, commit.
+When codecov or codeclimate reports missing coverage: add the missing tests, run `/verify`, include in the same commit batch.
 
-### 6e. Re-trigger review
+### 6e. After pushing fixes
 
-Push commits and wait. Reviews from bots (Copilot, coderabbit, codecov…) or humans will arrive on their own if configured. Do not attempt to trigger reviewers — that is outside the skill's scope and depends on each repo's setup.
+Push restarts CI. Loop back to step 6a (watch CI → grace period → read feedback). Do not attempt to trigger reviewers — reviews arrive on their own if the repo has auto-review configured (rulesets, bots, etc.).
 
 > **Never post `@copilot review` as a PR comment.** That invokes the Copilot coding agent (which can open PRs and issues), not the code reviewer.
 
 ### 6f. Stop condition
 
-All CI checks pass and a complete review pass (after the 4–5 min grace period) produces **zero new actionable comments** from all reviewers and bots.
+All CI checks pass **and** a complete polling pass (after the 3-min grace period) produces **zero new actionable comments** from all reviewers and bots. Only then exit the loop.
 
 ## 7. Conflict resolution
 
