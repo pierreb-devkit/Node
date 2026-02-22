@@ -17,7 +17,7 @@ Manage the full lifecycle of a pull request: branch → commit → issue → PR 
 Create a dedicated branch before any work:
 
 ```bash
-git checkout -b type/short-description   # e.g. feat/user-auth, fix/login-crash
+git switch -c type/short-description   # e.g. feat/user-auth, fix/login-crash
 ```
 
 Types: `feat`, `fix`, `docs`, `test`, `ci`, `build`, `style`, `refactor`, `perf`, `chore`.
@@ -49,11 +49,8 @@ gh issue list --search "<topic>" --state open
 # Check available labels first
 gh label list
 
-# Create issue (use bug_report or feature_request template fields)
-gh issue create \
-  --title "type(scope): description" \
-  --body "<body matching template fields>" \
-  --label "Fix"   # or Feat, etc.
+# Create issue — opens the browser form (required for YAML issue templates)
+gh issue create --web
 ```
 
 Label priority: use repo labels from `gh label list` first. Fallback mapping from commit type:
@@ -62,7 +59,7 @@ Label priority: use repo labels from `gh label list` first. Fallback mapping fro
 
 ## 5. PR creation
 
-Open as **draft** first — CI and bots run while the PR is still being finalized:
+Open as **draft** first — CI runs immediately; some review bots (e.g. CodeRabbit) only trigger on ready PRs:
 
 ```bash
 gh pr create --draft \
@@ -77,10 +74,10 @@ EOF
 
 PR title must follow `type(scope): description` (conventional commits). Link the issue with `Closes #N` in the body.
 
-**Fill every section of `.github/pull_request_template.md` without exception:**
+**Fill every required section of `.github/pull_request_template.md`:**
 - Narrative sections (Summary, Why, Scope): write real content, no placeholders
 - Checkbox sections (Validation, Guardrails): check each box that applies (`- [x]`), leave unchecked only what genuinely does not apply
-- Do not leave any section blank or with default placeholder text
+- Follow any instructions in the template (e.g. "Delete this section if not applicable")
 
 Once CI passes and the PR is ready for human review, convert to ready:
 
@@ -153,15 +150,15 @@ All CI checks pass and a complete review pass (after the 4–5 min grace period)
 
 ## 7. Conflict resolution
 
-If the branch has conflicts with `main` (GitHub shows "This branch has conflicts" or `git status` shows conflicts):
+If the branch has conflicts with the default branch (GitHub shows "This branch has conflicts" or `git status` shows conflicts):
 
 ```bash
 git fetch origin
-git rebase origin/main
+git rebase origin/HEAD
 # Resolve conflicts in each file, then:
 git add <resolved-files>
 git rebase --continue
-git push --force-with-lease
+git push --force-with-lease origin HEAD
 ```
 
 After resolving conflicts, restart the monitor loop from step 6a — CI will re-run.

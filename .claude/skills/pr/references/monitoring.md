@@ -1,5 +1,7 @@
 # PR Monitoring — gh API Reference
 
+Set these variables once before running any command below:
+
 ```bash
 OWNER=$(gh repo view --json owner -q .owner.login)
 REPO=$(gh repo view --json name -q .name)
