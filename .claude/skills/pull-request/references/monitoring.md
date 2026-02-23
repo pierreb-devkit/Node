@@ -55,7 +55,7 @@ gh api graphql -f query='{
 
 ```bash
 gh api repos/$OWNER/$REPO/pulls/$PR/comments --paginate \
-  | jq 'map({id, user: .user.login, body: .body[0:100], line})'
+  | jq 'map({id, user: .user.login, body: .body[0:100], line: .line})'
 ```
 
 ## List bot / issue comments

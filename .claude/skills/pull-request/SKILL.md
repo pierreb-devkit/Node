@@ -136,28 +136,32 @@ After any push (including force-push after rebase), wait before watching to let 
 
 ```bash
 sleep 30
-gh pr checks <number> --watch
+gh pr checks "$PR" --watch
 ```
 
 If `--watch` returns `no checks reported`, the run hasn't started yet — retry:
 
 ```bash
 # Retry until checks appear (max 5 attempts, 30s apart)
+CHECKS_FOUND=0
 for i in 1 2 3 4 5; do
-  if output=$(gh pr checks <number> 2>&1); then
+  if output=$(gh pr checks "$PR" 2>&1); then
     if echo "$output" | grep -q "no checks reported"; then
       sleep 30  # checks not started yet
     else
-      echo "$output" && break  # checks detected
+      echo "$output" && CHECKS_FOUND=1 && break  # checks detected
     fi
   else
     echo "$output" >&2 && sleep 30  # gh command failed, retry
   fi
 done
-gh pr checks <number> --watch
 ```
 
-**If all 5 retries fail and no checks appear**, CI may be disabled or misconfigured — report to the user and stop.
+**If all 5 retries fail and no checks appear** (`CHECKS_FOUND=0`), CI may be disabled or misconfigured — report to the user and stop. Do not proceed to `--watch`.
+
+```bash
+[ "$CHECKS_FOUND" -eq 1 ] && gh pr checks "$PR" --watch
+```
 
 **If any check fails** → treat as actionable. Fix the issue, run `/verify`, commit, push, and restart from the top of the loop. Do not read review feedback until all CI checks pass.
 
@@ -238,7 +242,7 @@ All CI checks pass **and** a complete polling pass (after the grace period) prod
 Before declaring done, check branch protection:
 
 ```bash
-gh pr view <number> --json reviewDecision,mergeable \
+gh pr view "$PR" --json reviewDecision,mergeable \
   | jq '{reviewDecision, mergeable}'
 ```
 
