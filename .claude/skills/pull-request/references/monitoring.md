@@ -15,18 +15,20 @@ After any push (including force-push), give CI time to register the new run:
 ```bash
 sleep 30
 # Retry until checks appear (max 5 attempts, 30s apart)
+CHECKS_FOUND=0
 for i in 1 2 3 4 5; do
   if output=$(gh pr checks "$PR" 2>&1); then
     if echo "$output" | grep -q "no checks reported"; then
       sleep 30  # checks not started yet
     else
-      echo "$output" && break  # checks detected
+      echo "$output" && CHECKS_FOUND=1 && break  # checks detected
     fi
   else
     echo "$output" >&2 && sleep 30  # gh command failed, retry
   fi
 done
-gh pr checks "$PR" --watch
+# If no checks found after 5 retries, CI may be misconfigured — stop
+[ "$CHECKS_FOUND" -eq 1 ] && gh pr checks "$PR" --watch
 ```
 
 ## List unresolved review threads (source of truth)
