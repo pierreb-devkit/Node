@@ -529,6 +529,13 @@ describe('Core unit tests:', () => {
       await policy.isAllowed(mockReq, mockRes, mockNext);
       expect(mockNext).not.toHaveBeenCalled();
       expect(mockRes.status).toHaveBeenCalledWith(405);
+      const errorBody = mockRes.json.mock.calls[0][0];
+      expect(errorBody).toEqual(
+        expect.objectContaining({
+          message: 'Method Not Allowed',
+          description: 'HTTP method PROPFIND is not supported',
+        }),
+      );
     });
   });
 
