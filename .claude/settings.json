@@ -244,6 +244,22 @@
           "reason": "Force push without lease is not allowed — use --force-with-lease"
         },
         {
+          "pattern": "git push origin master",
+          "reason": "Never push directly to master — use a feature branch and open a PR"
+        },
+        {
+          "pattern": "git push origin main",
+          "reason": "Never push directly to main — use a feature branch and open a PR"
+        },
+        {
+          "pattern": "git push * master",
+          "reason": "Never push directly to master — use a feature branch and open a PR"
+        },
+        {
+          "pattern": "git push * main",
+          "reason": "Never push directly to main — use a feature branch and open a PR"
+        },
+        {
           "pattern": "npm publish",
           "reason": "Package publishing requires explicit approval"
         },
