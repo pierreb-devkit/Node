@@ -54,6 +54,7 @@ The `.claude/` folder contains embedded settings, skills, and agents that are av
 - Keep changes minimal and merge-friendly for downstream projects
 - Flag security or mergeability risks explicitly in reviews
 - Every new or modified function must have a JSDoc header: one-line description, `@param` for each argument, `@returns` for any non-void return value (always include `@returns` for async functions to document the resolved value)
+- When shipping work to a pull request, always invoke `/pull-request` — never open a PR manually. The skill drives the full lifecycle: draft → CI → monitor loop → stop condition (CI green + zero actionable comments)
 
 ## Available embedded skills
 
@@ -66,7 +67,7 @@ Use `.claude/skills/*/SKILL.md` as the primary workflow source for Claude.
 | `/feature`       | Implement a feature while enforcing module isolation  |
 | `/update-stack`  | Merge upstream stack updates into downstream projects |
 | `/naming`        | Apply or audit naming conventions                     |
-| `/pr`            | Full PR lifecycle: branch, commit, issue, monitor     |
+| `/pull-request`  | Full PR lifecycle: draft, CI, monitor loop, iterate   |
 
 ## Embedded agent
 

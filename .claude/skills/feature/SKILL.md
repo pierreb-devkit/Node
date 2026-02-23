@@ -70,6 +70,10 @@ npm run lint
 npm test
 ```
 
+### 7. Open pull request
+
+Once verify passes, invoke `/pull-request` to open the PR and run the full monitoring loop (draft → CI → review iteration → stop condition).
+
 ## Notes
 
 - Config is loaded from `config/` and overridable via `DEVKIT_NODE_*` env vars
