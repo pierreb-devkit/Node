@@ -21,7 +21,7 @@ const User = z.object({
   roles: z.array(z.enum(config.whitelists.users.roles)).min(1).default(['user']),
   /* Provider */
   provider: z.string().optional(),
-  providerData: z.record(z.unknown()).optional(),
+  providerData: z.record(z.string(), z.unknown()).optional(),
   /* Password */
   password: z.string()
     .max(config.zxcvbn.maxSize)
@@ -30,7 +30,7 @@ const User = z.object({
       if (val === '') return; // allow empty (OAuth users / no password set)
       zodHelpers.passwordRefinement(val, ctx);
       if (val.length < config.zxcvbn.minSize) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Password length must be at least ${config.zxcvbn.minSize} characters long` });
+        ctx.addIssue({ code: 'custom', message: `Password length must be at least ${config.zxcvbn.minSize} characters long`, input: val });
       }
     }),
   resetPasswordToken: z.string().nullable().optional(),
@@ -38,8 +38,8 @@ const User = z.object({
   // startup requirement
   terms: z.coerce.date().nullable().optional(),
   // others
-  complementary: z.record(z.unknown()).nullable().optional(),
-}).strip();
+  complementary: z.record(z.string(), z.unknown()).nullable().optional(),
+});
 
 const UserUpdate = User.partial();
 

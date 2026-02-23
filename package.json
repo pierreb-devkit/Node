@@ -89,7 +89,7 @@
     "swagger-ui-express": "^5.0.1",
     "ts-jest": "^29.4.6",
     "winston": "^3.19.0",
-    "zod": "^3.25.76",
+    "zod": "^4.3.6",
     "zxcvbn": "^4.4.2"
   },
   "devDependencies": {
