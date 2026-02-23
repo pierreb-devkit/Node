@@ -1,6 +1,6 @@
 ---
 name: pull-request
-description: Full pull request lifecycle. Use when opening a pull request, creating a PR, shipping a feature or fix to review, iterating on PR feedback, or monitoring CI. Covers branch naming, commit-on-demand, issue creation or linking, draft PR, CI monitoring, conflict resolution, and an autonomous loop that polls every 3 minutes, fixes actionable comments, resolves threads, and iterates until CI is green and zero new actionable comments remain.
+description: Full PR lifecycle — branch, commit, issue, draft PR, CI, ready, autonomous monitor loop (fix comments, resolve threads, iterate until CI green and zero actionable threads).
 ---
 
 # Pull Request Skill
@@ -108,6 +108,14 @@ gh pr ready <number>
 
 ## 6. Monitor loop (autonomous)
 
+Set these variables once before running any loop command:
+
+```bash
+OWNER=$(gh repo view --json owner -q .owner.login)
+REPO=$(gh repo view --json name -q .name)
+PR=<number>
+```
+
 After `gh pr ready`, enter an autonomous polling loop. Do not wait for the user — drive the loop yourself until the stop condition is met.
 
 ### Loop procedure
@@ -136,8 +144,15 @@ If `--watch` returns `no checks reported`, the run hasn't started yet — retry:
 ```bash
 # Retry until checks appear (max 5 attempts, 30s apart)
 for i in 1 2 3 4 5; do
-  gh pr checks <number> 2>&1 | grep -v "no checks" && break
-  sleep 30
+  if output=$(gh pr checks <number> 2>&1); then
+    if echo "$output" | grep -q "no checks reported"; then
+      sleep 30  # checks not started yet
+    else
+      echo "$output" && break  # checks detected
+    fi
+  else
+    echo "$output" >&2 && sleep 30  # gh command failed, retry
+  fi
 done
 gh pr checks <number> --watch
 ```
@@ -157,7 +172,7 @@ sleep 180
 If after 3 min the total bot comment count is 0, wait an extra 2 min and re-check (slow bots on large PRs):
 
 ```bash
-TOTAL=$(gh api repos/$OWNER/$REPO/issues/$PR/comments --paginate | jq 'length')
+TOTAL=$(gh api repos/$OWNER/$REPO/issues/$PR/comments --paginate | jq -s 'add | length')
 [ "$TOTAL" -eq 0 ] && sleep 120
 ```
 

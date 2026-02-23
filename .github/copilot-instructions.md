@@ -29,7 +29,7 @@ Use `.github/prompts/*.prompt.md` for guided workflows:
 | Create module | `.github/prompts/create-module.prompt.md` |
 | Update stack | `.github/prompts/update-stack.prompt.md` |
 | Naming | `.github/prompts/naming.prompt.md` |
-| PR | `.github/prompts/pr.prompt.md` |
+| PR | `.github/prompts/pull-request.prompt.md` |
 
 ## Always-on guardrails
 

@@ -25,7 +25,7 @@ Use `.github/prompts/*` as task playbooks:
 | Create module | `.github/prompts/create-module.prompt.md` |
 | Update stack | `.github/prompts/update-stack.prompt.md` |
 | Naming | `.github/prompts/naming.prompt.md` |
-| PR | `.github/prompts/pr.prompt.md` |
+| PR | `.github/prompts/pull-request.prompt.md` |
 
 ## Review output convention
 
