@@ -505,6 +505,31 @@ describe('Core unit tests:', () => {
       const ability = await policy.defineAbilityFor({ roles: ['admin'] });
       expect(ability.can('read', '/api/users')).toBe(true);
     });
+
+    it('isAllowed should call next() for HEAD on an allowed route', async () => {
+      const mockReq = { method: 'HEAD', route: { path: '/api/tasks' }, user: { roles: ['user'] } };
+      const mockRes = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      const mockNext = jest.fn();
+      await policy.isAllowed(mockReq, mockRes, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    it('isAllowed should call next() for OPTIONS on an allowed route', async () => {
+      const mockReq = { method: 'OPTIONS', route: { path: '/api/tasks' }, user: { roles: ['user'] } };
+      const mockRes = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      const mockNext = jest.fn();
+      await policy.isAllowed(mockReq, mockRes, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    it('isAllowed should deny unknown HTTP methods with 403', async () => {
+      const mockReq = { method: 'PROPFIND', route: { path: '/api/tasks' }, user: { roles: ['admin'] } };
+      const mockRes = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      const mockNext = jest.fn();
+      await policy.isAllowed(mockReq, mockRes, mockNext);
+      expect(mockNext).not.toHaveBeenCalled();
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+    });
   });
 
   describe('Mongoose service', () => {
