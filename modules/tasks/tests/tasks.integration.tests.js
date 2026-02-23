@@ -110,7 +110,7 @@ describe('Tasks integration tests:', () => {
           .expect(422);
         expect(result.body.type).toBe('error');
         expect(result.body.message).toEqual('Schema validation error');
-        expect(result.body.description).toBe('Expected string, received number. ');
+        expect(result.body.description).toBe('Invalid input: expected string, received number. ');
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();

@@ -15,4 +15,4 @@ Use this file as a compact memory of recurring AI mistakes.
 - [2026-02-22] tests: never patch code to pass a test -> if a test is wrong, fix the test; if logic needs refactoring, refactor it
 - [2026-02-23] pr skill: stopping after `gh pr ready` -> always enter the monitor loop (wait CI → 3min grace → read feedback → iterate) until stop condition is met
 - [2026-02-23] pr skill: skipping issue creation when none found -> always create a GitHub issue before opening a PR (`gh issue create --web` or via CLI)
-- [2026-02-23] zod v4: z.string({ error: 'msg' }) does NOT override invalid_type message -> Zod v4 produces 'Expected string, received number'; update test expectations accordingly and remove the no-op error option
+- [2026-02-23] zod v4: z.string({ error: 'msg' }) does NOT override invalid_type message -> Zod v4 produces 'Invalid input: expected string, received number'; update test expectations accordingly and remove the no-op error option
