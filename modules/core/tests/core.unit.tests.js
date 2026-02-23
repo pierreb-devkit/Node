@@ -522,13 +522,13 @@ describe('Core unit tests:', () => {
       expect(mockNext).toHaveBeenCalled();
     });
 
-    it('isAllowed should deny unknown HTTP methods with 403', async () => {
+    it('isAllowed should deny unknown HTTP methods with 405', async () => {
       const mockReq = { method: 'PROPFIND', route: { path: '/api/tasks' }, user: { roles: ['admin'] } };
       const mockRes = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       const mockNext = jest.fn();
       await policy.isAllowed(mockReq, mockRes, mockNext);
       expect(mockNext).not.toHaveBeenCalled();
-      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockRes.status).toHaveBeenCalledWith(405);
     });
   });
 
