@@ -201,7 +201,9 @@ gh api repos/$OWNER/$REPO/issues/$PR/comments --paginate | jq 'map({id, user: .u
 
 **Actionable** (must fix): change requests, bug reports, missing tests, security issues, code suggestions.
 
-**Informational** (no code change needed, but must still reply + resolve): "LGTM", approvals, "coverage up from X% to Y%", "no issues found", style preferences without a change request, false positives (e.g. bot references a file that doesn't exist). Reply briefly explaining why no action is needed, then resolve the thread.
+**Informational** (no code change needed, but must still be addressed): "LGTM", approvals, "coverage up from X% to Y%", "no issues found", style preferences without a change request, false positives (e.g. bot references a file that doesn't exist).
+- If the comment is an unresolved **review thread**: reply briefly explaining why no action is needed, then resolve via GraphQL (see `references/monitoring.md`).
+- If the comment is a **PR-level or issue comment** (e.g. codecov report, approval message): reply if useful, but these cannot be resolved via GitHub's thread API — they do not count as open threads.
 
 ### 6c. Fix all actionable comments from this pass
 
