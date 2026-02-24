@@ -1,6 +1,6 @@
 ---
 name: pull-request
-description: Full PR lifecycle — branch, commit, issue, draft PR, CI, ready, autonomous monitor loop (fix comments, resolve threads, iterate until CI green and zero actionable threads).
+description: Full PR lifecycle — branch, commit, issue, draft PR, CI, ready, autonomous monitor loop (fix comments, resolve threads, iterate until CI green and zero open threads).
 ---
 
 # Pull Request Skill
@@ -238,7 +238,7 @@ Loop back to step 6a. Do not attempt to trigger reviewers — reviews arrive on 
 
 ### 6f. Stop condition
 
-All CI checks pass **and** a complete polling pass (after the grace period) produces **zero unresolved actionable threads**.
+All CI checks pass **and** a complete polling pass (after the grace period) produces **zero open threads** (actionable threads fixed, non-actionable threads replied to and resolved).
 
 Before declaring done, check branch protection:
 
