@@ -127,7 +127,8 @@ REPEAT:
   3. Grace period           → sleep 180 + adaptive check (see 6b)
   4. Read all feedback      → unresolved threads only (see 6b)
   5. If actionable comments → fix all, /verify, commit, push, reply, resolve, GOTO 1
-  6. If zero new actionable → check branch protection (see 6f), then STOP ✓
+  6. If non-actionable open threads → reply explaining why, resolve, GOTO 4
+  7. If zero open threads → check branch protection (see 6f), then STOP ✓
 ```
 
 ### 6a. Wait for CI
@@ -200,7 +201,7 @@ gh api repos/$OWNER/$REPO/issues/$PR/comments --paginate | jq 'map({id, user: .u
 
 **Actionable** (must fix): change requests, bug reports, missing tests, security issues, code suggestions.
 
-**Informational** (skip): "LGTM", approvals, "coverage up from X% to Y%", "no issues found", style preferences without a change request.
+**Informational** (no code change needed, but must still reply + resolve): "LGTM", approvals, "coverage up from X% to Y%", "no issues found", style preferences without a change request, false positives (e.g. bot references a file that doesn't exist). Reply briefly explaining why no action is needed, then resolve the thread.
 
 ### 6c. Fix all actionable comments from this pass
 
