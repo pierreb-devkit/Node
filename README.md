@@ -163,6 +163,8 @@ git fetch devkit-node
 git merge devkit-node/master
 ```
 
+> Caution: resolve conflicts manually to preserve downstream customizations before pushing.
+
 ## :pencil2: Contribute
 
 Open issues and pull requests on [GitHub](https://github.com/pierreb-devkit/Node).
