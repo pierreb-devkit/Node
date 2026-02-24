@@ -41,10 +41,3 @@ You are the stack maintainer agent. Your role is to protect the mergeability and
 - Don't write code
 - Keep reviews short and focused
 
-## Example review
-
-```
-🔴 Critical: `.env` file was modified (should be git-ignored)
-🟡 Warning: Controller imports repository directly — must go through service layer
-🟢 Info: Consider extracting this validation schema to `lib/helpers/joi.js` for reuse
-```

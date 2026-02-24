@@ -153,22 +153,7 @@ This stack ships preconfigured instruction and prompt files for Claude Code, Git
 
 ### Claude Code — Available Skills
 
-| Skill            | Description                                           |
-| ---------------- | ----------------------------------------------------- |
-| `/verify`        | Run quality loop (lint + tests)                       |
-| `/create-module` | Create new module by duplicating the `tasks` template |
-| `/feature`       | Implement feature following layered architecture rules |
-| `/update-stack`  | Merge stack updates into downstream projects          |
-| `/naming`        | Check or apply file and folder naming conventions     |
-| `/pull-request`  | Full PR lifecycle: branch, commit, issue, monitor     |
-
-### Layered Architecture Rules
-
-- Layer order is strict: **Routes → Controllers → Services → Repositories → Models**
-- Controllers must not call repositories directly — always go through services
-- Each module is self-contained in `modules/{name}/`
-- Shared code goes in `lib/helpers/` or `lib/services/` with explicit justification
-- Tests are organized per module: `modules/*/tests/`
+Skills available via `/verify`, `/feature`, `/create-module`, `/update-stack`, `/naming`, `/pull-request` — see `.claude/skills/` for details.
 
 ### Stack Merge Workflow
 
@@ -177,6 +162,8 @@ git remote add devkit-node https://github.com/pierreb-devkit/Node.git
 git fetch devkit-node
 git merge devkit-node/master
 ```
+
+> Caution: resolve conflicts manually to preserve downstream customizations before pushing.
 
 ## :pencil2: Contribute
 
