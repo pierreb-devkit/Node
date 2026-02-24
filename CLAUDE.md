@@ -12,24 +12,7 @@ The `.claude/` folder contains embedded settings, skills, and agents that are av
 
 ## Canonical commands
 
-| Command          | Script                   | Description                                    |
-| ---------------- | ------------------------ | ---------------------------------------------- |
-| **Dev**          | `npm start`              | Start dev server at `http://localhost:3000/`   |
-| **Dev (alias)**  | `npm run dev`            | Alias for `npm start`                          |
-| **Debug**        | `npm run debug`          | Start with nodemon and inspector               |
-| **Prod**         | `npm run prod`           | Start in production mode                       |
-| **Test**         | `npm test`               | Run all tests (one-shot)                       |
-| **Unit test**    | `npm run test:unit`      | Run unit tests once (alias of `npm test`)      |
-| **Watch**        | `npm run test:watch`     | Run tests in watch mode                        |
-| **Coverage**     | `npm run test:coverage`  | Generate test coverage                         |
-| **Lint**         | `npm run lint`           | Check code quality                             |
-| **Lint fix**     | `npm run lint:fix`       | Auto-fix linting issues                        |
-| **Format**       | `npm run format`         | Format with Prettier                           |
-| **Seed**         | `npm run seed:dev`       | Seed development database                      |
-| **Commit**       | `npm run commit`         | Commit with commitizen                         |
-| **Release**      | `npm run release`        | Manual release (standard-version)              |
-| **Release (CI)** | `npm run release:auto`   | Semantic release for CI                        |
-| **Docker**       | `docker-compose up`      | Start with docker-compose                      |
+Scripts: see `package.json` → `scripts` section.
 
 ## Preflight
 
@@ -75,13 +58,7 @@ Use `.claude/skills/*/SKILL.md` as the primary workflow source for Claude.
 
 ## Stack merge workflow
 
-```bash
-git remote add devkit-node https://github.com/pierreb-devkit/Node.git
-git fetch devkit-node
-git merge devkit-node/master
-```
-
-Resolve conflicts carefully to preserve downstream customizations and keep future merges clean.
+See README — stack merge workflow section.
 
 ## Definition of done
 

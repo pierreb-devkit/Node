@@ -9,11 +9,6 @@ For architecture, modularity rules, guardrails, naming, commands, and definition
 - Keep changes secure and free of secrets
 - Enforce module boundaries and layered architecture
 
-## Preflight
-
-- Read `ERRORS.md` before proposing changes or code reviews
-- If the AI makes a new recurring mistake, append one line to `ERRORS.md` using `[YYYY-MM-DD] <scope>: <wrong> -> <right>`
-
 ## Codex prompt routing
 
 Use `.github/prompts/*` as task playbooks:
@@ -27,8 +22,3 @@ Use `.github/prompts/*` as task playbooks:
 | Naming | `.github/prompts/naming.prompt.md` |
 | PR | `.github/prompts/pull-request.prompt.md` |
 
-## Review output convention
-
-- `Critical`: must fix before merge (security, breakage, mergeability risk)
-- `Warning`: should be reviewed (coupling, architecture drift)
-- `Info`: non-blocking suggestion
