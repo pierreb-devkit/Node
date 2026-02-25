@@ -121,14 +121,19 @@ After `gh pr ready`, enter an autonomous polling loop. Do not wait for the user 
 ### Loop procedure
 
 ```text
+consecutive_zero = 0
+
 REPEAT:
-  1. Wait for CI            → sleep 30 then gh pr checks <number> --watch
-  2. If CI fails            → fix, /verify, commit, push, GOTO 1
-  3. Grace period           → sleep 180 + adaptive check (see 6b)
-  4. Read all feedback      → unresolved threads only (see 6b)
-  5. If actionable comments → fix all, /verify, commit, push, reply, resolve, GOTO 1
-  6. If non-actionable open threads → reply explaining why, resolve, GOTO 4
-  7. If zero open threads → check branch protection (see 6f), then STOP ✓
+  1. Wait for CI                        → sleep 30 then gh pr checks <number> --watch
+  2. If CI fails                        → fix, /verify, commit, push, consecutive_zero=0, GOTO 1
+  3. Grace period                       → sleep 180 + adaptive check (see 6b)
+  4. Re-check pending review checks     → gh pr checks <number> — if any still pending, GOTO 3
+  5. Read all feedback                  → unresolved threads only (see 6b)
+  6. If actionable comments             → fix all, /verify, commit, push, reply, resolve, consecutive_zero=0, GOTO 1
+  7. If non-actionable unresolved       → reply all explaining why, resolve all, consecutive_zero=0, GOTO 5
+  8. If zero unresolved threads         → consecutive_zero++
+                                           if consecutive_zero >= 2 → check branch protection (see 6f), then STOP ✓
+                                           else GOTO 3
 ```
 
 ### 6a. Wait for CI
@@ -240,7 +245,7 @@ Loop back to step 6a. Do not attempt to trigger reviewers — reviews arrive on 
 
 ### 6f. Stop condition
 
-All CI checks pass **and** a complete polling pass (after the grace period) produces **zero open threads** (actionable threads fixed, non-actionable threads replied to and resolved).
+All CI checks pass **and** 2 consecutive polling passes (each after a full grace period) both produce **zero unresolved threads** — this double-pass ensures slow review bots have had time to post before the loop exits.
 
 Before declaring done, check branch protection:
 
