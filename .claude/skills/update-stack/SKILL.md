@@ -32,6 +32,7 @@ git merge devkit-node/master
 | `ERRORS.md` | Union merge — keep every line from both sides, never drop |
 | `MIGRATION.md` (if present) | Read it (needed for Phase 2), then `git checkout --theirs MIGRATION.md` |
 | `package.json` | `git checkout --ours package.json` then merge upstream version bumps |
+| Downstream-only new files (new modules, helpers, lib additions, scripts) | Never delete — these do not exist in the stack, `git checkout --ours <file>` if flagged |
 
 After resolving `package.json`:
 
