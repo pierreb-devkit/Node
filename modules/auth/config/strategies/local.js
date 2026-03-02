@@ -4,6 +4,7 @@
 import passport from 'passport';
 import { Strategy } from 'passport-local';
 
+import AppError from '../../../../lib/helpers/AppError.js';
 import AuthService from '../../services/auth.service.js';
 
 export default () => {
@@ -21,8 +22,11 @@ export default () => {
           return done(null, false, {
             message: 'Invalid email or password',
           });
-        } catch (_err) {
-          return done();
+        } catch (err) {
+          if (err instanceof AppError && err.code === 'SERVICE_ERROR') {
+            return done(null, false, { message: 'Invalid email or password' });
+          }
+          return done(err);
         }
       },
     ),

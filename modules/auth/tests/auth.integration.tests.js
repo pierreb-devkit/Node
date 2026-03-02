@@ -16,6 +16,7 @@ import config from '../../../config/index.js';
  */
 describe('Auth integration tests:', () => {
   let UserService = null;
+  let AuthService = null;
   let agent;
   let credentials;
   let user;
@@ -28,6 +29,7 @@ describe('Auth integration tests:', () => {
     try {
       const init = await bootstrap();
       UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
+      AuthService = (await import(path.resolve('./modules/auth/services/auth.service.js'))).default;
       agent = request.agent(init.app);
     } catch (err) {
       console.log(err);
@@ -793,6 +795,12 @@ describe('Auth integration tests:', () => {
       jest.spyOn(UserService, 'getBrut').mockRejectedValueOnce(new Error('DB error'));
       const result = await agent.get('/api/auth/reset/sometoken').expect(302);
       expect(result.headers.location).toBe('/api/password/reset/invalid');
+    });
+
+    test('should return 500 when local strategy authenticate throws an unexpected error', async () => {
+      const spy = jest.spyOn(AuthService, 'authenticate').mockRejectedValueOnce(new Error('DB failure'));
+      await agent.post('/api/auth/signin').send({ email: 'a@b.com', password: 'pass' }).expect(500);
+      spy.mockRestore();
     });
   });
 
