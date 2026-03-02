@@ -64,10 +64,6 @@ Read the last entries — they list breaking changes requiring updates in projec
 
 ### 5. Align project modules
 
-Diff project modules against `modules/tasks` (stack reference). Fix pattern drift per `ERRORS.md`:
-
-- Layer order: Routes → Controllers → Services → Repositories → Models (no controller→repository direct calls)
-- JSDoc on all functions
-- `async/await + try/catch` in controllers and services
+Diff project modules against `modules/tasks` (stack reference). Fix any pattern drift flagged by `ERRORS.md`.
 
 ### 6. `/verify`
