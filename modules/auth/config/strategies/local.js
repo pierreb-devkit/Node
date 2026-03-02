@@ -22,7 +22,7 @@ export default () => {
             message: 'Invalid email or password',
           });
         } catch (_err) {
-          return done();
+          return done(null, false, { message: 'Invalid email or password' });
         }
       },
     ),
