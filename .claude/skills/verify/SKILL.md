@@ -9,9 +9,10 @@ Run lint → tests and report results.
 
 ## Steps
 
-1. Run `npm run lint` to check code quality (read-only, no auto-fix)
-2. Run `npm test` to run all tests
-3. Summarize results:
+1. Read `ERRORS.md` — scan changed files for any pattern listed as wrong. Flag violations before running tooling.
+2. Run `npm run lint` to check code quality (read-only, no auto-fix)
+3. Run `npm test` to run all tests
+4. Summarize results:
    - ✅ All checks passed → ready to commit
    - ❌ Some checks failed → show what failed and suggest next action
 

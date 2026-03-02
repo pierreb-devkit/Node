@@ -8,7 +8,7 @@ It is designed to be cloned into downstream projects and kept up-to-date through
 
 Source of truth: `README.md` + `package.json` scripts.
 
-The `.claude/` folder contains embedded settings, skills, and agents that are available immediately after cloning.
+The `.claude/` folder contains embedded settings and skills that are available immediately after cloning.
 
 ## Canonical commands
 
@@ -51,10 +51,6 @@ Use `.claude/skills/*/SKILL.md` as the primary workflow source for Claude.
 | `/update-stack`  | Merge upstream stack updates into downstream projects |
 | `/naming`        | Apply or audit naming conventions                     |
 | `/pull-request`  | Full PR lifecycle: draft, CI, monitor loop, iterate   |
-
-## Embedded agent
-
-- `stack-maintainer` (`.claude/agents/stack-maintainer.md`): quick review guard for mergeability, security, and modularity.
 
 ## Stack merge workflow
 

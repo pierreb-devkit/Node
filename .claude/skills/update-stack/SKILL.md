@@ -5,60 +5,65 @@ description: Merge the latest changes from the Devkit Node stack repository into
 
 # Update Stack Skill
 
-Pure git workflow for merging stack updates while preserving downstream customizations.
+Two-phase workflow. Phase 1 brings the stack down ISO. Phase 2 aligns the project.
 
-## Steps
+## Phase 1 — ISO merge
 
-### 1. Add the stack remote (if not already added)
+**Goal: stack modules and lib exit this phase identical to upstream. Zero downstream logic in them.**
 
-```bash
-git remote add devkit-node https://github.com/pierreb-devkit/Node.git
-```
+Stack modules: `home`, `auth`, `users`, `tasks`, `uploads` — Stack core: `lib/` (existing files), `config/defaults/` (stack-owned files only)
 
-### 2. Fetch the latest stack changes
+### 1. Setup remote + merge
 
 ```bash
+git remote get-url devkit-node >/dev/null 2>&1 || git remote add devkit-node https://github.com/pierreb-devkit/Node.git
 git fetch devkit-node
-```
-
-### 3. Merge the stack updates
-
-```bash
 git merge devkit-node/master
 ```
 
-### 4. Handle conflicts
+### 2. Resolve conflicts
 
-Focus on these high-conflict areas:
+| File | Rule |
+|------|------|
+| Stack module (`modules/home\|auth\|users\|tasks\|uploads`) | `git checkout --theirs <file>` |
+| `lib/<existing-file>` | `git checkout --theirs <file>` (existing stack framework files — always ISO) |
+| `config/defaults/development.js`, `production.js`, etc. | `git checkout --theirs <file>` (stack-owned defaults) |
+| `package-lock.json` | `git checkout --theirs package-lock.json` — regenerate after `package.json` is resolved |
+| `ERRORS.md` | Merge stack entries + project entries — never drop lines |
+| `MIGRATION.md` (if present) | Read it (needed for Phase 2), then `git checkout --theirs MIGRATION.md` |
+| `package.json` | `git checkout --ours package.json` then merge upstream version bumps |
+| Downstream-only new files (new modules, helpers, lib additions, scripts) | Never delete — these do not exist in the stack, `git checkout --ours <file>` if flagged |
 
-- `config/defaults/` — Merge stack defaults carefully, preserve downstream overrides
-- `lib/services/` — Accept stack changes unless downstream has specific customizations
-- `package.json` — Keep downstream dependencies, accept stack dependency updates
-- `modules/*/` — Stack only ships `tasks`, `home`, `auth`, `users`, `uploads` — downstream modules are safe
-
-### 5. Verify after merge
+After resolving `package.json`:
 
 ```bash
-npm run lint
-npm test
+npm install --package-lock-only
+git add package-lock.json
 ```
 
-## Conflict Strategy
+Stage all resolved files and complete the merge:
 
-| File/Dir               | Strategy                                      |
-| ---------------------- | --------------------------------------------- |
-| `config/defaults/`     | Preserve downstream values, take stack structure |
-| `lib/`                 | Prefer stack (core framework code)            |
-| `modules/tasks/`       | Prefer stack (reference module)               |
-| `modules/home/`        | Prefer stack (core module)                    |
-| `modules/auth/`        | Prefer stack (security — take updates)        |
-| `modules/users/`       | Prefer stack unless customized                |
-| `modules/uploads/`     | Prefer stack unless customized                |
-| Custom modules         | Always keep downstream                        |
-| `package.json`         | Merge carefully, keep both dependency sets    |
+```bash
+git add -u
+git merge --continue
+```
 
-## Notes
+### 3. `/verify`
 
-- Stack modules (`tasks`, `home`, `auth`, `users`, `uploads`) are reference implementations — downstream may customize them
-- Custom modules added downstream will never conflict
-- After merge, check `config/defaults/development.js` to ensure new stack config keys are present
+All failures here are regressions from conflict resolution. Fix before Phase 2.
+
+---
+
+## Phase 2 — Project alignment
+
+**Goal: project-specific modules work and match stack patterns.**
+
+### 4. Apply MIGRATION.md (if present)
+
+Read the last entries — they list breaking changes requiring updates in project modules. Apply each one to non-stack modules.
+
+### 5. Align project modules
+
+Diff project modules against `modules/tasks` (stack reference). Fix any pattern drift flagged by `ERRORS.md`.
+
+### 6. `/verify`
