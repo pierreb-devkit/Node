@@ -11,7 +11,7 @@ Two-phase workflow. Phase 1 brings the stack down ISO. Phase 2 aligns the projec
 
 **Goal: stack modules and lib exit this phase identical to upstream. Zero downstream logic in them.**
 
-Stack modules: `home`, `auth`, `users`, `tasks`, `uploads` — Stack core: `lib/`, `config/defaults/`
+Stack modules: `home`, `auth`, `users`, `tasks`, `uploads` — Stack core: `lib/`, `config/defaults/` (stack-owned files only — `config/defaults/<project>.js` is downstream-only and will never conflict)
 
 ### 1. Setup remote + merge
 
@@ -27,17 +27,24 @@ git merge devkit-node/master
 |------|------|
 | Stack module (`modules/home\|auth\|users\|tasks\|uploads`) | `git checkout --theirs <file>` |
 | `lib/` | `git checkout --theirs <file>` (core framework — always ISO) |
+| `config/defaults/development.js`, `production.js`, etc. | `git checkout --theirs <file>` (stack-owned defaults) |
 | `package-lock.json` | `git checkout --theirs package-lock.json` — regenerate after `package.json` is resolved |
 | `ERRORS.md` | Union merge — keep every line from both sides, never drop |
-| `MIGRATION.md` (if present) | Read it (needed for Phase 2), then `git checkout --theirs` |
-| `config/defaults/<project>.js` | `--ours` (downstream-only file) |
-| `package.json` | `--ours` then merge upstream version bumps |
+| `MIGRATION.md` (if present) | Read it (needed for Phase 2), then `git checkout --theirs MIGRATION.md` |
+| `package.json` | `git checkout --ours package.json` then merge upstream version bumps |
 
 After resolving `package.json`:
 
 ```bash
 npm install --package-lock-only
 git add package-lock.json
+```
+
+Stage all resolved files and complete the merge:
+
+```bash
+git add .
+git merge --continue
 ```
 
 ### 3. `/verify`
