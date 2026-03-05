@@ -73,7 +73,7 @@
     "method-override": "^3.0.0",
     "mongoose": "^9.2.4",
     "morgan": "^1.10.1",
-    "multer": "^2.1.0",
+    "multer": "^2.1.1",
     "nodemailer": "^8.0.1",
     "nodemon": "^3.1.14",
     "object-path": "^0.11.8",
