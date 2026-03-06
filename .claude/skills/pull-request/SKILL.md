@@ -212,7 +212,12 @@ gh api repos/$OWNER/$REPO/issues/$PR/comments --paginate | jq 'map({id, user: .u
 
 ### 6c. Fix all actionable comments from this pass
 
-Fix all actionable comments in one batch, then:
+**Stack-originated files:** If a review comment targets a file that exists in the upstream stack repo (e.g., `devkit-node/master`), do **not** fix it downstream. Instead:
+1. Create an issue on the stack repo describing the finding
+2. Reply to the review comment with a link to the upstream issue
+3. Resolve the thread — the fix should happen upstream
+
+For all other actionable comments, fix them in one batch:
 
 1. Run `/verify` — never commit fixes without verifying first
 2. Commit all fixes in one commit using a conventional message:
