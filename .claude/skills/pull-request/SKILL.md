@@ -212,7 +212,13 @@ gh api repos/$OWNER/$REPO/issues/$PR/comments --paginate | jq 'map({id, user: .u
 
 ### 6c. Fix all actionable comments from this pass
 
-**Stack-originated files:** If a review comment targets a file that exists in the upstream stack repo (e.g., `devkit-node/master`), do **not** fix it downstream. Instead:
+**Stack-originated files:** If a review comment targets a file that exists in the upstream stack repo, do **not** fix it downstream. Check using the `devkit-node` remote (the remote name used by the `/update-stack` skill):
+
+```bash
+git cat-file -e devkit-node/master:path/to/file 2>/dev/null && echo "STACK" || echo "NOT_IN_STACK"
+```
+
+If the file is stack-originated:
 1. Create an issue on the stack repo describing the finding
 2. Reply to the review comment with a link to the upstream issue
 3. Resolve the thread — the fix should happen upstream
