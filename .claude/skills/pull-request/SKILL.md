@@ -40,7 +40,7 @@ npm run commit
 
 Run `/verify` and fix all failures before opening the PR.
 
-> **Coverage thresholds are immutable.** If `test:coverage` fails due to threshold violations, add or improve tests — never lower the thresholds (e.g., `coverageThreshold` in `jest.config.js`).
+> **Coverage thresholds are immutable.** When you run `npm run test:coverage` locally, or when CI/Codecov runs coverage checks, if coverage fails due to threshold violations, add or improve tests — never lower the thresholds (e.g., `coverageThreshold` in `jest.config.js`).
 
 ## 4. Issue
 
