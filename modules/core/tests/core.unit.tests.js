@@ -391,10 +391,11 @@ describe('Core unit tests:', () => {
     });
 
     it('should apply array excludes when provided to getGlobbedPaths', async () => {
-      const result = await configHelper.getGlobbedPaths('modules/core/tests/*.js', ['modules/', 'core/']);
+      const result = await configHelper.getGlobbedPaths('modules/*/tests/*.js', ['core.unit']);
       expect(Array.isArray(result)).toBe(true);
+      expect(result.length).toBeGreaterThan(0);
       result.forEach((file) => {
-        expect(file).not.toContain('modules/');
+        expect(file).not.toContain('core.unit');
       });
     });
 
