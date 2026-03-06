@@ -390,6 +390,22 @@ describe('Core unit tests:', () => {
       expect(Array.isArray(result)).toBe(true);
     });
 
+    it('should apply array excludes when provided to getGlobbedPaths', async () => {
+      const result = await configHelper.getGlobbedPaths('modules/core/tests/*.js', ['modules/', 'core/']);
+      expect(Array.isArray(result)).toBe(true);
+      result.forEach((file) => {
+        expect(file).not.toContain('modules/');
+      });
+    });
+
+    it('should disable ssl when key/cert paths are not configured', () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      const fakeConfig = { secure: { ssl: true } };
+      configHelper.initSecureMode(fakeConfig);
+      expect(fakeConfig.secure.ssl).toBe(false);
+      consoleSpy.mockRestore();
+    });
+
     it('should log a warning and disable ssl when cert files are missing', () => {
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       const fakeConfig = { secure: { ssl: true, key: './nonexistent.pem', cert: './nonexistent2.pem' } };
