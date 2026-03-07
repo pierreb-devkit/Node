@@ -40,6 +40,8 @@ npm run commit
 
 Run `/verify` and fix all failures before opening the PR.
 
+> **Coverage thresholds are immutable.** When you run `npm run test:coverage` locally, or when CI/Codecov runs coverage checks, if coverage fails due to threshold violations, add or improve tests — never lower the thresholds (e.g., `coverageThreshold` in `jest.config.js`).
+
 ## 4. Issue
 
 Search for an existing issue first:
@@ -232,7 +234,7 @@ See `references/monitoring.md` for the exact gh API / GraphQL commands.
 
 ### 6d. Coverage gaps
 
-When codecov or codeclimate reports missing coverage: add the missing tests, run `/verify`, include in the same commit batch.
+When codecov or codeclimate reports missing coverage: add the missing tests, run `/verify`, include in the same commit batch. **Never lower coverage thresholds** — always add tests to meet existing thresholds.
 
 ### 6e. After pushing fixes
 
