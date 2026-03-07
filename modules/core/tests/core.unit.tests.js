@@ -15,6 +15,7 @@ import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
 import AppError from '../../../lib/helpers/AppError.js';
 import policy from '../../../lib/middlewares/policy.js';
+import multerService from '../../../lib/services/multer.js';
 
 /**
  * Unit tests
@@ -390,6 +391,23 @@ describe('Core unit tests:', () => {
       expect(Array.isArray(result)).toBe(true);
     });
 
+    it('should apply array excludes when provided to getGlobbedPaths', async () => {
+      const result = await configHelper.getGlobbedPaths('modules/*/tests/*.js', ['core.unit']);
+      expect(Array.isArray(result)).toBe(true);
+      expect(result.length).toBeGreaterThan(0);
+      result.forEach((file) => {
+        expect(file).not.toContain('core.unit');
+      });
+    });
+
+    it('should disable ssl when key/cert paths are not configured', () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      const fakeConfig = { secure: { ssl: true } };
+      configHelper.initSecureMode(fakeConfig);
+      expect(fakeConfig.secure.ssl).toBe(false);
+      consoleSpy.mockRestore();
+    });
+
     it('should log a warning and disable ssl when cert files are missing', () => {
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
       const fakeConfig = { secure: { ssl: true, key: './nonexistent.pem', cert: './nonexistent2.pem' } };
@@ -402,6 +420,48 @@ describe('Core unit tests:', () => {
     it('should return true early when ssl is not configured', () => {
       const result = configHelper.initSecureMode({ secure: { ssl: false } });
       expect(result).toBe(true);
+    });
+  });
+
+  describe('Multer fileFilter', () => {
+    it('should reject files exceeding size limit with SERVICE_ERROR code', () => {
+      const filter = multerService.fileFilter(['image/png'], 1024);
+      const req = { headers: { 'content-length': '2048' } };
+      const file = { mimetype: 'image/png' };
+      const cb = jest.fn();
+      filter(req, file, cb);
+      expect(cb).toHaveBeenCalledWith(expect.any(Error), false);
+      const err = cb.mock.calls[0][0];
+      expect(err.code).toBe('SERVICE_ERROR');
+    });
+
+    it('should reject files with unsupported mimetype with SERVICE_ERROR code', () => {
+      const filter = multerService.fileFilter(['image/png'], 10240);
+      const req = { headers: { 'content-length': '512' } };
+      const file = { mimetype: 'application/pdf' };
+      const cb = jest.fn();
+      filter(req, file, cb);
+      expect(cb).toHaveBeenCalledWith(expect.any(Error), false);
+      const err = cb.mock.calls[0][0];
+      expect(err.code).toBe('SERVICE_ERROR');
+    });
+
+    it('should accept files within size limit and matching mimetype', () => {
+      const filter = multerService.fileFilter(['image/png'], 10240);
+      const req = { headers: { 'content-length': '512' } };
+      const file = { mimetype: 'image/png' };
+      const cb = jest.fn();
+      filter(req, file, cb);
+      expect(cb).toHaveBeenCalledWith(null, true);
+    });
+
+    it('should not call cb multiple times when file is too large', () => {
+      const filter = multerService.fileFilter(['image/png'], 1024);
+      const req = { headers: { 'content-length': '2048' } };
+      const file = { mimetype: 'image/png' };
+      const cb = jest.fn();
+      filter(req, file, cb);
+      expect(cb).toHaveBeenCalledTimes(1);
     });
   });
 
