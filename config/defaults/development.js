@@ -85,6 +85,9 @@ const config = {
     origin: ['http://localhost:8080'],
     credentials: true,
   },
+  trust: {
+    proxy: false,
+  },
   domain: '',
   sign: {
     in: true, // disable signin
