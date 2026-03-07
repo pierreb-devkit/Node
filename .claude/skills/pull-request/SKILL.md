@@ -1,6 +1,6 @@
 ---
 name: pull-request
-description: Full PR lifecycle — branch, commit, issue, draft PR, CI, ready, autonomous monitor loop (fix comments, resolve threads, iterate until CI green and zero actionable threads).
+description: Full PR lifecycle — branch, commit, issue, draft PR, CI, ready, autonomous monitor loop (fix comments, resolve threads, iterate until CI green and zero unresolved threads).
 ---
 
 # Pull Request Skill
@@ -215,26 +215,34 @@ gh api repos/$OWNER/$REPO/issues/$PR/comments --paginate | jq 'map({id, user: .u
 
 ### 6b-bis. Classify stack-level vs downstream comments (downstream projects only)
 
-When running on a **downstream project** (not the stack repo itself), classify each actionable comment before fixing:
+When running on a **downstream project** (not the stack repo itself), classify each actionable comment before fixing.
 
-1. **Check if the comment targets a stack-level file** — a file that exists in the upstream stack repo. Ensure the remote is available, then check:
+> The `devkit-node` remote is set up by `/update-stack`. If it does not exist, skip this classification — all comments are treated as downstream.
+
+1. **Check if the comment targets a stack-level file** — a file that exists in the upstream stack repo and has not been modified downstream:
    ```bash
-   # Ensure the devkit-node remote exists and is fetched (update-stack skill sets this up)
-   git remote get-url devkit-node >/dev/null 2>&1 || git remote add devkit-node git@github.com:<stack-owner>/<stack-repo>.git
+   # Derive the stack repo slug from the devkit-node remote
+   STACK_REPO=$(git remote get-url devkit-node 2>/dev/null | sed 's|.*github.com[:/]||;s|\.git$||')
+
+   # Fetch to ensure ref is up-to-date (skip silently if remote missing)
    git fetch devkit-node master --quiet 2>/dev/null
 
-   # Check if the file exists in the upstream
-   git ls-tree --name-only -r devkit-node/master -- <file-path>
+   # Check: file exists in upstream AND has no downstream diff
+   if git cat-file -e devkit-node/master:<file-path> 2>/dev/null \
+      && git diff --quiet devkit-node/master -- <file-path> 2>/dev/null; then
+     echo "STACK"  # file is unmodified from upstream
+   else
+     echo "DOWNSTREAM"  # file is downstream-only or has local changes
+   fi
    ```
-   If the file exists in the upstream, it is **stack-level**.
 
 2. **Stack-level comment** → do NOT fix locally. Instead:
-   - Create an issue on the stack repo with the review feedback (use a heredoc to avoid shell escaping issues):
+   - Create an issue on the stack repo (use a heredoc to avoid shell escaping issues):
      ```bash
-     ISSUE_URL=$(gh issue create --repo <stack-owner>/<stack-repo> \
+     ISSUE_URL=$(gh issue create --repo "$STACK_REPO" \
        --title "fix(<scope>): <summary from review comment>" \
        --body "$(cat <<'BODY'
-     Reported by CodeRabbit on <downstream-owner>/<downstream-repo>#<PR>.
+     Reported by review bot on <downstream-owner>/<downstream-repo>#<PR>.
 
      ## Review comment
      <full comment body>
@@ -245,13 +253,14 @@ When running on a **downstream project** (not the stack repo itself), classify e
      )" \
        --label "Fix")
      ```
-   - Reply to the review thread with the created issue link:
-     ```
+   - If `gh issue create` fails (e.g. no access to the stack repo), treat the comment as downstream and fix it locally instead.
+   - On success, reply to the review thread with the created issue link:
+     ```text
      This comment targets stack-level code from the upstream Devkit Node repo. Created $ISSUE_URL to track the fix upstream.
      ```
    - Resolve the thread
 
-3. **Downstream-only comment** → fix locally as usual (section 6c)
+3. **Downstream-only comment** (or file modified downstream) → fix locally as usual (section 6c)
 
 > Skip this classification when running directly on the stack repo — all comments are actionable there.
 
