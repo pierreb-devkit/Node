@@ -217,7 +217,7 @@ gh api repos/$OWNER/$REPO/issues/$PR/comments --paginate | jq 'map({id, user: .u
 
 When running on a **downstream project** (not the stack repo itself), classify each actionable comment before fixing.
 
-> The `devkit-node` remote is set up by `/update-stack`. If it does not exist, skip this classification — all comments are treated as downstream.
+> The `devkit-node` remote is set up by `/update-stack`. If it does not exist, **stop and report** that stack/downstream classification cannot be performed — instruct the user to run `/update-stack` first. Do not silently treat all comments as downstream.
 
 1. **Check if the comment targets a stack-level file** — a file that exists in the upstream stack repo and has not been modified downstream:
    ```bash
