@@ -1,6 +1,6 @@
 ---
 name: pull-request
-description: Full PR lifecycle — branch, commit, issue, draft PR, CI, ready, autonomous monitor loop (fix comments, resolve threads, iterate until CI green and zero open threads).
+description: Full PR lifecycle — branch, commit, issue, draft PR, CI, ready, autonomous monitor loop (fix comments, resolve threads, iterate until CI green and zero actionable threads).
 ---
 
 # Pull Request Skill
@@ -208,39 +208,56 @@ gh api repos/$OWNER/$REPO/issues/$PR/comments --paginate | jq 'map({id, user: .u
 
 **Actionable** (must fix): change requests, bug reports, missing tests, security issues, code suggestions.
 
-**Informational** (no code change needed, but must still be addressed): "LGTM", approvals, "coverage up from X% to Y%", "no issues found", style preferences without a change request, false positives (e.g. bot references a file that doesn't exist).
-- If the comment is an unresolved **review thread**: reply briefly explaining why no action is needed, then resolve via GraphQL (see `references/monitoring.md`).
-- If the comment is a **PR-level or issue comment** (e.g. codecov report, approval message): reply if useful, but these cannot be resolved via GitHub's thread API — they do not count as open threads.
+**Informational** (no code change needed, but must still be addressed):
+- Examples: "LGTM", approvals, "coverage up from X% to Y%", "no issues found", style preferences without a change request, false positives (e.g. bot references a file that doesn't exist)
+- If the comment is an unresolved **review thread**: reply briefly explaining why no action is needed, then resolve via GraphQL (see `references/monitoring.md`)
+- If the comment is a **PR-level or issue comment** (e.g. codecov report, approval message): reply if useful, but these cannot be resolved via GitHub's thread API — they do not count as unresolved threads
+
+### 6b-bis. Classify stack-level vs downstream comments (downstream projects only)
+
+When running on a **downstream project** (not the stack repo itself), classify each actionable comment before fixing:
+
+1. **Check if the comment targets a stack-level file** — a file that exists in the upstream stack repo. Ensure the remote is available, then check:
+   ```bash
+   # Ensure the devkit-node remote exists and is fetched (update-stack skill sets this up)
+   git remote get-url devkit-node >/dev/null 2>&1 || git remote add devkit-node git@github.com:<stack-owner>/<stack-repo>.git
+   git fetch devkit-node master --quiet 2>/dev/null
+
+   # Check if the file exists in the upstream
+   git ls-tree --name-only -r devkit-node/master -- <file-path>
+   ```
+   If the file exists in the upstream, it is **stack-level**.
+
+2. **Stack-level comment** → do NOT fix locally. Instead:
+   - Create an issue on the stack repo with the review feedback (use a heredoc to avoid shell escaping issues):
+     ```bash
+     ISSUE_URL=$(gh issue create --repo <stack-owner>/<stack-repo> \
+       --title "fix(<scope>): <summary from review comment>" \
+       --body "$(cat <<'BODY'
+     Reported by CodeRabbit on <downstream-owner>/<downstream-repo>#<PR>.
+
+     ## Review comment
+     <full comment body>
+
+     ## File
+     `<file-path>`
+     BODY
+     )" \
+       --label "Fix")
+     ```
+   - Reply to the review thread with the created issue link:
+     ```
+     This comment targets stack-level code from the upstream Devkit Node repo. Created $ISSUE_URL to track the fix upstream.
+     ```
+   - Resolve the thread
+
+3. **Downstream-only comment** → fix locally as usual (section 6c)
+
+> Skip this classification when running directly on the stack repo — all comments are actionable there.
 
 ### 6c. Fix all actionable comments from this pass
 
-**Stack-originated files:** If a review comment targets a file that exists in the upstream stack repo, do **not** fix it downstream. Check using the `devkit-node` remote (set up by `/update-stack`). Fetch first to ensure the ref is current:
-
-```bash
-# Derive the upstream repo slug from the devkit-node remote
-STACK_REPO=$(gh api repos --jq '.full_name' 2>/dev/null || true)
-STACK_REPO=$(git remote get-url devkit-node 2>/dev/null | sed 's|.*github.com[:/]||;s|\.git$||')
-
-# Fetch to ensure ref is up-to-date (skip silently if remote missing)
-git fetch devkit-node master 2>/dev/null || true
-
-# Check if file exists in the stack
-git cat-file -e devkit-node/master:path/to/file 2>/dev/null && echo "STACK" || echo "NOT_IN_STACK"
-```
-
-> If `devkit-node` remote does not exist, the fetch and check will silently fail, and the file is treated as project-only. This is safe — stack detection only works after `/update-stack` has been run at least once.
-
-If the file is stack-originated:
-1. Create an issue on the stack repo using `--repo` to target upstream:
-   ```bash
-   gh issue create --repo "$STACK_REPO" \
-     --title "fix(scope): description" \
-     --body "Flagged by review bot in downstream PR <link>"
-   ```
-2. Reply to the review comment with a link to the upstream issue
-3. Resolve the thread — the fix should happen upstream
-
-For all other actionable comments, fix them in one batch:
+Fix all actionable comments (downstream-only, or all if on the stack repo) in one batch:
 
 1. Run `/verify` — never commit fixes without verifying first
 2. Commit all fixes in one commit using a conventional message:
