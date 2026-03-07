@@ -466,31 +466,37 @@ describe('Core unit tests:', () => {
   });
 
   describe('Express service', () => {
-    it('should set trust proxy when config.trust.proxy is true', () => {
-      const originalTrust = config.trust;
-      config.trust = { proxy: true };
-      const mockApp = { locals: {}, use: jest.fn(), set: jest.fn() };
-      expressService.initMiddleware(mockApp);
-      expect(mockApp.set).toHaveBeenCalledWith('trust proxy', true);
-      config.trust = originalTrust;
-    });
+    describe('trust proxy', () => {
+      let originalTrust;
 
-    it('should not set trust proxy when config.trust.proxy is false', () => {
-      const originalTrust = config.trust;
-      config.trust = { proxy: false };
-      const mockApp = { locals: {}, use: jest.fn(), set: jest.fn() };
-      expressService.initMiddleware(mockApp);
-      expect(mockApp.set).not.toHaveBeenCalledWith('trust proxy', true);
-      config.trust = originalTrust;
-    });
+      beforeEach(() => {
+        originalTrust = config.trust;
+      });
 
-    it('should not set trust proxy when config.trust is undefined', () => {
-      const originalTrust = config.trust;
-      delete config.trust;
-      const mockApp = { locals: {}, use: jest.fn(), set: jest.fn() };
-      expressService.initMiddleware(mockApp);
-      expect(mockApp.set).not.toHaveBeenCalledWith('trust proxy', true);
-      config.trust = originalTrust;
+      afterEach(() => {
+        config.trust = originalTrust;
+      });
+
+      it('should set trust proxy when config.trust.proxy is true', () => {
+        config.trust = { proxy: true };
+        const mockApp = { locals: {}, use: jest.fn(), set: jest.fn() };
+        expressService.initMiddleware(mockApp);
+        expect(mockApp.set).toHaveBeenCalledWith('trust proxy', true);
+      });
+
+      it('should not set trust proxy when config.trust.proxy is false', () => {
+        config.trust = { proxy: false };
+        const mockApp = { locals: {}, use: jest.fn(), set: jest.fn() };
+        expressService.initMiddleware(mockApp);
+        expect(mockApp.set).not.toHaveBeenCalledWith('trust proxy', true);
+      });
+
+      it('should not set trust proxy when config.trust is undefined', () => {
+        delete config.trust;
+        const mockApp = { locals: {}, use: jest.fn(), set: jest.fn() };
+        expressService.initMiddleware(mockApp);
+        expect(mockApp.set).not.toHaveBeenCalledWith('trust proxy', true);
+      });
     });
 
     it('should set app.locals.secure when ssl is enabled', () => {
