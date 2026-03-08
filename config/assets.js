@@ -5,6 +5,6 @@ export default {
   mongooseModels: 'modules/*/models/*.mongoose.js',
   sequelizeModels: 'modules/*/models/*.sequelize.js',
   routes: 'modules/*/routes/*.js',
-  config: 'modules/*/config/*.js',
+  config: 'modules/*/config/*.config.js',
   policies: 'modules/*/policies/*.js',
 };

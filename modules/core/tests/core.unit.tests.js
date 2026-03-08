@@ -65,7 +65,7 @@ describe('Core unit tests:', () => {
 
     it('config should load production configuration in production env', async () => {
       try {
-        const defaultConfig = (await import(path.join(process.cwd(), './config', 'defaults', 'production.js'))) || {};
+        const defaultConfig = (await import(path.join(process.cwd(), './config', 'defaults', 'config.production.js'))) || {};
         expect(defaultConfig.default.app.title.split(' - ')[1]).toBe('Production Environment');
       } catch (err) {
         console.log(err);

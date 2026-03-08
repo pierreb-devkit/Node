@@ -8,25 +8,77 @@ import path from 'path';
 import objectPath from 'object-path';
 import assets from './assets.js';
 import configHelper from '../lib/helpers/config.js';
-/**
- * Initialize global configuration
- */
 
-const initGlobalConfig = async () => {
-  // Get the current config
-  const _path = path.join(process.cwd(), './config', 'defaults', `${process.env.NODE_ENV || 'development'}.js`);
-  let defaultConfig;
-  if (fs.existsSync(`${_path}`)) defaultConfig = await import(_path);
-  else {
-    console.error(chalk.red(`+ Error: No configuration file found for "${process.env.NODE_ENV}" environment using development instead. (${_path})`));
-    defaultConfig = await import(path.join(process.cwd(), './config', 'defaults', 'development.js'));
+/**
+ * Load and merge a single config file by path.
+ * @param {string} filePath - absolute path to the config module
+ * @returns {Promise<object>} the default export of the config module, or empty object on failure
+ */
+const loadConfigFile = async (filePath) => {
+  try {
+    const mod = await import(filePath);
+    return mod.default || {};
+  } catch {
+    return {};
   }
-  // Get the config from  process.env.DEVKIT_NODE_*
+};
+
+/**
+ * Glob module-level config files and merge them into a single object.
+ * @param {string} pattern - glob pattern for module config files
+ * @returns {Promise<object>} merged config from all matched files
+ */
+const loadModuleConfigs = async (pattern) => {
+  const files = await configHelper.getGlobbedPaths(pattern);
+  let merged = {};
+  for (const file of files) {
+    const abs = path.resolve(file);
+    const mod = await loadConfigFile(abs);
+    merged = _.merge(merged, mod);
+  }
+  return merged;
+};
+
+/**
+ * Initialize global configuration by layering module defaults, global defaults,
+ * environment overrides, and DEVKIT_NODE_* env vars.
+ * @returns {Promise<object>} fully merged configuration object
+ */
+const initGlobalConfig = async () => {
+  const env = process.env.NODE_ENV || 'development';
+
+  // Layer 1: module development defaults (base layer)
+  let config = await loadModuleConfigs('modules/*/config/config.development.js');
+
+  // Layer 2: global development defaults
+  const globalDevPath = path.join(process.cwd(), 'config', 'defaults', 'config.development.js');
+  if (fs.existsSync(globalDevPath)) {
+    const globalDev = await loadConfigFile(globalDevPath);
+    config = _.merge(config, globalDev);
+  }
+
+  // Layer 3 & 4: environment overrides (only if not development)
+  if (env !== 'development') {
+    // Layer 3: module env overrides
+    const moduleEnvConfigs = await loadModuleConfigs(`modules/*/config/config.${env}.js`);
+    config = _.merge(config, moduleEnvConfigs);
+
+    // Layer 4: global env override
+    const globalEnvPath = path.join(process.cwd(), 'config', 'defaults', `config.${env}.js`);
+    if (fs.existsSync(globalEnvPath)) {
+      const globalEnv = await loadConfigFile(globalEnvPath);
+      config = _.merge(config, globalEnv);
+    } else {
+      console.error(chalk.red(`+ Error: No configuration file found for "${env}" environment using development instead. (${globalEnvPath})`));
+    }
+  }
+
+  // Layer 5: DEVKIT_NODE_* env vars (final override)
   let environmentVars = _.mapKeys(
     _.pickBy(process.env, (_value, key) => key.startsWith('DEVKIT_NODE_')),
     (_v, k) => k.split('_').slice(2).join('.'),
   );
-  // convert string array from sys  to real array
+  // convert string array from sys to real array
   environmentVars = _.mapValues(environmentVars, (v) => (v[0] === '[' && v[v.length - 1] === ']' ? v.replace(/'/g, '').slice(1, -1).split(',') : v));
   const environmentConfigVars = {};
   _.forEach(environmentVars, (v, k) => {
@@ -35,8 +87,8 @@ const initGlobalConfig = async () => {
     if (value === 'false') value = false;
     return objectPath.set(environmentConfigVars, k, value);
   });
-  // Merge config files
-  const config = _.merge(defaultConfig.default, environmentConfigVars);
+  config = _.merge(config, environmentConfigVars);
+
   // read package.json for project information
   const packageJSON = JSON.parse(readFileSync(path.resolve('./package.json')));
   _.merge(config, { package: packageJSON });

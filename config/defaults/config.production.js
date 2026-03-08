@@ -1,8 +1,4 @@
-import _ from 'lodash';
-
-const config = await import('./development.js');
-
-export default _.merge(config.default, {
+const config = {
   app: {
     title: 'Devkit Node - Production Environment',
   },
@@ -38,4 +34,6 @@ export default _.merge(config.default, {
     pattern:
       ':id :email :remote-addr - :remote-user [:date[clf]] ":method :url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent"', // only for custom format
   },
-});
+};
+
+export default config;
