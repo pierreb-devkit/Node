@@ -50,7 +50,37 @@ git merge --continue
 
 ### 3. `/verify`
 
-All failures here are regressions from conflict resolution. Fix before Phase 2.
+Failures typically indicate regressions from conflict resolution — fix these before Phase 2. However, if failures originate from stack module code itself (see 3bis), report them upstream.
+
+### 3bis. Report stack issues
+
+If `/verify` failures originate from **stack module code** (`home`, `auth`, `users`, `tasks`, `uploads`) or **stack core** (`lib/`, `config/defaults/`) and not from conflict resolution mistakes, open a GitHub issue on `pierreb-devkit/Node`.
+
+**How to determine the failure origin:**
+- **Stack code failure:** error occurs in unmodified stack module files (resolved with `--theirs`)
+- **Conflict resolution mistake:** error occurs in files you manually merged or in downstream-only modules
+
+**Create the issue:**
+
+```bash
+gh issue create \
+  --repo pierreb-devkit/Node \
+  --title "fix(scope): <short description>" \
+  --body "$(cat <<'BODY'
+## Problem
+<failing command output>
+
+## Affected file(s)
+<list>
+
+## Steps to reproduce
+<steps>
+BODY
+)" \
+  --label "Fix"
+```
+
+Proceed to Phase 2 and track the upstream fix separately — do not block downstream alignment on it.
 
 ---
 
