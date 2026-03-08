@@ -118,6 +118,8 @@ Configuration is split between a **global** file and **per-module** files, then 
 
 ### File layout
 
+Only `config.*.js` files participate in the merge. Other config files in module directories (e.g. policy, seed) are loaded separately by their own init logic.
+
 ```text
 config/defaults/
   config.development.js          ← global defaults (app, db, host, port, log, seed, …)
@@ -135,8 +137,8 @@ modules/<name>/config/
 |-------|--------|---------|
 | 1 | Module development defaults | `modules/*/config/config.development.js` |
 | 2 | Global development defaults | `config/defaults/config.development.js` |
-| 3 | Module env overrides | `modules/*/config/config.production.js` |
-| 4 | Global env overrides | `config/defaults/config.production.js` |
+| 3 | Module env overrides | `modules/*/config/config.<env>.js` |
+| 4 | Global env overrides | `config/defaults/config.<env>.js` |
 | 5 | `DEVKIT_NODE_*` env vars | `DEVKIT_NODE_app_title='my app'` |
 
 Layers 3–4 are only applied when `NODE_ENV` is not `development`.
