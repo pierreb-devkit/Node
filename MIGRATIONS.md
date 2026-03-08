@@ -18,7 +18,7 @@ The monolithic `config/defaults/development.js` has been split into per-module c
 
 ### New file layout
 
-```
+```text
 config/defaults/
   config.development.js          ← core/infra only (app, swagger, api, db, log, csrf, etc.)
   config.production.js           ← production overrides (standalone)

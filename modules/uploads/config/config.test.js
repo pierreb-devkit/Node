@@ -2,7 +2,7 @@ const config = {
   uploads: {
     avatar: {
       limits: {
-        fileSize: 0.05 * 1024 * 1024, // Max file size in bytes (~50 KB)
+        fileSize: Math.floor(0.05 * 1024 * 1024), // Max file size in bytes (~52 KB)
       },
     },
   },

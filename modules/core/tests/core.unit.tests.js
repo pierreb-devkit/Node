@@ -193,7 +193,7 @@ describe('Core unit tests:', () => {
       const userAvatarConfig = config.uploads.avatar;
       expect(userAvatarConfig).toBeDefined();
       expect(userAvatarConfig.formats).toBeInstanceOf(Array);
-      expect(userAvatarConfig.limits.fileSize).toBe(52428.8);
+      expect(userAvatarConfig.limits.fileSize).toBe(52428);
     });
   });
 

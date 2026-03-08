@@ -73,8 +73,6 @@ const initGlobalConfig = async () => {
     if (fs.existsSync(globalEnvPath)) {
       const globalEnv = await loadConfigFile(globalEnvPath);
       config = _.merge(config, globalEnv);
-    } else {
-      console.error(chalk.red(`+ Error: No configuration file found for "${env}" environment using development instead. (${globalEnvPath})`));
     }
   }
 
