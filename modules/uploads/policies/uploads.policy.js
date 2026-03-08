@@ -9,7 +9,7 @@ import policy from '../../../lib/middlewares/policy.js';
 const invokeRolesPolicies = () => {
   policy.registerRules([
     { roles: ['user', 'admin'], actions: ['read', 'delete'], subject: '/api/uploads/:uploadName' },
-    { roles: ['user', 'admin'], actions: ['read'], subject: '/api/uploads/images/:imageName' },
+    { roles: ['guest', 'user', 'admin'], actions: ['read'], subject: '/api/uploads/images/:imageName' },
   ]);
 };
 
