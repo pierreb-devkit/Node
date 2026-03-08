@@ -4,6 +4,71 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Configuration split by module (2026-03-07)
+
+The monolithic `config/defaults/development.js` has been split into per-module config files with a homogeneous naming convention.
+
+### What changed
+
+- **Renamed**: `development.js` → `config.development.js`, `production.js` → `config.production.js`, `test.js` → `config.test.js`
+- **Extracted**: module-specific config into `modules/<name>/config/config.development.js`
+- **Updated**: `config/index.js` now globs module configs and merges them in layers
+- **Standalone env files**: `config.production.js` and `config.test.js` no longer import `development.js` — they export only their overrides
+- **Assets glob**: `config/assets.js` changed from `modules/*/config/*.js` to `modules/*/config/*.config.js` (excludes data config files, still matches init modules like `users.config.js`)
+
+### New file layout
+
+```text
+config/defaults/
+  config.development.js          ← core/infra only (app, swagger, api, db, log, csrf, etc.)
+  config.production.js           ← production overrides (standalone)
+  config.test.js                 ← test overrides (standalone)
+
+modules/auth/config/
+  config.development.js          ← sign, jwt, mailer, oAuth, zxcvbn, whitelists, seedDB
+
+modules/home/config/
+  config.development.js          ← repos
+
+modules/uploads/config/
+  config.development.js          ← uploads
+  config.test.js                 ← uploads test override (reduced fileSize)
+```
+
+### Merge order (priority ascending)
+
+1. Module defaults — `modules/*/config/config.development.js`
+2. Global defaults — `config/defaults/config.development.js`
+3. Module env overrides — `modules/*/config/config.${NODE_ENV}.js` (if NODE_ENV ≠ development)
+4. Global env overrides — `config/defaults/config.${NODE_ENV}.js` (if NODE_ENV ≠ development)
+5. `DEVKIT_NODE_*` environment variables
+
+### Custom environments
+
+Create `NODE_ENV=staging` by adding any of:
+- `config/defaults/config.staging.js` (global overrides)
+- `modules/auth/config/config.staging.js` (module-level overrides)
+
+No file is required — only modules that define a `config.<env>.js` will be overridden.
+
+### Steps for downstream projects
+
+1. If you have **customized** `config/defaults/development.js`:
+   - Move `sign`, `jwt`, `mailer`, `oAuth`, `zxcvbn`, `whitelists`, `seedDB` keys → `modules/auth/config/config.development.js`
+   - Move `repos` keys → `modules/home/config/config.development.js`
+   - Move `uploads` keys → `modules/uploads/config/config.development.js`
+   - Keep only core/infra keys in the global file
+   - Rename the file to `config.development.js`
+2. If you have **customized** `production.js` or `test.js`:
+   - Rename to `config.production.js` / `config.test.js`
+   - Remove the `import ... from './development.js'` and `merge()` wrapper — just export the override object directly
+   - If your test overrides contain module-specific keys (e.g. `uploads`), move them to `modules/<name>/config/config.test.js`
+3. If you have **custom init modules** matching `modules/*/config/*.js` that are NOT named `*.config.js`, rename them to follow the `*.config.js` convention (the assets glob has changed).
+4. If you have **not customized** any config files, the merge will apply cleanly.
+5. Run `npm run lint && npm test` to confirm everything works.
+
+---
+
 ## `acl` → `@casl/ability` (2026-02-20)
 
 `acl@0.4.11` (unmaintained since 2018) has been replaced by `@casl/ability`.
