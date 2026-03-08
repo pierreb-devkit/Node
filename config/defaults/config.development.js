@@ -85,6 +85,9 @@ const config = {
     origin: ['http://localhost:8080'],
     credentials: true,
   },
+  trust: {
+    proxy: false,
+  },
   domain: '',
   cookie: {
     secure: false, // false in dev (HTTP localhost)

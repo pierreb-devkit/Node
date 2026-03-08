@@ -466,6 +466,39 @@ describe('Core unit tests:', () => {
   });
 
   describe('Express service', () => {
+    describe('trust proxy', () => {
+      let originalTrust;
+
+      beforeEach(() => {
+        originalTrust = config.trust;
+      });
+
+      afterEach(() => {
+        config.trust = originalTrust;
+      });
+
+      it('should set trust proxy when config.trust.proxy is true', () => {
+        config.trust = { proxy: true };
+        const mockApp = { locals: {}, use: jest.fn(), set: jest.fn() };
+        expressService.initMiddleware(mockApp);
+        expect(mockApp.set).toHaveBeenCalledWith('trust proxy', true);
+      });
+
+      it('should not set trust proxy when config.trust.proxy is false', () => {
+        config.trust = { proxy: false };
+        const mockApp = { locals: {}, use: jest.fn(), set: jest.fn() };
+        expressService.initMiddleware(mockApp);
+        expect(mockApp.set).not.toHaveBeenCalledWith('trust proxy', true);
+      });
+
+      it('should not set trust proxy when config.trust is undefined', () => {
+        delete config.trust;
+        const mockApp = { locals: {}, use: jest.fn(), set: jest.fn() };
+        expressService.initMiddleware(mockApp);
+        expect(mockApp.set).not.toHaveBeenCalledWith('trust proxy', true);
+      });
+    });
+
     it('should set app.locals.secure when ssl is enabled', () => {
       const originalSecure = config.secure;
       config.secure = { ssl: true };
