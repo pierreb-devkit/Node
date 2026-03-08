@@ -17,10 +17,10 @@ export default (app) => {
     .get(uploads.get)
     .delete(policy.isOwner, uploads.remove); // delete
 
-  // classic crud
+  // public image access (guest-readable, no JWT required)
   app
     .route('/api/uploads/images/:imageName')
-    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
+    .all(policy.isAllowed)
     .get(uploads.getSharp);
 
   // Finish by binding the task middleware
