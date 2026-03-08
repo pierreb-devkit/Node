@@ -67,10 +67,10 @@ const deleteMany = (filter) => {
 
 /**
  * @function stats
- * @description Data access operation to get the count of documents in the tasks collection.
- * @returns {Object} The count of documents.
+ * @description Data access operation to get the estimated count of documents in the tasks collection.
+ * @returns {Promise<number>} estimated document count
  */
-const stats = () => Task.countDocuments();
+const stats = () => Task.estimatedDocumentCount().exec();
 
 /**
  * @function push
