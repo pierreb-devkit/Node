@@ -6,20 +6,25 @@ import chalk from 'chalk';
 import fs, { readFileSync } from 'fs';
 import path from 'path';
 import objectPath from 'object-path';
+import { pathToFileURL } from 'url';
 import assets from './assets.js';
 import configHelper from '../lib/helpers/config.js';
 
 /**
- * Load and merge a single config file by path.
+ * Load a single config file by path.
  * @param {string} filePath - absolute path to the config module
- * @returns {Promise<object>} the default export of the config module, or empty object on failure
+ * @returns {Promise<object>} the default export of the config module, or empty object if missing
  */
 const loadConfigFile = async (filePath) => {
   try {
-    const mod = await import(filePath);
+    const mod = await import(pathToFileURL(filePath).href);
     return mod.default || {};
-  } catch {
-    return {};
+  } catch (err) {
+    if (err && (err.code === 'ERR_MODULE_NOT_FOUND' || err.code === 'MODULE_NOT_FOUND' || err.code === 'ENOENT')) {
+      return {};
+    }
+    console.error(chalk.red(`+ Error loading config file ${filePath}: ${err.message || err}`));
+    throw err;
   }
 };
 
