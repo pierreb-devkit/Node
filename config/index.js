@@ -11,6 +11,32 @@ import assets from './assets.js';
 import configHelper from '../lib/helpers/config.js';
 
 /**
+ * Deep merge two objects, replacing arrays instead of merging by index.
+ * @param {Object} target - Base object
+ * @param {Object} source - Override object
+ * @returns {Object} Merged result (new object, inputs are not mutated)
+ */
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+const deepMerge = (target, source) => {
+  const result = { ...target };
+  for (const key of Object.keys(source)) {
+    if (UNSAFE_KEYS.has(key)) continue;
+    const srcVal = source[key];
+    if (srcVal === undefined) continue;
+    const tgtVal = result[key];
+    if (Array.isArray(srcVal)) {
+      result[key] = [...srcVal];
+    } else if (srcVal && typeof srcVal === 'object' && !Array.isArray(srcVal) && tgtVal && typeof tgtVal === 'object' && !Array.isArray(tgtVal)) {
+      result[key] = deepMerge(tgtVal, srcVal);
+    } else {
+      result[key] = srcVal;
+    }
+  }
+  return result;
+};
+
+/**
  * Load a single config file by path.
  * @param {string} filePath - absolute path to the config module
  * @returns {Promise<object>} the default export of the config module, or empty object if missing
@@ -39,7 +65,7 @@ const loadModuleConfigs = async (pattern) => {
   for (const file of files) {
     const abs = path.resolve(file);
     const mod = await loadConfigFile(abs);
-    merged = _.merge(merged, mod);
+    merged = deepMerge(merged, mod);
   }
   return merged;
 };
@@ -59,20 +85,20 @@ const initGlobalConfig = async () => {
   const globalDevPath = path.join(process.cwd(), 'config', 'defaults', 'config.development.js');
   if (fs.existsSync(globalDevPath)) {
     const globalDev = await loadConfigFile(globalDevPath);
-    config = _.merge(config, globalDev);
+    config = deepMerge(config, globalDev);
   }
 
   // Layer 3 & 4: environment overrides (only if not development)
   if (env !== 'development') {
     // Layer 3: module env overrides
     const moduleEnvConfigs = await loadModuleConfigs(`modules/*/config/config.${env}.js`);
-    config = _.merge(config, moduleEnvConfigs);
+    config = deepMerge(config, moduleEnvConfigs);
 
     // Layer 4: global env override
     const globalEnvPath = path.join(process.cwd(), 'config', 'defaults', `config.${env}.js`);
     if (fs.existsSync(globalEnvPath)) {
       const globalEnv = await loadConfigFile(globalEnvPath);
-      config = _.merge(config, globalEnv);
+      config = deepMerge(config, globalEnv);
     }
   }
 
@@ -90,13 +116,13 @@ const initGlobalConfig = async () => {
     if (value === 'false') value = false;
     return objectPath.set(environmentConfigVars, k, value);
   });
-  config = _.merge(config, environmentConfigVars);
+  config = deepMerge(config, environmentConfigVars);
 
   // read package.json for project information
   const packageJSON = JSON.parse(readFileSync(path.resolve('./package.json')));
-  _.merge(config, { package: packageJSON });
+  config = deepMerge(config, { package: packageJSON });
   // Initialize global globbed files
-  _.merge(config, { files: await configHelper.initGlobalConfigFiles(assets) });
+  config = deepMerge(config, { files: await configHelper.initGlobalConfigFiles(assets) });
   // Init Secure SSL if can be used
   configHelper.initSecureMode(config);
   // Print a warning if config.domain is not set
@@ -109,4 +135,6 @@ const initGlobalConfig = async () => {
   return conf;
 };
 
-export default await initGlobalConfig();
+const config = await initGlobalConfig();
+export { deepMerge };
+export default config;

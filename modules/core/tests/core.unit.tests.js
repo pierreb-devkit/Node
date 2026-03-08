@@ -6,7 +6,7 @@ import path from 'path';
 import { jest } from '@jest/globals';
 
 import assets from '../../../config/assets.js';
-import config from '../../../config/index.js';
+import config, { deepMerge } from '../../../config/index.js';
 import configHelper from '../../../lib/helpers/config.js';
 import logger from '../../../lib/services/logger.js';
 import mongooseService from '../../../lib/services/mongoose.js';
@@ -667,6 +667,46 @@ describe('Core unit tests:', () => {
     it('should return the password when checkPassword is called with a strong password', () => {
       const strong = 'C0rr3ct!H0rs3B@tt3ry';
       expect(AuthService.checkPassword(strong)).toBe(strong);
+    });
+  });
+
+  describe('deepMerge', () => {
+    it('should replace arrays instead of merging by index', () => {
+      const target = { items: ['a', 'b', 'c', 'd'] };
+      const source = { items: ['x', 'y'] };
+      const result = deepMerge(target, source);
+      expect(result.items).toEqual(['x', 'y']);
+    });
+
+    it('should deep merge nested objects', () => {
+      const target = { a: { b: 1, c: 2 } };
+      const source = { a: { c: 3, d: 4 } };
+      const result = deepMerge(target, source);
+      expect(result.a).toEqual({ b: 1, c: 3, d: 4 });
+    });
+
+    it('should skip undefined values', () => {
+      const target = { a: 1, b: 2 };
+      const source = { a: undefined, b: 3 };
+      const result = deepMerge(target, source);
+      expect(result.a).toBe(1);
+      expect(result.b).toBe(3);
+    });
+
+    it('should skip unsafe keys', () => {
+      const target = { safe: 1 };
+      const source = { safe: 2 };
+      Object.defineProperty(source, '__proto__', { value: { polluted: true }, enumerable: true });
+      const result = deepMerge(target, source);
+      expect(result.polluted).toBeUndefined();
+      expect(result.safe).toBe(2);
+    });
+
+    it('should not mutate source arrays', () => {
+      const sourceArr = ['a', 'b'];
+      const result = deepMerge({ items: ['x'] }, { items: sourceArr });
+      result.items.push('c');
+      expect(sourceArr).toEqual(['a', 'b']);
     });
   });
 });
