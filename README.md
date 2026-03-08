@@ -114,9 +114,42 @@ GITHUB_TOKEN=xxx npm run release:auto             # Semantic release (CI)
 
 ## :wrench: Configuration
 
-Configuration files live in `config/defaults/`. The `development.js` file is the base; other files in that folder override it.
+Configuration is split between a **global** file and **per-module** files, then merged at startup into a single config object.
 
-Environment variables prefixed with `DEVKIT_NODE_` are merged on top. The variable path maps directly to the config object key:
+### File layout
+
+Only `config.*.js` files participate in the merge. Other config files in module directories (e.g. policy, seed) are loaded separately by their own init logic.
+
+```text
+config/defaults/
+  config.development.js          ← global defaults (app, db, host, port, log, seed, …)
+  config.production.js           ← production overrides
+  config.test.js                 ← test overrides
+
+modules/<name>/config/
+  config.development.js          ← module defaults (e.g. uploads, auth, tasks)
+  config.<env>.js                ← module env overrides (optional)
+```
+
+### Merge order (priority ascending)
+
+| Layer | Source | Example |
+|-------|--------|---------|
+| 1 | Module development defaults | `modules/*/config/config.development.js` |
+| 2 | Global development defaults | `config/defaults/config.development.js` |
+| 3 | Module env overrides | `modules/*/config/config.<env>.js` |
+| 4 | Global env overrides | `config/defaults/config.<env>.js` |
+| 5 | `DEVKIT_NODE_*` env vars | `DEVKIT_NODE_app_title='my app'` |
+
+Layers 3–4 are only applied when `NODE_ENV` is not `development`.
+
+### Merge semantics
+
+- **Objects** are merged recursively — keys from higher layers override lower layers, unmentioned keys are preserved.
+- **Arrays are replaced entirely** — a higher-priority layer defining a 2-item array replaces a 4-item array from a lower layer. Items are never merged by index.
+- **`undefined` values** are skipped — they do not overwrite existing keys.
+
+### Environment variables
 
 ```bash
 DEVKIT_NODE_app_title='my app'               # sets config.app.title
