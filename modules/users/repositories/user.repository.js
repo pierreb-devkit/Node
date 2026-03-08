@@ -81,9 +81,9 @@ const remove = async (user) => {
 
 /**
  * @desc Function to get collection stats
- * @returns {Promise<number>} estimated document count
+ * @return {Promise<number>} estimated document count
  */
-const stats = () => User.estimatedDocumentCount();
+const stats = () => User.estimatedDocumentCount().exec();
 
 /**
  * @desc Function to push list of users in db
