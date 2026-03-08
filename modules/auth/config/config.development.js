@@ -3,7 +3,7 @@ const config = {
     in: true, // disable signin
     up: true, // disable signup
   },
-  // jwt is for token authentification
+  // jwt is for token authentication
   jwt: {
     secret: 'WaosSecretKeyExampleToChnageAbsolutely', // secret for hash
     expiresIn: 7 * 24 * 60 * 60, // token expire in x sec
