@@ -60,11 +60,27 @@ If `/verify` failures originate from **stack module code** (`home`, `auth`, `use
 - **Stack code failure:** error occurs in unmodified stack module files (resolved with `--theirs`)
 - **Conflict resolution mistake:** error occurs in files you manually merged or in downstream-only modules
 
-**Issue format:**
-- Title: short description of the failure
-- Body: failing command output, affected file(s), and steps to reproduce
+**Create the issue:**
 
-This ensures upstream regressions are tracked and fixed at the source.
+```bash
+gh issue create \
+  --repo pierreb-devkit/Node \
+  --title "fix(scope): <short description>" \
+  --body "$(cat <<'BODY'
+## Problem
+<failing command output>
+
+## Affected file(s)
+<list>
+
+## Steps to reproduce
+<steps>
+BODY
+)" \
+  --label "Fix"
+```
+
+Proceed to Phase 2 and track the upstream fix separately — do not block downstream alignment on it.
 
 ---
 
