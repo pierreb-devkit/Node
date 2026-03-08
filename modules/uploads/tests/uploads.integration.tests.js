@@ -284,6 +284,45 @@ describe('Uploads integration tests:', () => {
     });
   });
 
+  describe('Public (unauthenticated)', () => {
+    let authAgent;
+    let publicAgent;
+    let publicUser;
+    let publicUpload;
+
+    beforeAll(async () => {
+      const init = await bootstrap();
+      authAgent = request.agent(init.app);
+      publicAgent = request(init.app);
+
+      const creds = { email: 'upload-public@test.com', password: 'W@os.jsI$Aw3$0m3' };
+      const result = await authAgent.post('/api/auth/signup').send({ firstName: 'Public', lastName: 'Test', ...creds, provider: 'local' }).expect(200);
+      publicUser = result.body.user;
+
+      const uploadResult = await authAgent.post('/api/users/avatar').attach('img', './modules/users/tests/img/default.jpeg').expect(200);
+      publicUpload = uploadResult.body.data.avatar;
+    });
+
+    test('should allow unauthenticated access to images', async () => {
+      const result = await publicAgent.get(`/api/uploads/images/${publicUpload}`).expect(200);
+      expect(result.body).toBeInstanceOf(Buffer);
+    });
+
+    test('should deny unauthenticated access to raw uploads', async () => {
+      await publicAgent.get(`/api/uploads/${publicUpload}`).expect(401);
+    });
+
+    afterAll(async () => {
+      try {
+        await authAgent.delete(`/api/uploads/${publicUpload}`);
+        const UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
+        await UserService.remove(publicUser);
+      } catch (err) {
+        console.log(err);
+      }
+    });
+  });
+
   describe('Data', () => {
     beforeAll(async () => {
       // user credentials
