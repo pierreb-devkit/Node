@@ -4,6 +4,23 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Downstream config naming convention (2026-03-09)
+
+### Config naming convention
+
+Downstream projects must name their config files `config.{projectname}.js` (not just `{projectname}.js`). The loader only discovers files matching `config.${NODE_ENV}.js` — files without the `config.` prefix are silently ignored.
+
+A template file `config/defaults/config.myproject.js` is now included in the stack. Copy and rename it for your project.
+
+The loader now warns when `NODE_ENV` is set to a non-standard value and no matching config files are found.
+
+### Steps for downstream projects
+
+1. Rename any `{projectname}.js` config files to `config.{projectname}.js` (both in `config/defaults/` and `modules/*/config/`)
+2. Run `npm start` and verify the config loads correctly
+
+---
+
 ## Configuration split by module (2026-03-07)
 
 The monolithic `config/defaults/development.js` has been split into per-module config files with a homogeneous naming convention.
