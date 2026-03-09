@@ -208,10 +208,10 @@ const oauthCallback = async (req, res, next) => {
 };
 
 /**
- * @desc Endpoint to expose public auth feature flags
+ * @desc Endpoint to expose public auth sign-in/up feature flags
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {Object} Public auth configuration (sign and oAuth flags only)
+ * @returns {void} Sends the public auth configuration (sign flags only) in the HTTP response
  */
 const getConfig = (_req, res) => {
   responses.success(res, 'Auth config')({
