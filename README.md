@@ -156,6 +156,20 @@ DEVKIT_NODE_app_title='my app'               # sets config.app.title
 DEVKIT_NODE_db_uri='mongodb://...'           # sets config.db.uri
 ```
 
+### Downstream projects
+
+When running a downstream project that clones this stack, set `NODE_ENV` to the project name and create matching config files:
+
+```text
+config/defaults/
+  config.myproject.js            ← global project overrides (optional)
+
+modules/<name>/config/
+  config.myproject.js            ← module project overrides (optional)
+```
+
+The loader discovers files named `config.${NODE_ENV}.js` — files without the `config.` prefix are ignored.
+
 ## :whale: Docker
 
 ```bash
