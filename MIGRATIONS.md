@@ -15,6 +15,8 @@ The monolithic `config/defaults/development.js` has been split into per-module c
 - **Updated**: `config/index.js` now globs module configs and merges them in layers
 - **Standalone env files**: `config.production.js` and `config.test.js` no longer import `development.js` — they export only their overrides
 - **Assets glob**: `config/assets.js` changed from `modules/*/config/*.js` to `modules/*/config/*.config.js` (excludes data config files, still matches init modules like `users.config.js`)
+- **Template**: `config/defaults/config.myproject.js` added as a starting point for downstream projects
+- **Startup warning**: the loader now warns when `NODE_ENV` is non-standard and no matching config files are found
 
 ### New file layout
 
@@ -51,6 +53,10 @@ Create `NODE_ENV=staging` by adding any of:
 
 No file is required — only modules that define a `config.<env>.js` will be overridden.
 
+### Downstream project config files
+
+Files must be named `config.{projectname}.js` — files without the `config.` prefix are silently ignored. A template is provided at `config/defaults/config.myproject.js`.
+
 ### Steps for downstream projects
 
 1. If you have **customized** `config/defaults/development.js`:
@@ -64,8 +70,9 @@ No file is required — only modules that define a `config.<env>.js` will be ove
    - Remove the `import ... from './development.js'` and `merge()` wrapper — just export the override object directly
    - If your test overrides contain module-specific keys (e.g. `uploads`), move them to `modules/<name>/config/config.test.js`
 3. If you have **custom init modules** matching `modules/*/config/*.js` that are NOT named `*.config.js`, rename them to follow the `*.config.js` convention (the assets glob has changed).
-4. If you have **not customized** any config files, the merge will apply cleanly.
-5. Run `npm run lint && npm test` to confirm everything works.
+4. Rename any `{projectname}.js` config files to `config.{projectname}.js` (both in `config/defaults/` and `modules/*/config/`)
+5. If you have **not customized** any config files, the merge will apply cleanly.
+6. Run `npm run lint && npm test` to confirm everything works.
 
 ---
 

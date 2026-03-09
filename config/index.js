@@ -10,6 +10,8 @@ import { pathToFileURL } from 'url';
 import assets from './assets.js';
 import configHelper from '../lib/helpers/config.js';
 
+const STANDARD_ENVS = new Set(['development', 'production', 'test']);
+
 /**
  * Deep merge two objects, replacing arrays instead of merging by index.
  * @param {Object} target - Base object
@@ -91,14 +93,24 @@ const initGlobalConfig = async () => {
   // Layer 3 & 4: environment overrides (only if not development)
   if (env !== 'development') {
     // Layer 3: module env overrides
-    const moduleEnvConfigs = await loadModuleConfigs(`modules/*/config/config.${env}.js`);
+    const moduleEnvPattern = `modules/*/config/config.${env}.js`;
+    const moduleEnvConfigs = await loadModuleConfigs(moduleEnvPattern);
+    const hasModuleEnvConfigs = (await configHelper.getGlobbedPaths(moduleEnvPattern)).length > 0;
     config = deepMerge(config, moduleEnvConfigs);
 
     // Layer 4: global env override
     const globalEnvPath = path.join(process.cwd(), 'config', 'defaults', `config.${env}.js`);
-    if (fs.existsSync(globalEnvPath)) {
+    const hasGlobalEnvConfig = fs.existsSync(globalEnvPath);
+    if (hasGlobalEnvConfig) {
       const globalEnv = await loadConfigFile(globalEnvPath);
       config = deepMerge(config, globalEnv);
+    }
+
+    // Warn when a non-standard NODE_ENV has no matching config files
+    if (!STANDARD_ENVS.has(env) && !hasModuleEnvConfigs && !hasGlobalEnvConfig) {
+      console.warn(
+        chalk.yellow(`+ Warning: NODE_ENV="${env}" but no config.${env}.js files found — using development defaults. Downstream projects should create config.${env}.js files (see README).`),
+      );
     }
   }
 
