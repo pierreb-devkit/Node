@@ -207,6 +207,21 @@ const oauthCallback = async (req, res, next) => {
   })(req, res, next);
 };
 
+/**
+ * @desc Endpoint to expose public auth feature flags
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Object} Public auth configuration (sign and oAuth flags only)
+ */
+const getConfig = (_req, res) => {
+  responses.success(res, 'Auth config')({
+    sign: {
+      in: !!config.sign.in,
+      up: !!config.sign.up,
+    },
+  });
+};
+
 export default {
   signup,
   signin,
@@ -214,4 +229,5 @@ export default {
   oauthCall,
   oauthCallback,
   checkOAuthUserProfile,
+  getConfig,
 };
