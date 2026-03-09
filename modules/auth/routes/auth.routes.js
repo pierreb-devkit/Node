@@ -13,6 +13,9 @@ import authPassword from '../controllers/auth.password.controller.js';
 export default (app) => {
   const authLimiter = rateLimit(config.rateLimit.auth);
 
+  // Public auth config (no authentication required, rate-limited)
+  app.route('/api/auth/config').get(authLimiter, auth.getConfig);
+
   // Setting up the users password api
   app.route('/api/auth/forgot').post(authLimiter, authPassword.forgot);
   app.route('/api/auth/reset/:token').get(authLimiter, authPassword.validateResetToken);

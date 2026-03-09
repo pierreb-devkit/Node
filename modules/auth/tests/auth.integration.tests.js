@@ -804,6 +804,34 @@ describe('Auth integration tests:', () => {
     });
   });
 
+  describe('Config endpoint', () => {
+    test('should return sign flags reflecting current config', async () => {
+      const result = await agent.get('/api/auth/config').expect(200);
+      expect(result.body.data).toEqual({
+        sign: {
+          in: expect.any(Boolean),
+          up: expect.any(Boolean),
+        },
+      });
+    });
+
+    test('should return false when sign.up is disabled', async () => {
+      const original = config.sign.up;
+      config.sign.up = false;
+      const result = await agent.get('/api/auth/config').expect(200);
+      expect(result.body.data.sign.up).toBe(false);
+      config.sign.up = original;
+    });
+
+    test('should return false when sign.in is disabled', async () => {
+      const original = config.sign.in;
+      config.sign.in = false;
+      const result = await agent.get('/api/auth/config').expect(200);
+      expect(result.body.data.sign.in).toBe(false);
+      config.sign.in = original;
+    });
+  });
+
   // Mongoose disconnect
   afterAll(async () => {
     try {
