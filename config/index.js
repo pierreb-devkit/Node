@@ -93,8 +93,9 @@ const initGlobalConfig = async () => {
   // Layer 3 & 4: environment overrides (only if not development)
   if (env !== 'development') {
     // Layer 3: module env overrides
-    const moduleEnvConfigs = await loadModuleConfigs(`modules/*/config/config.${env}.js`);
-    const hasModuleEnvConfigs = Object.keys(moduleEnvConfigs).length > 0;
+    const moduleEnvPattern = `modules/*/config/config.${env}.js`;
+    const moduleEnvConfigs = await loadModuleConfigs(moduleEnvPattern);
+    const hasModuleEnvConfigs = (await configHelper.getGlobbedPaths(moduleEnvPattern)).length > 0;
     config = deepMerge(config, moduleEnvConfigs);
 
     // Layer 4: global env override
