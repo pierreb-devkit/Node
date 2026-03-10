@@ -43,6 +43,10 @@ const UserMongoose = new Schema(
     failedLoginAttempts: { type: Number, default: 0 },
     lockUntil: { type: Date, default: null },
     // other
+    currentOrganization: {
+      type: Schema.ObjectId,
+      ref: 'Organization',
+    },
     complementary: {}, // put your specific project private data here
   },
   {

@@ -45,6 +45,8 @@ const User = z.object({
   lastLoginAt: z.coerce.date().nullable().optional().default(null),
   failedLoginAttempts: z.number().int().min(0).optional().default(0),
   lockUntil: z.coerce.date().nullable().optional().default(null),
+  // organization context
+  currentOrganization: z.string().trim().optional(),
   // others
   complementary: z.record(z.string(), z.unknown()).nullable().optional(),
 });

@@ -4,6 +4,7 @@
 import passport from 'passport';
 
 import model from '../../../lib/middlewares/model.js';
+import organization from '../../../lib/middlewares/organization.js';
 import policy from '../../../lib/middlewares/policy.js';
 import tasks from '../controllers/tasks.controller.js';
 import tasksSchema from '../models/tasks.schema.js';
@@ -19,12 +20,12 @@ export default (app) => {
   app
     .route('/api/tasks')
     .get(tasks.list) // list
-    .post(passport.authenticate('jwt', { session: false }), policy.isAllowed, model.isValid(tasksSchema.Task), tasks.create); // create
+    .post(passport.authenticate('jwt', { session: false }), organization.resolveOrganization, policy.isAllowed, model.isValid(tasksSchema.Task), tasks.create); // create
 
   // classic crud — ownership is enforced by CASL conditions in isAllowed
   app
     .route('/api/tasks/:taskId')
-    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
+    .all(passport.authenticate('jwt', { session: false }), organization.resolveOrganization, policy.isAllowed)
     .get(tasks.get) // get
     .put(model.isValid(tasksSchema.TaskUpdate), tasks.update) // update
     .delete(tasks.remove); // delete
