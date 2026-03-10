@@ -39,6 +39,7 @@ const config = {
       privateKeyLocation: null,
     },
   },
+  // organizations — controls automatic org creation/joining at signup
   organizations: {
     enabled: true, // false → B2C mode, organizations invisible
     autoCreate: true, // auto-create default org on signup
