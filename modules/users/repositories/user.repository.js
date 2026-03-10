@@ -38,7 +38,7 @@ const list = (search, page, perPage) => {
 const create = (user) => new User(user).save();
 
 /**
- * @desc Function to get a user from db by id or email
+ * @desc Function to get a user from db by id, email, or token
  * @param {Object} user
  * @return {Object} user
  */
@@ -49,6 +49,14 @@ const get = (user) => {
     return User.findOne({
       resetPasswordToken: user.resetPasswordToken,
       resetPasswordExpires: {
+        $gt: Date.now(),
+      },
+    }).exec();
+  }
+  if (user.emailVerificationToken) {
+    return User.findOne({
+      emailVerificationToken: user.emailVerificationToken,
+      emailVerificationExpires: {
         $gt: Date.now(),
       },
     }).exec();

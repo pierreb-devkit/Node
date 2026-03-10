@@ -35,6 +35,10 @@ const User = z.object({
     }),
   resetPasswordToken: z.string().nullable().optional(),
   resetPasswordExpires: z.coerce.date().nullable().optional(),
+  /* Email verification */
+  emailVerified: z.boolean().optional().default(false),
+  emailVerificationToken: z.string().nullable().optional(),
+  emailVerificationExpires: z.coerce.date().nullable().optional(),
   // startup requirement
   terms: z.coerce.date().nullable().optional(),
   // others
