@@ -10,12 +10,12 @@ import uploads from '../controllers/uploads.controller.js';
  * Routes
  */
 export default (app) => {
-  // classic crud
+  // classic crud — ownership is enforced by CASL conditions in isAllowed
   app
     .route('/api/uploads/:uploadName')
     .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
     .get(uploads.get)
-    .delete(policy.isOwner, uploads.remove); // delete
+    .delete(uploads.remove); // delete
 
   // public image access (guest-readable, no JWT required)
   app

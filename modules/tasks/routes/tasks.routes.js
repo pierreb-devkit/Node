@@ -21,13 +21,13 @@ export default (app) => {
     .get(tasks.list) // list
     .post(passport.authenticate('jwt', { session: false }), policy.isAllowed, model.isValid(tasksSchema.Task), tasks.create); // create
 
-  // classic crud
+  // classic crud — ownership is enforced by CASL conditions in isAllowed
   app
     .route('/api/tasks/:taskId')
-    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed) // policy.isOwner (require set in middleWare)
+    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
     .get(tasks.get) // get
-    .put(model.isValid(tasksSchema.TaskUpdate), policy.isOwner, tasks.update) // update
-    .delete(policy.isOwner, tasks.remove); // delete
+    .put(model.isValid(tasksSchema.TaskUpdate), tasks.update) // update
+    .delete(tasks.remove); // delete
 
   // Finish by binding the task middleware
   app.param('taskId', tasks.taskByID);

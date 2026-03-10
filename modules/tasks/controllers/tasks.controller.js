@@ -113,7 +113,6 @@ const taskByID = async (req, res, next, id) => {
     if (!task) responses.error(res, 404, 'Not Found', 'No Task with that identifier has been found')();
     else {
       req.task = task;
-      if (task.user) req.isOwner = task.user._id; // user id used if we proteck road by isOwner policy
       next();
     }
   } catch (err) {
