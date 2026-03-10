@@ -11,6 +11,8 @@ import responses from '../../../lib/helpers/responses.js';
 import errors from '../../../lib/helpers/errors.js';
 import AppError from '../../../lib/helpers/AppError.js';
 import UsersSchema from '../../users/models/user.schema.js';
+import policy from '../../../lib/middlewares/policy.js';
+import serializeAbilities from '../../../lib/helpers/abilities.js';
 
 const tokenCookieOptions = {
   httpOnly: true,
@@ -56,12 +58,15 @@ const signin = async (req, res) => {
   const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
     expiresIn: config.jwt.expiresIn,
   });
+  const ability = await policy.defineAbilityFor(user, null);
+  const abilities = serializeAbilities(ability);
   return res
     .status(200)
     .cookie('TOKEN', token, tokenCookieOptions)
     .json({
       user,
       tokenExpiresIn: Date.now() + config.jwt.expiresIn * 1000,
+      abilities,
       type: 'sucess',
       message: 'Sign in',
     });
@@ -90,10 +95,12 @@ const token = async (req, res) => {
   const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
     expiresIn: config.jwt.expiresIn,
   });
+  const ability = await policy.defineAbilityFor(req.user, null);
+  const abilities = serializeAbilities(ability);
   return res
     .status(200)
     .cookie('TOKEN', token, tokenCookieOptions)
-    .json({ user, tokenExpiresIn: Date.now() + config.jwt.expiresIn * 1000 });
+    .json({ user, tokenExpiresIn: Date.now() + config.jwt.expiresIn * 1000, abilities });
 };
 
 /**
