@@ -14,7 +14,7 @@ import TasksService from '../services/tasks.service.js';
  */
 const list = async (req, res) => {
   try {
-    const tasks = await TasksService.list();
+    const tasks = await TasksService.list(req.organization);
     responses.success(res, 'task list')(tasks);
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
@@ -30,7 +30,7 @@ const list = async (req, res) => {
  */
 const create = async (req, res) => {
   try {
-    const task = await TasksService.create(req.body, req.user);
+    const task = await TasksService.create(req.body, req.user, req.organization);
     responses.success(res, 'task created')(task);
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);

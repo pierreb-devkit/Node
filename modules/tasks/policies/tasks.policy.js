@@ -4,10 +4,12 @@
 
 /**
  * Define task-related abilities for an authenticated user.
- * Platform admins get full access. Regular users can read and create
- * any task, but can only update/delete their own tasks (ownership check).
+ * Platform admins get full access. When an organization membership exists,
+ * abilities are scoped to the organization via organizationId conditions.
+ * Without a membership (legacy / no org context), users can read and
+ * create any task but can only update/delete their own tasks.
  * @param {Object} user - The authenticated user
- * @param {Object|null} membership - Optional organization membership (reserved for future use)
+ * @param {Object|null} membership - Optional organization membership
  * @param {Object} builder - CASL AbilityBuilder helpers
  * @param {Function} builder.can - Grant an ability
  * @param {Function} builder.cannot - Deny an ability
@@ -17,10 +19,20 @@ export function taskAbilities(user, membership, { can }) {
     can('manage', 'all');
     return;
   }
-  can('read', 'Task');
-  can('create', 'Task');
-  can('update', 'Task', { user: String(user._id) });
-  can('delete', 'Task', { user: String(user._id) });
+  if (membership) {
+    // Org-scoped abilities
+    const organizationId = String(membership.organizationId);
+    can('create', 'Task', { organizationId });
+    can('read', 'Task', { organizationId });
+    can('update', 'Task', { organizationId, user: String(user._id) });
+    can('delete', 'Task', { organizationId, user: String(user._id) });
+  } else {
+    // Legacy — no org context
+    can('read', 'Task');
+    can('create', 'Task');
+    can('update', 'Task', { user: String(user._id) });
+    can('delete', 'Task', { user: String(user._id) });
+  }
 }
 
 /**

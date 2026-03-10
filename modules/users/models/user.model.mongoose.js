@@ -32,6 +32,10 @@ const UserMongoose = new Schema(
     // startup requirement
     terms: Date,
     // other
+    currentOrganization: {
+      type: Schema.ObjectId,
+      ref: 'Organization',
+    },
     complementary: {}, // put your specific project private data here
   },
   {

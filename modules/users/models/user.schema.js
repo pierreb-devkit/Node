@@ -37,6 +37,8 @@ const User = z.object({
   resetPasswordExpires: z.coerce.date().nullable().optional(),
   // startup requirement
   terms: z.coerce.date().nullable().optional(),
+  // organization context
+  currentOrganization: z.string().trim().optional(),
   // others
   complementary: z.record(z.string(), z.unknown()).nullable().optional(),
 });
