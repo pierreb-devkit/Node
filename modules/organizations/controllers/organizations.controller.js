@@ -1,10 +1,19 @@
 /**
  * Module dependencies
  */
+import jwt from 'jsonwebtoken';
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
+import config from '../../../config/index.js';
+import policy from '../../../lib/middlewares/policy.js';
 import OrganizationsService from '../services/organizations.service.js';
 import MembershipService from '../services/organizations.membership.service.js';
+
+const tokenCookieOptions = {
+  httpOnly: true,
+  secure: config.cookie.secure,
+  sameSite: config.cookie.sameSite,
+};
 
 /**
  * @function list
@@ -125,6 +134,60 @@ const organizationByID = async (req, res, next, id) => {
   }
 };
 
+/**
+ * @function switchOrganization
+ * @description Endpoint to switch the authenticated user's current organization context.
+ * The organization is already loaded by the organizationByID param middleware.
+ * Verifies the user has a membership on the target organization, updates
+ * user.currentOrganization in the DB, issues a new JWT cookie, builds abilities
+ * for the new org context, and returns the updated user with abilities.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {void}
+ */
+const switchOrganization = async (req, res) => {
+  try {
+    const organizationId = req.params.organizationId;
+
+    // Verify organization exists (param middleware may have loaded it, but we check directly
+    // since the param middleware runs before JWT auth and may not have req.user available)
+    const organization = req.organization || await OrganizationsService.get(organizationId);
+    if (!organization) {
+      return responses.error(res, 404, 'Not Found', 'No Organization with that identifier has been found')();
+    }
+
+    // Switch organization (verifies membership and updates user.currentOrganization)
+    const { user: updatedUser, membership } = await OrganizationsService.switchOrganization(req.user, organization._id || organization.id);
+
+    // Issue a new JWT cookie
+    const token = jwt.sign({ userId: updatedUser.id }, config.jwt.secret, {
+      expiresIn: config.jwt.expiresIn,
+    });
+
+    // Build abilities for the new org context
+    const ability = await policy.defineAbilityFor(updatedUser, membership);
+    const abilities = ability.rules;
+
+    return res
+      .status(200)
+      .cookie('TOKEN', token, tokenCookieOptions)
+      .json({
+        type: 'success',
+        message: 'organization switched',
+        data: {
+          user: updatedUser,
+          abilities,
+          tokenExpiresIn: Date.now() + config.jwt.expiresIn * 1000,
+        },
+      });
+  } catch (err) {
+    if (err.code === 'FORBIDDEN') {
+      return responses.error(res, 403, 'Forbidden', 'User is not a member of this organization')(err);
+    }
+    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+  }
+};
+
 export default {
   list,
   create,
@@ -133,4 +196,5 @@ export default {
   remove,
   adminList,
   organizationByID,
+  switchOrganization,
 };
