@@ -812,6 +812,10 @@ describe('Auth integration tests:', () => {
           in: expect.any(Boolean),
           up: expect.any(Boolean),
         },
+        organizations: {
+          enabled: expect.any(Boolean),
+          domainMatching: expect.any(Boolean),
+        },
       });
     });
 
@@ -829,6 +833,34 @@ describe('Auth integration tests:', () => {
       const result = await agent.get('/api/auth/config').expect(200);
       expect(result.body.data.sign.in).toBe(false);
       config.sign.in = original;
+    });
+
+    test('should return organizations config with enabled and domainMatching', async () => {
+      const result = await agent.get('/api/auth/config').expect(200);
+      expect(result.body.data.organizations).toBeDefined();
+      expect(result.body.data.organizations.enabled).toBe(true);
+      expect(typeof result.body.data.organizations.domainMatching).toBe('boolean');
+    });
+
+    test('should not expose autoCreate in organizations config', async () => {
+      const result = await agent.get('/api/auth/config').expect(200);
+      expect(result.body.data.organizations.autoCreate).toBeUndefined();
+    });
+
+    test('should reflect organizations.enabled=false when disabled', async () => {
+      const original = config.organizations.enabled;
+      config.organizations.enabled = false;
+      const result = await agent.get('/api/auth/config').expect(200);
+      expect(result.body.data.organizations.enabled).toBe(false);
+      config.organizations.enabled = original;
+    });
+
+    test('should reflect organizations.enabled=true when enabled', async () => {
+      const original = config.organizations.enabled;
+      config.organizations.enabled = true;
+      const result = await agent.get('/api/auth/config').expect(200);
+      expect(result.body.data.organizations.enabled).toBe(true);
+      config.organizations.enabled = original;
     });
   });
 

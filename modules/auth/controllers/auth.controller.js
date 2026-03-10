@@ -287,16 +287,20 @@ const oauthCallback = async (req, res, next) => {
 };
 
 /**
- * @desc Endpoint to expose public auth sign-in/up feature flags
+ * @desc Endpoint to expose public auth configuration (sign flags and organizations settings)
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void} Sends the public auth configuration (sign flags only) in the HTTP response
+ * @returns {void} Sends the public auth configuration in the HTTP response
  */
 const getConfig = (_req, res) => {
   responses.success(res, 'Auth config')({
     sign: {
       in: !!config.sign.in,
       up: !!config.sign.up,
+    },
+    organizations: {
+      enabled: !!config.organizations.enabled,
+      domainMatching: !!config.organizations.domainMatching,
     },
   });
 };

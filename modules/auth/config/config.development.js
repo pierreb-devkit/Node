@@ -39,6 +39,11 @@ const config = {
       privateKeyLocation: null,
     },
   },
+  organizations: {
+    enabled: true, // false → B2C mode, organizations invisible
+    autoCreate: true, // auto-create default org on signup
+    domainMatching: true, // match users to existing orgs by email domain
+  },
   // zxcvbn is used to manage password security
   zxcvbn: {
     forbiddenPasswords: ['12345678', 'azertyui', 'qwertyui', 'azertyuiop', 'qwertyuiop'], // passwords forbidden
