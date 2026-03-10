@@ -26,6 +26,12 @@ export default (app) => {
     .put(model.isValid(organizationsSchema.OrganizationUpdate), organizations.update)
     .delete(organizations.remove);
 
+  // Organization switch
+  app
+    .route('/api/organizations/:organizationId/switch')
+    .all(passport.authenticate('jwt', { session: false }))
+    .post(organizations.switchOrganization);
+
   // Platform admin routes
   app
     .route('/api/admin/organizations')

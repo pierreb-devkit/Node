@@ -1,6 +1,8 @@
 /**
  * Module dependencies
  */
+import mongoose from 'mongoose';
+import AppError from '../../../lib/helpers/AppError.js';
 import OrganizationsRepository from '../repositories/organizations.repository.js';
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
 
@@ -96,6 +98,36 @@ const remove = async (organization) => {
   return Promise.resolve(result);
 };
 
+/**
+ * @function switchOrganization
+ * @description Service to switch the user's current organization context.
+ * Verifies the user has a membership on the target organization, updates
+ * the user's currentOrganization field, and returns the updated user document.
+ * @param {Object} user - The authenticated user (Mongoose document or plain object with id).
+ * @param {String} organizationId - The ID of the organization to switch to.
+ * @returns {Promise<Object>} A promise resolving to the updated user document with currentOrganization populated.
+ */
+const switchOrganization = async (user, organizationId) => {
+  const User = mongoose.model('User');
+
+  const membership = await MembershipRepository.findOne({
+    userId: user._id || user.id,
+    organizationId,
+  });
+
+  if (!membership) {
+    throw new AppError('User is not a member of this organization', { code: 'FORBIDDEN' });
+  }
+
+  const updatedUser = await User.findByIdAndUpdate(
+    user._id || user.id,
+    { currentOrganization: organizationId },
+    { new: true },
+  ).populate('currentOrganization').exec();
+
+  return { user: updatedUser, membership };
+};
+
 export default {
   list,
   listByUser,
@@ -103,4 +135,5 @@ export default {
   get,
   update,
   remove,
+  switchOrganization,
 };
