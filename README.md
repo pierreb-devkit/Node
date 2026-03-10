@@ -18,7 +18,7 @@ Designed to be cloned into downstream projects and kept up-to-date via `git merg
 | Architecture | Layered Architecture : everything is separated in layers, and the upper layers are abstractions of the lower ones, that's why every layer should only reference the immediate lower layer (vertical modules architecture with Repository and Services Pattern)                                                          |
 | Server       | [Node >= 22](https://nodejs.org/en/) - [Express](https://github.com/expressjs/express) - [Helmet](https://github.com/helmetjs/helmet) - [CORS](https://github.com/expressjs/cors) <br> [nodemon](https://github.com/remy/nodemon)                                                                            |
 | Database     | [MongoDB](https://www.mongodb.com/) - [Mongoose](https://github.com/Automattic/mongoose) - GridFS upload <br> [Sequelize](https://github.com/sequelize/sequelize) - PostgreSQL, MySQL, SQLite (option) <br> [JOI](https://github.com/hapijs/joi) - Models & Repository validation                                      |
-| Security     | [passport-jwt](https://github.com/themikenicholson/passport-jwt) - JWT Stateless <br> [bcrypt](https://en.wikipedia.org/wiki/Bcrypt) - [zxcvbn](https://github.com/dropbox/zxcvbn) - Passwords <br> SSL - Express / Reverse Proxy                                                                                     |
+| Security     | [passport-jwt](https://github.com/themikenicholson/passport-jwt) - JWT Stateless <br> [bcrypt](https://en.wikipedia.org/wiki/Bcrypt) - [zxcvbn](https://github.com/dropbox/zxcvbn) - Passwords <br> [CASL](https://casl.js.org/) - Document-level authorization <br> SSL - Express / Reverse Proxy                     |
 | API          | [jsend](https://github.com/omniti-labs/jsend) - Default response wrapper: status, message, data or error                                                                                                                                                                                                              |
 | Upload       | [Mongo GridFS](https://docs.mongodb.com/manual/core/gridfs/) - [Multer](https://github.com/expressjs/multer) - [Sharp](https://github.com/lovell/sharp) - Image stream, all content types                                                                                                                             |
 | Testing      | [Jest](https://github.com/facebook/jest) - [SuperTest](https://github.com/visionmedia/supertest) - Coverage & Watch                                                                                                                                                                                                   |
@@ -35,10 +35,13 @@ Designed to be cloned into downstream projects and kept up-to-date via `git merg
 - **User** : classic register / auth or oAuth (Google, Apple) - profile management (update, avatar upload)
 - **User data privacy** : delete all - get all - send all by mail
 - **Admin** : list users - get user - edit user - delete user
+- **Organizations** : multi-tenant organization management - create, update, delete orgs - member invite, role management (owner/admin/member) - platform admin org listing
+- **CASL v2 Authorization** : document-level permission checks via [@casl/ability](https://casl.js.org/) - replaces route-level role rules with per-document conditions (ownership, org scope)
+- **Migration System** : automatic database migrations at boot - tracks executed scripts in MongoDB - idempotent reruns
 
 ### Examples
 
-- **Tasks** : list - get - add - edit - delete
+- **Tasks** : list - get - add - edit - delete (org-scoped when organization context is present)
 - **File Uploads** : get stream - add - delete - image stream & sharp operations
 
 ## :pushpin: Prerequisites
@@ -169,6 +172,25 @@ modules/<name>/config/
 ```
 
 The loader discovers files named `config.${NODE_ENV}.js` — files without the `config.` prefix are ignored.
+
+## :building_construction: Organizations API
+
+| Method   | Endpoint                                                | Auth      | Description                 |
+| -------- | ------------------------------------------------------- | --------- | --------------------------- |
+| `GET`    | `/api/organizations`                                    | JWT       | List user's organizations   |
+| `POST`   | `/api/organizations`                                    | JWT       | Create organization         |
+| `GET`    | `/api/organizations/:organizationId`                    | JWT       | Get organization            |
+| `PUT`    | `/api/organizations/:organizationId`                    | JWT       | Update organization         |
+| `DELETE` | `/api/organizations/:organizationId`                    | JWT       | Delete organization         |
+| `GET`    | `/api/organizations/:organizationId/members`            | JWT       | List members                |
+| `POST`   | `/api/organizations/:organizationId/members/invite`     | JWT       | Invite member               |
+| `PUT`    | `/api/organizations/:organizationId/members/:memberId`  | JWT       | Update member role          |
+| `DELETE` | `/api/organizations/:organizationId/members/:memberId`  | JWT       | Remove member               |
+| `GET`    | `/api/admin/organizations`                              | JWT+Admin | List all organizations      |
+| `GET`    | `/api/admin/organizations/:organizationId`              | JWT+Admin | Get any organization        |
+| `DELETE` | `/api/admin/organizations/:organizationId`              | JWT+Admin | Delete any organization     |
+
+> See [MIGRATION.md](MIGRATION.md) for the full migration guide from route-level CASL to document-level CASL v2.
 
 ## :whale: Docker
 
