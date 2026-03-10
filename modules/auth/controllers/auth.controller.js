@@ -11,6 +11,7 @@ import responses from '../../../lib/helpers/responses.js';
 import errors from '../../../lib/helpers/errors.js';
 import AppError from '../../../lib/helpers/AppError.js';
 import UsersSchema from '../../users/models/user.schema.js';
+import AuthOrganizationService from '../services/auth.organization.service.js';
 
 const tokenCookieOptions = {
   httpOnly: true,
@@ -27,15 +28,28 @@ const signup = async (req, res) => {
   try {
     if (!config.sign.up) return responses.error(res, 404, 'Signup error', 'Registration is currently deactivated')();
     const user = await UserService.create(req.body);
+
+    // Handle organization provisioning based on config
+    const orgResult = await AuthOrganizationService.handleSignupOrganization(user);
+
     const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
       expiresIn: config.jwt.expiresIn,
     });
+
+    // If the org set currentOrganization, reflect it on the returned user
+    if (orgResult.organization) {
+      user.currentOrganization = orgResult.organization._id || orgResult.organization.id;
+    }
+
     return res
       .status(200)
       .cookie('TOKEN', token, tokenCookieOptions)
       .json({
         user,
         tokenExpiresIn: Date.now() + config.jwt.expiresIn * 1000,
+        organization: orgResult.organization || null,
+        abilities: orgResult.abilities || [],
+        organizationSetupRequired: orgResult.organizationSetupRequired || false,
         type: 'sucess',
         message: 'Sign up',
       });

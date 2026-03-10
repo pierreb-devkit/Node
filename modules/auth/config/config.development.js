@@ -33,6 +33,12 @@ const config = {
       privateKeyLocation: null,
     },
   },
+  // organizations — controls automatic org creation/joining at signup
+  organizations: {
+    enabled: false, // when false, a silent default org is created for the user
+    autoCreate: true, // when true, org is created/joined automatically at signup
+    domainMatching: true, // when true, new users join existing orgs with matching email domain
+  },
   // zxcvbn is used to manage password security
   zxcvbn: {
     forbiddenPasswords: ['12345678', 'azertyui', 'qwertyui', 'azertyuiop', 'qwertyuiop'], // passwords forbidden
