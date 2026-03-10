@@ -118,14 +118,14 @@ describe('Tasks integration tests:', () => {
     });
 
     test('should be able to get a task', async () => {
-      // delete task
+      // get task created in beforeEach (task1)
       try {
-        const result = await agent.get(`/api/tasks/${task2.id}`).expect(200);
+        const result = await agent.get(`/api/tasks/${task1.id}`).expect(200);
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('task get');
-        expect(result.body.data.id).toBe(task2.id);
-        expect(result.body.data.title).toBe(_tasks[1].title);
-        expect(result.body.data.description).toBe(_tasks[1].description);
+        expect(result.body.data.id).toBe(task1.id);
+        expect(result.body.data.title).toBe(_tasks[0].title);
+        expect(result.body.data.description).toBe(_tasks[0].description);
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();

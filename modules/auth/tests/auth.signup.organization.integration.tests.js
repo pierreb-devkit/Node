@@ -3,8 +3,6 @@
  */
 import request from 'supertest';
 import path from 'path';
-import mongoose from 'mongoose';
-
 import { bootstrap } from '../../../lib/app.js';
 import mongooseService from '../../../lib/services/mongoose.js';
 import config from '../../../config/index.js';

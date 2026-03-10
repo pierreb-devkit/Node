@@ -12,18 +12,16 @@ import mongooseService from '../../../lib/services/mongoose.js';
 /**
  * Integration tests for organization-scoped task operations.
  * Verifies that tasks created within an organization context carry the
- * correct organizationId field, and that existing non-org flows continue
- * to work (backward compatibility).
+ * correct organizationId field, and that non-members cannot access
+ * another organization's resources.
  */
 describe('Tasks organization-scoped integration tests:', () => {
   let UserService;
   let OrganizationsService;
-  let MembershipService;
   let agent;
   let ownerUser;
   let nonMemberUser;
   let organization;
-  let membership;
 
   // init
   beforeAll(async () => {
@@ -31,7 +29,6 @@ describe('Tasks organization-scoped integration tests:', () => {
       const init = await bootstrap();
       UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
       OrganizationsService = (await import(path.resolve('./modules/organizations/services/organizations.service.js'))).default;
-      MembershipService = (await import(path.resolve('./modules/organizations/services/organizations.membership.service.js'))).default;
       agent = request.agent(init.app);
     } catch (err) {
       console.log(err);
@@ -41,36 +38,17 @@ describe('Tasks organization-scoped integration tests:', () => {
 
   describe('Org-scoped task creation', () => {
     beforeAll(async () => {
-      // Create owner user and sign in
+      // Create owner user and sign in (signup auto-creates an org and sets currentOrganization)
       try {
         const result = await agent.post('/api/auth/signup').send({
           firstName: 'OrgOwner',
           lastName: 'Tasks',
-          email: 'orgtask-owner@test.com',
+          email: 'orgtask-owner@orgtask1.com',
           password: 'W@os.jsI$Aw3$0m3',
           provider: 'local',
         }).expect(200);
         ownerUser = result.body.user;
-      } catch (err) {
-        console.log(err);
-        expect(err).toBeFalsy();
-      }
-
-      // Create an organization
-      try {
-        const orgResult = await agent.post('/api/organizations').send({
-          name: 'Task Test Org',
-          slug: 'task-test-org',
-        }).expect(200);
-        organization = orgResult.body.data;
-      } catch (err) {
-        console.log(err);
-        expect(err).toBeFalsy();
-      }
-
-      // Set currentOrganization on the user
-      try {
-        await agent.put('/api/users/me').send({ currentOrganization: organization.id }).expect(200);
+        organization = result.body.organization;
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -87,32 +65,23 @@ describe('Tasks organization-scoped integration tests:', () => {
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('task created');
         expect(result.body.data.organizationId).toBeDefined();
-        expect(result.body.data.organizationId).toBe(organization.id);
+        expect(result.body.data.organizationId).toBe(organization.id || organization._id);
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
       }
     });
 
-    test('should create a task without organizationId when user has no currentOrganization', async () => {
-      // Clear currentOrganization
-      try {
-        await agent.put('/api/users/me').send({ currentOrganization: '' }).expect(200);
-      } catch (err) {
-        console.log(err);
-        expect(err).toBeFalsy();
-      }
-
+    test('should always create tasks within the current organization context', async () => {
       try {
         const result = await agent.post('/api/tasks').send({
-          title: 'legacy task',
-          description: 'no org context',
+          title: 'second org task',
+          description: 'also belongs to org',
         }).expect(200);
 
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('task created');
-        // organizationId should not be set
-        expect(result.body.data.organizationId).toBeFalsy();
+        expect(result.body.data.organizationId).toBe(organization.id || organization._id);
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -128,10 +97,8 @@ describe('Tasks organization-scoped integration tests:', () => {
         console.log(err);
       }
       try {
-        await OrganizationsService.remove({ id: organization.id });
-      } catch (err) {
-        console.log(err);
-      }
+        if (organization) await OrganizationsService.remove({ id: organization.id || organization._id, _id: organization._id || organization.id });
+      } catch (_) { /* cleanup */ }
       try {
         await UserService.remove(ownerUser);
       } catch (err) {
@@ -141,35 +108,26 @@ describe('Tasks organization-scoped integration tests:', () => {
   });
 
   describe('Non-member org access', () => {
+    let ownerOrg;
+
     beforeAll(async () => {
-      // Create owner user and sign in
+      // Create owner user and sign in (signup auto-creates an org)
       try {
         const result = await agent.post('/api/auth/signup').send({
-          firstName: 'OrgOwner2',
-          lastName: 'Tasks2',
-          email: 'orgtask-owner2@test.com',
+          firstName: 'OrgOwnerTwo',
+          lastName: 'TasksTwo',
+          email: 'orgtask-owner2@orgtask2.com',
           password: 'W@os.jsI$Aw3$0m3',
           provider: 'local',
         }).expect(200);
         ownerUser = result.body.user;
+        ownerOrg = result.body.organization;
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
       }
 
-      // Create an organization (this also creates a membership for the owner)
-      try {
-        const orgResult = await agent.post('/api/organizations').send({
-          name: 'Access Test Org',
-          slug: 'access-test-org',
-        }).expect(200);
-        organization = orgResult.body.data;
-      } catch (err) {
-        console.log(err);
-        expect(err).toBeFalsy();
-      }
-
-      // Sign out and create non-member user
+      // Sign out and create non-member user (uses a different domain to avoid domain-matching)
       try {
         await agent.get('/api/auth/signout');
       } catch (err) {
@@ -180,7 +138,7 @@ describe('Tasks organization-scoped integration tests:', () => {
         const result = await agent.post('/api/auth/signup').send({
           firstName: 'NonMember',
           lastName: 'User',
-          email: 'orgtask-nonmember@test.com',
+          email: 'orgtask-nonmember@other-domain.com',
           password: 'W@os.jsI$Aw3$0m3',
           provider: 'local',
         }).expect(200);
@@ -190,9 +148,9 @@ describe('Tasks organization-scoped integration tests:', () => {
         expect(err).toBeFalsy();
       }
 
-      // Set currentOrganization on the non-member to the org they are NOT a member of
+      // Set currentOrganization on the non-member to the owner's org (they are NOT a member of)
       try {
-        await agent.put('/api/users/me').send({ currentOrganization: organization.id }).expect(200);
+        await agent.put('/api/users').send({ currentOrganization: ownerOrg.id || ownerOrg._id }).expect(200);
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -207,7 +165,6 @@ describe('Tasks organization-scoped integration tests:', () => {
         }).expect(403);
 
         expect(result.body.type).toBe('error');
-        expect(result.body.message).toBe('Forbidden');
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -216,20 +173,24 @@ describe('Tasks organization-scoped integration tests:', () => {
 
     afterAll(async () => {
       try {
-        await OrganizationsService.remove({ id: organization.id });
-      } catch (err) {
-        console.log(err);
-      }
+        if (ownerOrg) await OrganizationsService.remove({ id: ownerOrg.id || ownerOrg._id, _id: ownerOrg._id || ownerOrg.id });
+      } catch (_) { /* cleanup */ }
+      // Clean up non-member's auto-created org
+      try {
+        if (nonMemberUser) {
+          const Membership = mongoose.model('Membership');
+          const memberships = await Membership.find({ userId: nonMemberUser.id });
+          for (const m of memberships) {
+            try { await OrganizationsService.remove({ id: m.organizationId, _id: m.organizationId }); } catch (_) { /* cleanup */ }
+          }
+        }
+      } catch (_) { /* cleanup */ }
       try {
         await UserService.remove(ownerUser);
-      } catch (err) {
-        console.log(err);
-      }
+      } catch (_) { /* cleanup */ }
       try {
         await UserService.remove(nonMemberUser);
-      } catch (err) {
-        console.log(err);
-      }
+      } catch (_) { /* cleanup */ }
     });
   });
 

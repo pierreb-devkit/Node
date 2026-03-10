@@ -21,7 +21,7 @@ export default (app) => {
 
   app
     .route('/api/organizations/:organizationId')
-    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
+    .all(passport.authenticate('jwt', { session: false }), organizations.loadMembership, policy.isAllowed)
     .get(organizations.get)
     .put(model.isValid(organizationsSchema.OrganizationUpdate), organizations.update)
     .delete(organizations.remove);
@@ -40,7 +40,7 @@ export default (app) => {
 
   app
     .route('/api/admin/organizations/:organizationId')
-    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
+    .all(passport.authenticate('jwt', { session: false }), organizations.loadMembership, policy.isAllowed)
     .get(organizations.get)
     .delete(organizations.remove);
 

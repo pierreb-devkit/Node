@@ -16,17 +16,17 @@ export default (app) => {
   // Member routes (nested under organization)
   app
     .route('/api/organizations/:organizationId/members')
-    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
+    .all(passport.authenticate('jwt', { session: false }), organizations.loadMembership, policy.isAllowed)
     .get(members.list);
 
   app
     .route('/api/organizations/:organizationId/members/invite')
-    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
+    .all(passport.authenticate('jwt', { session: false }), organizations.loadMembership, policy.isAllowed)
     .post(model.isValid(membershipSchema.MembershipInvite), members.invite);
 
   app
     .route('/api/organizations/:organizationId/members/:memberId')
-    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
+    .all(passport.authenticate('jwt', { session: false }), organizations.loadMembership, policy.isAllowed)
     .put(model.isValid(membershipSchema.MembershipUpdate), members.updateRole)
     .delete(members.remove);
 

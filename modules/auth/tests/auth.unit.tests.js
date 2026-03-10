@@ -120,7 +120,7 @@ describe('Auth service unit tests:', () => {
     });
 
     test('should return sanitised user when credentials are valid', async () => {
-      const storedUser = { _id: '1', email: 'a@b.com', firstName: 'Joe', password: 'hashed', roles: ['user'], provider: 'local' };
+      const storedUser = { _id: '1', email: 'a@b.com', firstName: 'Joe', password: 'hashed', roles: ['user'], provider: 'local', save: jest.fn() };
       mockGet.mockResolvedValueOnce(storedUser);
       mockBcryptCompare.mockResolvedValueOnce(true);
       const result = await AuthService.authenticate('a@b.com', 'plain');
@@ -129,7 +129,7 @@ describe('Auth service unit tests:', () => {
     });
 
     test('should throw when password does not match', async () => {
-      mockGet.mockResolvedValueOnce({ email: 'a@b.com', password: 'hashed' });
+      mockGet.mockResolvedValueOnce({ email: 'a@b.com', password: 'hashed', save: jest.fn() });
       mockBcryptCompare.mockResolvedValueOnce(false);
       await expect(AuthService.authenticate('a@b.com', 'wrong')).rejects.toThrow('invalid user or password.');
     });

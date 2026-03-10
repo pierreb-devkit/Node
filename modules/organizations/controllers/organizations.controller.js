@@ -188,6 +188,28 @@ const switchOrganization = async (req, res) => {
   }
 };
 
+/**
+ * @function loadMembership
+ * @description Middleware to load the user's membership for the current organization.
+ * Intended to run after passport authentication on routes where the organizationByID
+ * param middleware may have run before req.user was available.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ * @returns {void}
+ */
+const loadMembership = async (req, res, next) => {
+  if (req.organization && req.user && !req.membership) {
+    try {
+      req.membership = await MembershipService.findByUserAndOrganization(
+        req.user._id || req.user.id,
+        req.organization._id || req.organization.id,
+      );
+    } catch (_) { /* ignore — isAllowed will handle the missing membership */ }
+  }
+  next();
+};
+
 export default {
   list,
   create,
@@ -196,5 +218,6 @@ export default {
   remove,
   adminList,
   organizationByID,
+  loadMembership,
   switchOrganization,
 };
