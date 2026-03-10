@@ -1,4 +1,10 @@
 const config = {
+  auth: {
+    lockout: {
+      maxAttempts: 5, // lock account after N consecutive failed login attempts
+      lockDuration: 30, // lock duration in minutes
+    },
+  },
   sign: {
     in: true, // disable signin
     up: true, // disable signup

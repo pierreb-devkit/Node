@@ -38,6 +38,10 @@ const UserMongoose = new Schema(
     emailVerificationExpires: Date,
     // startup requirement
     terms: Date,
+    /* Account lockout */
+    lastLoginAt: { type: Date, default: null },
+    failedLoginAttempts: { type: Number, default: 0 },
+    lockUntil: { type: Date, default: null },
     // other
     complementary: {}, // put your specific project private data here
   },

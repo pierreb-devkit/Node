@@ -41,6 +41,10 @@ const User = z.object({
   emailVerificationExpires: z.coerce.date().nullable().optional(),
   // startup requirement
   terms: z.coerce.date().nullable().optional(),
+  /* Account lockout */
+  lastLoginAt: z.coerce.date().nullable().optional().default(null),
+  failedLoginAttempts: z.number().int().min(0).optional().default(0),
+  lockUntil: z.coerce.date().nullable().optional().default(null),
   // others
   complementary: z.record(z.string(), z.unknown()).nullable().optional(),
 });

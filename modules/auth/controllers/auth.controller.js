@@ -69,7 +69,7 @@ const signup = async (req, res) => {
       // Send verification email (best-effort, do not block signup)
       sendVerificationEmail(user, verificationToken).catch(() => {});
     } else {
-      // No mailer configured - auto-verify so dev/test are not blocked
+      // No mailer configured — auto-verify so dev/test are not blocked
       const brutUser = await UserService.getBrut({ id: user.id });
       await UserService.update(brutUser, { emailVerified: true }, 'recover');
       user.emailVerified = true;
@@ -90,6 +90,30 @@ const signup = async (req, res) => {
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
   }
+};
+
+/**
+ * @desc Middleware that runs passport local authentication and intercepts account-locked errors
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ * @returns {void} Calls next on success or sends a 423/401/500 response on failure
+ */
+const signinAuthenticate = (req, res, next) => {
+  // eslint-disable-next-line no-unused-vars
+  passport.authenticate('local', { session: false }, (err, user, info) => {
+    if (err && err.code === 'ACCOUNT_LOCKED') {
+      return responses.error(res, 423, 'Account locked', err.details?.message || 'Account is locked. Try again later.')(err);
+    }
+    if (err) {
+      return responses.error(res, 500, 'Internal Server Error', errors.getMessage(err))(err);
+    }
+    if (!user) {
+      return res.status(401).send('Unauthorized');
+    }
+    req.user = user;
+    return next();
+  })(req, res, next);
 };
 
 /**
@@ -158,7 +182,7 @@ const oauthCall = (req, res, next) => {
 /**
  * @desc Endpoint to save oAuthProfile
  * @param {Object} profil - OAuth user profile object
- * @param {string} key - Provider key to lookup `providerData`
+ * @param {string} key - Provider key to lookup providerData
  * @param {string} provider - OAuth provider name
  */
 const checkOAuthUserProfile = async (profil, key, provider) => {
@@ -319,6 +343,7 @@ const resendVerification = async (req, res) => {
 
 export default {
   signup,
+  signinAuthenticate,
   signin,
   token,
   oauthCall,

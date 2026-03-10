@@ -23,6 +23,9 @@ export default () => {
             message: 'Invalid email or password',
           });
         } catch (err) {
+          if (err instanceof AppError && err.code === 'ACCOUNT_LOCKED') {
+            return done(err);
+          }
           if (err instanceof AppError && err.code === 'SERVICE_ERROR') {
             return done(null, false, { message: 'Invalid email or password' });
           }
