@@ -25,6 +25,10 @@ export default (app) => {
   app.route('/api/auth/signup').post(authLimiter, model.isValid(UsersSchema.User), auth.signup);
   app.route('/api/auth/signin').post(authLimiter, passport.authenticate('local', { session: false }), auth.signin);
 
+  // Email verification
+  app.route('/api/auth/verify-email/:token').post(authLimiter, auth.verifyEmail);
+  app.route('/api/auth/resend-verification').post(passport.authenticate('jwt', { session: false }), auth.resendVerification);
+
   // Jwt reset token
   app.route('/api/auth/token').get(passport.authenticate('jwt', { session: false }), auth.token);
 

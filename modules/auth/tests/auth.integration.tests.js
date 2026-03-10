@@ -832,6 +832,131 @@ describe('Auth integration tests:', () => {
     });
   });
 
+  describe('Email verification', () => {
+    const verifyEmail = 'verify@test.com';
+    const verifyPassword = 'W@os.jsI$Aw3$0m3';
+    let verifyUser;
+
+    beforeEach(async () => {
+      try {
+        const result = await agent.post('/api/auth/signup').send({
+          firstName: 'Verify',
+          lastName: 'Test',
+          email: verifyEmail,
+          password: verifyPassword,
+          provider: 'local',
+        }).expect(200);
+        verifyUser = result.body.user;
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should auto-verify email when mailer is not configured', async () => {
+      // In test env, mailer.from starts with DEVKIT_NODE_ so it is treated as unconfigured
+      try {
+        const dbUser = await UserService.getBrut({ email: verifyEmail });
+        expect(dbUser.emailVerified).toBe(true);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should return emailVerified true in signup response when auto-verified', async () => {
+      expect(verifyUser.emailVerified).toBe(true);
+    });
+
+    test('should return 400 for invalid verification token', async () => {
+      try {
+        const result = await agent.post('/api/auth/verify-email/invalid-token-xyz').expect(400);
+        expect(result.body.type).toBe('error');
+        expect(result.body.message).toBe('Bad Request');
+        expect(result.body.description).toBe('Email verification token is invalid or has expired.');
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should verify email with a valid token', async () => {
+      // Manually set a verification token to simulate mailer-configured flow
+      try {
+        const dbUser = await UserService.getBrut({ email: verifyEmail });
+        dbUser.emailVerified = false;
+        dbUser.emailVerificationToken = 'valid-test-token-123';
+        dbUser.emailVerificationExpires = new Date(Date.now() + 24 * 3600000);
+        await dbUser.save();
+
+        const result = await agent.post('/api/auth/verify-email/valid-test-token-123').expect(200);
+        expect(result.body.type).toBe('success');
+        expect(result.body.message).toBe('Email verified successfully');
+        expect(result.body.data.emailVerified).toBe(true);
+
+        const updatedUser = await UserService.getBrut({ email: verifyEmail });
+        expect(updatedUser.emailVerified).toBe(true);
+        expect(updatedUser.emailVerificationToken).toBeNull();
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should return 400 for expired verification token', async () => {
+      try {
+        const dbUser = await UserService.getBrut({ email: verifyEmail });
+        dbUser.emailVerified = false;
+        dbUser.emailVerificationToken = 'expired-test-token-456';
+        dbUser.emailVerificationExpires = new Date(Date.now() - 1000); // expired
+        await dbUser.save();
+
+        const result = await agent.post('/api/auth/verify-email/expired-test-token-456').expect(400);
+        expect(result.body.type).toBe('error');
+        expect(result.body.description).toBe('Email verification token is invalid or has expired.');
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should return 400 when resending verification for already verified email', async () => {
+      try {
+        // Sign in to get auth cookie
+        await agent.post('/api/auth/signin').send({ email: verifyEmail, password: verifyPassword }).expect(200);
+        const result = await agent.post('/api/auth/resend-verification').expect(400);
+        expect(result.body.type).toBe('error');
+        expect(result.body.description).toBe('Email is already verified');
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should return 400 when resending verification but mailer is not configured', async () => {
+      try {
+        const dbUser = await UserService.getBrut({ email: verifyEmail });
+        dbUser.emailVerified = false;
+        await dbUser.save();
+
+        await agent.post('/api/auth/signin').send({ email: verifyEmail, password: verifyPassword }).expect(200);
+        const result = await agent.post('/api/auth/resend-verification').expect(400);
+        expect(result.body.type).toBe('error');
+        expect(result.body.description).toBe('Mail service is not configured');
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    afterEach(async () => {
+      try {
+        if (verifyUser) await UserService.remove(verifyUser);
+      } catch (_) { /* cleanup */ }
+      verifyUser = null;
+    });
+  });
+
   // Mongoose disconnect
   afterAll(async () => {
     try {
