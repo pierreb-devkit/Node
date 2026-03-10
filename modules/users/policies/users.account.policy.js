@@ -1,25 +1,40 @@
 /**
- * Module dependencies
- * */
-import policy from '../../../lib/middlewares/policy.js';
+ * User account ability definitions for CASL document-level authorization.
+ * Uses 'UserAccount' for self-service routes (me, terms, password, avatar, data, stats).
+ * Uses 'UserSelf' for the base /api/users path (update/delete own account).
+ */
 
 /**
- * Invoke Users Account Permissions
+ * Define user-account-related abilities for an authenticated user.
+ * Regular users can manage their own account via self-service routes.
+ * 'UserSelf' only grants update and delete — read on /api/users is admin-only.
+ * Admins get full access to everything.
+ * @param {Object} user - The authenticated user
+ * @param {Object|null} membership - Optional organization membership (reserved for future use)
+ * @param {Object} builder - CASL AbilityBuilder helpers
+ * @param {Function} builder.can - Grant an ability
  */
-const invokeRolesPolicies = () => {
-  policy.registerRules([
-    { roles: ['user'], actions: ['read'], subject: '/api/users/me' },
-    { roles: ['user'], actions: ['read'], subject: '/api/users/terms' },
-    { roles: ['user'], actions: ['update', 'delete'], subject: '/api/users' },
-    { roles: ['user'], actions: ['create'], subject: '/api/users/password' },
-    { roles: ['user'], actions: ['create', 'delete'], subject: '/api/users/avatar' },
-    { roles: ['user'], actions: ['create', 'delete'], subject: '/api/users/accounts' },
-    { roles: ['user'], actions: ['read', 'delete'], subject: '/api/users/data' },
-    { roles: ['user'], actions: ['read'], subject: '/api/users/data/mail' },
-    { roles: ['guest'], actions: ['read'], subject: '/api/users/stats' },
-  ]);
-};
+export function userAccountAbilities(user, membership, { can }) {
+  if (user.roles.includes('admin')) {
+    can('manage', 'all');
+    return;
+  }
+  // Self-service routes (me, terms, password, avatar, data, stats)
+  can('read', 'UserAccount');
+  can('create', 'UserAccount');
+  can('update', 'UserAccount');
+  can('delete', 'UserAccount');
+  // Base /api/users route — users can update/delete their own account but NOT list users
+  can('update', 'UserSelf');
+  can('delete', 'UserSelf');
+}
 
-export default {
-  invokeRolesPolicies,
-};
+/**
+ * Define user-account-related abilities for unauthenticated guests.
+ * Guests can only read user stats (which is a UserAccount route).
+ * @param {Object} builder - CASL AbilityBuilder helpers
+ * @param {Function} builder.can - Grant an ability
+ */
+export function userAccountGuestAbilities({ can }) {
+  can('read', 'UserAccount');
+}
