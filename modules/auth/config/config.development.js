@@ -1,4 +1,10 @@
 const config = {
+  auth: {
+    lockout: {
+      maxAttempts: 5, // lock account after N consecutive failed login attempts
+      lockDuration: 30, // lock duration in minutes
+    },
+  },
   sign: {
     in: true, // disable signin
     up: true, // disable signup
@@ -59,12 +65,13 @@ const config = {
         'createdAt',
         'resetPasswordToken',
         'resetPasswordExpires',
+        'emailVerified',
         'complementary',
         'terms',
       ],
       update: ['firstName', 'lastName', 'bio', 'position', 'email', 'avatar', 'complementary'],
       updateAdmin: ['firstName', 'lastName', 'bio', 'position', 'email', 'avatar', 'roles', 'complementary'],
-      recover: ['password', 'resetPasswordToken', 'resetPasswordExpires'],
+      recover: ['password', 'resetPasswordToken', 'resetPasswordExpires', 'emailVerified', 'emailVerificationToken', 'emailVerificationExpires'],
       roles: ['user', 'admin'],
     },
   },

@@ -1,12 +1,14 @@
 /**
  * Module dependencies
  */
+import crypto from 'crypto';
 import passport from 'passport';
 import jwt from 'jsonwebtoken';
 
 import UserService from '../../users/services/users.service.js';
 import config from '../../../config/index.js';
 import model from '../../../lib/middlewares/model.js';
+import mails from '../../../lib/helpers/mails.js';
 import responses from '../../../lib/helpers/responses.js';
 import errors from '../../../lib/helpers/errors.js';
 import AppError from '../../../lib/helpers/AppError.js';
@@ -19,6 +21,33 @@ const tokenCookieOptions = {
 };
 
 /**
+ * @desc Check whether the mailer is configured with a real sender address
+ * @returns {boolean} true when SMTP mail sending is available
+ */
+const isMailerConfigured = () => !!(config.mailer && config.mailer.from && !config.mailer.from.startsWith('DEVKIT_NODE_'));
+
+/**
+ * @desc Send a verification email to the user with a signed token link
+ * @param {Object} user - User object (must have email, firstName, lastName)
+ * @param {string} verificationToken - The email verification token
+ * @returns {Promise<Object>} nodemailer send result
+ */
+const sendVerificationEmail = async (user, verificationToken) => {
+  const mail = await mails.sendMail({
+    template: 'verify-email',
+    to: user.email,
+    subject: 'Verify your email address',
+    params: {
+      displayName: `${user.firstName} ${user.lastName}`,
+      url: `${config.cors.origin[0]}/verify-email?token=${verificationToken}`,
+      appName: config.app.title,
+      appContact: config.app.contact,
+    },
+  });
+  return mail;
+};
+
+/**
  * @desc Endpoint to ask the service to create a user
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
@@ -27,6 +56,25 @@ const signup = async (req, res) => {
   try {
     if (!config.sign.up) return responses.error(res, 404, 'Signup error', 'Registration is currently deactivated')();
     const user = await UserService.create(req.body);
+
+    // Handle email verification
+    if (isMailerConfigured()) {
+      // Generate verification token and persist it
+      const verificationToken = crypto.randomBytes(20).toString('hex');
+      const brutUser = await UserService.getBrut({ id: user.id });
+      await UserService.update(brutUser, {
+        emailVerificationToken: verificationToken,
+        emailVerificationExpires: Date.now() + 24 * 3600000, // 24 hours
+      }, 'recover');
+      // Send verification email (best-effort, do not block signup)
+      sendVerificationEmail(user, verificationToken).catch(() => {});
+    } else {
+      // No mailer configured — auto-verify so dev/test are not blocked
+      const brutUser = await UserService.getBrut({ id: user.id });
+      await UserService.update(brutUser, { emailVerified: true }, 'recover');
+      user.emailVerified = true;
+    }
+
     const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
       expiresIn: config.jwt.expiresIn,
     });
@@ -42,6 +90,30 @@ const signup = async (req, res) => {
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
   }
+};
+
+/**
+ * @desc Middleware that runs passport local authentication and intercepts account-locked errors
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ * @returns {void} Calls next on success or sends a 423/401/500 response on failure
+ */
+const signinAuthenticate = (req, res, next) => {
+  // eslint-disable-next-line no-unused-vars
+  passport.authenticate('local', { session: false }, (err, user, info) => {
+    if (err && err.code === 'ACCOUNT_LOCKED') {
+      return responses.error(res, 423, 'Account locked', err.details?.message || 'Account is locked. Try again later.')(err);
+    }
+    if (err) {
+      return responses.error(res, 500, 'Internal Server Error', errors.getMessage(err))(err);
+    }
+    if (!user) {
+      return res.status(401).send('Unauthorized');
+    }
+    req.user = user;
+    return next();
+  })(req, res, next);
 };
 
 /**
@@ -110,7 +182,7 @@ const oauthCall = (req, res, next) => {
 /**
  * @desc Endpoint to save oAuthProfile
  * @param {Object} profil - OAuth user profile object
- * @param {string} key - Provider key to lookup `providerData`
+ * @param {string} key - Provider key to lookup providerData
  * @param {string} provider - OAuth provider name
  */
 const checkOAuthUserProfile = async (profil, key, provider) => {
@@ -222,12 +294,62 @@ const getConfig = (_req, res) => {
   });
 };
 
+/**
+ * @desc Endpoint to verify a user email address using a token
+ * @param {Object} req - Express request object (req.params.token)
+ * @param {Object} res - Express response object
+ * @returns {void} Sends JSON response indicating verification success or failure
+ */
+const verifyEmail = async (req, res) => {
+  try {
+    const user = await UserService.getBrut({ emailVerificationToken: req.params.token });
+    if (!user || !user.email) return responses.error(res, 400, 'Bad Request', 'Email verification token is invalid or has expired.')();
+    await UserService.update(user, {
+      emailVerified: true,
+      emailVerificationToken: null,
+      emailVerificationExpires: null,
+    }, 'recover');
+    return responses.success(res, 'Email verified successfully')({ emailVerified: true });
+  } catch (err) {
+    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+  }
+};
+
+/**
+ * @desc Endpoint to resend the verification email for the authenticated user
+ * @param {Object} req - Express request object (req.user must be set)
+ * @param {Object} res - Express response object
+ * @returns {void} Sends JSON response confirming the email was resent or an error
+ */
+const resendVerification = async (req, res) => {
+  try {
+    const user = await UserService.getBrut({ id: req.user.id });
+    if (!user || !user.email) return responses.error(res, 400, 'Bad Request', 'User not found')();
+    if (user.emailVerified) return responses.error(res, 400, 'Bad Request', 'Email is already verified')();
+    if (!isMailerConfigured()) return responses.error(res, 400, 'Bad Request', 'Mail service is not configured')();
+
+    const verificationToken = crypto.randomBytes(20).toString('hex');
+    await UserService.update(user, {
+      emailVerificationToken: verificationToken,
+      emailVerificationExpires: Date.now() + 24 * 3600000, // 24 hours
+    }, 'recover');
+    const mail = await sendVerificationEmail(user, verificationToken);
+    if (!mail.accepted) return responses.error(res, 400, 'Bad Request', 'Failure sending email')();
+    return responses.success(res, 'Verification email sent')({ status: true });
+  } catch (err) {
+    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+  }
+};
+
 export default {
   signup,
+  signinAuthenticate,
   signin,
   token,
   oauthCall,
   oauthCallback,
   checkOAuthUserProfile,
   getConfig,
+  verifyEmail,
+  resendVerification,
 };

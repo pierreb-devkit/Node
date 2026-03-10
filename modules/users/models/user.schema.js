@@ -35,8 +35,16 @@ const User = z.object({
     }),
   resetPasswordToken: z.string().nullable().optional(),
   resetPasswordExpires: z.coerce.date().nullable().optional(),
+  /* Email verification */
+  emailVerified: z.boolean().optional().default(false),
+  emailVerificationToken: z.string().nullable().optional(),
+  emailVerificationExpires: z.coerce.date().nullable().optional(),
   // startup requirement
   terms: z.coerce.date().nullable().optional(),
+  /* Account lockout */
+  lastLoginAt: z.coerce.date().nullable().optional().default(null),
+  failedLoginAttempts: z.number().int().min(0).optional().default(0),
+  lockUntil: z.coerce.date().nullable().optional().default(null),
   // others
   complementary: z.record(z.string(), z.unknown()).nullable().optional(),
 });

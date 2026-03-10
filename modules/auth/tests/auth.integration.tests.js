@@ -832,6 +832,123 @@ describe('Auth integration tests:', () => {
     });
   });
 
+  describe('Account lockout', () => {
+    const lockEmail = 'lockout@test.com';
+    const lockPassword = 'W@os.jsI$Aw3$0m3';
+    let lockUser;
+
+    beforeEach(async () => {
+      try {
+        const result = await agent.post('/api/auth/signup').send({
+          firstName: 'Lock',
+          lastName: 'Test',
+          email: lockEmail,
+          password: lockPassword,
+          provider: 'local',
+        }).expect(200);
+        lockUser = result.body.user;
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should update lastLoginAt on successful login', async () => {
+      try {
+        await agent.post('/api/auth/signin').send({ email: lockEmail, password: lockPassword }).expect(200);
+        const dbUser = await UserService.getBrut({ email: lockEmail });
+        expect(dbUser.lastLoginAt).toBeDefined();
+        expect(dbUser.lastLoginAt).toBeInstanceOf(Date);
+        expect(dbUser.failedLoginAttempts).toBe(0);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should increment failedLoginAttempts on wrong password', async () => {
+      try {
+        await agent.post('/api/auth/signin').send({ email: lockEmail, password: 'WrongP@ss123' }).expect(401);
+        const dbUser = await UserService.getBrut({ email: lockEmail });
+        expect(dbUser.failedLoginAttempts).toBe(1);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should lock account after max failed attempts and return 423', async () => {
+      const maxAttempts = config.auth?.lockout?.maxAttempts ?? 5;
+      try {
+        for (let i = 0; i < maxAttempts; i++) {
+          await agent.post('/api/auth/signin').send({ email: lockEmail, password: 'WrongP@ss123' });
+        }
+        const dbUser = await UserService.getBrut({ email: lockEmail });
+        expect(dbUser.failedLoginAttempts).toBe(maxAttempts);
+        expect(dbUser.lockUntil).toBeDefined();
+        expect(dbUser.lockUntil).toBeInstanceOf(Date);
+        expect(dbUser.lockUntil.getTime()).toBeGreaterThan(Date.now());
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      // Now a valid login should be rejected with 423
+      try {
+        const result = await agent.post('/api/auth/signin').send({ email: lockEmail, password: lockPassword }).expect(423);
+        expect(result.body.type).toBe('error');
+        expect(result.body.message).toBe('Account locked');
+        expect(result.body.description).toMatch(/locked/i);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should allow login after lock expires', async () => {
+      const maxAttempts = config.auth?.lockout?.maxAttempts ?? 5;
+      try {
+        for (let i = 0; i < maxAttempts; i++) {
+          await agent.post('/api/auth/signin').send({ email: lockEmail, password: 'WrongP@ss123' });
+        }
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      // Manually set lockUntil to a past date to simulate expiry
+      try {
+        const dbUser = await UserService.getBrut({ email: lockEmail });
+        dbUser.lockUntil = new Date(Date.now() - 1000);
+        await dbUser.save();
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      // Should now be able to login successfully
+      try {
+        const result = await agent.post('/api/auth/signin').send({ email: lockEmail, password: lockPassword }).expect(200);
+        expect(result.body.user.email).toBe(lockEmail);
+
+        const dbUser = await UserService.getBrut({ email: lockEmail });
+        expect(dbUser.failedLoginAttempts).toBe(0);
+        expect(dbUser.lockUntil).toBeNull();
+        expect(dbUser.lastLoginAt).toBeInstanceOf(Date);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    afterEach(async () => {
+      try {
+        if (lockUser) await UserService.remove(lockUser);
+      } catch (_) { /* cleanup */ }
+      lockUser = null;
+    });
+  });
+
   // Mongoose disconnect
   afterAll(async () => {
     try {
