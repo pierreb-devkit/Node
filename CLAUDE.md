@@ -29,6 +29,32 @@ Scripts: see `package.json` → `scripts` section.
 - Put shared code in `lib/helpers/` or `lib/services/` only with explicit justification
 - Keep tests organized per module: `modules/*/tests/`
 
+## CASL authorization patterns
+
+- Every module policy file exports named functions: `<module>Abilities(user, membership, { can, cannot })` and optionally `<module>GuestAbilities({ can, cannot })`.
+- Policy files are auto-discovered by `policy.discoverPolicies()` at startup — no manual registration needed.
+- Platform admins always start with `if (user.roles.includes('admin')) { can('manage', 'all'); return; }`.
+- Ownership is enforced via CASL conditions (e.g. `{ user: String(user._id) }`) — never use a separate `isOwner` middleware.
+- Organization scoping uses `{ organizationId: String(membership.organizationId) }` conditions when a membership is present.
+- `resolveSubject(req)` in `lib/middlewares/policy.js` maps `req.task`, `req.upload`, `req.model`, `req.organization`, `req.membershipDoc` to CASL subject types.
+- `deriveSubjectType(routePath)` handles collection-level checks (list, create, stats) by mapping route prefixes to subject type strings.
+
+## Organizations module
+
+- Located at `modules/organizations/` — follows standard module structure (controllers, services, repositories, models, policies, routes, tests).
+- Membership roles: `owner`, `admin`, `member` — defined in the Membership model.
+- The `resolveOrganization` middleware (`lib/middlewares/organization.js`) loads org + membership onto `req.organization` and `req.membership`.
+- Org-scoped routes (tasks, etc.) should include `organization.resolveOrganization` in their middleware chain.
+- Configuration in `modules/auth/config/config.development.js` under `organizations: { enabled, autoCreate, domainMatching }`.
+- Signup flow handles org provisioning via `AuthOrganizationService.handleSignupOrganization(user)`.
+
+## Migration system
+
+- Migration files live in `modules/<name>/migrations/` with date-prefixed filenames (e.g. `20260310120000-organizations-init.js`).
+- Each file exports an `up()` function. Migrations run automatically at boot (in `lib/app.js`, after MongoDB connects).
+- Executed migrations are tracked in the `migrations` MongoDB collection via the `Migration` model.
+- Migrations must be idempotent — safe to run multiple times.
+
 ## Always-on guardrails
 
 - Never commit secrets or credentials (`.env*`, `secrets/**`, keys, tokens)
