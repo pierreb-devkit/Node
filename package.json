@@ -74,7 +74,7 @@
     "mongoose": "^9.2.4",
     "morgan": "^1.10.1",
     "multer": "^2.1.1",
-    "nodemailer": "^8.0.1",
+    "nodemailer": "^8.0.2",
     "nodemon": "^3.1.14",
     "object-path": "^0.11.8",
     "passport": "^0.7.0",
