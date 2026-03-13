@@ -27,7 +27,8 @@ describe('User admin integration tests:', () => {
    * must happen server-side after account creation.
    */
   const signupAndPromoteAdmin = async (agentInstance, body) => {
-    const { roles: _roles, ...safeBody } = body;
+    const safeBody = { ...body };
+    delete safeBody.roles;
     const result = await agentInstance.post('/api/auth/signup').send(safeBody).expect(200);
     const created = result.body.user;
     const brut = await UserService.getBrut({ id: created.id || created._id });
