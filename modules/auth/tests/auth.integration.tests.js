@@ -355,7 +355,7 @@ describe('Auth integration tests:', () => {
       }
 
       try {
-        const result = await UserService.get({
+        const result = await UserService.getBrut({
           email: user.email,
         });
         expect(typeof result).toBe('object');
@@ -384,7 +384,7 @@ describe('Auth integration tests:', () => {
       }
 
       try {
-        const result = await UserService.get({
+        const result = await UserService.getBrut({
           email: user.email,
         });
         expect(typeof result).toBe('object');
@@ -421,7 +421,7 @@ describe('Auth integration tests:', () => {
       }
 
       try {
-        const result = await UserService.get({
+        const result = await UserService.getBrut({
           email: user.email,
         });
         expect(typeof result).toBe('object');

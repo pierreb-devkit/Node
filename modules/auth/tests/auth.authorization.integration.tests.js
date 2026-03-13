@@ -63,7 +63,7 @@ describe('Authorization integration tests:', () => {
     // Upload an avatar for the user so we have an upload to test against
     await agent.post('/api/users/avatar').attach('avatar', './modules/users/tests/img/default.jpeg').expect(200);
 
-    // Create an admin user via adminAgent
+    // Create an admin user via adminAgent (signup then promote via service — roles are stripped from signup)
     const adminRes = await adminAgent
       .post('/api/auth/signup')
       .send({
@@ -72,10 +72,11 @@ describe('Authorization integration tests:', () => {
         email: 'auth-test-admin@test.com',
         password: 'W@os.jsI$Aw3$0m3',
         provider: 'local',
-        roles: ['user', 'admin'],
       })
       .expect(200);
     adminUser = adminRes.body.user;
+    const adminBrut = await UserService.getBrut({ id: adminUser.id });
+    await UserService.update(adminBrut, { roles: ['user', 'admin'] }, 'admin');
 
     // Create another normal user via otherAgent
     const otherRes = await otherAgent

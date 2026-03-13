@@ -60,7 +60,10 @@ const sendVerificationEmail = async (user, verificationToken) => {
 const signup = async (req, res) => {
   try {
     if (!config.sign.up) return responses.error(res, 404, 'Signup error', 'Registration is currently deactivated')();
-    const user = await UserService.create(req.body);
+    // Force default role on public signup — clients must not self-assign admin
+    const { roles: _roles, ...safeBody } = req.body;
+    safeBody.roles = ['user'];
+    const user = await UserService.create(safeBody);
 
     // Handle email verification
     if (isMailerConfigured()) {

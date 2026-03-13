@@ -152,8 +152,8 @@ const remove = async (organization) => {
 
   // Delete all tasks belonging to this organization (Task module may not exist in all projects)
   try {
-    const TasksRepository = (await import('../../tasks/repositories/tasks.repository.js')).default;
-    await TasksRepository.deleteMany({ organizationId: orgId });
+    const TasksService = (await import('../../tasks/services/tasks.service.js')).default;
+    await TasksService.deleteMany({ organizationId: orgId });
   } catch (_err) {
     // Tasks module not available — skip cleanup
   }

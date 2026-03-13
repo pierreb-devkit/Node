@@ -21,6 +21,20 @@ describe('User admin integration tests:', () => {
   let _user;
   let _userEdited;
 
+  /**
+   * Helper: sign up a user and promote to admin via service layer.
+   * Roles are stripped from signup for security, so admin promotion
+   * must happen server-side after account creation.
+   */
+  const signupAndPromoteAdmin = async (agentInstance, body) => {
+    const { roles: _roles, ...safeBody } = body;
+    const result = await agentInstance.post('/api/auth/signup').send(safeBody).expect(200);
+    const created = result.body.user;
+    const brut = await UserService.getBrut({ id: created.id || created._id });
+    await UserService.update(brut, { roles: ['user', 'admin'] }, 'admin');
+    return created;
+  };
+
   //  init
   beforeAll(async () => {
     try {
@@ -84,11 +98,8 @@ describe('User admin integration tests:', () => {
     });
 
     test('should be able to retrieve a list of users if admin', async () => {
-      _userEdited.roles = ['user', 'admin'];
-
       try {
-        const result = await agent.post('/api/auth/signup').send(_userEdited).expect(200);
-        userEdited = result.body.user;
+        userEdited = await signupAndPromoteAdmin(agent, { ..._userEdited, roles: ['user', 'admin'] });
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -113,11 +124,8 @@ describe('User admin integration tests:', () => {
     });
 
     test('should be able to retrieve a list of users if admin with pagination', async () => {
-      _userEdited.roles = ['user', 'admin'];
-
       try {
-        const result = await agent.post('/api/auth/signup').send(_userEdited).expect(200);
-        userEdited = result.body.user;
+        userEdited = await signupAndPromoteAdmin(agent, { ..._userEdited, roles: ['user', 'admin'] });
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -164,11 +172,8 @@ describe('User admin integration tests:', () => {
     });
 
     test('should be able to retrieve a list of users if admin with pagination and search', async () => {
-      _userEdited.roles = ['user', 'admin'];
-
       try {
-        const result = await agent.post('/api/auth/signup').send(_userEdited).expect(200);
-        userEdited = result.body.user;
+        userEdited = await signupAndPromoteAdmin(agent, { ..._userEdited, roles: ['user', 'admin'] });
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -193,11 +198,8 @@ describe('User admin integration tests:', () => {
     });
 
     test('should be able to get a single user details if admin', async () => {
-      _userEdited.roles = ['user', 'admin'];
-
       try {
-        const result = await agent.post('/api/auth/signup').send(_userEdited).expect(200);
-        userEdited = result.body.user;
+        userEdited = await signupAndPromoteAdmin(agent, { ..._userEdited, roles: ['user', 'admin'] });
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -223,11 +225,8 @@ describe('User admin integration tests:', () => {
     });
 
     test('should be able to update a single user details if admin', async () => {
-      _userEdited.roles = ['user', 'admin'];
-
       try {
-        const result = await agent.post('/api/auth/signup').send(_userEdited).expect(200);
-        userEdited = result.body.user;
+        userEdited = await signupAndPromoteAdmin(agent, { ..._userEdited, roles: ['user', 'admin'] });
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -264,11 +263,8 @@ describe('User admin integration tests:', () => {
     });
 
     test('should be able to remove a single user if admin', async () => {
-      _userEdited.roles = ['user', 'admin'];
-
       try {
-        const result = await agent.post('/api/auth/signup').send(_userEdited).expect(200);
-        userEdited = result.body.user;
+        userEdited = await signupAndPromoteAdmin(agent, { ..._userEdited, roles: ['user', 'admin'] });
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -294,11 +290,8 @@ describe('User admin integration tests:', () => {
     });
 
     test('should return 404 when getting a user with a non-existent id if admin', async () => {
-      _userEdited.roles = ['user', 'admin'];
-
       try {
-        const result = await agent.post('/api/auth/signup').send(_userEdited).expect(200);
-        userEdited = result.body.user;
+        userEdited = await signupAndPromoteAdmin(agent, { ..._userEdited, roles: ['user', 'admin'] });
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -322,11 +315,8 @@ describe('User admin integration tests:', () => {
     });
 
     test('should return 422 when pagination params exceed maximum of 3', async () => {
-      _userEdited.roles = ['user', 'admin'];
-
       try {
-        const result = await agent.post('/api/auth/signup').send(_userEdited).expect(200);
-        userEdited = result.body.user;
+        userEdited = await signupAndPromoteAdmin(agent, { ..._userEdited, roles: ['user', 'admin'] });
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -378,15 +368,13 @@ describe('User admin integration tests:', () => {
         expect(err).toBeFalsy();
       }
       try {
-        const adminResult = await agent.post('/api/auth/signup').send({
+        adminUser = await signupAndPromoteAdmin(agent, {
           firstName: 'Admin',
           lastName: 'Error',
           email: 'adminerror@test.com',
           password: 'W@os.jsI$Aw3$0m3',
           provider: 'local',
-          roles: ['user', 'admin'],
-        }).expect(200);
-        adminUser = adminResult.body.user;
+        });
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();

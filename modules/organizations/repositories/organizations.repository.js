@@ -49,7 +49,7 @@ const get = (id) => {
  * @param {Object} organization - The organization object containing the updated details.
  * @returns {Promise<Object>} The updated organization.
  */
-const update = (organization) => new Organization(organization).save().then((doc) => doc.populate(defaultPopulate));
+const update = (organization) => organization.save().then((doc) => doc.populate(defaultPopulate));
 
 /**
  * @function remove

@@ -65,7 +65,7 @@ const seedMongoose = async () => {
   await mongooseService.connect();
   try {
     await mongooseService.loadModels();
-    const AuthService = await import(path.resolve('./modules/identity-local/services/identity.service.js'));
+    const AuthService = await import(path.resolve('./modules/auth/services/auth.service.js'));
     const UserService = await import(path.resolve('./modules/users/services/users.service.js'));
     const TaskService = await import(path.resolve('./modules/tasks/services/tasks.service.js'));
     const seed = await import(path.resolve('./lib/services/seed.js'));
@@ -81,7 +81,7 @@ const seedMongooseUser = async () => {
   await mongooseService.connect();
   try {
     await mongooseService.loadModels();
-    const AuthService = await import(path.resolve('./modules/identity-local/services/identity.service.js'));
+    const AuthService = await import(path.resolve('./modules/auth/services/auth.service.js'));
     const UserService = await import(path.resolve('./modules/users/services/users.service.js'));
     const seed = await import(path.resolve('./lib/services/seed.js'));
 

@@ -15,7 +15,7 @@ import TasksRepository from '../repositories/tasks.repository.js';
 const list = async (organization) => {
   const filter = organization ? { organizationId: organization._id } : {};
   const result = await TasksRepository.list(filter);
-  return Promise.resolve(result);
+  return result;
 };
 
 /**
@@ -38,7 +38,7 @@ const create = async (body, user, organization) => {
   }
 
   const result = await TasksRepository.create(task);
-  return Promise.resolve(result);
+  return result;
 };
 
 /**
@@ -49,7 +49,7 @@ const create = async (body, user, organization) => {
  */
 const get = async (id) => {
   const result = await TasksRepository.get(id);
-  return Promise.resolve(result);
+  return result;
 };
 
 /**
@@ -64,7 +64,7 @@ const update = async (task, body) => {
   task.description = body.description;
 
   const result = await TasksRepository.update(task);
-  return Promise.resolve(result);
+  return result;
 };
 
 /**
@@ -75,7 +75,7 @@ const update = async (task, body) => {
  */
 const remove = async (task) => {
   const result = await TasksRepository.remove(task);
-  return Promise.resolve(result);
+  return result;
 };
 
 /**
@@ -85,7 +85,18 @@ const remove = async (task) => {
  */
 const stats = async () => {
   const result = await TasksRepository.stats();
-  return Promise.resolve(result);
+  return result;
+};
+
+/**
+ * @function deleteMany
+ * @description Service to delete multiple tasks matching a filter.
+ * @param {Object} filter - The filter to apply to the deletion query.
+ * @returns {Promise} A promise resolving to the deletion result.
+ */
+const deleteMany = async (filter) => {
+  const result = await TasksRepository.deleteMany(filter);
+  return result;
 };
 
 export default {
@@ -95,4 +106,5 @@ export default {
   update,
   remove,
   stats,
+  deleteMany,
 };

@@ -148,9 +148,10 @@ describe('Tasks organization-scoped integration tests:', () => {
         expect(err).toBeFalsy();
       }
 
-      // Set currentOrganization on the non-member to the owner's org (they are NOT a member of)
+      // Directly set currentOrganization on the non-member to the owner's org (they are NOT a member of)
+      // This bypasses the API whitelist intentionally to simulate a tampered DB state
       try {
-        await agent.put('/api/users').send({ currentOrganization: ownerOrg.id || ownerOrg._id }).expect(200);
+        await UserService.updateById(nonMemberUser.id || nonMemberUser._id, { currentOrganization: ownerOrg.id || ownerOrg._id });
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();

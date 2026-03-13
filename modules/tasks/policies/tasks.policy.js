@@ -6,8 +6,8 @@
  * Define task-related abilities for an authenticated user.
  * Platform admins get full access. When an organization membership exists,
  * abilities are scoped to the organization via organizationId conditions.
- * Without a membership (legacy / no org context), users can read and
- * create any task but can only update/delete their own tasks.
+ * Without a membership (no org context), users receive no task abilities
+ * and cannot access tasks.
  * @param {Object} user - The authenticated user
  * @param {Object|null} membership - Optional organization membership
  * @param {Object} builder - CASL AbilityBuilder helpers

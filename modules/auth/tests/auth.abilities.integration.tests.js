@@ -55,7 +55,7 @@ describe('Auth abilities integration tests:', () => {
       .expect(200);
     user = userRes.body.user;
 
-    // Create an admin user
+    // Create an admin user (signup then promote via service — roles are stripped from signup)
     const adminRes = await adminAgent
       .post('/api/auth/signup')
       .send({
@@ -64,10 +64,11 @@ describe('Auth abilities integration tests:', () => {
         email: adminCredentials.email,
         password: adminCredentials.password,
         provider: 'local',
-        roles: ['user', 'admin'],
       })
       .expect(200);
     adminUser = adminRes.body.user;
+    const adminBrut = await UserService.getBrut({ id: adminUser.id });
+    await UserService.update(adminBrut, { roles: ['user', 'admin'] }, 'admin');
   });
 
   // -------------------------------------------------------

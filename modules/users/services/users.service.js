@@ -18,7 +18,7 @@ import OrganizationsCrudService from '../../organizations/services/organizations
  */
 const list = async (search, page, perPage) => {
   const result = await UserRepository.list(search, page || 0, perPage || 20);
-  return Promise.resolve(result.map((user) => AuthService.removeSensitive(user)));
+  return result.map((user) => AuthService.removeSensitive(user));
 };
 
 /**
@@ -41,7 +41,7 @@ const create = async (user) => {
   }
   const result = await UserRepository.create(user);
   // Remove sensitive data before return
-  return Promise.resolve(AuthService.removeSensitive(result));
+  return AuthService.removeSensitive(result);
 };
 
 /**
@@ -51,7 +51,7 @@ const create = async (user) => {
  */
 const search = async (input) => {
   const result = await UserRepository.search(input);
-  return Promise.resolve(result.map((user) => AuthService.removeSensitive(user)));
+  return result.map((user) => AuthService.removeSensitive(user));
 };
 
 /**
@@ -61,7 +61,7 @@ const search = async (input) => {
  */
 const get = async (user) => {
   const result = await UserRepository.get(user);
-  return Promise.resolve(AuthService.removeSensitive(result));
+  return AuthService.removeSensitive(result);
 };
 
 /**
@@ -71,7 +71,7 @@ const get = async (user) => {
  */
 const getBrut = async (user) => {
   const result = await UserRepository.get(user);
-  return Promise.resolve(result);
+  return result;
 };
 
 /**
@@ -87,7 +87,7 @@ const update = async (user, body, option) => {
   else if (option === 'recover') user = _.assignIn(user, AuthService.removeSensitive(body, config.whitelists.users.recover));
 
   const result = await UserRepository.update(user);
-  return Promise.resolve(AuthService.removeSensitive(result));
+  return AuthService.removeSensitive(result);
 };
 
 /**
@@ -98,7 +98,7 @@ const update = async (user, body, option) => {
 const terms = async (user) => {
   user = _.assignIn(user, { terms: new Date() });
   const result = await UserRepository.update(user);
-  return Promise.resolve(AuthService.removeSensitive(result));
+  return AuthService.removeSensitive(result);
 };
 
 /**
@@ -130,7 +130,7 @@ const remove = async (user) => {
   }
 
   const result = await UserRepository.remove(user);
-  return Promise.resolve(result);
+  return result;
 };
 
 /**
@@ -139,7 +139,7 @@ const remove = async (user) => {
  */
 const stats = async () => {
   const result = await UserRepository.stats();
-  return Promise.resolve(result);
+  return result;
 };
 
 /**

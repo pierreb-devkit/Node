@@ -20,7 +20,7 @@ import responses from '../../../lib/helpers/responses.js';
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  * @param {Function} next - Express next middleware function
- * @returns {void}
+ * @returns {Promise<void>}
  */
 async function resolveOrganization(req, res, next) {
   const organizationId = req.params.organizationId || req.user?.currentOrganization;
