@@ -7,6 +7,7 @@ import path from 'path';
 import { beforeAll, afterAll, describe, test, expect } from '@jest/globals';
 import { bootstrap } from '../../../lib/app.js';
 import mongooseService from '../../../lib/services/mongoose.js';
+import config from '../../../config/index.js';
 
 /**
  * Authorization integration tests.
@@ -27,8 +28,11 @@ describe('Authorization integration tests:', () => {
   let otherUser;
   let otherAgent;
   let task; // task owned by `user`
+  const originalOrgEnabled = config.organizations.enabled;
 
   beforeAll(async () => {
+    // Disable organizations so signup auto-creates a silent org with membership
+    config.organizations.enabled = false;
     const init = await bootstrap();
     UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
     agent = request.agent(init.app);
@@ -57,7 +61,7 @@ describe('Authorization integration tests:', () => {
     task = taskRes.body.data;
 
     // Upload an avatar for the user so we have an upload to test against
-    await agent.post('/api/users/avatar').attach('img', './modules/users/tests/img/default.jpeg').expect(200);
+    await agent.post('/api/users/avatar').attach('avatar', './modules/users/tests/img/default.jpeg').expect(200);
 
     // Create an admin user via adminAgent
     const adminRes = await adminAgent
@@ -177,29 +181,29 @@ describe('Authorization integration tests:', () => {
   // Regular USER cannot access admin routes
   // -------------------------------------------------------
   describe('Regular user cannot access admin routes', () => {
-    test('GET /api/users (admin list) should return 403 for regular user', async () => {
-      const result = await agent.get('/api/users').expect(403);
+    test('GET /api/admin/users (admin list) should return 403 for regular user', async () => {
+      const result = await agent.get('/api/admin/users').expect(403);
       expect(result.body.message).toBe('Unauthorized');
       expect(result.body.description).toBe('User is not authorized');
     });
 
-    test('GET /api/users/page/0 should return 403 for regular user', async () => {
-      const result = await agent.get('/api/users/page/0').expect(403);
+    test('GET /api/admin/users/page/0 should return 403 for regular user', async () => {
+      const result = await agent.get('/api/admin/users/page/0').expect(403);
       expect(result.body.message).toBe('Unauthorized');
     });
 
-    test('GET /api/users/:userId should return 403 for regular user', async () => {
-      const result = await agent.get(`/api/users/${adminUser._id}`).expect(403);
+    test('GET /api/admin/users/:userId should return 403 for regular user', async () => {
+      const result = await agent.get(`/api/admin/users/${adminUser._id}`).expect(403);
       expect(result.body.message).toBe('Unauthorized');
     });
 
-    test('PUT /api/users/:userId should return 403 for regular user', async () => {
-      const result = await agent.put(`/api/users/${adminUser._id}`).send({ firstName: 'x' }).expect(403);
+    test('PUT /api/admin/users/:userId should return 403 for regular user', async () => {
+      const result = await agent.put(`/api/admin/users/${adminUser._id}`).send({ firstName: 'x' }).expect(403);
       expect(result.body.message).toBe('Unauthorized');
     });
 
-    test('DELETE /api/users/:userId should return 403 for regular user', async () => {
-      const result = await agent.delete(`/api/users/${adminUser._id}`).expect(403);
+    test('DELETE /api/admin/users/:userId should return 403 for regular user', async () => {
+      const result = await agent.delete(`/api/admin/users/${adminUser._id}`).expect(403);
       expect(result.body.message).toBe('Unauthorized');
     });
   });
@@ -239,12 +243,12 @@ describe('Authorization integration tests:', () => {
   // Admin CAN access admin routes
   // -------------------------------------------------------
   describe('Admin can access admin routes', () => {
-    test('GET /api/users (admin list) should return 200 for admin', async () => {
-      await adminAgent.get('/api/users').expect(200);
+    test('GET /api/admin/users (admin list) should return 200 for admin', async () => {
+      await adminAgent.get('/api/admin/users').expect(200);
     });
 
-    test('GET /api/users/:userId should return 200 for admin', async () => {
-      await adminAgent.get(`/api/users/${user._id}`).expect(200);
+    test('GET /api/admin/users/:userId should return 200 for admin', async () => {
+      await adminAgent.get(`/api/admin/users/${user._id}`).expect(200);
     });
   });
 
@@ -252,6 +256,7 @@ describe('Authorization integration tests:', () => {
   // Cleanup
   // -------------------------------------------------------
   afterAll(async () => {
+    config.organizations.enabled = originalOrgEnabled;
     try { await agent.delete(`/api/tasks/${task.id}`); } catch (_) { /* ignore */ }
     try { await UserService.remove(user); } catch (_) { /* ignore */ }
     try { await UserService.remove(adminUser); } catch (_) { /* ignore */ }

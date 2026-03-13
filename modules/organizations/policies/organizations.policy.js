@@ -31,8 +31,10 @@ export function organizationAbilities(user, membership, { can, cannot }) {
     case 'admin':
       can('read', 'Organization', { _id: String(membership.organizationId._id || membership.organizationId) });
       can('update', 'Organization', { _id: String(membership.organizationId._id || membership.organizationId) });
-      can('manage', 'Membership', { organizationId: String(membership.organizationId._id || membership.organizationId) });
       cannot('delete', 'Organization');
+      can('read', 'Membership', { organizationId: String(membership.organizationId._id || membership.organizationId) });
+      can('create', 'Membership', { organizationId: String(membership.organizationId._id || membership.organizationId) });
+      can('delete', 'Membership', { organizationId: String(membership.organizationId._id || membership.organizationId) });
       break;
     case 'member':
       can('read', 'Organization', { _id: String(membership.organizationId._id || membership.organizationId) });

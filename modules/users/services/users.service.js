@@ -5,7 +5,9 @@ import _ from 'lodash';
 
 import config from '../../../config/index.js';
 import AuthService from '../../auth/services/auth.service.js';
-import UserRepository from '../repositories/user.repository.js';
+import UserRepository from '../repositories/users.repository.js';
+import MembershipService from '../../organizations/services/organizations.membership.service.js';
+import OrganizationsCrudService from '../../organizations/services/organizations.crud.service.js';
 
 /**
  * @desc Function to get all users in db
@@ -105,6 +107,28 @@ const terms = async (user) => {
  * @return {Promise} result & id
  */
 const remove = async (user) => {
+  const userId = user._id || user.id;
+
+  // Clean up memberships and handle orphaned orgs before deleting the user
+  const memberships = await MembershipService.listByUser(userId);
+  for (const membership of memberships) {
+    const orgId = membership.organizationId._id || membership.organizationId;
+    if (membership.role === 'owner') {
+      // Check if this user is the only owner of the org
+      const ownerCount = await MembershipService.count({ organizationId: orgId, role: 'owner' });
+      if (ownerCount <= 1) {
+        // Sole owner — delete the entire org and its memberships
+        // Clear currentOrganization for affected users
+        await UserRepository.updateMany({ currentOrganization: orgId }, { currentOrganization: null });
+        await MembershipService.deleteMany({ organizationId: orgId });
+        await OrganizationsCrudService.removeById(orgId);
+        continue; // membership already deleted above
+      }
+    }
+    // Delete this user's membership
+    await MembershipService.deleteMany({ _id: membership._id });
+  }
+
   const result = await UserRepository.remove(user);
   return Promise.resolve(result);
 };
@@ -118,6 +142,45 @@ const stats = async () => {
   return Promise.resolve(result);
 };
 
+/**
+ * @desc Function to update a user by ID with a partial update object
+ * @param {String} id - The user ID
+ * @param {Object} data - Fields to update
+ * @returns {Promise<Object>} update result
+ */
+const updateById = (id, data) => UserRepository.updateById(id, data);
+
+/**
+ * @desc Function to find users matching a filter with optional field selection
+ * @param {Object} filter - Mongoose filter
+ * @param {String} [select] - Fields to select
+ * @returns {Promise<Array>} matching users
+ */
+const findWithFilter = (filter, select) => UserRepository.findWithFilter(filter, select);
+
+/**
+ * @desc Function to find a user by ID, update, and return the populated document
+ * @param {String} id - The user ID
+ * @param {Object} data - Fields to update
+ * @param {String|Array|Object} populateFields - Fields to populate
+ * @returns {Promise<Object>} updated user
+ */
+const findByIdAndUpdatePopulated = (id, data, populateFields) => UserRepository.findByIdAndUpdatePopulated(id, data, populateFields);
+
+/**
+ * @desc Function to search users by name or email
+ * @param {String} search - The search string
+ * @returns {Promise<Array>} matching user IDs
+ */
+const searchByNameOrEmail = (search) => UserRepository.searchByNameOrEmail(search);
+
+/**
+ * @desc Function to find a user by email address
+ * @param {String} email - The email to search for
+ * @returns {Promise<Object|null>} The matching user or null
+ */
+const findByEmail = (email) => UserRepository.findByEmail(email);
+
 export default {
   list,
   create,
@@ -128,4 +191,9 @@ export default {
   terms,
   remove,
   stats,
+  updateById,
+  findWithFilter,
+  findByIdAndUpdatePopulated,
+  searchByNameOrEmail,
+  findByEmail,
 };

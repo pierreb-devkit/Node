@@ -4,6 +4,7 @@
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
 import UserService from '../services/users.service.js';
+import MembershipService from '../../organizations/services/organizations.membership.service.js';
 
 /**
  * @desc Endpoint to ask the service to get the list of users
@@ -13,7 +14,13 @@ import UserService from '../services/users.service.js';
 const list = async (req, res) => {
   try {
     const users = await UserService.list(req.search, req.page, req.perPage);
-    responses.success(res, 'user list')(users);
+    const enriched = await Promise.all(users.map(async (u) => {
+      const user = u.toJSON ? u.toJSON() : { ...u };
+      const memberships = await MembershipService.listByUser(user._id || user.id);
+      user.memberships = memberships.map((m) => (m.toJSON ? m.toJSON() : { ...m }));
+      return user;
+    }));
+    responses.success(res, 'user list')(enriched);
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
   }
@@ -24,9 +31,18 @@ const list = async (req, res) => {
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
-const get = (req, res) => {
-  const user = req.model ? req.model.toJSON() : {};
-  responses.success(res, 'user get')(user);
+const get = async (req, res) => {
+  try {
+    const user = req.model ? req.model.toJSON() : {};
+    const memberships = await MembershipService.listByUser(user._id || user.id);
+    user.memberships = memberships.map((m) => {
+      const obj = m.toJSON ? m.toJSON() : { ...m };
+      return obj;
+    });
+    responses.success(res, 'user get')(user);
+  } catch (err) {
+    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+  }
 };
 
 /**

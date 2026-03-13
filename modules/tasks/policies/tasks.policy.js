@@ -19,20 +19,12 @@ export function taskAbilities(user, membership, { can }) {
     can('manage', 'all');
     return;
   }
-  if (membership) {
-    // Org-scoped abilities
-    const organizationId = String(membership.organizationId);
-    can('create', 'Task', { organizationId });
-    can('read', 'Task', { organizationId });
-    can('update', 'Task', { organizationId, user: String(user._id) });
-    can('delete', 'Task', { organizationId, user: String(user._id) });
-  } else {
-    // Legacy — no org context
-    can('read', 'Task');
-    can('create', 'Task');
-    can('update', 'Task', { user: String(user._id) });
-    can('delete', 'Task', { user: String(user._id) });
-  }
+  if (!membership) return; // No org membership — no task access
+  const organizationId = String(membership.organizationId);
+  can('create', 'Task', { organizationId });
+  can('read', 'Task', { organizationId });
+  can('update', 'Task', { organizationId, user: String(user._id) });
+  can('delete', 'Task', { organizationId, user: String(user._id) });
 }
 
 /**

@@ -1,7 +1,7 @@
 /**
  * Module dependencies
  */
-import mongoose from 'mongoose';
+import OrganizationRepository from '../repositories/organizations.repository.js';
 
 /**
  * Normalize a string into a URL-safe slug.
@@ -28,11 +28,10 @@ const slugify = (input) =>
  */
 const generateOrganizationSlug = async (firstName, lastName) => {
   const base = firstName ? slugify(`${firstName}s organization`) : slugify(`${lastName}s organization`);
-  const Organization = mongoose.model('Organization');
 
   let candidate = base;
   let counter = 1;
-  while (await Organization.exists({ slug: candidate })) {
+  while (await OrganizationRepository.exists({ slug: candidate })) {
     candidate = `${base}-${counter}`;
     counter += 1;
   }

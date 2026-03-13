@@ -6,7 +6,7 @@ import rateLimit from 'express-rate-limit';
 
 import config from '../../../config/index.js';
 import model from '../../../lib/middlewares/model.js';
-import UsersSchema from '../../users/models/user.schema.js';
+import UsersSchema from '../../users/models/users.schema.js';
 import auth from '../controllers/auth.controller.js';
 import authPassword from '../controllers/auth.password.controller.js';
 

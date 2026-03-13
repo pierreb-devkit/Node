@@ -35,8 +35,8 @@ export default {
     '!<rootDir>/lib/services/sequelize.js',
     // Exclude OAuth strategy configs — no business logic, just passport.use() calls;
     // real OAuth credentials required to test, which are not available in CI
-    '!<rootDir>/modules/auth/config/strategies/apple.js',
-    '!<rootDir>/modules/auth/config/strategies/google.js',
+    '!<rootDir>/modules/identity-local/config/strategies/apple.js',
+    '!<rootDir>/modules/identity-local/config/strategies/google.js',
     // Exclude dead code — never imported anywhere in the codebase
     '!<rootDir>/modules/users/services/users.data.service.js',
   ],

@@ -121,30 +121,29 @@ Configuration is split between a **global** file and **per-module** files, then 
 
 ### File layout
 
-Only `config.*.js` files participate in the merge. Other config files in module directories (e.g. policy, seed) are loaded separately by their own init logic.
+Config files follow the `module.env.kind.js` naming convention. Init files (Express middleware like passport) use `module.init.js`.
 
 ```text
 config/defaults/
-  config.development.js          ← global defaults (app, db, host, port, log, seed, …)
-  config.production.js           ← production overrides
-  config.test.js                 ← test overrides
+  development.config.js          ← infra only (app, db, api, log, cors, cookie, mailer, seedDB)
+  production.config.js           ← production overrides
+  test.config.js                 ← test overrides
 
 modules/<name>/config/
-  config.development.js          ← module defaults (e.g. uploads, auth, tasks)
-  config.<env>.js                ← module env overrides (optional)
+  <name>.development.config.js   ← module defaults (e.g. auth.development.config.js)
+  <name>.init.js                 ← module init (e.g. auth.init.js — passport setup)
 ```
 
 ### Merge order (priority ascending)
 
 | Layer | Source | Example |
 |-------|--------|---------|
-| 1 | Module development defaults | `modules/*/config/config.development.js` |
-| 2 | Global development defaults | `config/defaults/config.development.js` |
-| 3 | Module env overrides | `modules/*/config/config.<env>.js` |
-| 4 | Global env overrides | `config/defaults/config.<env>.js` |
-| 5 | `DEVKIT_NODE_*` env vars | `DEVKIT_NODE_app_title='my app'` |
+| 1 | Module defaults | `modules/*/config/*.development.config.js` |
+| 2 | Global development defaults | `config/defaults/development.config.js` |
+| 3 | Global env overrides | `config/defaults/<env>.config.js` |
+| 4 | `DEVKIT_NODE_*` env vars | `DEVKIT_NODE_app_title='my app'` |
 
-Layers 3–4 are only applied when `NODE_ENV` is not `development`.
+Layer 3 is only applied when `NODE_ENV` is not `development`.
 
 ### Merge semantics
 
@@ -165,13 +164,10 @@ When running a downstream project that clones this stack, set `NODE_ENV` to the 
 
 ```text
 config/defaults/
-  config.myproject.js            ← global project overrides (optional)
-
-modules/<name>/config/
-  config.myproject.js            ← module project overrides (optional)
+  myproject.config.js            ← global project overrides
 ```
 
-The loader discovers files named `config.${NODE_ENV}.js` — files without the `config.` prefix are ignored.
+The loader discovers files named `${NODE_ENV}.config.js` in `config/defaults/` — module config files are always loaded regardless of environment.
 
 ## :building_construction: Organizations API
 
@@ -190,7 +186,7 @@ The loader discovers files named `config.${NODE_ENV}.js` — files without the `
 | `GET`    | `/api/admin/organizations/:organizationId`              | JWT+Admin | Get any organization        |
 | `DELETE` | `/api/admin/organizations/:organizationId`              | JWT+Admin | Delete any organization     |
 
-> See [MIGRATION.md](MIGRATION.md) for the full migration guide from route-level CASL to document-level CASL v2.
+> See [MIGRATIONS.md](MIGRATIONS.md) for the full migration guide from route-level CASL to document-level CASL v2.
 
 ## :whale: Docker
 

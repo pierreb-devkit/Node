@@ -15,6 +15,11 @@ const OrganizationMongoose = new Schema(
       required: true,
       trim: true,
     },
+    description: {
+      type: String,
+      default: '',
+      trim: true,
+    },
     slug: {
       type: String,
       required: true,

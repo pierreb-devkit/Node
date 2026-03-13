@@ -1,5 +1,5 @@
- 
- 
+
+
 /**
  * Module dependencies
  */
@@ -7,8 +7,8 @@ import path from 'path';
 import passport from 'passport';
 import * as url from 'url';
 
-import config from '../../../config/index.js';
-import UserService from '../../users/services/users.service.js';
+import config from '../../config/index.js';
+import UserService from '../users/services/users.service.js';
 
 const __dirname = url.fileURLToPath(new URL('.', import.meta.url));
 

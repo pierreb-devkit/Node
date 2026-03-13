@@ -65,7 +65,7 @@ describe('Core unit tests:', () => {
 
     it('config should load production configuration in production env', async () => {
       try {
-        const defaultConfig = (await import(path.join(process.cwd(), './config', 'defaults', 'config.production.js'))) || {};
+        const defaultConfig = (await import(path.join(process.cwd(), './config', 'defaults', 'production.config.js'))) || {};
         expect(defaultConfig.default.app.title.split(' - ')[1]).toBe('Production Environment');
       } catch (err) {
         console.log(err);
@@ -576,7 +576,8 @@ describe('Core unit tests:', () => {
     });
 
     it('user can create tasks', async () => {
-      const ability = await policy.defineAbilityFor({ _id: 'user1', roles: ['user'] });
+      const membership = { organizationId: 'org1' };
+      const ability = await policy.defineAbilityFor({ _id: 'user1', roles: ['user'] }, membership);
       expect(ability.can('create', 'Task')).toBe(true);
     });
 
@@ -591,7 +592,7 @@ describe('Core unit tests:', () => {
     });
 
     it('isAllowed should call next() for HEAD on an allowed route', async () => {
-      const mockReq = { method: 'HEAD', route: { path: '/api/tasks' }, user: { _id: 'user1', roles: ['user'] } };
+      const mockReq = { method: 'HEAD', route: { path: '/api/users/me' }, user: { _id: 'user1', roles: ['user'] } };
       const mockRes = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       const mockNext = jest.fn();
       await policy.isAllowed(mockReq, mockRes, mockNext);
@@ -599,7 +600,7 @@ describe('Core unit tests:', () => {
     });
 
     it('isAllowed should call next() for OPTIONS on an allowed route', async () => {
-      const mockReq = { method: 'OPTIONS', route: { path: '/api/tasks' }, user: { _id: 'user1', roles: ['user'] } };
+      const mockReq = { method: 'OPTIONS', route: { path: '/api/users/me' }, user: { _id: 'user1', roles: ['user'] } };
       const mockRes = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       const mockNext = jest.fn();
       await policy.isAllowed(mockReq, mockRes, mockNext);

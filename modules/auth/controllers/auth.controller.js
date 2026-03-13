@@ -8,14 +8,16 @@ import jwt from 'jsonwebtoken';
 import UserService from '../../users/services/users.service.js';
 import config from '../../../config/index.js';
 import model from '../../../lib/middlewares/model.js';
-import mails from '../../../lib/helpers/mails.js';
+import mails from '../../../lib/helpers/mailer/index.js';
 import responses from '../../../lib/helpers/responses.js';
 import errors from '../../../lib/helpers/errors.js';
 import AppError from '../../../lib/helpers/AppError.js';
-import UsersSchema from '../../users/models/user.schema.js';
+import UsersSchema from '../../users/models/users.schema.js';
 import policy from '../../../lib/middlewares/policy.js';
 import serializeAbilities from '../../../lib/helpers/abilities.js';
-import AuthOrganizationService from '../services/auth.organization.service.js';
+import AuthOrganizationService from '../../organizations/services/organizations.service.js';
+import OrganizationCrudService from '../../organizations/services/organizations.crud.service.js';
+import MembershipService from '../../organizations/services/organizations.membership.service.js';
 
 const tokenCookieOptions = {
   httpOnly: true,
@@ -79,14 +81,27 @@ const signup = async (req, res) => {
     }
 
     // Handle organization provisioning based on config
-    const orgResult = await AuthOrganizationService.handleSignupOrganization(user);
+    // If org creation fails, rollback the just-created user
+    let orgResult;
+    try {
+      orgResult = await AuthOrganizationService.handleSignupOrganization(user);
+    } catch (orgErr) {
+      // Manual rollback: delete the user we just created
+      try {
+        await UserService.remove(user);
+      } catch (_cleanupErr) {
+        // Best-effort cleanup; log but don't mask original error
+      }
+      throw orgErr;
+    }
 
     const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
       expiresIn: config.jwt.expiresIn,
     });
 
     // If the org set currentOrganization, reflect it on the returned user
-    if (orgResult.organization) {
+    // (but NOT for pendingJoin — user has no active membership yet)
+    if (orgResult.organization && !orgResult.pendingJoin) {
       user.currentOrganization = orgResult.organization._id || orgResult.organization.id;
     }
 
@@ -97,8 +112,11 @@ const signup = async (req, res) => {
         user,
         tokenExpiresIn: Date.now() + config.jwt.expiresIn * 1000,
         organization: orgResult.organization || null,
+        joined: orgResult.joined || false,
+        pendingJoin: orgResult.pendingJoin || false,
         abilities: orgResult.abilities || [],
         organizationSetupRequired: orgResult.organizationSetupRequired || false,
+        suggestedOrganization: orgResult.suggestedOrganization || null,
         type: 'sucess',
         message: 'Sign up',
       });
@@ -140,11 +158,31 @@ const signinAuthenticate = (req, res, next) => {
 const signin = async (req, res) => {
   if (!config.sign.in) return responses.error(res, 404, 'Signin error', 'Login is currently deactivated')();
   const user = req.user;
+
+  // Auto-set currentOrganization if missing but active memberships exist
+  await OrganizationCrudService.autoSetCurrentOrganization(user);
+
+  // Load active membership for current organization to build abilities
+  let membership = null;
+  if (user.currentOrganization) {
+    membership = await MembershipService.findByUserAndOrganization(
+      user._id || user.id,
+      user.currentOrganization._id || user.currentOrganization,
+    );
+  }
+
   const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
     expiresIn: config.jwt.expiresIn,
   });
-  const ability = await policy.defineAbilityFor(user, null);
+  const ability = await policy.defineAbilityFor(user, membership);
   const abilities = serializeAbilities(ability);
+
+  // If user has no org, check for pending join requests
+  let pendingRequests = [];
+  if (!user.currentOrganization && config.organizations?.enabled) {
+    pendingRequests = await MembershipService.listPendingByUser(user._id || user.id);
+  }
+
   return res
     .status(200)
     .cookie('TOKEN', token, tokenCookieOptions)
@@ -152,6 +190,7 @@ const signin = async (req, res) => {
       user,
       tokenExpiresIn: Date.now() + config.jwt.expiresIn * 1000,
       abilities,
+      pendingRequests: pendingRequests.length > 0 ? pendingRequests : undefined,
       type: 'sucess',
       message: 'Sign in',
     });
@@ -166,6 +205,9 @@ const signin = async (req, res) => {
 const token = async (req, res) => {
   let user = null;
   if (req.user) {
+    // Auto-set currentOrganization if missing but active memberships exist
+    await OrganizationCrudService.autoSetCurrentOrganization(req.user);
+
     user = {
       id: req.user.id,
       provider: req.user.provider,
@@ -175,17 +217,38 @@ const token = async (req, res) => {
       lastName: req.user.lastName,
       firstName: req.user.firstName,
       additionalProvidersData: req.user.additionalProvidersData,
+      emailVerified: req.user.emailVerified,
+      currentOrganization: req.user.currentOrganization,
+      lastLoginAt: req.user.lastLoginAt,
     };
   }
+
+  // Load active membership for current organization to build abilities
+  let membership = null;
+  if (req.user && req.user.currentOrganization) {
+    membership = await MembershipService.findByUserAndOrganization(
+      req.user._id || req.user.id,
+      req.user.currentOrganization._id || req.user.currentOrganization,
+    );
+  }
+
   const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
     expiresIn: config.jwt.expiresIn,
   });
-  const ability = await policy.defineAbilityFor(req.user, null);
+  const ability = await policy.defineAbilityFor(req.user, membership);
   const abilities = serializeAbilities(ability);
+
+  // If user has no org, include pending join requests
+  let pendingRequests;
+  if (req.user && !req.user.currentOrganization && config.organizations?.enabled) {
+    const requests = await MembershipService.listPendingByUser(req.user._id || req.user.id);
+    if (requests.length > 0) pendingRequests = requests;
+  }
+
   return res
     .status(200)
     .cookie('TOKEN', token, tokenCookieOptions)
-    .json({ user, tokenExpiresIn: Date.now() + config.jwt.expiresIn * 1000, abilities });
+    .json({ user, tokenExpiresIn: Date.now() + config.jwt.expiresIn * 1000, abilities, pendingRequests });
 };
 
 /**
@@ -314,6 +377,11 @@ const getConfig = (_req, res) => {
     organizations: {
       enabled: !!config.organizations.enabled,
       domainMatching: !!config.organizations.domainMatching,
+      roles: config.organizations.roles,
+      roleDescriptions: config.organizations.roleDescriptions,
+    },
+    mail: {
+      configured: isMailerConfigured(),
     },
   });
 };

@@ -807,7 +807,7 @@ describe('Auth integration tests:', () => {
   describe('Config endpoint', () => {
     test('should return sign flags reflecting current config', async () => {
       const result = await agent.get('/api/auth/config').expect(200);
-      expect(result.body.data).toEqual({
+      expect(result.body.data).toMatchObject({
         sign: {
           in: expect.any(Boolean),
           up: expect.any(Boolean),
@@ -836,10 +836,13 @@ describe('Auth integration tests:', () => {
     });
 
     test('should return organizations config with enabled and domainMatching', async () => {
+      const original = config.organizations.enabled;
+      config.organizations.enabled = true;
       const result = await agent.get('/api/auth/config').expect(200);
       expect(result.body.data.organizations).toBeDefined();
       expect(result.body.data.organizations.enabled).toBe(true);
       expect(typeof result.body.data.organizations.domainMatching).toBe('boolean');
+      config.organizations.enabled = original;
     });
 
     test('should not expose autoCreate in organizations config', async () => {

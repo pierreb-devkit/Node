@@ -101,7 +101,7 @@ describe('Auth signup organization integration tests:', () => {
   });
 
   describe('Signup with organizations enabled + autoCreate + domainMatching', () => {
-    test('should join an existing organization when domain matches', async () => {
+    test('should create pending join request when domain matches existing org', async () => {
       config.organizations = { enabled: true, autoCreate: true, domainMatching: true };
 
       // First, create an existing organization with a specific domain
@@ -125,7 +125,7 @@ describe('Auth signup organization integration tests:', () => {
         expect(firstOrg).toBeDefined();
         expect(firstOrg.domain).toBe('matchdomain.com');
 
-        // Sign up second user with same domain — should join existing org
+        // Sign up second user with same domain — should get pending join request
         const result2 = await agent
           .post('/api/auth/signup')
           .send({
@@ -139,12 +139,13 @@ describe('Auth signup organization integration tests:', () => {
 
         secondUser = result2.body.user;
 
-        // Should have joined the same organization
+        // Should reference the same org but with pending flag
         expect(result2.body.organization).toBeDefined();
         expect(result2.body.organization._id).toBe(firstOrg._id);
+        expect(result2.body.pendingJoin).toBe(true);
         expect(result2.body.organizationSetupRequired).toBe(false);
 
-        // Abilities should be present
+        // Abilities should be present (without org context)
         expect(result2.body.abilities).toBeDefined();
         expect(result2.body.abilities).toBeInstanceOf(Array);
       } catch (err) {

@@ -4,7 +4,7 @@
 import passport from 'passport';
 
 import model from '../../../lib/middlewares/model.js';
-import organization from '../../../lib/middlewares/organization.js';
+import organization from '../../organizations/middleware/organizations.middleware.js';
 import policy from '../../../lib/middlewares/policy.js';
 import tasks from '../controllers/tasks.controller.js';
 import tasksSchema from '../models/tasks.schema.js';

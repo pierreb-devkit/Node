@@ -1,81 +1,93 @@
 ---
 name: feature
-description: Implement a new feature or modify existing functionality following the project's layered architecture and modularity rules. Use when adding features, modifying existing ones, or ensuring correct isolation within module boundaries.
+description: Implement a new feature or modify existing functionality. Use when asked to implement, add, build, create, or modify a feature, endpoint, API, or module. Includes scope analysis, edge case detection, module scaffolding, implementation, and quality verification.
 ---
 
 # Feature Skill
 
-Implement features with strict layer ordering and module isolation.
+## Phase 0 — Scope Analysis (interactive, before coding)
 
-## Steps
+### 1. Identify target module
 
-### 1. Identify target module(s)
+- Which module? Default to **ONE** unless justified.
+- **If the module doesn't exist** → run `/create-module` to scaffold it first, then continue.
 
-Before coding, determine:
+### 2. Analyze flows & edge cases
 
-- Which module(s) does this feature belong to?
-- Default to **ONE module** unless strictly necessary
-- If it spans multiple modules, explain why and minimize coupling
+For each user-facing flow this feature creates or modifies, identify:
 
-### 2. Apply layer rules
+- **Happy path** — standard success scenario
+- **Error path** — what fails, what does the user see?
+- **"Last one" edge** — last owner, last org, last member, sole record
+- **Retry edge** — can the user retry after failure/rejection? (check unique indexes)
+- **Multi-user impact** — who else is affected? Do they need notification?
 
-Respect the strict layer order — never skip or reverse it:
+### 3. Check boilerplate resilience
+
+- Works WITHOUT mailer configured? (graceful skip, no crash)
+- Works WITHOUT organizations enabled?
+- No hard dependency on external services for core flow?
+
+### 4. Present plan & ask questions
+
+**STOP and present to the user:**
+- Flows identified (happy + error + edge cases)
+- Users impacted + notification plan
+- Open questions or scope decisions
+
+**Wait for user validation before coding.**
+
+## Phase 1 — Implementation
+
+### 5. Apply layer rules
+
+Strict order — never skip or reverse:
 
 ```
 Routes → Controllers → Services → Repositories → Models
 ```
 
-- **Routes** (`routes/`): Define HTTP endpoints, apply policy middleware
-- **Controllers** (`controllers/`): Handle HTTP req/res, call services, format responses via `lib/helpers/responses.js`
-- **Services** (`services/`): Business logic, call repositories, throw `AppError` for domain errors
-- **Repositories** (`repositories/`): Database access only, use Joi schemas for validation
-- **Models** (`models/`): Mongoose schema definition (`*.model.mongoose.js`) and Joi schema (`*.schema.js`)
+- **Controllers**: HTTP only, call services, format via `lib/helpers/responses.js`
+- **Services**: Business logic, call repositories, throw `AppError`
+- **Repositories**: Database only — sole layer importing mongoose
 
-### 3. Apply modularity rules
+### 6. Apply modularity rules
 
-- **Isolate feature logic** inside the module boundary
-- **Avoid cross-module imports** unless absolutely required
-- If shared code is needed:
-  - Place it in `lib/helpers/` or `lib/services/`
-  - Provide **explicit justification** for why it must be shared
-- Keep these inside the module (`modules/{module}/**`):
-  - Controllers, services, repositories, models, schemas, policies, routes, tests
+- Isolate inside module boundary
+- No cross-module imports unless justified (shared code → `lib/helpers/`)
+- **No cross-module Repository/Model imports** — a service must never import another module's repositories or models; use the target module's Service instead
+- Follow `/naming` conventions
 
-### 4. Use existing helpers
+### 7. Handle notifications
 
-Before writing new utilities, check:
+If an action affects another user:
+- Use `lib/helpers/mailer/` abstraction (never nodemailer directly)
+- Check `mailer.isConfigured()` — skip silently if not configured
+- Create template in `config/templates/` for each new email type
+- Send async, non-blocking (`.catch(() => {})`)
 
-- `lib/helpers/responses.js` — JSend response wrapper
-- `lib/helpers/AppError.js` — Custom error class for domain errors
-- `lib/helpers/errors.js` — Error formatting utilities
-- `lib/helpers/joi.js` — Shared Joi validation helpers
-- `lib/middlewares/policy.js` — Authorization middleware
-- `lib/middlewares/model.js` — Model middleware
+## Phase 2 — Definition of Done
 
-### 5. Follow API response format
+### 8. Self-review checklist
 
-All API responses must use the JSend wrapper from `lib/helpers/responses.js`:
+**Edge cases:**
+- [ ] "Last one" handled (last owner can't leave/be demoted)
+- [ ] Retry works after rejection (unique indexes freed)
+- [ ] Works without mailer (graceful skip)
+- [ ] Error responses have user-friendly `description` field
 
-```js
-// Success
-responses.success(res, 'task list')(data);
-// Error
-responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
-```
+**Tests:**
+- [ ] Tests: add unit + integration tests. Add E2E (`*.e2e.tests.js`) only if the change affects a critical user flow (auth, org onboarding, invite/join).
 
-### 6. Run verify
+**Modularity:**
+- [ ] Isolated in ONE module (or justified)
+- [ ] No cross-module Repository/Model imports (use target module's Service)
+- [ ] Layer order respected
 
-```bash
-npm run lint
-npm test
-```
+**Notifications:**
+- [ ] Actions affecting other users trigger email (if configured)
+- [ ] Templates created for each email type
 
-### 7. Open pull request
+### 9. Run `/verify`
 
-Once verify passes, invoke `/pull-request` to open the PR and run the full monitoring loop (draft → CI → review iteration → stop condition).
-
-## Notes
-
-- Config is loaded from `config/` and overridable via `DEVKIT_NODE_*` env vars
-- Authentication is handled via Passport JWT middleware — don't reimplement
-- All policies must use `lib/middlewares/policy.js` patterns
+### 10. Run `/pull-request`

@@ -18,7 +18,11 @@ const defaultPopulate = [
  * @param {Object} [filter] - Optional filter to apply to the query.
  * @returns {Promise<Array>} An array of organizations.
  */
-const list = (filter) => Organization.find(filter).populate(defaultPopulate).sort('-createdAt').exec();
+const list = (filter, page, perPage) => {
+  const query = Organization.find(filter || {}).populate(defaultPopulate).sort('-createdAt');
+  if (perPage) query.limit(perPage).skip((page || 0) * perPage);
+  return query.exec();
+};
 
 /**
  * @function create
@@ -65,6 +69,22 @@ const deleteMany = (filter) => {
   if (filter) return Organization.deleteMany(filter).exec();
 };
 
+/**
+ * @function findOne
+ * @description Data access operation to find a single organization matching a filter.
+ * @param {Object} filter - The filter to apply to the query.
+ * @returns {Promise<Object|null>} The found organization or null.
+ */
+const findOne = (filter) => Organization.findOne(filter).exec();
+
+/**
+ * @function exists
+ * @description Data access operation to check if an organization matching a filter exists.
+ * @param {Object} filter - The filter to apply.
+ * @returns {Promise<Object|null>} Truthy if exists, null otherwise.
+ */
+const exists = (filter) => Organization.exists(filter);
+
 export default {
   list,
   create,
@@ -72,4 +92,6 @@ export default {
   update,
   remove,
   deleteMany,
+  findOne,
+  exists,
 };

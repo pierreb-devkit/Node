@@ -1,139 +1,196 @@
 /**
  * Module dependencies
  */
-import mongoose from 'mongoose';
-import AppError from '../../../lib/helpers/AppError.js';
+import config from '../../../config/index.js';
+import policy from '../../../lib/middlewares/policy.js';
 import OrganizationsRepository from '../repositories/organizations.repository.js';
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
+import MembershipService from './organizations.membership.service.js';
+import UserService from '../../users/services/users.service.js';
+import { slugify, generateOrganizationSlug } from '../helpers/organizations.slug.js';
 
 /**
- * @function list
- * @description Service to retrieve all organizations in the database.
- * @returns {Promise<Array>} A promise that resolves to the list of all organizations.
+ * Extract the domain part from an email address.
+ * @param {string} email - A valid email address.
+ * @returns {string} The domain portion (e.g. "acme.com").
  */
-const list = async () => {
-  const result = await OrganizationsRepository.list();
-  return Promise.resolve(result);
+const extractDomain = (email) => email.split('@')[1].toLowerCase();
+
+/**
+ * Derive a human-readable organization name from an email domain.
+ * Strips the TLD and capitalizes the first letter (e.g. "acme.com" → "Acme").
+ * @param {string} domain - The email domain.
+ * @returns {string} A display name for the organization.
+ */
+const nameFromDomain = (domain) => {
+  const base = domain.split('.')[0];
+  return base.charAt(0).toUpperCase() + base.slice(1);
 };
 
 /**
- * @function listByUser
- * @description Service to retrieve all organizations a user belongs to via memberships.
- * @param {Object} user - The authenticated user.
- * @returns {Promise<Array>} A promise that resolves to the list of organizations.
+ * Generate a unique slug from an email domain.
+ * Appends a numeric suffix if the base slug already exists.
+ * @param {string} domain - The email domain to derive the slug from.
+ * @returns {Promise<string>} A unique slug string.
  */
-const listByUser = async (user) => {
-  const memberships = await MembershipRepository.list({ userId: user._id || user.id });
-  const organizationIds = memberships.map((m) => m.organizationId._id || m.organizationId);
-  const result = await OrganizationsRepository.list({ _id: { $in: organizationIds } });
-  return Promise.resolve(result);
+const generateSlugFromDomain = async (domain) => {
+  const base = slugify(domain.split('.')[0]);
+  let candidate = base;
+  let counter = 1;
+  while (await OrganizationsRepository.exists({ slug: candidate })) {
+    candidate = `${base}-${counter}`;
+    counter += 1;
+  }
+  return candidate;
 };
 
 /**
- * @function create
- * @description Service to create a new organization and make the creator the owner.
- * @param {Object} body - The object containing organization details.
- * @param {Object} user - The user creating the organization.
- * @returns {Promise<Object>} A promise resolving to the newly created organization.
+ * Create a new organization, an owner membership, and set currentOrganization on the user.
+ * @param {Object} params - Parameters for org creation.
+ * @param {string} params.name - Display name for the organization.
+ * @param {string} params.slug - URL-safe slug for the organization.
+ * @param {string} params.domain - Email domain associated with the org (can be empty).
+ * @param {Object} params.user - The newly created user object (must have id/firstName/lastName).
+ * @returns {Promise<{organization: Object, membership: Object}>} The created org and membership.
  */
-const create = async (body, user) => {
-  const organization = {
-    name: body.name,
-    slug: body.slug,
-    domain: body.domain || '',
-    plan: body.plan || 'free',
-    createdBy: user.id || user._id,
-  };
+const createOrganizationForUser = async ({ name, slug, domain, user }) => {
+  const userId = user.id || user._id;
 
-  const result = await OrganizationsRepository.create(organization);
+  const organization = await OrganizationsRepository.create({
+    name,
+    slug,
+    domain: domain || '',
+    plan: 'free',
+    createdBy: userId,
+  });
 
-  // Create owner membership for the creator
-  await MembershipRepository.create({
-    userId: user.id || user._id,
-    organizationId: result._id,
+  const membership = await MembershipRepository.create({
+    userId,
+    organizationId: organization._id,
     role: 'owner',
   });
 
-  return Promise.resolve(result);
+  await UserService.updateById(userId, { currentOrganization: organization._id });
+
+  return { organization, membership };
 };
 
 /**
- * @function get
- * @description Service to fetch a single organization by its ID.
- * @param {String} id - The ID of the organization to fetch.
- * @returns {Promise<Object|null>} A promise resolving to the retrieved organization.
+ * Handle organization provisioning during the signup flow.
+ *
+ * Behaviour depends on the organizations configuration flags:
+ * - **!enabled**: Creates a silent/default org named "{firstName}'s organization".
+ * - **enabled**: Never auto-creates or auto-joins. Returns information for the
+ *   frontend to handle organization setup as step 2. If domainMatching is on and
+ *   the user's email domain is not in the publicDomains blocklist, a matching
+ *   existing org is returned as `suggestedOrganization`.
+ *
+ * @param {Object} user - The user object returned by UserService.create (with id, email, firstName, lastName).
+ * @returns {Promise<{organization: Object|null, membership: Object|null, abilities: Array, organizationSetupRequired: boolean, suggestedOrganization: Object|null}>}
+ *   An object containing the organization context for the signup response.
  */
-const get = async (id) => {
-  const result = await OrganizationsRepository.get(id);
-  return Promise.resolve(result);
-};
+const handleSignupOrganization = async (user) => {
+  const orgConfig = config.organizations || {};
 
-/**
- * @function update
- * @description Service to update an existing organization.
- * @param {Object} organization - The existing organization object.
- * @param {Object} body - The object containing updated organization details.
- * @returns {Promise<Object>} A promise resolving to the updated organization.
- */
-const update = async (organization, body) => {
-  if (body.name !== undefined) organization.name = body.name;
-  if (body.slug !== undefined) organization.slug = body.slug;
-  if (body.domain !== undefined) organization.domain = body.domain;
-  if (body.plan !== undefined) organization.plan = body.plan;
+  // Case 1: Organizations disabled — create a silent default org
+  if (!orgConfig.enabled) {
+    const firstName = user.firstName || 'User';
+    const name = `${firstName}'s organization`;
+    const slug = await generateOrganizationSlug(firstName, user.lastName || '');
 
-  const result = await OrganizationsRepository.update(organization);
-  return Promise.resolve(result);
-};
+    const { organization, membership } = await createOrganizationForUser({
+      name,
+      slug,
+      domain: '',
+      user,
+    });
 
-/**
- * @function remove
- * @description Service to delete an organization and all its memberships.
- * @param {Object} organization - The organization to delete.
- * @returns {Promise<Object>} A promise resolving to a confirmation of the deletion.
- */
-const remove = async (organization) => {
-  // Remove all memberships for this organization
-  await MembershipRepository.deleteMany({ organizationId: organization._id || organization.id });
-  const result = await OrganizationsRepository.remove(organization);
-  return Promise.resolve(result);
-};
+    const ability = await policy.defineAbilityFor(user, membership);
 
-/**
- * @function switchOrganization
- * @description Service to switch the user's current organization context.
- * Verifies the user has a membership on the target organization, updates
- * the user's currentOrganization field, and returns the updated user document.
- * @param {Object} user - The authenticated user (Mongoose document or plain object with id).
- * @param {String} organizationId - The ID of the organization to switch to.
- * @returns {Promise<Object>} A promise resolving to the updated user document with currentOrganization populated.
- */
-const switchOrganization = async (user, organizationId) => {
-  const User = mongoose.model('User');
-
-  const membership = await MembershipRepository.findOne({
-    userId: user._id || user.id,
-    organizationId,
-  });
-
-  if (!membership) {
-    throw new AppError('User is not a member of this organization', { code: 'FORBIDDEN' });
+    return {
+      organization,
+      membership,
+      abilities: ability.rules,
+      organizationSetupRequired: false,
+    };
   }
 
-  const updatedUser = await User.findByIdAndUpdate(
-    user._id || user.id,
-    { currentOrganization: organizationId },
-    { new: true },
-  ).populate('currentOrganization').exec();
+  // Case 2: Organizations enabled
+  const domain = extractDomain(user.email);
+  const publicDomains = orgConfig.publicDomains || [];
+  const isPublic = publicDomains.includes(domain.toLowerCase());
 
-  return { user: updatedUser, membership };
+  // Case 2a: autoCreate enabled — automatically provision or join an organization
+  if (orgConfig.autoCreate) {
+    // Try domain matching first if enabled and domain is not public
+    if (orgConfig.domainMatching && !isPublic) {
+      const existingOrgs = await OrganizationsRepository.list({ domain });
+      if (existingOrgs.length > 0) {
+        // Create a pending join request — admin must approve
+        const organization = existingOrgs[0];
+        await MembershipService.createJoinRequest(user.id || user._id, organization._id);
+        const ability = await policy.defineAbilityFor(user, null);
+        return {
+          organization,
+          membership: null,
+          abilities: ability.rules,
+          organizationSetupRequired: false,
+          pendingJoin: true,
+        };
+      }
+      // No existing org — create a new one with the domain
+      const name = nameFromDomain(domain);
+      const slug = await generateSlugFromDomain(domain);
+      const { organization, membership } = await createOrganizationForUser({ name, slug, domain, user });
+      const ability = await policy.defineAbilityFor(user, membership);
+      return {
+        organization,
+        membership,
+        abilities: ability.rules,
+        organizationSetupRequired: false,
+      };
+    }
+    // No domain matching — create a personal organization
+    const firstName = user.firstName || 'User';
+    const name = `${firstName}'s organization`;
+    const slug = await generateOrganizationSlug(firstName, user.lastName || '');
+    const { organization, membership } = await createOrganizationForUser({ name, slug, domain: '', user });
+    const ability = await policy.defineAbilityFor(user, membership);
+    return {
+      organization,
+      membership,
+      abilities: ability.rules,
+      organizationSetupRequired: false,
+    };
+  }
+
+  // Case 2b: autoCreate disabled — require step 2
+  let suggestedOrganization = null;
+
+  // If domain matching enabled and domain is NOT public, suggest existing org
+  if (orgConfig.domainMatching && !isPublic) {
+    const existingOrgs = await OrganizationsRepository.list({ domain });
+    if (existingOrgs.length > 0) {
+      suggestedOrganization = existingOrgs[0];
+    }
+  }
+
+  // Compute abilities without org context (user has no org yet)
+  const ability = await policy.defineAbilityFor(user, null);
+
+  return {
+    organization: null,
+    membership: null,
+    abilities: ability.rules,
+    organizationSetupRequired: true,
+    suggestedOrganization, // null or { _id, name, slug, domain }
+  };
 };
 
 export default {
-  list,
-  listByUser,
-  create,
-  get,
-  update,
-  remove,
-  switchOrganization,
+  handleSignupOrganization,
+  extractDomain,
+  nameFromDomain,
+  generateSlugFromDomain,
+  createOrganizationForUser,
 };

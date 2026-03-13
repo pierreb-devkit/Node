@@ -15,6 +15,7 @@ const config = {
     expiresIn: 7 * 24 * 60 * 60, // token expire in x sec
   },
   mailer: {
+    provider: 'DEVKIT_NODE_mailer_provider',
     from: 'DEVKIT_NODE_mailer_from',
     options: {
       service: 'DEVKIT_NODE_mailer_options_service',
@@ -42,8 +43,17 @@ const config = {
   // organizations — controls automatic org creation/joining at signup
   organizations: {
     enabled: true, // false → B2C mode, organizations invisible
-    autoCreate: true, // auto-create default org on signup
+    autoCreate: true, // automatically create/join orgs at signup
     domainMatching: true, // match users to existing orgs by email domain
+    publicDomains: [
+      'gmail.com', 'googlemail.com', 'yahoo.com', 'yahoo.fr',
+      'hotmail.com', 'hotmail.fr', 'outlook.com', 'outlook.fr',
+      'live.com', 'msn.com', 'aol.com', 'icloud.com', 'me.com',
+      'mac.com', 'protonmail.com', 'proton.me', 'mail.com',
+      'zoho.com', 'yandex.com', 'gmx.com', 'gmx.fr',
+      'free.fr', 'orange.fr', 'sfr.fr', 'laposte.net',
+      'wanadoo.fr', 'bbox.fr',
+    ],
   },
   // zxcvbn is used to manage password security
   zxcvbn: {
@@ -73,6 +83,7 @@ const config = {
         'resetPasswordExpires',
         'emailVerified',
         'currentOrganization',
+        'lastLoginAt',
         'complementary',
         'terms',
       ],

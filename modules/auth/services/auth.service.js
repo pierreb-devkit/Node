@@ -8,7 +8,7 @@ import zxcvbn from 'zxcvbn';
 
 import config from '../../../config/index.js';
 import AppError from '../../../lib/helpers/AppError.js';
-import UserRepository from '../../users/repositories/user.repository.js';
+import UserService from '../../users/services/users.service.js';
 
 const saltRounds = 10;
 
@@ -20,7 +20,8 @@ const saltRounds = 10;
 const removeSensitive = (user, conf) => {
   if (!user || typeof user !== 'object') return null;
   const keys = conf || config.whitelists.users.default;
-  return _.pick(user, keys);
+  const plain = typeof user.toJSON === 'function' ? user.toJSON() : user;
+  return _.pick(plain, keys);
 };
 
 /**
@@ -89,7 +90,7 @@ const recordSuccessfulLogin = async (user) => {
  * @returns {Promise<Object>} sanitized user object on success
  */
 const authenticate = async (email, password) => {
-  const user = await UserRepository.get({ email });
+  const user = await UserService.getBrut({ email });
   if (!user) throw new AppError('invalid user or password.', { code: 'SERVICE_ERROR' });
 
   // Check lockout before attempting password comparison

@@ -20,6 +20,11 @@ export default (app) => {
     .post(policy.isAllowed, model.isValid(organizationsSchema.Organization), organizations.create);
 
   app
+    .route('/api/organizations/search')
+    .all(passport.authenticate('jwt', { session: false }))
+    .get(organizations.search);
+
+  app
     .route('/api/organizations/:organizationId')
     .all(passport.authenticate('jwt', { session: false }), organizations.loadMembership, policy.isAllowed)
     .get(organizations.get)
@@ -32,17 +37,11 @@ export default (app) => {
     .all(passport.authenticate('jwt', { session: false }))
     .post(organizations.switchOrganization);
 
-  // Platform admin routes
+  // Leave organization
   app
-    .route('/api/admin/organizations')
-    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
-    .get(organizations.adminList);
-
-  app
-    .route('/api/admin/organizations/:organizationId')
-    .all(passport.authenticate('jwt', { session: false }), organizations.loadMembership, policy.isAllowed)
-    .get(organizations.get)
-    .delete(organizations.remove);
+    .route('/api/organizations/:organizationId/leave')
+    .all(passport.authenticate('jwt', { session: false }))
+    .post(organizations.leave);
 
   // Bind param middleware
   app.param('organizationId', organizations.organizationByID);

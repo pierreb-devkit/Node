@@ -8,7 +8,7 @@ const Membership = mongoose.model('Membership');
 const defaultPopulate = [
   {
     path: 'userId',
-    select: 'email firstName lastName',
+    select: 'email firstName lastName lastLoginAt',
   },
   {
     path: 'organizationId',
@@ -22,7 +22,11 @@ const defaultPopulate = [
  * @param {Object} [filter] - Optional filter to apply to the query.
  * @returns {Promise<Array>} An array of memberships.
  */
-const list = (filter) => Membership.find(filter).populate(defaultPopulate).sort('-createdAt').exec();
+const list = (filter, page, perPage) => {
+  const query = Membership.find(filter).populate(defaultPopulate).sort('-createdAt');
+  if (perPage) query.limit(perPage).skip((page || 0) * perPage);
+  return query.exec();
+};
 
 /**
  * @function create
@@ -57,7 +61,7 @@ const findOne = (filter) => Membership.findOne(filter).populate(defaultPopulate)
  * @param {Object} membership - The membership object containing the updated details.
  * @returns {Promise<Object>} The updated membership.
  */
-const update = (membership) => new Membership(membership).save().then((doc) => doc.populate(defaultPopulate));
+const update = (membership) => membership.save().then((doc) => doc.populate(defaultPopulate));
 
 /**
  * @function remove
@@ -66,6 +70,14 @@ const update = (membership) => new Membership(membership).save().then((doc) => d
  * @returns {Promise<Object>} A confirmation of the deletion.
  */
 const remove = (membership) => Membership.deleteOne({ _id: membership.id || membership._id }).exec();
+
+/**
+ * @function count
+ * @description Data access operation to count memberships matching a filter.
+ * @param {Object} filter - The filter to apply to the count query.
+ * @returns {Promise<number>} The count of matching memberships.
+ */
+const count = (filter) => Membership.countDocuments(filter).exec();
 
 /**
  * @function deleteMany
@@ -77,6 +89,18 @@ const deleteMany = (filter) => {
   if (filter) return Membership.deleteMany(filter).exec();
 };
 
+/**
+ * @function aggregateCountByOrganizations
+ * @description Data access operation to count active members per organization using aggregation.
+ * @param {Array} orgIds - Array of organization IDs to count members for.
+ * @returns {Promise<Array>} Array of { _id: orgId, count: number } objects.
+ */
+const aggregateCountByOrganizations = (orgIds) =>
+  Membership.aggregate([
+    { $match: { organizationId: { $in: orgIds }, status: 'active' } },
+    { $group: { _id: '$organizationId', count: { $sum: 1 } } },
+  ]);
+
 export default {
   list,
   create,
@@ -84,5 +108,7 @@ export default {
   findOne,
   update,
   remove,
+  count,
   deleteMany,
+  aggregateCountByOrganizations,
 };

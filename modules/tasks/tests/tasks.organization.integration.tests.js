@@ -28,7 +28,7 @@ describe('Tasks organization-scoped integration tests:', () => {
     try {
       const init = await bootstrap();
       UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
-      OrganizationsService = (await import(path.resolve('./modules/organizations/services/organizations.service.js'))).default;
+      OrganizationsService = (await import(path.resolve('./modules/organizations/services/organizations.crud.service.js'))).default;
       agent = request.agent(init.app);
     } catch (err) {
       console.log(err);

@@ -7,6 +7,7 @@ import path from 'path';
 import { beforeAll, afterAll, describe, test, expect } from '@jest/globals';
 import { bootstrap } from '../../../lib/app.js';
 import mongooseService from '../../../lib/services/mongoose.js';
+import config from '../../../config/index.js';
 
 /**
  * Abilities integration tests.
@@ -21,6 +22,7 @@ describe('Auth abilities integration tests:', () => {
   let adminAgent;
   let user;
   let adminUser;
+  const originalOrgEnabled = config.organizations.enabled;
 
   const userCredentials = {
     email: 'abilities-user@test.com',
@@ -33,6 +35,8 @@ describe('Auth abilities integration tests:', () => {
   };
 
   beforeAll(async () => {
+    // Disable organizations so signup auto-creates a silent org with membership
+    config.organizations.enabled = false;
     const init = await bootstrap();
     UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
     agent = request.agent(init.app);
@@ -158,6 +162,7 @@ describe('Auth abilities integration tests:', () => {
   // Cleanup
   // -------------------------------------------------------
   afterAll(async () => {
+    config.organizations.enabled = originalOrgEnabled;
     try { await UserService.remove(user); } catch (_) { /* cleanup */ }
     try { await UserService.remove(adminUser); } catch (_) { /* cleanup */ }
     try { await mongooseService.disconnect(); } catch (_) { /* cleanup */ }

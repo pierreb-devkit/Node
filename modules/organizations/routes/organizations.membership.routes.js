@@ -20,17 +20,11 @@ export default (app) => {
     .get(members.list);
 
   app
-    .route('/api/organizations/:organizationId/members/invite')
-    .all(passport.authenticate('jwt', { session: false }), organizations.loadMembership, policy.isAllowed)
-    .post(model.isValid(membershipSchema.MembershipInvite), members.invite);
-
-  app
     .route('/api/organizations/:organizationId/members/:memberId')
     .all(passport.authenticate('jwt', { session: false }), organizations.loadMembership, policy.isAllowed)
     .put(model.isValid(membershipSchema.MembershipUpdate), members.updateRole)
     .delete(members.remove);
 
   // Bind param middleware
-  app.param('organizationId', organizations.organizationByID);
   app.param('memberId', members.memberByID);
 };

@@ -13,7 +13,7 @@ const MembershipMongoose = new Schema(
     userId: {
       type: Schema.ObjectId,
       ref: 'User',
-      required: true,
+      default: null,
     },
     organizationId: {
       type: Schema.ObjectId,
@@ -25,6 +25,13 @@ const MembershipMongoose = new Schema(
       enum: ['owner', 'admin', 'member'],
       default: 'member',
     },
+    status: {
+      type: String,
+      enum: ['active', 'pending', 'rejected', 'invited'],
+      default: 'active',
+    },
+    inviteToken: { type: String, default: null },
+    invitedEmail: { type: String, default: null },
   },
   {
     timestamps: true,
@@ -34,7 +41,25 @@ const MembershipMongoose = new Schema(
 /**
  * Compound unique index to prevent duplicate memberships
  */
-MembershipMongoose.index({ userId: 1, organizationId: 1 }, { unique: true });
+MembershipMongoose.index(
+  { userId: 1, organizationId: 1 },
+  { unique: true, partialFilterExpression: { userId: { $exists: true, $ne: null } } },
+);
+
+/**
+ * Sparse index on inviteToken for invite lookups
+ */
+MembershipMongoose.index({ inviteToken: 1 }, { sparse: true });
+
+/**
+ * Single-field index on organizationId for list-by-org queries
+ */
+MembershipMongoose.index({ organizationId: 1 });
+
+/**
+ * Compound index on organizationId + status for listing pending requests
+ */
+MembershipMongoose.index({ organizationId: 1, status: 1 });
 
 /**
  * @desc Function to add id (+ _id) to all objects

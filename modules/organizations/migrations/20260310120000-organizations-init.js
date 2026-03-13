@@ -3,7 +3,7 @@
  */
 import mongoose from 'mongoose';
 
-import { generateOrganizationSlug } from '../helpers/slug.js';
+import { generateOrganizationSlug } from '../helpers/organizations.slug.js';
 
 /**
  * Migration: Create default organizations for existing users.
@@ -45,6 +45,20 @@ export async function up() {
       organizationId: organization._id,
       role: 'owner',
     });
+
+    await User.updateOne({ _id: user._id }, { currentOrganization: organization._id });
+  }
+
+  // ── Step 2b: Backfill currentOrganization for users who have a membership but no currentOrganization
+  const usersWithoutCurrentOrg = await User.find({
+    $or: [{ currentOrganization: { $exists: false } }, { currentOrganization: null }],
+  }).lean();
+
+  for (const user of usersWithoutCurrentOrg) {
+    const membership = await Membership.findOne({ userId: user._id }).lean();
+    if (membership) {
+      await User.updateOne({ _id: user._id }, { currentOrganization: membership.organizationId });
+    }
   }
 
   // ── Step 3: Backfill organizationId on tasks without one ──────────

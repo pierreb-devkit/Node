@@ -8,7 +8,8 @@ import { z } from 'zod';
  */
 const Organization = z.object({
   name: z.string().trim().min(1),
-  slug: z.string().trim().min(1).toLowerCase(),
+  description: z.string().trim().default(''),
+  slug: z.string().trim().min(1).toLowerCase().optional(),
   domain: z.string().trim().default(''),
   plan: z.enum(['free', 'starter', 'pro', 'enterprise']).default('free'),
 });

@@ -51,61 +51,12 @@ Files to check in `modules/{new-module-name}/`:
 - Policy function names
 - Test descriptions and fixture data
 
-### 5. Show rename plan (if broad changes)
+### 5. Apply renames carefully
 
-If renaming affects many files, show a brief plan before applying changes.
-
-### 6. Apply renames carefully
-
-Use safe search+replace to avoid false positives:
-
-- Be case-sensitive
-- Match whole words where possible
+- Case-sensitive, whole-word matches where possible
+- Show plan before applying if many files affected
 - Don't rename unrelated code (e.g., "tasks" in comments about other features)
 
-### 7. Run verify
+### 6. Verify & report
 
-```bash
-npm run lint
-npm test
-```
-
-### 8. Report results
-
-Provide a summary:
-
-- ✅ Module created at: `modules/{new-module-name}`
-- ✅ Renamed tokens: `tasks` → `{new-module-name}`, etc.
-- ✅ Verification: lint passed, tests passed
-- 📝 Next steps: Customize the schema, update business logic in services. Routes are auto-discovered via glob `modules/*/routes/*.js` — no registration needed
-
-## Module Structure
-
-```
-modules/{new-module-name}/
-├── controllers/
-│   └── {module}.controller.js
-├── services/
-│   └── {module}.service.js
-│   └── {module}.data.service.js
-├── repositories/
-│   └── {module}.repository.js
-├── models/
-│   └── {module}.model.mongoose.js
-│   └── {module}.model.sequelize.js  (optional)
-│   └── {module}.schema.js
-├── policies/
-│   └── {module}.policy.js
-├── routes/
-│   └── {module}.routes.js
-└── tests/
-    ├── {module}.integration.tests.js
-    └── {module}.unit.tests.js
-```
-
-## Notes
-
-- Preserves the layered architecture: controllers → services → repositories → models
-- Follows modularity rules: keeps the module self-contained
-- Policy functions control route authorization — update them for your use case
-- Remove `{module}.model.sequelize.js` if not using SQL
+Run `/verify`, then report: module path, renamed tokens, lint/test results, next steps (customize schema/services — routes auto-discovered via `modules/*/routes/*.js`).

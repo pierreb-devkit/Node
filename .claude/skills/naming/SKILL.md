@@ -47,4 +47,4 @@ From a module name (e.g., `my-feature`):
 
 Routes → Controllers → Services → Repositories → Models
 
-Never skip layers. Controllers must not call repositories directly.
+Never skip layers. Controllers call services only. `mongoose` is imported exclusively in repositories and models.

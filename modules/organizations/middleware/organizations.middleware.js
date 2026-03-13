@@ -1,12 +1,10 @@
 /**
  * Module dependencies
  */
-import mongoose from 'mongoose';
+import OrganizationsCrudService from '../services/organizations.crud.service.js';
+import MembershipService from '../services/organizations.membership.service.js';
 
-import responses from '../helpers/responses.js';
-
-const Organization = mongoose.model('Organization');
-const Membership = mongoose.model('Membership');
+import responses from '../../../lib/helpers/responses.js';
 
 /**
  * Middleware that resolves the current organization from a route param or
@@ -30,7 +28,7 @@ async function resolveOrganization(req, res, next) {
   if (!organizationId) return next(); // No org context — allow for backward compat
 
   try {
-    const organization = await Organization.findById(organizationId);
+    const organization = await OrganizationsCrudService.get(organizationId);
     if (!organization) {
       return responses.error(res, 404, 'Not Found', 'No Organization with that identifier has been found')();
     }
@@ -44,10 +42,7 @@ async function resolveOrganization(req, res, next) {
     }
 
     // Load membership for the current user
-    const membership = await Membership.findOne({
-      userId: req.user._id,
-      organizationId: organization._id,
-    });
+    const membership = await MembershipService.findByUserAndOrganization(req.user._id, organization._id);
 
     if (!membership) {
       return responses.error(res, 403, 'Forbidden', 'User is not a member of this organization')();

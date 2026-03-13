@@ -26,6 +26,7 @@ const list = (search, page, perPage) => {
     .limit(perPage)
     .skip(perPage * page || 0)
     .select('-password -providerData')
+    .populate('currentOrganization', 'name')
     .sort('-createdAt')
     .exec();
 };
@@ -116,6 +117,59 @@ const push = (users, filters) =>
     }),
   );
 
+/**
+ * @desc Function to search users by name or email with a regex
+ * @param {String} search - The search string
+ * @return {Array} matching user IDs
+ */
+const searchByNameOrEmail = (search) => {
+  const regex = new RegExp(search, 'i');
+  return User.find({
+    $or: [{ email: regex }, { firstName: regex }, { lastName: regex }],
+  }).select('_id').exec();
+};
+
+/**
+ * @desc Function to find a user by email address
+ * @param {String} email - The email to search for
+ * @return {Promise<Object|null>} The matching user or null
+ */
+const findByEmail = (email) => User.findOne({ email });
+
+/**
+ * @desc Function to update a user by ID with a partial update object
+ * @param {String} id - The user ID
+ * @param {Object} data - Fields to update
+ * @return {Object} update result
+ */
+const updateById = (id, data) => User.updateOne({ _id: id }, data).exec();
+
+/**
+ * @desc Function to find a user by ID, update, and return the populated document
+ * @param {String} id - The user ID
+ * @param {Object} data - Fields to update
+ * @param {String|Array|Object} populateFields - Fields to populate
+ * @return {Object} updated user
+ */
+const findByIdAndUpdatePopulated = (id, data, populateFields) =>
+  User.findByIdAndUpdate(id, data, { new: true }).populate(populateFields).exec();
+
+/**
+ * @desc Function to find users matching a filter with optional field selection
+ * @param {Object} filter - Mongoose filter
+ * @param {String} [select] - Fields to select
+ * @return {Array} matching users
+ */
+const findWithFilter = (filter, select) => User.find(filter).select(select || '').exec();
+
+/**
+ * @desc Function to update multiple users matching a filter
+ * @param {Object} filter - Mongoose filter
+ * @param {Object} data - Fields to update
+ * @return {Object} update result
+ */
+const updateMany = (filter, data) => User.updateMany(filter, data).exec();
+
 export default {
   list,
   create,
@@ -125,4 +179,10 @@ export default {
   remove,
   stats,
   push,
+  searchByNameOrEmail,
+  findByEmail,
+  updateById,
+  findByIdAndUpdatePopulated,
+  findWithFilter,
+  updateMany,
 };

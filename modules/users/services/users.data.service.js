@@ -1,7 +1,7 @@
 /**
  * Module dependencies
  */
-import UserRepository from '../repositories/user.repository.js';
+import UserRepository from '../repositories/users.repository.js';
 
 /**
  * @desc Function to ask repository to import a list of users

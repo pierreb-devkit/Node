@@ -6,7 +6,7 @@ import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
 import config from '../../../config/index.js';
 import policy from '../../../lib/middlewares/policy.js';
-import OrganizationsService from '../services/organizations.service.js';
+import OrganizationsService from '../services/organizations.crud.service.js';
 import MembershipService from '../services/organizations.membership.service.js';
 
 const tokenCookieOptions = {
@@ -84,6 +84,11 @@ const update = async (req, res) => {
  */
 const remove = async (req, res) => {
   try {
+    // Prevent deleting the user's last organization
+    const userMemberships = await MembershipService.listByUser(req.user._id || req.user.id);
+    if (userMemberships.length <= 1) {
+      return responses.error(res, 422, 'Unprocessable Entity', 'You cannot delete your last organization')();
+    }
     const result = await OrganizationsService.remove(req.organization);
     responses.success(res, 'organization deleted')({ id: req.organization.id, ...result });
   } catch (err) {
@@ -100,8 +105,59 @@ const remove = async (req, res) => {
  */
 const adminList = async (req, res) => {
   try {
-    const organizations = await OrganizationsService.list();
-    responses.success(res, 'organization list')(organizations);
+    const organizations = await OrganizationsService.list(req.search, req.page, req.perPage);
+    const orgIds = organizations.map((org) => org._id || org.id);
+    // Batch count members for all orgs in a single query
+    const counts = await MembershipService.aggregateCountByOrganizations(orgIds);
+    const countMap = Object.fromEntries(counts.map((c) => [String(c._id), c.count]));
+    const enriched = organizations.map((org) => {
+      const obj = org.toJSON ? org.toJSON() : { ...org };
+      obj.memberCount = countMap[String(obj._id || obj.id)] || 0;
+      return obj;
+    });
+    responses.success(res, 'organization list')(enriched);
+  } catch (err) {
+    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+  }
+};
+
+/**
+ * @function organizationByPage
+ * @description Middleware to parse pagination params for admin org listing.
+ */
+const organizationByPage = async (req, res, next, params) => {
+  try {
+    if (!params) return responses.error(res, 404, 'Not Found', 'No params provided')();
+    const request = params.split('&');
+    if (request.length > 3) return responses.error(res, 422, 'Unprocessable Entity', 'Too many params')();
+    if (request.length === 3) {
+      req.page = Number(request[0]);
+      req.perPage = Number(request[1]);
+      req.search = String(request[2]);
+    } else if (request.length === 2) {
+      req.page = Number(request[0]);
+      req.perPage = Number(request[1]);
+    } else {
+      req.page = 0;
+      req.perPage = 0;
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * @function search
+ * @description Endpoint to search organizations by name.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {void}
+ */
+const search = async (req, res) => {
+  try {
+    const organizations = await OrganizationsService.searchByDomain(req.user.email);
+    responses.success(res, 'organization search')(organizations);
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
   }
@@ -189,6 +245,25 @@ const switchOrganization = async (req, res) => {
 };
 
 /**
+ * @function leave
+ * @description Endpoint to leave an organization.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {void}
+ */
+const leave = async (req, res) => {
+  try {
+    const result = await MembershipService.leave(
+      req.user._id || req.user.id,
+      req.organization._id || req.organization.id,
+    );
+    responses.success(res, 'organization left')(result);
+  } catch (err) {
+    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+  }
+};
+
+/**
  * @function loadMembership
  * @description Middleware to load the user's membership for the current organization.
  * Intended to run after passport authentication on routes where the organizationByID
@@ -216,8 +291,11 @@ export default {
   get,
   update,
   remove,
+  leave,
+  search,
   adminList,
   organizationByID,
+  organizationByPage,
   loadMembership,
   switchOrganization,
 };

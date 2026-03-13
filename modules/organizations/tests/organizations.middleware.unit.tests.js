@@ -3,36 +3,33 @@
  */
 import mongoose from 'mongoose';
 
-import { jest, describe, test, expect, beforeAll, beforeEach, afterAll } from '@jest/globals';
+import { jest, describe, test, expect, beforeEach } from '@jest/globals';
+
+const mockGet = jest.fn();
+jest.unstable_mockModule('../services/organizations.crud.service.js', () => ({
+  default: { get: mockGet },
+}));
+
+const mockFindByUserAndOrganization = jest.fn();
+jest.unstable_mockModule('../services/organizations.membership.service.js', () => ({
+  default: { findByUserAndOrganization: mockFindByUserAndOrganization },
+}));
+
+const { default: organizationsMiddleware } = await import('../middleware/organizations.middleware.js');
+const { resolveOrganization } = organizationsMiddleware;
 
 /**
  * Unit tests for the resolveOrganization middleware.
  */
 describe('resolveOrganization middleware unit tests:', () => {
-  let resolveOrganization;
-  let Organization;
-  let Membership;
-
   const fakeOrgId = new mongoose.Types.ObjectId();
   const fakeUserId = new mongoose.Types.ObjectId();
 
   const fakeOrganization = { _id: fakeOrgId, name: 'Test Org', slug: 'test-org' };
   const fakeMembership = { _id: new mongoose.Types.ObjectId(), userId: fakeUserId, organizationId: fakeOrgId, role: 'member' };
 
-  beforeAll(async () => {
-    // Ensure Mongoose models are registered (import model files for side-effects)
-    await import('../../../modules/organizations/models/organizations.model.mongoose.js');
-    await import('../../../modules/organizations/models/organizations.membership.model.mongoose.js');
-
-    Organization = mongoose.model('Organization');
-    Membership = mongoose.model('Membership');
-
-    const mod = await import('../organization.js');
-    resolveOrganization = mod.default.resolveOrganization;
-  });
-
   /**
-   * Helper to build a minimal Express-like req object.
+   * @desc Build a minimal Express-like req object
    * @param {Object} overrides - Properties to merge onto the request
    * @returns {Object} mock request
    */
@@ -45,7 +42,7 @@ describe('resolveOrganization middleware unit tests:', () => {
   }
 
   /**
-   * Helper to build a minimal Express-like res object with spies.
+   * @desc Build a minimal Express-like res object with spies
    * @returns {Object} mock response
    */
   function mockRes() {
@@ -56,7 +53,7 @@ describe('resolveOrganization middleware unit tests:', () => {
   }
 
   beforeEach(() => {
-    jest.restoreAllMocks();
+    jest.clearAllMocks();
   });
 
   test('should call next without setting req.organization when no organizationId is present', async () => {
@@ -72,7 +69,7 @@ describe('resolveOrganization middleware unit tests:', () => {
   });
 
   test('should return 404 when organization is not found', async () => {
-    jest.spyOn(Organization, 'findById').mockResolvedValue(null);
+    mockGet.mockResolvedValue(null);
 
     const req = mockReq({ params: { organizationId: fakeOrgId.toString() } });
     const res = mockRes();
@@ -86,8 +83,8 @@ describe('resolveOrganization middleware unit tests:', () => {
   });
 
   test('should inject req.organization and req.membership for a valid member', async () => {
-    jest.spyOn(Organization, 'findById').mockResolvedValue(fakeOrganization);
-    jest.spyOn(Membership, 'findOne').mockResolvedValue(fakeMembership);
+    mockGet.mockResolvedValue(fakeOrganization);
+    mockFindByUserAndOrganization.mockResolvedValue(fakeMembership);
 
     const req = mockReq({ params: { organizationId: fakeOrgId.toString() } });
     const res = mockRes();
@@ -101,8 +98,8 @@ describe('resolveOrganization middleware unit tests:', () => {
   });
 
   test('should return 403 when user is not a member of the organization', async () => {
-    jest.spyOn(Organization, 'findById').mockResolvedValue(fakeOrganization);
-    jest.spyOn(Membership, 'findOne').mockResolvedValue(null);
+    mockGet.mockResolvedValue(fakeOrganization);
+    mockFindByUserAndOrganization.mockResolvedValue(null);
 
     const req = mockReq({ params: { organizationId: fakeOrgId.toString() } });
     const res = mockRes();
@@ -116,8 +113,7 @@ describe('resolveOrganization middleware unit tests:', () => {
   });
 
   test('should bypass membership check for platform admin and inject synthetic owner membership', async () => {
-    jest.spyOn(Organization, 'findById').mockResolvedValue(fakeOrganization);
-    const membershipSpy = jest.spyOn(Membership, 'findOne');
+    mockGet.mockResolvedValue(fakeOrganization);
 
     const req = mockReq({
       params: { organizationId: fakeOrgId.toString() },
@@ -128,15 +124,15 @@ describe('resolveOrganization middleware unit tests:', () => {
 
     await resolveOrganization(req, res, next);
 
-    expect(membershipSpy).not.toHaveBeenCalled();
+    expect(mockFindByUserAndOrganization).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
     expect(req.organization).toEqual(fakeOrganization);
     expect(req.membership).toEqual(expect.objectContaining({ role: 'owner', organizationId: fakeOrgId }));
   });
 
   test('should resolve organizationId from user.currentOrganization when no route param', async () => {
-    jest.spyOn(Organization, 'findById').mockResolvedValue(fakeOrganization);
-    jest.spyOn(Membership, 'findOne').mockResolvedValue(fakeMembership);
+    mockGet.mockResolvedValue(fakeOrganization);
+    mockFindByUserAndOrganization.mockResolvedValue(fakeMembership);
 
     const req = mockReq({
       user: { _id: fakeUserId, roles: ['user'], currentOrganization: fakeOrgId.toString() },
@@ -149,9 +145,5 @@ describe('resolveOrganization middleware unit tests:', () => {
     expect(next).toHaveBeenCalledTimes(1);
     expect(req.organization).toEqual(fakeOrganization);
     expect(req.membership).toEqual(fakeMembership);
-  });
-
-  afterAll(() => {
-    jest.restoreAllMocks();
   });
 });

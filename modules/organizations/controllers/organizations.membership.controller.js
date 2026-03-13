@@ -14,25 +14,11 @@ import MembershipService from '../services/organizations.membership.service.js';
  */
 const list = async (req, res) => {
   try {
-    const members = await MembershipService.list(req.organization._id);
+    const page = req.query.page != null ? Number(req.query.page) : undefined;
+    const perPage = req.query.perPage != null ? Number(req.query.perPage) : undefined;
+    const search = req.query.search || undefined;
+    const members = await MembershipService.list(req.organization._id, search, page, perPage);
     responses.success(res, 'membership list')(members);
-  } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
-  }
-};
-
-/**
- * @function invite
- * @description Endpoint to invite a user to an organization by email.
- * Generates an invitation token with a 7-day expiry.
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @returns {void}
- */
-const invite = async (req, res) => {
-  try {
-    const invitation = await MembershipService.invite(req.organization._id, req.body.email, req.body.role);
-    responses.success(res, 'invitation created')(invitation);
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
   }
@@ -47,6 +33,10 @@ const invite = async (req, res) => {
  */
 const updateRole = async (req, res) => {
   try {
+    // Belt-and-suspenders: only owners can change roles (CASL blocks admins via no 'update Membership')
+    if (req.membership && req.membership.role !== 'owner') {
+      return responses.error(res, 403, 'Forbidden', 'Only owners can change member roles')();
+    }
     const membership = await MembershipService.updateRole(req.membershipDoc, req.body.role);
     responses.success(res, 'membership updated')(membership);
   } catch (err) {
@@ -63,6 +53,10 @@ const updateRole = async (req, res) => {
  */
 const remove = async (req, res) => {
   try {
+    // Admins can only remove members, not other admins or owners
+    if (req.membership && req.membership.role !== 'owner' && req.membershipDoc.role !== 'member') {
+      return responses.error(res, 403, 'Forbidden', 'Only owners can remove admins or other owners')();
+    }
     const result = await MembershipService.remove(req.membershipDoc);
     responses.success(res, 'membership deleted')({ id: req.membershipDoc.id, ...result });
   } catch (err) {
@@ -94,7 +88,6 @@ const memberByID = async (req, res, next, id) => {
 
 export default {
   list,
-  invite,
   updateRole,
   remove,
   memberByID,

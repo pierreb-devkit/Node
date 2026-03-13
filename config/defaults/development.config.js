@@ -5,6 +5,7 @@ const config = {
     keywords: 'node, express, mongo, jwt, sequelize, stack, boilerplate',
     googleAnalyticsTrackingID: 'DEVKIT_NODE_app_googleAnalyticsTrackingID',
     contact: 'contact@example.com',
+    front: 'DEVKIT_NODE_app_front',
   },
   swagger: {
     enable: true,
@@ -70,7 +71,6 @@ const config = {
   //      port: ''
   //    }
   //  },
-  // Lusca config
   csrf: {
     csrf: false,
     csp: false,
@@ -80,6 +80,9 @@ const config = {
   },
   bodyParser: {
     limit: '500kb',
+  },
+  validation: {
+    supportedMethods: ['post', 'put'],
   },
   cors: {
     origin: ['http://localhost:8080'],
@@ -93,19 +96,48 @@ const config = {
     secure: false, // false in dev (HTTP localhost)
     sameSite: 'strict',
   },
-  rateLimit: {
-    auth: {
-      windowMs: 15 * 60 * 1000, // 15 min
-      max: 20, // 20 requests per window in dev (more lenient)
-      message: { message: 'Too many requests, please try again later.' },
-      standardHeaders: true,
-      legacyHeaders: false,
+  mailer: {
+    provider: 'DEVKIT_NODE_mailer_provider',
+    from: 'DEVKIT_NODE_mailer_from',
+    options: {
+      service: 'DEVKIT_NODE_mailer_options_service',
+      auth: {
+        user: 'DEVKIT_NODE_mailer_options_auth_user',
+        pass: 'DEVKIT_NODE_mailer_options_auth_pass',
+      },
     },
   },
-  // validation is used to manage schema restrictions, on the top of mongo / orm
-  validation: {
-    // enabled HTTP methods for request data validation
-    supportedMethods: ['post', 'put'],
+  seedDB: {
+    seed: true,
+    options: {
+      logResults: true,
+      seedTasks: [
+        {
+          title: 'title1',
+          description: 'do something about something else',
+        },
+        {
+          title: 'title2',
+          description: 'do something about something else',
+        },
+      ],
+      seedUser: {
+        provider: 'local',
+        email: 'seeduser@localhost.com',
+        firstName: 'User',
+        lastName: 'Local',
+        displayName: 'User Local',
+        roles: ['user'],
+      },
+      seedAdmin: {
+        provider: 'local',
+        email: 'seedadmin@localhost.com',
+        firstName: 'Admin',
+        lastName: 'Local',
+        displayName: 'Admin Local',
+        roles: ['user', 'admin'],
+      },
+    },
   },
 };
 

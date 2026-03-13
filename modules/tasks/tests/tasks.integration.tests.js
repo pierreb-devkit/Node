@@ -7,12 +7,14 @@ import path from 'path';
 import { jest, afterAll, beforeAll } from '@jest/globals';
 import { bootstrap } from '../../../lib/app.js';
 import mongooseService from '../../../lib/services/mongoose.js';
+import config from '../../../config/index.js';
 
 /**
  * Unit tests
  */
 describe('Tasks integration tests:', () => {
   let UserService;
+  const originalOrgEnabled = config.organizations.enabled;
   let TasksService;
   let TasksDataService;
   let agent;
@@ -24,6 +26,8 @@ describe('Tasks integration tests:', () => {
 
   //  init
   beforeAll(async () => {
+    // Disable organizations so signup auto-creates a silent org with membership
+    config.organizations.enabled = false;
     try {
       const init = await bootstrap();
       UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
@@ -462,6 +466,7 @@ describe('Tasks integration tests:', () => {
 
   // Mongoose disconnect
   afterAll(async () => {
+    config.organizations.enabled = originalOrgEnabled;
     try {
       await mongooseService.disconnect();
     } catch (err) {

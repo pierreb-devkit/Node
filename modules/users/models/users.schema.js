@@ -12,8 +12,10 @@ const names = /^[a-zA-Zàáâäãåąčćęèéêëėįìíîïłńòóôöõø�
  * User Data Schema
  */
 const User = z.object({
-  firstName: z.string().regex(names).min(1).max(50).trim(),
-  lastName: z.string().regex(names).min(1).max(50).trim(),
+  firstName: z.string().min(1).max(50).trim()
+    .refine((val) => names.test(val), { message: 'Invalid characters in name' }),
+  lastName: z.string().max(50).trim().optional().default('')
+    .refine((val) => val === '' || names.test(val), { message: 'Invalid characters in name' }),
   bio: z.string().max(200).trim().optional().default(''),
   position: z.string().max(50).trim().optional().default(''),
   email: z.string().email().optional(),

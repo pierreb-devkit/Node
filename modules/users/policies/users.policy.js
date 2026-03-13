@@ -1,11 +1,11 @@
 /**
- * User account ability definitions for CASL document-level authorization.
+ * Account ability definitions for CASL document-level authorization.
  * Uses 'UserAccount' for self-service routes (me, terms, password, avatar, data, stats).
  * Uses 'UserSelf' for the base /api/users path (update/delete own account).
  */
 
 /**
- * Define user-account-related abilities for an authenticated user.
+ * Define account-related abilities for an authenticated user.
  * Regular users can manage their own account via self-service routes.
  * 'UserSelf' only grants update and delete — read on /api/users is admin-only.
  * Admins get full access to everything.
@@ -14,7 +14,7 @@
  * @param {Object} builder - CASL AbilityBuilder helpers
  * @param {Function} builder.can - Grant an ability
  */
-export function userAccountAbilities(user, membership, { can }) {
+export function usersAbilities(user, membership, { can }) {
   if (user.roles.includes('admin')) {
     can('manage', 'all');
     return;
@@ -30,11 +30,11 @@ export function userAccountAbilities(user, membership, { can }) {
 }
 
 /**
- * Define user-account-related abilities for unauthenticated guests.
+ * Define account-related abilities for unauthenticated guests.
  * Guests can only read user stats (which is a UserAccount route).
  * @param {Object} builder - CASL AbilityBuilder helpers
  * @param {Function} builder.can - Grant an ability
  */
-export function userAccountGuestAbilities({ can }) {
+export function usersGuestAbilities({ can }) {
   can('read', 'UserAccount');
 }
