@@ -9,6 +9,10 @@ import UsersSchema from '../../users/models/users.schema.js';
 import auth from '../controllers/auth.controller.js';
 import authPassword from '../controllers/auth.password.controller.js';
 
+/**
+ * Register authentication routes on the Express application.
+ * @param {Object} app - Express application instance
+ */
 export default (app) => {
   const authLimiter = limiters.auth;
 

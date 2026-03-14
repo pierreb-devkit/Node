@@ -377,11 +377,11 @@ const getConfig = (_req, res) => {
       up: !!config.sign.up,
     },
     organizations: {
-      enabled: !!config.organizations.enabled,
-      autoCreate: !!config.organizations.autoCreate,
-      domainMatching: !!config.organizations.domainMatching,
-      roles: config.organizations.roles,
-      roleDescriptions: config.organizations.roleDescriptions,
+      enabled: !!config.organizations?.enabled,
+      autoCreate: !!config.organizations?.autoCreate,
+      domainMatching: !!config.organizations?.domainMatching,
+      roles: config.organizations?.roles || [],
+      roleDescriptions: config.organizations?.roleDescriptions || {},
     },
     mail: {
       configured: isMailerConfigured(),

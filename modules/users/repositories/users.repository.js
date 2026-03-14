@@ -50,7 +50,7 @@ const create = (user) => new User(user).save();
  * @param {Object} user
  * @returns {Object} user
  */
-const get = (user) => {
+const get = (user = {}) => {
   if (user.id && mongoose.Types.ObjectId.isValid(user.id)) return User.findOne({ _id: user.id }).exec();
   if (user.email) return User.findOne({ email: user.email }).exec();
   if (user.resetPasswordToken) {
@@ -112,8 +112,11 @@ const stats = () => User.estimatedDocumentCount().exec();
  * @param {[String]} filters
  * @returns {Object} locations
  */
-const push = (users, filters) =>
-  User.bulkWrite(
+const push = (users, filters) => {
+  if (!Array.isArray(filters) || filters.length === 0) {
+    throw new Error('push requires at least one filter field');
+  }
+  return User.bulkWrite(
     users.map((user) => {
       const filter = {};
       filters.forEach((value) => {
@@ -128,6 +131,7 @@ const push = (users, filters) =>
       };
     }),
   );
+};
 
 /**
  * @desc Function to search users by name or email with a regex

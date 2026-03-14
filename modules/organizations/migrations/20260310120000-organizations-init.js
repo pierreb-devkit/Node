@@ -37,25 +37,31 @@ export async function up() {
     const firstName = user.firstName || 'User';
     const lastName = user.lastName || '';
 
-    const slug = await generateOrganizationSlug(firstName, lastName);
+    const maxRetries = 3;
+    for (let attempt = 0; attempt < maxRetries; attempt += 1) {
+      const slug = await generateOrganizationSlug(firstName, lastName);
+      const session = await mongoose.startSession();
+      try {
+        await session.withTransaction(async () => {
+          const [organization] = await Organization.create(
+            [{ name: `${firstName}'s organization`, slug, createdBy: user._id }],
+            { session },
+          );
 
-    const session = await mongoose.startSession();
-    try {
-      await session.withTransaction(async () => {
-        const [organization] = await Organization.create(
-          [{ name: `${firstName}'s organization`, slug, createdBy: user._id }],
-          { session },
-        );
+          await Membership.create(
+            [{ userId: user._id, organizationId: organization._id, role: 'owner' }],
+            { session },
+          );
 
-        await Membership.create(
-          [{ userId: user._id, organizationId: organization._id, role: 'owner' }],
-          { session },
-        );
-
-        await User.updateOne({ _id: user._id }, { currentOrganization: organization._id }, { session });
-      });
-    } finally {
-      await session.endSession();
+          await User.updateOne({ _id: user._id }, { currentOrganization: organization._id }, { session });
+        });
+        break; // Success — exit retry loop
+      } catch (err) {
+        if (err?.code === 11000 && attempt < maxRetries - 1) continue; // Slug collision — retry
+        throw err;
+      } finally {
+        await session.endSession();
+      }
     }
   }
 
@@ -89,7 +95,7 @@ export async function up() {
       // Look up the user's current org first, fall back to any active membership
       const taskUser = await User.findById(task.user, 'currentOrganization').lean();
       const orgId = taskUser?.currentOrganization
-        || (await Membership.findOne({ userId: task.user, status: { $in: ['active', undefined] } }).lean())?.organizationId;
+        || (await Membership.findOne({ userId: task.user, $or: [{ status: 'active' }, { status: { $exists: false } }] }).lean())?.organizationId;
       if (orgId) {
         await Task.updateOne({ _id: task._id }, { organizationId: orgId });
       }
@@ -115,7 +121,7 @@ export async function up() {
       // Look up the user's current org first, fall back to any active membership
       const uploadUser = await User.findById(upload.metadata.user, 'currentOrganization').lean();
       const orgId = uploadUser?.currentOrganization
-        || (await Membership.findOne({ userId: upload.metadata.user, status: { $in: ['active', undefined] } }).lean())?.organizationId;
+        || (await Membership.findOne({ userId: upload.metadata.user, $or: [{ status: 'active' }, { status: { $exists: false } }] }).lean())?.organizationId;
       if (orgId) {
         await Upload.updateOne({ _id: upload._id }, { 'metadata.organizationId': orgId });
       }

@@ -52,6 +52,7 @@ const generateSlugFromDomain = async (domain) => {
  * @param {string} params.slug - URL-safe slug for the organization.
  * @param {string} params.domain - Email domain associated with the org (can be empty).
  * @param {Object} params.user - The newly created user object (must have id/firstName/lastName).
+ * @param {Function} [params.slugGenerator] - Optional custom slug generator function. Defaults to internal slug generation.
  * @returns {Promise<{organization: Object, membership: Object}>} The created org and membership.
  */
 const createOrganizationForUser = async ({ name, slug, domain, user, slugGenerator }) => {

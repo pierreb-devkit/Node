@@ -92,7 +92,15 @@ const create = async (body, user) => {
     createdBy: user.id || user._id,
   };
 
-  const result = await OrganizationsRepository.create(organization);
+  let result;
+  try {
+    result = await OrganizationsRepository.create(organization);
+  } catch (err) {
+    if (err?.code === 11000 && err?.keyPattern?.slug) {
+      throw new AppError('An organization with this slug already exists. Please try again.', { code: 'CONFLICT' });
+    }
+    throw err;
+  }
 
   // Create owner membership for the creator
   await MembershipRepository.create({

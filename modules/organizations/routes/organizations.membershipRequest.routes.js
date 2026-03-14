@@ -9,7 +9,8 @@ import organizations from '../controllers/organizations.controller.js';
 import membershipRequests from '../controllers/organizations.membershipRequest.controller.js';
 
 /**
- * Routes
+ * Register membership request routes on the Express application.
+ * @param {Object} app - Express application instance
  */
 export default (app) => {
   // User's own membership requests
