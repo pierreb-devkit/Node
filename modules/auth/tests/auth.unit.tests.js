@@ -130,7 +130,9 @@ describe('Auth service unit tests:', () => {
     });
 
     test('should throw when password does not match', async () => {
-      mockGetBrut.mockResolvedValueOnce({ email: 'a@b.com', password: 'hashed', save: jest.fn() });
+      mockGetBrut.mockResolvedValueOnce({ _id: '1', email: 'a@b.com', password: 'hashed', save: jest.fn() });
+      // recordFailedAttempt re-reads user via getBrut after atomic $inc
+      mockGetBrut.mockResolvedValueOnce({ _id: '1', email: 'a@b.com', failedLoginAttempts: 1 });
       mockBcryptCompare.mockResolvedValueOnce(false);
       await expect(AuthService.authenticate('a@b.com', 'wrong')).rejects.toThrow('invalid user or password.');
     });
