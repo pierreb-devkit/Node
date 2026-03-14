@@ -14,7 +14,7 @@
  * @param {Function} builder.can - Grant an ability
  */
 export function adminAbilities(user, membership, { can }) {
-  if (user.roles.includes('admin')) {
+  if (Array.isArray(user?.roles) && user.roles.includes('admin')) {
     can('manage', 'UserAdmin');
     can('read', 'UserSelf');
   }

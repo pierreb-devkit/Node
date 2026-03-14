@@ -12,7 +12,7 @@
  * @param {Function} builder.can - Grant an ability
  */
 export function uploadAbilities(user, membership, { can }) {
-  if (user.roles.includes('admin')) {
+  if (Array.isArray(user?.roles) && user.roles.includes('admin')) {
     can('manage', 'all');
     return;
   }

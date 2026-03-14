@@ -13,7 +13,7 @@
  * @param {Function} builder.cannot - Deny an ability
  */
 export function organizationAbilities(user, membership, { can, cannot }) {
-  if (user.roles.includes('admin')) {
+  if (Array.isArray(user?.roles) && user.roles.includes('admin')) {
     can('manage', 'all');
     return;
   }
