@@ -370,23 +370,36 @@ const oauthCallback = async (req, res, next) => {
  * @param {Object} res - Express response object
  * @returns {void} Sends the public auth configuration in the HTTP response
  */
-const getConfig = (_req, res) => {
-  responses.success(res, 'Auth config')({
+const getConfig = (req, res) => {
+  const data = {
     sign: {
       in: !!config.sign.in,
       up: !!config.sign.up,
     },
+    oAuth: {
+      google: !!config.oAuth?.google?.clientID,
+      apple: !!config.oAuth?.apple?.clientID,
+    },
     organizations: {
       enabled: !!config.organizations?.enabled,
-      autoCreate: !!config.organizations?.autoCreate,
-      domainMatching: !!config.organizations?.domainMatching,
-      roles: config.organizations?.roles || [],
-      roleDescriptions: config.organizations?.roleDescriptions || {},
     },
     mail: {
       configured: isMailerConfigured(),
     },
-  });
+  };
+
+  // Authenticated users get extended org config
+  if (req.user) {
+    data.organizations = {
+      ...data.organizations,
+      autoCreate: !!config.organizations?.autoCreate,
+      domainMatching: !!config.organizations?.domainMatching,
+      roles: config.organizations?.roles || [],
+      roleDescriptions: config.organizations?.roleDescriptions || {},
+    };
+  }
+
+  responses.success(res, 'Auth config')(data);
 };
 
 /**

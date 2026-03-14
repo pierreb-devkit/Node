@@ -22,13 +22,13 @@ export async function up() {
 
   // ── Step 1: Find users who don't have any membership yet ──────────
   const allMemberships = await Membership.find({}, 'userId').lean();
-  const usersWithOrganization = new Set(allMemberships.map((m) => m.userId.toString()));
+  const usersWithOrganization = new Set(allMemberships.filter((m) => m.userId).map((m) => m.userId.toString()));
   const usersWithoutOrganization = await User.find({
     _id: { $nin: [...usersWithOrganization] },
   }).lean();
 
   // ── Step 2: Create a default organization + owner membership per user
-  // Uses a session/transaction to prevent duplicate or orphaned orgs on retry
+  // No transactions — compatible with standalone MongoDB (no replica set required)
   for (const user of usersWithoutOrganization) {
     // Double-check: skip if a membership was created since the initial query
     const alreadyHas = await Membership.findOne({ userId: user._id }).lean();
@@ -37,31 +37,22 @@ export async function up() {
     const firstName = user.firstName || 'User';
     const lastName = user.lastName || '';
 
+    let organization;
     const maxRetries = 3;
     for (let attempt = 0; attempt < maxRetries; attempt += 1) {
       const slug = await generateOrganizationSlug(firstName, lastName);
-      const session = await mongoose.startSession();
       try {
-        await session.withTransaction(async () => {
-          const [organization] = await Organization.create(
-            [{ name: `${firstName}'s organization`, slug, createdBy: user._id }],
-            { session },
-          );
-
-          await Membership.create(
-            [{ userId: user._id, organizationId: organization._id, role: 'owner' }],
-            { session },
-          );
-
-          await User.updateOne({ _id: user._id }, { currentOrganization: organization._id }, { session });
-        });
+        organization = await Organization.create({ name: `${firstName}'s organization`, slug, createdBy: user._id });
         break; // Success — exit retry loop
       } catch (err) {
         if (err?.code === 11000 && attempt < maxRetries - 1) continue; // Slug collision — retry
         throw err;
-      } finally {
-        await session.endSession();
       }
+    }
+
+    if (organization) {
+      await Membership.create({ userId: user._id, organizationId: organization._id, role: 'owner' });
+      await User.updateOne({ _id: user._id }, { currentOrganization: organization._id });
     }
   }
 

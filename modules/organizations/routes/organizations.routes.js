@@ -15,7 +15,7 @@ export default (app) => {
   // Organization CRUD
   app
     .route('/api/organizations')
-    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
+    .all(passport.authenticate('jwt', { session: false }))
     .get(organizations.list)
     .post(policy.isAllowed, model.isValid(organizationsSchema.Organization), organizations.create);
 

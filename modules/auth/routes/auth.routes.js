@@ -16,8 +16,14 @@ import authPassword from '../controllers/auth.password.controller.js';
 export default (app) => {
   const authLimiter = limiters.auth;
 
-  // Public auth config (no authentication required, rate-limited)
-  app.route('/api/auth/config').get(authLimiter, auth.getConfig);
+  // Auth config — optional JWT: public fields for everyone, org details for authenticated users
+  const optionalJwt = (req, res, next) => {
+    passport.authenticate('jwt', { session: false }, (err, user) => {
+      if (user) req.user = user;
+      next();
+    })(req, res, next);
+  };
+  app.route('/api/auth/config').get(authLimiter, optionalJwt, auth.getConfig);
 
   // Setting up the users password api
   app.route('/api/auth/forgot').post(authLimiter, authPassword.forgot);
