@@ -65,7 +65,7 @@ export async function up() {
   }).lean();
 
   for (const user of usersWithoutCurrentOrg) {
-    const membership = await Membership.findOne({ userId: user._id }).lean();
+    const membership = await Membership.findOne({ userId: user._id, status: 'active' }).lean();
     if (membership) {
       await User.updateOne({ _id: user._id }, { currentOrganization: membership.organizationId });
     }

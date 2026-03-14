@@ -4,7 +4,20 @@
 import AppError from '../../../lib/helpers/AppError.js';
 import config from '../../../config/index.js';
 
+/**
+ * @desc Escape regex-special characters in a user-provided string.
+ * @param {String} str - The raw string to escape.
+ * @returns {String} The escaped string safe for use in a RegExp.
+ */
 const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Normalize a domain string by trimming whitespace and lowercasing.
+ * @param {String} [value=''] - Raw domain value.
+ * @returns {String} Normalized domain.
+ */
+const normalizeDomain = (value = '') => value.trim().toLowerCase();
+
 import OrganizationsRepository from '../repositories/organizations.repository.js';
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
 import UserService from '../../users/services/users.service.js';
@@ -61,7 +74,7 @@ const create = async (body, user) => {
   }
 
   // Auto-set domain from creator's email if not provided and not a public domain
-  let domain = body.domain || '';
+  let domain = (body.domain || '').trim().toLowerCase();
   if (!domain && user.email) {
     const emailDomain = user.email.split('@')[1]?.toLowerCase();
     const publicDomains = config.organizations?.publicDomains || [];
@@ -124,7 +137,7 @@ const update = async (organization, body) => {
     }
     organization.slug = body.slug;
   }
-  if (body.domain !== undefined) organization.domain = body.domain;
+  if (body.domain !== undefined) organization.domain = normalizeDomain(body.domain);
   if (body.plan !== undefined) organization.plan = body.plan;
 
   const result = await OrganizationsRepository.update(organization);
@@ -148,7 +161,7 @@ const remove = async (organization) => {
 
   // For each affected user, switch to their next available org or set null
   for (const u of affectedUsers) {
-    const remaining = await MembershipRepository.list({ userId: u._id });
+    const remaining = await MembershipRepository.list({ userId: u._id, status: 'active' });
     const nextOrg = remaining.length > 0
       ? (remaining[0].organizationId._id || remaining[0].organizationId)
       : null;
@@ -159,8 +172,13 @@ const remove = async (organization) => {
   try {
     const TasksService = (await import('../../tasks/services/tasks.service.js')).default;
     await TasksService.deleteMany({ organizationId: orgId });
-  } catch (_err) {
-    // Tasks module not available — skip cleanup
+  } catch (err) {
+    // Only swallow module-not-found errors; re-throw data/runtime failures
+    if (err && (err.code === 'ERR_MODULE_NOT_FOUND' || err.code === 'MODULE_NOT_FOUND')) {
+      // Tasks module not available — skip cleanup
+    } else {
+      throw err;
+    }
   }
 
   const result = await OrganizationsRepository.remove(organization);

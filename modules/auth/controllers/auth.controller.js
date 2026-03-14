@@ -432,7 +432,8 @@ const resendVerification = async (req, res) => {
       emailVerificationExpires: Date.now() + 24 * 3600000, // 24 hours
     }, 'recover');
     const mail = await sendVerificationEmail(user, verificationToken);
-    if (!mail || !mail.accepted) return responses.error(res, 400, 'Bad Request', 'Failure sending email')();
+    const acceptedCount = Array.isArray(mail?.accepted) ? mail.accepted.length : 0;
+    if (!acceptedCount) return responses.error(res, 400, 'Bad Request', 'Failure sending email')();
     return responses.success(res, 'Verification email sent')({ status: true });
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);

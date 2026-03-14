@@ -65,12 +65,12 @@ const checkLockout = async (user) => {
 const recordFailedAttempt = async (user) => {
   const maxAttempts = config.auth?.lockout?.maxAttempts ?? 5;
   const lockMinutes = config.auth?.lockout?.lockDuration ?? 30;
-  const newAttempts = (user.failedLoginAttempts || 0) + 1;
-  const update = { $inc: { failedLoginAttempts: 1 } };
-  if (newAttempts >= maxAttempts) {
-    update.$set = { lockUntil: new Date(Date.now() + lockMinutes * 60 * 1000) };
+  const result = await UserService.updateById(user._id, { $inc: { failedLoginAttempts: 1 } });
+  // Re-read the authoritative attempt count from DB after atomic $inc
+  const updated = await UserService.get({ id: user._id });
+  if (updated && updated.failedLoginAttempts >= maxAttempts) {
+    await UserService.updateById(user._id, { $set: { lockUntil: new Date(Date.now() + lockMinutes * 60 * 1000) } });
   }
-  await UserService.updateById(user._id, update);
 };
 
 /**

@@ -3,6 +3,11 @@
  */
 import mongoose from 'mongoose';
 
+/**
+ * @desc Escape regex-special characters in a user-provided string.
+ * @param {String} str - The raw string to escape.
+ * @returns {String} The escaped string safe for use in a RegExp.
+ */
 const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const User = mongoose.model('User');
@@ -12,7 +17,7 @@ const User = mongoose.model('User');
  * @param {String} search
  * @param {Int} page
  * @param {Int} perPage
- * @return {Array}  users selected
+ * @returns {Array}  users selected
  */
 const list = (search, page, perPage) => {
   const filter = search
@@ -36,14 +41,14 @@ const list = (search, page, perPage) => {
 /**
  * @desc Function to create a user in db
  * @param {Object} user
- * @return {Object} user
+ * @returns{Object} user
  */
 const create = (user) => new User(user).save();
 
 /**
  * @desc Function to get a user from db by id, email, or token
  * @param {Object} user
- * @return {Object} user
+ * @returns{Object} user
  */
 const get = (user) => {
   if (user.id && mongoose.Types.ObjectId.isValid(user.id)) return User.findOne({ _id: user.id }).exec();
@@ -69,14 +74,14 @@ const get = (user) => {
 /**
  * @desc Function to get a search in db request
  * @param {Object} mongoose input request
- * @return {Array} users
+ * @returns{Array} users
  */
 const search = (input) => User.find(input).exec();
 
 /**
  * @desc Function to update a user in db
  * @param {Object} user
- * @return {Object} user
+ * @returns{Object} user
  */
 const update = (user) => {
   if (user._id) {
@@ -88,7 +93,7 @@ const update = (user) => {
 /**
  * @desc Function to remove a user from db by id or email
  * @param {Object} user
- * @return {Object} confirmation of delete
+ * @returns{Object} confirmation of delete
  */
 const remove = async (user) => {
   if (user && user.id && mongoose.Types.ObjectId.isValid(user.id)) return User.deleteOne({ _id: user.id }).exec();
@@ -97,7 +102,7 @@ const remove = async (user) => {
 
 /**
  * @desc Function to get collection stats
- * @return {Promise<number>} estimated document count
+ * @returns{Promise<number>} estimated document count
  */
 const stats = () => User.estimatedDocumentCount().exec();
 
@@ -105,7 +110,7 @@ const stats = () => User.estimatedDocumentCount().exec();
  * @desc Function to push list of users in db
  * @param {[Object]} users
  * @param {[String]} filters
- * @return {Object} locations
+ * @returns{Object} locations
  */
 const push = (users, filters) =>
   User.bulkWrite(
@@ -127,7 +132,7 @@ const push = (users, filters) =>
 /**
  * @desc Function to search users by name or email with a regex
  * @param {String} search - The search string
- * @return {Array} matching user IDs
+ * @returns{Array} matching user IDs
  */
 const searchByNameOrEmail = (search) => {
   const regex = new RegExp(escapeRegex(search), 'i');
@@ -139,7 +144,7 @@ const searchByNameOrEmail = (search) => {
 /**
  * @desc Function to find a user by email address
  * @param {String} email - The email to search for
- * @return {Promise<Object|null>} The matching user or null
+ * @returns{Promise<Object|null>} The matching user or null
  */
 const findByEmail = (email) => User.findOne({ email });
 
@@ -147,7 +152,7 @@ const findByEmail = (email) => User.findOne({ email });
  * @desc Function to update a user by ID with a partial update object
  * @param {String} id - The user ID
  * @param {Object} data - Fields to update
- * @return {Object} update result
+ * @returns{Object} update result
  */
 const updateById = (id, data) => User.updateOne({ _id: id }, data).exec();
 
@@ -156,7 +161,7 @@ const updateById = (id, data) => User.updateOne({ _id: id }, data).exec();
  * @param {String} id - The user ID
  * @param {Object} data - Fields to update
  * @param {String|Array|Object} populateFields - Fields to populate
- * @return {Object} updated user
+ * @returns{Object} updated user
  */
 const findByIdAndUpdatePopulated = (id, data, populateFields) =>
   User.findByIdAndUpdate(id, data, { new: true }).populate(populateFields).exec();
@@ -165,7 +170,7 @@ const findByIdAndUpdatePopulated = (id, data, populateFields) =>
  * @desc Function to find users matching a filter with optional field selection
  * @param {Object} filter - Mongoose filter
  * @param {String} [select] - Fields to select
- * @return {Array} matching users
+ * @returns{Array} matching users
  */
 const findWithFilter = (filter, select) => User.find(filter).select(select || '').exec();
 
@@ -173,7 +178,7 @@ const findWithFilter = (filter, select) => User.find(filter).select(select || ''
  * @desc Function to update multiple users matching a filter
  * @param {Object} filter - Mongoose filter
  * @param {Object} data - Fields to update
- * @return {Object} update result
+ * @returns{Object} update result
  */
 const updateMany = (filter, data) => User.updateMany(filter, data).exec();
 
