@@ -32,6 +32,7 @@ const MembershipMongoose = new Schema(
     },
     inviteToken: { type: String, default: null },
     invitedEmail: { type: String, default: null },
+    inviteExpiresAt: { type: Date, default: null },
   },
   {
     timestamps: true,

@@ -293,6 +293,7 @@ const invite = async (organizationId, email, invitedBy) => {
     status: 'invited',
     inviteToken,
     invitedEmail: email.toLowerCase(),
+    inviteExpiresAt: new Date(Date.now() + 7 * 24 * 3600000),
   });
 
   if (mailer.isConfigured()) {
@@ -332,6 +333,10 @@ const invite = async (organizationId, email, invitedBy) => {
 const acceptInvite = async (token, userId) => {
   const membership = await MembershipRepository.findOne({ inviteToken: token, status: 'invited' });
   if (!membership) throw new Error('Invalid or expired invite');
+
+  if (membership.inviteExpiresAt && membership.inviteExpiresAt < Date.now()) {
+    throw new Error('Invite has expired');
+  }
 
   // Verify the accepting user matches the intended invite recipient
   const user = await UserService.getBrut({ id: String(userId) });

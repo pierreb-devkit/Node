@@ -3,6 +3,8 @@
  */
 import mongoose from 'mongoose';
 
+const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 const User = mongoose.model('User');
 
 /**
@@ -16,9 +18,9 @@ const list = (search, page, perPage) => {
   const filter = search
     ? {
         $or: [
-          { firstName: { $regex: `${search}`, $options: 'i' } },
-          { lastName: { $regex: `${search}`, $options: 'i' } },
-          { email: { $regex: `${search}`, $options: 'i' } },
+          { firstName: { $regex: escapeRegex(search), $options: 'i' } },
+          { lastName: { $regex: escapeRegex(search), $options: 'i' } },
+          { email: { $regex: escapeRegex(search), $options: 'i' } },
         ],
       }
     : {};
@@ -123,7 +125,7 @@ const push = (users, filters) =>
  * @return {Array} matching user IDs
  */
 const searchByNameOrEmail = (search) => {
-  const regex = new RegExp(search, 'i');
+  const regex = new RegExp(escapeRegex(search), 'i');
   return User.find({
     $or: [{ email: regex }, { firstName: regex }, { lastName: regex }],
   }).select('_id').exec();

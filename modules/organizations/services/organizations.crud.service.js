@@ -3,6 +3,8 @@
  */
 import AppError from '../../../lib/helpers/AppError.js';
 import config from '../../../config/index.js';
+
+const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 import OrganizationsRepository from '../repositories/organizations.repository.js';
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
 import UserService from '../../users/services/users.service.js';
@@ -15,7 +17,7 @@ import { slugify } from '../helpers/organizations.slug.js';
  */
 const list = async (search, page, perPage) => {
   const filter = search
-    ? { $or: [{ name: { $regex: `${search}`, $options: 'i' } }, { domain: { $regex: `${search}`, $options: 'i' } }] }
+    ? { $or: [{ name: { $regex: escapeRegex(search), $options: 'i' } }, { domain: { $regex: escapeRegex(search), $options: 'i' } }] }
     : {};
   const result = await OrganizationsRepository.list(filter, page, perPage);
   return result;
@@ -175,6 +177,7 @@ const switchOrganization = async (user, organizationId) => {
   const membership = await MembershipRepository.findOne({
     userId: user._id || user.id,
     organizationId,
+    status: 'active',
   });
 
   if (!membership) {
