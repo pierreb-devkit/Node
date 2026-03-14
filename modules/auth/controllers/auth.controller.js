@@ -382,6 +382,8 @@ const getConfig = (req, res) => {
     },
     organizations: {
       enabled: !!config.organizations?.enabled,
+      domainMatching: !!config.organizations?.domainMatching,
+      autoCreate: !!config.organizations?.autoCreate,
     },
     mail: {
       configured: isMailerConfigured(),
@@ -392,8 +394,6 @@ const getConfig = (req, res) => {
   if (req.user) {
     data.organizations = {
       ...data.organizations,
-      autoCreate: !!config.organizations?.autoCreate,
-      domainMatching: !!config.organizations?.domainMatching,
       roles: config.organizations?.roles || [],
       roleDescriptions: config.organizations?.roleDescriptions || {},
     };
