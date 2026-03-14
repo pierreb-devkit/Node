@@ -195,7 +195,7 @@ const handleSignupOrganization = async (user) => {
   return {
     organization: null,
     membership: null,
-    abilities: ability.rules,
+    abilities: serializeAbilities(ability),
     organizationSetupRequired: true,
     suggestedOrganization, // null or { _id, name, slug, domain }
   };

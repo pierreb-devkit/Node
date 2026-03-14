@@ -66,18 +66,20 @@ export async function up() {
   try {
     Task = mongoose.model('Task');
   } catch {
-    // Task model not registered — nothing to backfill
-    return;
+    // Task model not registered — skip task backfill only
+    Task = null;
   }
 
-  const tasksWithoutOrganization = await Task.find({
-    $or: [{ organizationId: { $exists: false } }, { organizationId: null }],
-  }).lean();
+  if (Task) {
+    const tasksWithoutOrganization = await Task.find({
+      $or: [{ organizationId: { $exists: false } }, { organizationId: null }],
+    }).lean();
 
-  for (const task of tasksWithoutOrganization) {
-    const membership = await Membership.findOne({ userId: task.user, role: 'owner' }).lean();
-    if (membership) {
-      await Task.updateOne({ _id: task._id }, { organizationId: membership.organizationId });
+    for (const task of tasksWithoutOrganization) {
+      const membership = await Membership.findOne({ userId: task.user, role: 'owner' }).lean();
+      if (membership) {
+        await Task.updateOne({ _id: task._id }, { organizationId: membership.organizationId });
+      }
     }
   }
 
@@ -86,18 +88,20 @@ export async function up() {
   try {
     Upload = mongoose.model('Upload');
   } catch {
-    // Upload model not registered — nothing to backfill
-    return;
+    // Upload model not registered — skip upload backfill only
+    Upload = null;
   }
 
-  const uploadsWithoutOrganization = await Upload.find({
-    $or: [{ 'metadata.organizationId': { $exists: false } }, { 'metadata.organizationId': null }],
-  }).lean();
+  if (Upload) {
+    const uploadsWithoutOrganization = await Upload.find({
+      $or: [{ 'metadata.organizationId': { $exists: false } }, { 'metadata.organizationId': null }],
+    }).lean();
 
-  for (const upload of uploadsWithoutOrganization) {
-    const membership = await Membership.findOne({ userId: upload.user, role: 'owner' }).lean();
-    if (membership) {
-      await Upload.updateOne({ _id: upload._id }, { 'metadata.organizationId': membership.organizationId });
+    for (const upload of uploadsWithoutOrganization) {
+      const membership = await Membership.findOne({ userId: upload.user, role: 'owner' }).lean();
+      if (membership) {
+        await Upload.updateOne({ _id: upload._id }, { 'metadata.organizationId': membership.organizationId });
+      }
     }
   }
 }

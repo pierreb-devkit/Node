@@ -397,7 +397,10 @@ const getConfig = (_req, res) => {
 const verifyEmail = async (req, res) => {
   try {
     const user = await UserService.getBrut({ emailVerificationToken: req.params.token });
-    if (!user || !user.email) return responses.error(res, 400, 'Bad Request', 'Email verification token is invalid or has expired.')();
+    const isExpired = !user?.emailVerificationExpires || Number(user.emailVerificationExpires) < Date.now();
+    if (!user || !user.email || isExpired) {
+      return responses.error(res, 400, 'Bad Request', 'Email verification token is invalid or has expired.')();
+    }
     await UserService.update(user, {
       emailVerified: true,
       emailVerificationToken: null,

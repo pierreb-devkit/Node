@@ -213,16 +213,18 @@ const rejectRequest = async (membership) => {
     const user = await UserService.getBrut({ id: String(userId) });
     const orgId = membership.organizationId._id || membership.organizationId;
     const org = await OrganizationRepository.get(orgId);
-    mailer.sendMail({
-      to: user.email,
-      subject: `Your request to join ${org.name}`,
-      template: 'org-request-rejected',
-      params: {
-        displayName: `${user.firstName} ${user.lastName}`,
-        orgName: org.name,
-        appName: config.app.title,
-      },
-    }).catch(() => {});
+    if (user?.email && org?.name) {
+      mailer.sendMail({
+        to: user.email,
+        subject: `Your request to join ${org.name}`,
+        template: 'org-request-rejected',
+        params: {
+          displayName: `${user.firstName} ${user.lastName}`,
+          orgName: org.name,
+          appName: config.app.title,
+        },
+      }).catch(() => {});
+    }
   }
   return MembershipRepository.remove(membership);
 };
@@ -261,12 +263,20 @@ const leave = async (userId, organizationId) => {
  * @returns {Promise<Object>} The created membership and invite token.
  */
 const invite = async (organizationId, email, invitedBy) => {
+  // Check for existing invited membership by email first (handles non-registered users)
+  const existingInvite = await MembershipRepository.findOne({
+    invitedEmail: email.toLowerCase(),
+    organizationId,
+    status: 'invited',
+  });
+  if (existingInvite) throw new Error('An invite has already been sent to this email');
+
   const existingUser = await UserService.findByEmail(email);
   if (existingUser) {
     const existingMembership = await MembershipRepository.findOne({
       userId: existingUser._id,
       organizationId,
-      status: { $in: ['active', 'pending'] },
+      status: { $in: ['active', 'pending', 'invited'] },
     });
     if (existingMembership) throw new Error('User is already a member or has a pending request');
   }
@@ -278,7 +288,7 @@ const invite = async (organizationId, email, invitedBy) => {
     role: 'member',
     status: 'invited',
     inviteToken,
-    invitedEmail: email,
+    invitedEmail: email.toLowerCase(),
   });
 
   if (mailer.isConfigured()) {

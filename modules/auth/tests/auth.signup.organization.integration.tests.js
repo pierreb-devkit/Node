@@ -29,6 +29,7 @@ describe('Auth signup organization integration tests:', () => {
   /**
    * Helper to clean up a user and their associated organizations/memberships.
    * @param {Object} user - The user object to clean up (must have id).
+   * @returns {Promise<void>} Resolves when cleanup completes.
    */
   const cleanupUser = async (user) => {
     if (!user) return;
