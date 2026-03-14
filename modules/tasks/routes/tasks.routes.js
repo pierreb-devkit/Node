@@ -13,8 +13,8 @@ import tasksSchema from '../models/tasks.schema.js';
  * Routes
  */
 export default (app) => {
-  // stats
-  app.route('/api/tasks/stats').all(policy.isAllowed).get(tasks.stats);
+  // stats — public aggregate endpoint, no auth required
+  app.route('/api/tasks/stats').get(tasks.stats);
 
   // list & post
   app
