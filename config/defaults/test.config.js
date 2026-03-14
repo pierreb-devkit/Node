@@ -17,6 +17,9 @@ const config = {
     auth: {
       max: Number.MAX_SAFE_INTEGER, // disable rate limiting in tests
     },
+    api: {
+      max: Number.MAX_SAFE_INTEGER, // disable rate limiting in tests
+    },
   },
   uploads: {
     avatar: {

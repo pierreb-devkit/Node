@@ -54,39 +54,55 @@ const generateSlugFromDomain = async (domain) => {
  * @param {Object} params.user - The newly created user object (must have id/firstName/lastName).
  * @returns {Promise<{organization: Object, membership: Object}>} The created org and membership.
  */
-const createOrganizationForUser = async ({ name, slug, domain, user }) => {
+const createOrganizationForUser = async ({ name, slug, domain, user, slugGenerator }) => {
   const userId = user.id || user._id;
-  let organization;
-  let membership;
+  const maxRetries = 5;
 
-  try {
-    organization = await OrganizationsRepository.create({
-      name,
-      slug,
-      domain: domain || '',
-      plan: 'free',
-      createdBy: userId,
-    });
+  for (let attempt = 0; attempt < maxRetries; attempt += 1) {
+    let organization;
+    let membership;
+    const currentSlug = attempt === 0 ? slug : `${slug}-${attempt}`;
 
-    membership = await MembershipRepository.create({
-      userId,
-      organizationId: organization._id,
-      role: 'owner',
-    });
+    try {
+      organization = await OrganizationsRepository.create({
+        name,
+        slug: currentSlug,
+        domain: domain || '',
+        plan: 'free',
+        createdBy: userId,
+      });
 
-    await UserService.updateById(userId, { currentOrganization: organization._id });
-  } catch (err) {
-    // Clean up any partially created artifacts to avoid orphaned records
-    if (membership) {
-      await MembershipRepository.deleteMany({ _id: membership._id }).catch(() => {});
+      membership = await MembershipRepository.create({
+        userId,
+        organizationId: organization._id,
+        role: 'owner',
+      });
+
+      await UserService.updateById(userId, { currentOrganization: organization._id });
+
+      return { organization, membership };
+    } catch (err) {
+      // Clean up any partially created artifacts to avoid orphaned records
+      if (membership) {
+        await MembershipRepository.deleteMany({ _id: membership._id }).catch(() => {});
+      }
+      if (organization) {
+        await OrganizationsRepository.remove(organization).catch(() => {});
+      }
+      // Retry on MongoDB duplicate key error for slug collisions (TOCTOU race)
+      if (err.code === 11000 && err.message?.includes('slug') && attempt < maxRetries - 1) {
+        continue;
+      }
+      throw err;
     }
-    if (organization) {
-      await OrganizationsRepository.remove(organization).catch(() => {});
-    }
-    throw err;
   }
 
-  return { organization, membership };
+  // Fallback: re-generate slug from scratch if all retries exhausted
+  if (slugGenerator) {
+    const freshSlug = await slugGenerator();
+    return createOrganizationForUser({ name, slug: freshSlug, domain, user });
+  }
+  throw new Error('Failed to create organization: slug conflict after maximum retries');
 };
 
 /**

@@ -2,16 +2,15 @@
  * Module dependencies
  */
 import passport from 'passport';
-import rateLimit from 'express-rate-limit';
 
-import config from '../../../config/index.js';
+import limiters from '../../../lib/middlewares/rateLimiter.js';
 import model from '../../../lib/middlewares/model.js';
 import UsersSchema from '../../users/models/users.schema.js';
 import auth from '../controllers/auth.controller.js';
 import authPassword from '../controllers/auth.password.controller.js';
 
 export default (app) => {
-  const authLimiter = rateLimit(config.rateLimit.auth);
+  const authLimiter = limiters.auth;
 
   // Public auth config (no authentication required, rate-limited)
   app.route('/api/auth/config').get(authLimiter, auth.getConfig);

@@ -565,9 +565,9 @@ describe('Core unit tests:', () => {
       await policy.discoverPolicies(policyPaths);
     });
 
-    it('guest can read tasks', async () => {
+    it('guest cannot read tasks (org-scoped, JWT required)', async () => {
       const ability = await policy.defineAbilityFor(null);
-      expect(ability.can('read', 'Task')).toBe(true);
+      expect(ability.can('read', 'Task')).toBe(false);
     });
 
     it('guest cannot create tasks', async () => {

@@ -3,6 +3,7 @@
  */
 import passport from 'passport';
 
+import limiters from '../../../lib/middlewares/rateLimiter.js';
 import policy from '../../../lib/middlewares/policy.js';
 import organizations from '../controllers/organizations.controller.js';
 import membershipRequests from '../controllers/organizations.membershipRequest.controller.js';
@@ -21,7 +22,7 @@ export default (app) => {
   app
     .route('/api/organizations/:organizationId/requests')
     .all(passport.authenticate('jwt', { session: false }))
-    .post(membershipRequests.create)
+    .post(limiters.api, organizations.loadMembership, policy.isAllowed, membershipRequests.create)
     .get(organizations.loadMembership, policy.isAllowed, membershipRequests.listPending);
 
   // Approve a membership request

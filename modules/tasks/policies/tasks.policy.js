@@ -27,12 +27,3 @@ export function taskAbilities(user, membership, { can }) {
   can('delete', 'Task', { organizationId, user: String(user._id) });
 }
 
-/**
- * Define task-related abilities for unauthenticated guests.
- * Guests can only read tasks and task stats.
- * @param {Object} builder - CASL AbilityBuilder helpers
- * @param {Function} builder.can - Grant an ability
- */
-export function taskGuestAbilities({ can }) {
-  can('read', 'Task');
-}
