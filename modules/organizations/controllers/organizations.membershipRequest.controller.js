@@ -140,8 +140,9 @@ const getInvite = async (req, res) => {
 const requestByID = async (req, res, next, id) => {
   try {
     const membership = await MembershipService.get(id);
-    const organizationId = req.organization._id || req.organization.id;
-    if (!membership || membership.status !== 'pending' || String(membership.organizationId) !== String(organizationId)) {
+    const organizationId = String(req.organization._id || req.organization.id);
+    const membershipOrgId = String(membership?.organizationId?._id || membership?.organizationId);
+    if (!membership || membership.status !== 'pending' || membershipOrgId !== organizationId) {
       return responses.error(res, 404, 'Not Found', 'No pending request with that identifier has been found')();
     }
     req.membershipRequest = membership;

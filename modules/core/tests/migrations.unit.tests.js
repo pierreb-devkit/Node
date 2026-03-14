@@ -31,7 +31,7 @@ describe('Migrations unit tests:', () => {
 
   describe('runMigration', () => {
     it('should skip already-executed migrations', async () => {
-      const executed = new Set(['20260101000000-already-done.js']);
+      const executed = new Set(['modules/core/migrations/20260101000000-already-done.js']);
       const result = await migrations.runMigration('modules/core/migrations/20260101000000-already-done.js', executed);
       expect(result).toBe(false);
     });
