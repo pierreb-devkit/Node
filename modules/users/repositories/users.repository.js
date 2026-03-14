@@ -98,6 +98,7 @@ const update = (user) => {
 const remove = async (user) => {
   if (user && user.id && mongoose.Types.ObjectId.isValid(user.id)) return User.deleteOne({ _id: user.id }).exec();
   if (user && user.email) return User.deleteOne({ email: user.email }).exec();
+  return { deletedCount: 0 };
 };
 
 /**
@@ -129,7 +130,7 @@ const push = (users, filters) => {
       return {
         updateOne: {
           filter,
-          update: user,
+          update: { $set: user },
           upsert: true,
         },
       };
