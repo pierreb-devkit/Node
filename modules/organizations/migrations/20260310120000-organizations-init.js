@@ -9,7 +9,7 @@ import { generateOrganizationSlug } from '../helpers/organizations.slug.js';
  * Migration: Create default organizations for existing users.
  * For each user without a membership, creates a personal organization
  * and an owner membership. Also backfills organizationId on tasks
- * that are missing one.
+ * and uploads that are missing one.
  *
  * This migration is idempotent: users who already have a membership are
  * skipped, and tasks that already have an organizationId are not touched.
@@ -78,6 +78,26 @@ export async function up() {
     const membership = await Membership.findOne({ userId: task.user, role: 'owner' }).lean();
     if (membership) {
       await Task.updateOne({ _id: task._id }, { organizationId: membership.organizationId });
+    }
+  }
+
+  // ── Step 4: Backfill organizationId on uploads without one ──────────
+  let Upload;
+  try {
+    Upload = mongoose.model('Upload');
+  } catch {
+    // Upload model not registered — nothing to backfill
+    return;
+  }
+
+  const uploadsWithoutOrganization = await Upload.find({
+    $or: [{ 'metadata.organizationId': { $exists: false } }, { 'metadata.organizationId': null }],
+  }).lean();
+
+  for (const upload of uploadsWithoutOrganization) {
+    const membership = await Membership.findOne({ userId: upload.user, role: 'owner' }).lean();
+    if (membership) {
+      await Upload.updateOne({ _id: upload._id }, { 'metadata.organizationId': membership.organizationId });
     }
   }
 }

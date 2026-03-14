@@ -311,6 +311,18 @@ const acceptInvite = async (token, userId) => {
   const membership = await MembershipRepository.findOne({ inviteToken: token, status: 'invited' });
   if (!membership) throw new Error('Invalid or expired invite');
 
+  // Verify the accepting user matches the intended invite recipient
+  const user = await UserService.getBrut({ id: String(userId) });
+  if (!user) throw new Error('User not found');
+
+  const invitedUserId = membership.userId?._id || membership.userId;
+  if (invitedUserId && String(invitedUserId) !== String(userId)) {
+    throw new Error('This invite belongs to another user');
+  }
+  if (membership.invitedEmail && membership.invitedEmail.toLowerCase() !== user.email.toLowerCase()) {
+    throw new Error('This invite belongs to another email address');
+  }
+
   membership.userId = userId;
   membership.status = 'active';
   membership.inviteToken = null;

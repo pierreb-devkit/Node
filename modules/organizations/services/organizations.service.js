@@ -55,22 +55,35 @@ const generateSlugFromDomain = async (domain) => {
  */
 const createOrganizationForUser = async ({ name, slug, domain, user }) => {
   const userId = user.id || user._id;
+  let organization;
+  let membership;
 
-  const organization = await OrganizationsRepository.create({
-    name,
-    slug,
-    domain: domain || '',
-    plan: 'free',
-    createdBy: userId,
-  });
+  try {
+    organization = await OrganizationsRepository.create({
+      name,
+      slug,
+      domain: domain || '',
+      plan: 'free',
+      createdBy: userId,
+    });
 
-  const membership = await MembershipRepository.create({
-    userId,
-    organizationId: organization._id,
-    role: 'owner',
-  });
+    membership = await MembershipRepository.create({
+      userId,
+      organizationId: organization._id,
+      role: 'owner',
+    });
 
-  await UserService.updateById(userId, { currentOrganization: organization._id });
+    await UserService.updateById(userId, { currentOrganization: organization._id });
+  } catch (err) {
+    // Clean up any partially created artifacts to avoid orphaned records
+    if (membership) {
+      await MembershipRepository.deleteMany({ _id: membership._id }).catch(() => {});
+    }
+    if (organization) {
+      await OrganizationsRepository.remove(organization).catch(() => {});
+    }
+    throw err;
+  }
 
   return { organization, membership };
 };
