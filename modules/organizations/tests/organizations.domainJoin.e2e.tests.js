@@ -161,17 +161,6 @@ describe('Organizations domain join E2E tests:', () => {
       }
     });
 
-    test('pending user cannot list pending requests — 403', async () => {
-      try {
-        await agentMember
-          .get(`/api/organizations/${org._id}/requests`)
-          .expect(403);
-      } catch (err) {
-        console.log(err);
-        expect(err).toBeFalsy();
-      }
-    });
-
     test('owner can list pending requests and sees the new joiner — 200', async () => {
       try {
         const result = await agentOwner

@@ -44,7 +44,7 @@ const getStream = (upload) => {
  * @param {Object} update
  * @return {Object} upload updated
  */
-const update = (id, update) => Uploads.findOneAndUpdate({ _id: id }, update, { new: true }).exec();
+const update = (id, update) => Uploads.findOneAndUpdate({ _id: id }, update, { returnDocument: 'after' }).exec();
 
 /**
  * @desc Function to remove an upload from db

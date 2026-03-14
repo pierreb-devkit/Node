@@ -24,7 +24,7 @@ export default (app) => {
     .route('/api/organizations/:organizationId/requests')
     .all(passport.authenticate('jwt', { session: false }))
     .post(limiters.api, organizations.loadMembership, policy.isAllowed, membershipRequests.create)
-    .get(organizations.loadMembership, policy.isAllowed, membershipRequests.listPending);
+    .get(organizations.loadMembership, membershipRequests.listPending);
 
   // Approve a membership request
   app

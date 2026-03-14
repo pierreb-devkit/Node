@@ -95,6 +95,56 @@ describe('Organizations integration tests:', () => {
     });
   });
 
+  describe('GET /api/organizations/:id/requests (pending requests permissions)', () => {
+    let owner;
+    let member;
+    let ownerAgent;
+    let memberAgent;
+    let org;
+
+    beforeAll(async () => {
+      config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
+      ownerAgent = request.agent((await bootstrap()).app);
+      memberAgent = request.agent((await bootstrap()).app);
+
+      // Create owner with auto-created org
+      const ownerRes = await ownerAgent
+        .post('/api/auth/signup')
+        .send({ firstName: 'Owner', lastName: 'Test', email: 'owner-req@test.com', password: 'W@os.jsI$Aw3$0m3', provider: 'local' })
+        .expect(200);
+      owner = ownerRes.body.user;
+
+      const orgsRes = await ownerAgent.get('/api/organizations').expect(200);
+      org = orgsRes.body.data[0];
+
+      // Create member and add to same org
+      const memberRes = await memberAgent
+        .post('/api/auth/signup')
+        .send({ firstName: 'Member', lastName: 'Test', email: 'member-req@test.com', password: 'W@os.jsI$Aw3$0m3', provider: 'local' })
+        .expect(200);
+      member = memberRes.body.user;
+
+      // Add member to owner's org as 'member'
+      const MembershipService = (await import(path.resolve('./modules/organizations/services/organizations.membership.service.js'))).default;
+      await MembershipService.create({ userId: member._id || member.id, organizationId: org._id || org.id, role: 'member' });
+    });
+
+    test('owner should see pending requests — 200 with array', async () => {
+      const result = await ownerAgent.get(`/api/organizations/${org._id || org.id}/requests`).expect(200);
+      expect(result.body.data).toBeInstanceOf(Array);
+    });
+
+    test('member should get empty array for pending requests — 200', async () => {
+      const result = await memberAgent.get(`/api/organizations/${org._id || org.id}/requests`).expect(200);
+      expect(result.body.data).toEqual([]);
+    });
+
+    afterAll(async () => {
+      await cleanupUser(owner);
+      await cleanupUser(member);
+    });
+  });
+
   // Mongoose disconnect
   afterAll(async () => {
     config.organizations = { ...originalOrganizations };

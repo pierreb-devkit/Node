@@ -85,7 +85,7 @@ const search = (input) => User.find(input).exec();
  */
 const update = (user) => {
   if (user._id) {
-    return User.findByIdAndUpdate(user._id, user, { new: true, runValidators: true }).exec();
+    return User.findByIdAndUpdate(user._id, user, { returnDocument: 'after', runValidators: true }).exec();
   }
   return new User(user).save();
 };
@@ -173,7 +173,7 @@ const updateById = (id, data) => User.updateOne({ _id: id }, data, { runValidato
  * @returns {Object} updated user
  */
 const findByIdAndUpdatePopulated = (id, data, populateFields) =>
-  User.findByIdAndUpdate(id, data, { new: true, runValidators: true }).populate(populateFields).exec();
+  User.findByIdAndUpdate(id, data, { returnDocument: 'after', runValidators: true }).populate(populateFields).exec();
 
 /**
  * @desc Function to find users matching a filter with optional field selection

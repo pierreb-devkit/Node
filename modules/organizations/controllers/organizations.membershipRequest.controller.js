@@ -33,8 +33,8 @@ const create = async (req, res) => {
  */
 const listPending = async (req, res) => {
   try {
-    if (req.membership && req.membership.role === 'member') {
-      return responses.error(res, 403, 'Forbidden', 'Only admin or owner can list pending requests')();
+    if (!req.membership || req.membership.role === 'member') {
+      return responses.success(res, 'membership request list')([]);
     }
     const requests = await MembershipService.listPending(req.organization._id || req.organization.id);
     responses.success(res, 'membership request list')(requests);
