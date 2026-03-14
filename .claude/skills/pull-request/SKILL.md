@@ -221,10 +221,16 @@ REPEAT:
   3. Run diff audit               → audit `git diff master...HEAD` for security, logic bugs,
                                     data integrity, API design, performance issues
   4. If audit has findings        → fix all, commit, push, GOTO 1
-  5. If 0 CodeRabbit comments AND 0 audit findings → STOP ✓
+  5. If 0 CodeRabbit comments AND 0 audit findings → run cleanup (step 6), then STOP ✓
+  6. Cleanup outdated threads     → list all threads with isOutdated==true that have NO reply
+                                    explaining the fix. For each, reply with the SHA and a brief
+                                    explanation of how/why it was addressed, then resolve if not
+                                    already resolved.
 ```
 
 **Safety limit:** 5 outer iterations max — report to user if still not converged.
+
+**Important:** In section 6c, you MUST reply to every thread before resolving it. Never resolve a thread silently — the reply serves as audit trail.
 
 ## 8. Conflict resolution
 
