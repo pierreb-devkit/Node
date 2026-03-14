@@ -86,7 +86,7 @@ export async function up() {
   // ── Step 4: Backfill organizationId on uploads without one ──────────
   let Upload;
   try {
-    Upload = mongoose.model('Upload');
+    Upload = mongoose.model('Uploads');
   } catch {
     // Upload model not registered — skip upload backfill only
     Upload = null;
@@ -98,7 +98,8 @@ export async function up() {
     }).lean();
 
     for (const upload of uploadsWithoutOrganization) {
-      const membership = await Membership.findOne({ userId: upload.user, role: 'owner' }).lean();
+      if (!upload.metadata?.user) continue;
+      const membership = await Membership.findOne({ userId: upload.metadata.user, role: 'owner' }).lean();
       if (membership) {
         await Upload.updateOne({ _id: upload._id }, { 'metadata.organizationId': membership.organizationId });
       }

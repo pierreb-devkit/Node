@@ -193,7 +193,7 @@ const signin = async (req, res) => {
       tokenExpiresIn: Date.now() + config.jwt.expiresIn * 1000,
       abilities,
       pendingRequests: pendingRequests.length > 0 ? pendingRequests : undefined,
-      type: 'sucess',
+      type: 'success',
       message: 'Sign in',
     });
 };

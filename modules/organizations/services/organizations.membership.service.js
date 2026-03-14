@@ -141,21 +141,23 @@ const createJoinRequest = async (userId, organizationId) => {
   if (mailer.isConfigured()) {
     const user = await UserService.getBrut({ id: String(userId) });
     const org = await OrganizationRepository.get(organizationId);
-    const admins = await MembershipRepository.list({ organizationId, role: { $in: ['owner', 'admin'] }, status: 'active' });
-    for (const admin of admins) {
-      if (admin.userId?.email) {
-        mailer.sendMail({
-          to: admin.userId.email,
-          subject: `New join request for ${org.name}`,
-          template: 'org-request-new',
-          params: {
-            requesterName: `${user.firstName} ${user.lastName}`,
-            requesterEmail: user.email,
-            orgName: org.name,
-            url: `${config.app?.front || ''}/users/organizations/${organizationId}`,
-            appName: config.app.title,
-          },
-        }).catch(() => {});
+    if (user?.email && org?.name) {
+      const admins = await MembershipRepository.list({ organizationId, role: { $in: ['owner', 'admin'] }, status: 'active' });
+      for (const admin of admins) {
+        if (admin.userId?.email) {
+          mailer.sendMail({
+            to: admin.userId.email,
+            subject: `New join request for ${org.name}`,
+            template: 'org-request-new',
+            params: {
+              requesterName: `${user.firstName} ${user.lastName}`,
+              requesterEmail: user.email,
+              orgName: org.name,
+              url: `${config.app?.front || ''}/users/organizations/${organizationId}`,
+              appName: config.app.title,
+            },
+          }).catch(() => {});
+        }
       }
     }
   }
@@ -186,16 +188,18 @@ const approveRequest = async (membership) => {
     const approvedUserId = membership.userId._id || membership.userId;
     const user = await UserService.getBrut({ id: String(approvedUserId) });
     const org = await OrganizationRepository.get(membership.organizationId._id || membership.organizationId);
-    mailer.sendMail({
-      to: user.email,
-      subject: `Your request to join ${org.name} has been approved`,
-      template: 'org-request-approved',
-      params: {
-        displayName: `${user.firstName} ${user.lastName}`,
-        orgName: org.name,
-        appName: config.app.title,
-      },
-    }).catch(() => {});
+    if (user?.email && org?.name) {
+      mailer.sendMail({
+        to: user.email,
+        subject: `Your request to join ${org.name} has been approved`,
+        template: 'org-request-approved',
+        params: {
+          displayName: `${user.firstName} ${user.lastName}`,
+          orgName: org.name,
+          appName: config.app.title,
+        },
+      }).catch(() => {});
+    }
   }
 
   return result;
@@ -293,18 +297,26 @@ const invite = async (organizationId, email, invitedBy) => {
 
   if (mailer.isConfigured()) {
     const org = await OrganizationRepository.get(organizationId);
-    await mailer.sendMail({
-      to: email,
-      subject: `You've been invited to join ${org.name}`,
-      template: 'org-invite',
-      params: {
-        inviterName: `${invitedBy.firstName} ${invitedBy.lastName}`,
-        orgName: org.name,
-        url: `${config.app?.front || ''}/invite?token=${inviteToken}`,
-        appName: config.app.title,
-        appContact: config.mailer.from,
-      },
-    });
+    if (org?.name) {
+      try {
+        await mailer.sendMail({
+          to: email,
+          subject: `You've been invited to join ${org.name}`,
+          template: 'org-invite',
+          params: {
+            inviterName: `${invitedBy.firstName} ${invitedBy.lastName}`,
+            orgName: org.name,
+            url: `${config.app?.front || ''}/invite?token=${inviteToken}`,
+            appName: config.app.title,
+            appContact: config.mailer.from,
+          },
+        });
+      } catch {
+        // Clean up persisted membership so the invite can be retried
+        await MembershipRepository.remove(membership);
+        throw new Error('Failed to send invite email');
+      }
+    }
   }
 
   return { membership, inviteToken };
