@@ -3,6 +3,7 @@
  */
 import config from '../../../config/index.js';
 import policy from '../../../lib/middlewares/policy.js';
+import serializeAbilities from '../../../lib/helpers/abilities.js';
 import OrganizationsRepository from '../repositories/organizations.repository.js';
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
 import MembershipService from './organizations.membership.service.js';
@@ -123,7 +124,7 @@ const handleSignupOrganization = async (user) => {
     return {
       organization,
       membership,
-      abilities: ability.rules,
+      abilities: serializeAbilities(ability),
       organizationSetupRequired: false,
     };
   }
@@ -146,7 +147,7 @@ const handleSignupOrganization = async (user) => {
         return {
           organization,
           membership: null,
-          abilities: ability.rules,
+          abilities: serializeAbilities(ability),
           organizationSetupRequired: false,
           pendingJoin: true,
         };
@@ -159,7 +160,7 @@ const handleSignupOrganization = async (user) => {
       return {
         organization,
         membership,
-        abilities: ability.rules,
+        abilities: serializeAbilities(ability),
         organizationSetupRequired: false,
       };
     }
@@ -172,7 +173,7 @@ const handleSignupOrganization = async (user) => {
     return {
       organization,
       membership,
-      abilities: ability.rules,
+      abilities: serializeAbilities(ability),
       organizationSetupRequired: false,
     };
   }

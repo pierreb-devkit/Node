@@ -6,6 +6,7 @@ import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
 import config from '../../../config/index.js';
 import policy from '../../../lib/middlewares/policy.js';
+import serializeAbilities from '../../../lib/helpers/abilities.js';
 import OrganizationsService from '../services/organizations.crud.service.js';
 import MembershipService from '../services/organizations.membership.service.js';
 
@@ -222,7 +223,7 @@ const switchOrganization = async (req, res) => {
 
     // Build abilities for the new org context
     const ability = await policy.defineAbilityFor(updatedUser, membership);
-    const abilities = ability.rules;
+    const abilities = serializeAbilities(ability);
 
     return res
       .status(200)

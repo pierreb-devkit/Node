@@ -15,7 +15,7 @@ export default (app) => {
   // Organization CRUD
   app
     .route('/api/organizations')
-    .all(passport.authenticate('jwt', { session: false }))
+    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
     .get(organizations.list)
     .post(policy.isAllowed, model.isValid(organizationsSchema.Organization), organizations.create);
 
@@ -34,13 +34,13 @@ export default (app) => {
   // Organization switch
   app
     .route('/api/organizations/:organizationId/switch')
-    .all(passport.authenticate('jwt', { session: false }))
+    .all(passport.authenticate('jwt', { session: false }), organizations.loadMembership, policy.isAllowed)
     .post(organizations.switchOrganization);
 
   // Leave organization
   app
     .route('/api/organizations/:organizationId/leave')
-    .all(passport.authenticate('jwt', { session: false }))
+    .all(passport.authenticate('jwt', { session: false }), organizations.loadMembership, policy.isAllowed)
     .post(organizations.leave);
 
   // Bind param middleware

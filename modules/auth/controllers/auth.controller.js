@@ -119,7 +119,7 @@ const signup = async (req, res) => {
         abilities: orgResult.abilities || [],
         organizationSetupRequired: orgResult.organizationSetupRequired || false,
         suggestedOrganization: orgResult.suggestedOrganization || null,
-        type: 'sucess',
+        type: 'success',
         message: 'Sign up',
       });
   } catch (err) {
@@ -331,7 +331,7 @@ const oauthCallback = async (req, res, next) => {
         .json({
           user,
           tokenExpiresIn: Date.now() + config.jwt.expiresIn * 1000,
-          type: 'sucess',
+          type: 'success',
           message: 'oAuth Ok',
         });
     } catch (err) {
@@ -428,7 +428,7 @@ const resendVerification = async (req, res) => {
       emailVerificationExpires: Date.now() + 24 * 3600000, // 24 hours
     }, 'recover');
     const mail = await sendVerificationEmail(user, verificationToken);
-    if (!mail.accepted) return responses.error(res, 400, 'Bad Request', 'Failure sending email')();
+    if (!mail || !mail.accepted) return responses.error(res, 400, 'Bad Request', 'Failure sending email')();
     return responses.success(res, 'Verification email sent')({ status: true });
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);

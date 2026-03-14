@@ -292,7 +292,7 @@ describe('Auth signup organization integration tests:', () => {
         expect(result.body).toHaveProperty('abilities');
         expect(result.body).toHaveProperty('organizationSetupRequired');
         expect(result.body).toHaveProperty('tokenExpiresIn');
-        expect(result.body.type).toBe('sucess');
+        expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('Sign up');
       } catch (err) {
         console.log(err);

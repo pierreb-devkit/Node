@@ -6,7 +6,7 @@ services:
 
   test:
     build: .
-    command: npm test
+    command: npm run test:all
     depends_on:
       - mongo
     environment:
