@@ -48,11 +48,14 @@ const listPending = async (req, res) => {
  * @description Endpoint to approve a pending membership request.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const approve = async (req, res) => {
   try {
     const membership = await MembershipService.approveRequest(req.membershipRequest);
+    if (!membership) {
+      return responses.error(res, 409, 'Conflict', 'Membership request could not be approved')();
+    }
     responses.success(res, 'membership request approved')(membership);
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);

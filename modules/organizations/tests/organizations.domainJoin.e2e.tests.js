@@ -28,6 +28,7 @@ describe('Organizations domain join E2E tests:', () => {
   /**
    * @description Clean up a user and their associated organizations/memberships.
    * @param {Object} user - The user object to clean up.
+   * @returns {Promise<void>}
    */
   const cleanupUser = async (user) => {
     if (!user) return;
