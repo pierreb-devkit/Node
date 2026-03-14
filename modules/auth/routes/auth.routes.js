@@ -36,7 +36,11 @@ export default (app) => {
 
   // Email verification
   app.route('/api/auth/verify-email/:token').post(authLimiter, auth.verifyEmail);
-  app.route('/api/auth/resend-verification').post(passport.authenticate('jwt', { session: false }), auth.resendVerification);
+  app.route('/api/auth/resend-verification').post(
+    authLimiter,
+    passport.authenticate('jwt', { session: false }),
+    auth.resendVerification,
+  );
 
   // Jwt reset token
   app.route('/api/auth/token').get(passport.authenticate('jwt', { session: false }), auth.token);

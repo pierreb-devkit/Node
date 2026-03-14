@@ -19,11 +19,13 @@ export function usersAbilities(user, membership, { can }) {
     can('manage', 'all');
     return;
   }
-  // Self-service routes (me, terms, password, avatar, data, stats)
+  // Self-service routes (me, terms, password, avatar, data)
   can('read', 'UserAccount');
   can('create', 'UserAccount');
   can('update', 'UserAccount');
   can('delete', 'UserAccount');
+  // Stats route (also guest-accessible via UserStats)
+  can('read', 'UserStats');
   // Base /api/users route — users can update/delete their own account but NOT list users
   can('update', 'UserSelf');
   can('delete', 'UserSelf');
@@ -36,5 +38,5 @@ export function usersAbilities(user, membership, { can }) {
  * @param {Function} builder.can - Grant an ability
  */
 export function usersGuestAbilities({ can }) {
-  can('read', 'UserAccount');
+  can('read', 'UserStats');
 }

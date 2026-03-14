@@ -11,6 +11,18 @@ import UserService from '../../users/services/users.service.js';
 import { slugify, generateOrganizationSlug } from '../helpers/organizations.slug.js';
 
 /**
+ * @desc Strip sensitive fields from an organization document before returning to public flows.
+ * @param {Object} org - Organization document (Mongoose or plain).
+ * @returns {Object} Safe projection without createdBy or plan.
+ */
+const sanitizeOrg = (org) => {
+  const obj = org.toJSON ? org.toJSON() : { ...org };
+  delete obj.createdBy;
+  delete obj.plan;
+  return obj;
+};
+
+/**
  * Extract the domain part from an email address.
  * @param {string} email - A valid email address.
  * @returns {string} The domain portion (e.g. "acme.com").
@@ -158,8 +170,8 @@ const handleSignupOrganization = async (user) => {
       const existingOrgs = await OrganizationsRepository.list({ domain });
       if (existingOrgs.length > 0) {
         // Create a pending join request — admin must approve
-        const organization = existingOrgs[0];
-        await MembershipService.createJoinRequest(user.id || user._id, organization._id);
+        const organization = sanitizeOrg(existingOrgs[0]);
+        await MembershipService.createJoinRequest(user.id || user._id, existingOrgs[0]._id);
         const ability = await policy.defineAbilityFor(user, null);
         return {
           organization,
@@ -202,7 +214,7 @@ const handleSignupOrganization = async (user) => {
   if (orgConfig.domainMatching && !isPublic) {
     const existingOrgs = await OrganizationsRepository.list({ domain });
     if (existingOrgs.length > 0) {
-      suggestedOrganization = existingOrgs[0];
+      suggestedOrganization = sanitizeOrg(existingOrgs[0]);
     }
   }
 

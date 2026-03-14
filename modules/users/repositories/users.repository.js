@@ -118,6 +118,10 @@ const push = (users, filters) => {
   }
   return User.bulkWrite(
     users.map((user) => {
+      const missing = filters.filter((value) => user[value] == null || user[value] === '');
+      if (missing.length) {
+        throw new Error(`push requires ${missing.join(', ')} on every user`);
+      }
       const filter = {};
       filters.forEach((value) => {
         filter[value] = user[value];
@@ -158,7 +162,7 @@ const findByEmail = (email) => User.findOne({ email });
  * @param {Object} data - Fields to update
  * @returns {Object} update result
  */
-const updateById = (id, data) => User.updateOne({ _id: id }, data).exec();
+const updateById = (id, data) => User.updateOne({ _id: id }, data, { runValidators: true }).exec();
 
 /**
  * @desc Function to find a user by ID, update, and return the populated document
@@ -168,7 +172,7 @@ const updateById = (id, data) => User.updateOne({ _id: id }, data).exec();
  * @returns {Object} updated user
  */
 const findByIdAndUpdatePopulated = (id, data, populateFields) =>
-  User.findByIdAndUpdate(id, data, { new: true }).populate(populateFields).exec();
+  User.findByIdAndUpdate(id, data, { new: true, runValidators: true }).populate(populateFields).exec();
 
 /**
  * @desc Function to find users matching a filter with optional field selection
@@ -184,7 +188,7 @@ const findWithFilter = (filter, select) => User.find(filter).select(select || ''
  * @param {Object} data - Fields to update
  * @returns {Object} update result
  */
-const updateMany = (filter, data) => User.updateMany(filter, data).exec();
+const updateMany = (filter, data) => User.updateMany(filter, data, { runValidators: true }).exec();
 
 export default {
   list,

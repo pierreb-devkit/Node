@@ -211,7 +211,7 @@ describe('Auth integration tests:', () => {
             password: 'W@os.jsI$Aw3$0m3',
           })
           .expect(401);
-        expect(result.error.text).toBe('Unauthorized');
+        expect(result.body.message).toBe('Unauthorized');
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -249,7 +249,7 @@ describe('Auth integration tests:', () => {
             password: 'WrongPassword!123',
           })
           .expect(401);
-        expect(result.error.text).toBe('Unauthorized');
+        expect(result.body.message).toBe('Unauthorized');
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();

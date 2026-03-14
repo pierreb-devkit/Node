@@ -9,7 +9,9 @@ import organizations from '../controllers/organizations.controller.js';
 import organizationsSchema from '../models/organizations.schema.js';
 
 /**
- * Routes
+ * @desc Register organization CRUD and membership routes on the Express application.
+ * @param {Object} app - Express application instance
+ * @returns {void}
  */
 export default (app) => {
   // Organization CRUD

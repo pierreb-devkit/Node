@@ -64,22 +64,27 @@ const signup = async (req, res) => {
     const safeBody = { ...req.body, roles: ['user'] };
     const user = await UserService.create(safeBody);
 
-    // Handle email verification
-    if (isMailerConfigured()) {
-      // Generate verification token and persist it
-      const verificationToken = crypto.randomBytes(20).toString('hex');
-      const brutUser = await UserService.getBrut({ id: user.id });
-      await UserService.update(brutUser, {
-        emailVerificationToken: verificationToken,
-        emailVerificationExpires: Date.now() + 24 * 3600000, // 24 hours
-      }, 'recover');
-      // Send verification email (best-effort, do not block signup)
-      sendVerificationEmail(user, verificationToken).catch(() => {});
-    } else {
-      // No mailer configured — auto-verify so dev/test are not blocked
-      const brutUser = await UserService.getBrut({ id: user.id });
-      await UserService.update(brutUser, { emailVerified: true }, 'recover');
-      user.emailVerified = true;
+    // Handle email verification — rollback user on failure to avoid orphaned accounts
+    try {
+      if (isMailerConfigured()) {
+        // Generate verification token and persist it
+        const verificationToken = crypto.randomBytes(20).toString('hex');
+        const brutUser = await UserService.getBrut({ id: user.id });
+        await UserService.update(brutUser, {
+          emailVerificationToken: verificationToken,
+          emailVerificationExpires: Date.now() + 24 * 3600000, // 24 hours
+        }, 'recover');
+        // Send verification email (best-effort, do not block signup)
+        sendVerificationEmail(user, verificationToken).catch(() => {});
+      } else {
+        // No mailer configured — auto-verify so dev/test are not blocked
+        const brutUser = await UserService.getBrut({ id: user.id });
+        await UserService.update(brutUser, { emailVerified: true }, 'recover');
+        user.emailVerified = true;
+      }
+    } catch (verifyErr) {
+      try { await UserService.remove(user); } catch (_cleanupErr) { /* best-effort */ }
+      throw verifyErr;
     }
 
     // Handle organization provisioning based on config
@@ -144,7 +149,7 @@ const signinAuthenticate = (req, res, next) => {
       return responses.error(res, 500, 'Internal Server Error', errors.getMessage(err))(err);
     }
     if (!user) {
-      return res.status(401).send('Unauthorized');
+      return responses.error(res, 401, 'Unauthorized', info?.message || 'Unauthorized')();
     }
     req.user = user;
     return next();

@@ -16,8 +16,15 @@ export function uploadAbilities(user, membership, { can }) {
     can('manage', 'all');
     return;
   }
-  can('read', 'Upload');
-  can('delete', 'Upload', { 'metadata.user': String(user._id) });
+  if (membership && membership.organizationId) {
+    const orgId = String(membership.organizationId._id || membership.organizationId);
+    can('read', 'Upload', { 'metadata.organizationId': orgId });
+    can('delete', 'Upload', { 'metadata.organizationId': orgId, 'metadata.user': String(user._id) });
+  } else {
+    // Users without a membership can only access their own uploads
+    can('read', 'Upload', { 'metadata.user': String(user._id) });
+    can('delete', 'Upload', { 'metadata.user': String(user._id) });
+  }
 }
 
 /**

@@ -102,15 +102,22 @@ const create = async (body, user) => {
     throw err;
   }
 
-  // Create owner membership for the creator
-  await MembershipRepository.create({
-    userId: user.id || user._id,
-    organizationId: result._id,
-    role: 'owner',
-  });
+  // Create owner membership and set current org — rollback on failure
+  let membership;
+  try {
+    membership = await MembershipRepository.create({
+      userId: user.id || user._id,
+      organizationId: result._id,
+      role: 'owner',
+    });
 
-  // Set as user's current organization
-  await UserService.updateById(user.id || user._id, { currentOrganization: result._id });
+    await UserService.updateById(user.id || user._id, { currentOrganization: result._id });
+  } catch (err) {
+    // Rollback partially created artifacts
+    if (membership) await MembershipRepository.deleteMany({ _id: membership._id }).catch(() => {});
+    await OrganizationsRepository.remove(result).catch(() => {});
+    throw err;
+  }
 
   return result;
 };
