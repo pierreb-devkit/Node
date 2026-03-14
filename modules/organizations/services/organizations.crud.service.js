@@ -74,7 +74,7 @@ const create = async (body, user) => {
   }
 
   // Auto-set domain from creator's email if not provided and not a public domain
-  let domain = (body.domain || '').trim().toLowerCase();
+  let domain = normalizeDomain(body.domain);
   if (!domain && user.email) {
     const emailDomain = user.email.split('@')[1]?.toLowerCase();
     const publicDomains = config.organizations?.publicDomains || [];
