@@ -26,10 +26,23 @@ const tokenCookieOptions = {
 };
 
 /**
- * @desc Check whether the mailer is configured with a real sender address
+ * @desc Check whether the mailer is configured with a real sender address.
+ * Delegates to the centralized helper in lib/helpers/mailer.
  * @returns {boolean} true when SMTP mail sending is available
  */
-const isMailerConfigured = () => !!(config.mailer && config.mailer.from && !config.mailer.from.startsWith('DEVKIT_NODE_'));
+const isMailerConfigured = () => mails.isConfigured();
+
+/**
+ * @desc Resolve the first CORS origin as a base URL string.
+ * Handles both array and string forms of config.cors.origin.
+ * @returns {string} The base URL for building client-facing links.
+ */
+const getBaseUrl = () => {
+  const origin = config.cors?.origin;
+  if (Array.isArray(origin) && origin.length > 0) return origin[0];
+  if (typeof origin === 'string') return origin;
+  return '';
+};
 
 /**
  * @desc Send a verification email to the user with a signed token link
@@ -44,7 +57,7 @@ const sendVerificationEmail = async (user, verificationToken) => {
     subject: 'Verify your email address',
     params: {
       displayName: `${user.firstName} ${user.lastName}`,
-      url: `${config.cors.origin[0]}/verify-email?token=${verificationToken}`,
+      url: `${getBaseUrl()}/verify-email?token=${verificationToken}`,
       appName: config.app.title,
       appContact: config.app.contact,
     },

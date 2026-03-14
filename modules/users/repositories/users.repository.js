@@ -154,7 +154,7 @@ const searchByNameOrEmail = (search) => {
  * @param {String} email - The email to search for
  * @returns {Promise<Object|null>} The matching user or null
  */
-const findByEmail = (email) => User.findOne({ email });
+const findByEmail = (email) => User.findOne({ email }).exec();
 
 /**
  * @desc Function to update a user by ID with a partial update object

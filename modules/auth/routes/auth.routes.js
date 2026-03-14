@@ -12,11 +12,19 @@ import authPassword from '../controllers/auth.password.controller.js';
 /**
  * Register authentication routes on the Express application.
  * @param {Object} app - Express application instance
+ * @returns {void}
  */
 export default (app) => {
   const authLimiter = limiters.auth;
 
   // Auth config — optional JWT: public fields for everyone, org details for authenticated users
+  /**
+   * @desc Middleware that optionally authenticates via JWT, attaching user if valid but allowing unauthenticated requests.
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware function
+   * @returns {void}
+   */
   const optionalJwt = (req, res, next) => {
     passport.authenticate('jwt', { session: false }, (err, user) => {
       if (user) req.user = user;
