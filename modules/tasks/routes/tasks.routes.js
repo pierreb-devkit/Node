@@ -19,8 +19,9 @@ export default (app) => {
   // list & post
   app
     .route('/api/tasks')
+    .all(passport.authenticate('jwt', { session: false }), organization.resolveOrganization, policy.isAllowed)
     .get(tasks.list) // list
-    .post(passport.authenticate('jwt', { session: false }), organization.resolveOrganization, policy.isAllowed, model.isValid(tasksSchema.Task), tasks.create); // create
+    .post(model.isValid(tasksSchema.Task), tasks.create); // create
 
   // classic crud — ownership is enforced by CASL conditions in isAllowed
   app

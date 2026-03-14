@@ -78,7 +78,12 @@ const search = (input) => User.find(input).exec();
  * @param {Object} user
  * @return {Object} user
  */
-const update = (user) => new User(user).save();
+const update = (user) => {
+  if (user._id) {
+    return User.findByIdAndUpdate(user._id, user, { new: true, runValidators: true }).exec();
+  }
+  return new User(user).save();
+};
 
 /**
  * @desc Function to remove a user from db by id or email

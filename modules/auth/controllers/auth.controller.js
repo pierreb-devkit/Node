@@ -378,6 +378,7 @@ const getConfig = (_req, res) => {
     },
     organizations: {
       enabled: !!config.organizations.enabled,
+      autoCreate: !!config.organizations.autoCreate,
       domainMatching: !!config.organizations.domainMatching,
       roles: config.organizations.roles,
       roleDescriptions: config.organizations.roleDescriptions,

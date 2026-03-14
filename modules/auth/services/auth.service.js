@@ -47,40 +47,43 @@ const checkLockout = async (user) => {
       details: { message: `Account is locked. Try again in ${remainingMin} minute(s).`, remainingMs },
     });
   }
-  // If lock has expired, reset attempts so the user can try again
+  // If lock has expired, atomically reset attempts so the user can try again
   if (user.lockUntil && user.lockUntil <= new Date()) {
+    await UserService.updateById(user._id, { failedLoginAttempts: 0, lockUntil: null });
     user.failedLoginAttempts = 0;
     user.lockUntil = null;
-    await user.save();
   }
   return user;
 };
 
 /**
- * @desc Record a failed login attempt and lock the account when the threshold is reached
+ * @desc Record a failed login attempt and lock the account when the threshold is reached.
+ * Uses atomic $inc to prevent parallel sign-in attempts from overwriting each other.
  * @param {Object} user - Mongoose user document
  * @returns {Promise<void>} resolves after persisting the updated attempt counter
  */
 const recordFailedAttempt = async (user) => {
   const maxAttempts = config.auth?.lockout?.maxAttempts ?? 5;
   const lockMinutes = config.auth?.lockout?.lockDuration ?? 30;
-  user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
-  if (user.failedLoginAttempts >= maxAttempts) {
-    user.lockUntil = new Date(Date.now() + lockMinutes * 60 * 1000);
+  const newAttempts = (user.failedLoginAttempts || 0) + 1;
+  const update = { $inc: { failedLoginAttempts: 1 } };
+  if (newAttempts >= maxAttempts) {
+    update.$set = { lockUntil: new Date(Date.now() + lockMinutes * 60 * 1000) };
   }
-  await user.save();
+  await UserService.updateById(user._id, update);
 };
 
 /**
- * @desc Record a successful login by resetting failed attempts and stamping lastLoginAt
+ * @desc Record a successful login by atomically resetting failed attempts and stamping lastLoginAt
  * @param {Object} user - Mongoose user document
  * @returns {Promise<void>} resolves after persisting the login timestamp
  */
 const recordSuccessfulLogin = async (user) => {
-  user.failedLoginAttempts = 0;
-  user.lockUntil = null;
-  user.lastLoginAt = new Date();
-  await user.save();
+  await UserService.updateById(user._id, {
+    failedLoginAttempts: 0,
+    lockUntil: null,
+    lastLoginAt: new Date(),
+  });
 };
 
 /**

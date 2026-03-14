@@ -76,11 +76,17 @@ const remove = async (req, res) => {
 const memberByID = async (req, res, next, id) => {
   try {
     const membership = await MembershipService.get(id);
-    if (!membership) responses.error(res, 404, 'Not Found', 'No Membership with that identifier has been found')();
-    else {
-      req.membershipDoc = membership;
-      next();
+    if (!membership) return responses.error(res, 404, 'Not Found', 'No Membership with that identifier has been found')();
+
+    // Scope to the current organization to prevent cross-org manipulation
+    const memberOrgId = String(membership.organizationId?._id || membership.organizationId);
+    const reqOrgId = String(req.organization?._id || req.organization?.id);
+    if (!reqOrgId || memberOrgId !== reqOrgId) {
+      return responses.error(res, 404, 'Not Found', 'No Membership with that identifier has been found')();
     }
+
+    req.membershipDoc = membership;
+    next();
   } catch (err) {
     next(err);
   }

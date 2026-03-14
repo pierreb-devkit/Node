@@ -29,6 +29,8 @@ const OrganizationMongoose = new Schema(
     domain: {
       type: String,
       default: '',
+      trim: true,
+      lowercase: true,
     },
     plan: {
       type: String,

@@ -3,12 +3,18 @@ services:
     image: mongo:7
     ports:
       - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   test:
     build: .
     command: npm run test:all
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
     environment:
       NODE_ENV: test
       DEVKIT_NODE_db_uri: mongodb://mongo:27017/NodeTest

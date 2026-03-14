@@ -8,6 +8,9 @@ import MembershipService from '../services/organizations.membership.service.js';
 /**
  * @function create
  * @description Endpoint to create a pending membership (join request) for an organization.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {void}
  */
 const create = async (req, res) => {
   try {
@@ -24,6 +27,9 @@ const create = async (req, res) => {
 /**
  * @function listPending
  * @description Endpoint to list pending join requests for an organization (owner/admin).
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {void}
  */
 const listPending = async (req, res) => {
   try {
@@ -40,6 +46,9 @@ const listPending = async (req, res) => {
 /**
  * @function approve
  * @description Endpoint to approve a pending membership request.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {void}
  */
 const approve = async (req, res) => {
   try {
@@ -53,6 +62,9 @@ const approve = async (req, res) => {
 /**
  * @function reject
  * @description Endpoint to reject a pending membership request.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {void}
  */
 const reject = async (req, res) => {
   try {
@@ -66,6 +78,9 @@ const reject = async (req, res) => {
 /**
  * @function listMine
  * @description Endpoint to list the authenticated user's own pending requests.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {void}
  */
 const listMine = async (req, res) => {
   try {
@@ -136,6 +151,11 @@ const getInvite = async (req, res) => {
 /**
  * @function requestByID
  * @description Middleware to fetch a pending membership by its ID.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ * @param {String} id - The membership request ID
+ * @returns {void}
  */
 const requestByID = async (req, res, next, id) => {
   try {

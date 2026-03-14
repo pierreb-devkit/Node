@@ -13,6 +13,9 @@ import { slugify } from '../helpers/organizations.slug.js';
 /**
  * @function list
  * @description Service to retrieve all organizations in the database.
+ * @param {String} [search] - Optional search string to filter by name or domain.
+ * @param {Number} [page] - Optional page number for pagination.
+ * @param {Number} [perPage] - Optional items per page for pagination.
  * @returns {Promise<Array>} A promise that resolves to the list of all organizations.
  */
 const list = async (search, page, perPage) => {

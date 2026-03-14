@@ -42,6 +42,9 @@ async function resolveOrganization(req, res, next) {
     }
 
     // Load membership for the current user
+    if (!req.user) {
+      return responses.error(res, 401, 'Unauthorized', 'Authentication required')();
+    }
     const membership = await MembershipService.findByUserAndOrganization(req.user._id, organization._id);
 
     if (!membership) {
