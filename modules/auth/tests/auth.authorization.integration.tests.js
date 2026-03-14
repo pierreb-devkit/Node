@@ -153,8 +153,8 @@ describe('Authorization integration tests:', () => {
   // GUEST can access public routes
   // -------------------------------------------------------
   describe('Guest can access public routes', () => {
-    test('GET /api/tasks should return 200 for guests', async () => {
-      await publicAgent.get('/api/tasks').expect(200);
+    test('GET /api/tasks should return 401 for guests (auth required)', async () => {
+      await publicAgent.get('/api/tasks').expect(401);
     });
 
     test('GET /api/tasks/stats should return 200 for guests', async () => {

@@ -8,8 +8,9 @@ import { jest } from '@jest/globals';
  * jest.unstable_mockModule is the correct API for ES module mocking.
  */
 const mockGetBrut = jest.fn();
+const mockUpdateById = jest.fn().mockResolvedValue({});
 jest.unstable_mockModule('../../users/services/users.service.js', () => ({
-  default: { getBrut: mockGetBrut },
+  default: { getBrut: mockGetBrut, updateById: mockUpdateById },
 }));
 
 const mockBcryptCompare = jest.fn();
