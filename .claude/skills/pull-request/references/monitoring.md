@@ -116,14 +116,19 @@ When you post `@coderabbitai full review`, CodeRabbit replies "Full review trigg
 
 ```bash
 # Poll until CodeRabbit posts its new review summary (contains "Actionable comments")
+FOUND=0
 for i in $(seq 1 20); do
-  LATEST=$(gh api repos/$OWNER/$REPO/issues/$PR/comments \
-    --jq '[.[] | select(.user.login=="coderabbitai")] | sort_by(.created_at) | last | .body[0:200]')
+  LATEST=$(gh api repos/$OWNER/$REPO/issues/$PR/comments --paginate \
+    --jq '[.[] | select(.user.login=="coderabbitai")] | sort_by(.created_at) | last | (.body // "")[0:200]')
   if echo "$LATEST" | grep -qiE "actionable|no issues found|walkthrough"; then
-    echo "CodeRabbit review posted" && break
+    echo "CodeRabbit review posted"
+    FOUND=1
+    break
   fi
   sleep 30
 done
+
+[ "$FOUND" -eq 1 ] || { echo "Timed out waiting for new CodeRabbit summary" >&2; exit 1; }
 ```
 
 Only after this should you check for unresolved threads and declare clean.
