@@ -73,22 +73,14 @@ const create = async (body, user) => {
     counter += 1;
   }
 
-  // Auto-set domain from creator's email if not provided and not a public domain
-  let domain = normalizeDomain(body.domain);
-  if (!domain && user.email) {
-    const emailDomain = user.email.split('@')[1]?.toLowerCase();
-    const publicDomains = config.organizations?.publicDomains || [];
-    if (emailDomain && !publicDomains.includes(emailDomain)) {
-      domain = emailDomain;
-    }
-  }
+  const domain = normalizeDomain(body.domain);
 
   const organization = {
     name: body.name,
     description: body.description || '',
     slug,
     domain,
-    plan: body.plan || 'free',
+    plan: 'free',
     createdBy: user.id || user._id,
   };
 

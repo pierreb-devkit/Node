@@ -101,6 +101,15 @@ const aggregateCountByOrganizations = (orgIds) =>
     { $group: { _id: '$organizationId', count: { $sum: 1 } } },
   ]);
 
+/**
+ * @function listByUsers
+ * @description Batch-fetch active memberships for multiple user IDs in a single query.
+ * @param {Array} userIds - Array of user IDs.
+ * @returns {Promise<Array>} An array of memberships.
+ */
+const listByUsers = (userIds) =>
+  Membership.find({ userId: { $in: userIds }, status: 'active' }).populate(defaultPopulate).sort('-createdAt').exec();
+
 export default {
   list,
   create,
@@ -111,4 +120,5 @@ export default {
   count,
   deleteMany,
   aggregateCountByOrganizations,
+  listByUsers,
 };

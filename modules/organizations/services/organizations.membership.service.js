@@ -397,9 +397,18 @@ const aggregateCountByOrganizations = (orgIds) => MembershipRepository.aggregate
  */
 const deleteMany = (filter) => MembershipRepository.deleteMany(filter);
 
+/**
+ * @function listByUsers
+ * @description Service to batch-fetch active memberships for multiple users in a single query.
+ * @param {Array} userIds - Array of user IDs.
+ * @returns {Promise<Array>} A promise that resolves to all matching memberships.
+ */
+const listByUsers = (userIds) => MembershipRepository.listByUsers(userIds);
+
 export default {
   list,
   listByUser,
+  listByUsers,
   get,
   findByUserAndOrganization,
   create,

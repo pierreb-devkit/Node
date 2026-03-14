@@ -14,12 +14,20 @@ import MembershipService from '../../organizations/services/organizations.member
 const list = async (req, res) => {
   try {
     const users = await UserService.list(req.search, req.page, req.perPage);
-    const enriched = await Promise.all(users.map(async (u) => {
+    const userIds = users.map((u) => u._id || u.id);
+    const allMemberships = await MembershipService.listByUsers(userIds);
+    const membershipsByUser = {};
+    for (const m of allMemberships) {
+      const uid = String(m.userId?._id || m.userId);
+      if (!membershipsByUser[uid]) membershipsByUser[uid] = [];
+      membershipsByUser[uid].push(m.toJSON ? m.toJSON() : { ...m });
+    }
+    const enriched = users.map((u) => {
       const user = u.toJSON ? u.toJSON() : { ...u };
-      const memberships = await MembershipService.listByUser(user._id || user.id);
-      user.memberships = memberships.map((m) => (m.toJSON ? m.toJSON() : { ...m }));
+      const uid = String(user._id || user.id);
+      user.memberships = membershipsByUser[uid] || [];
       return user;
-    }));
+    });
     responses.success(res, 'user list')(enriched);
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
