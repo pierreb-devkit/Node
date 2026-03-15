@@ -1,7 +1,6 @@
 /**
  * Module dependencies
  */
-import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
 import BillingPlansService from '../services/billing.plans.service.js';
 
