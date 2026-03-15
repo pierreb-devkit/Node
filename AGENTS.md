@@ -22,3 +22,8 @@ Use `.github/prompts/*` as task playbooks:
 | Naming | `.github/prompts/naming.prompt.md` |
 | PR | `.github/prompts/pull-request.prompt.md` |
 
+## Workflow rules
+
+- After any user correction, evaluate if the mistake pattern belongs in `ERRORS.md`
+- Investigate and fix bugs autonomously — don't ask for hand-holding
+- For non-trivial tasks, plan before coding
