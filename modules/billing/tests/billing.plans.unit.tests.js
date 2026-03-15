@@ -26,22 +26,16 @@ describe('Billing plans service unit tests:', () => {
     ],
   };
 
-  const mockPricesStarter = {
+  const mockAllPrices = {
     data: [
-      { recurring: { interval: 'month' }, unit_amount: 900, id: 'price_starter_m' },
-      { recurring: { interval: 'year' }, unit_amount: 9000, id: 'price_starter_y' },
-    ],
-  };
-
-  const mockPricesPro = {
-    data: [
-      { recurring: { interval: 'month' }, unit_amount: 2900, id: 'price_pro_m' },
-      { recurring: { interval: 'year' }, unit_amount: 29000, id: 'price_pro_y' },
+      { product: 'prod_starter', recurring: { interval: 'month' }, unit_amount: 900, id: 'price_starter_m' },
+      { product: 'prod_starter', recurring: { interval: 'year' }, unit_amount: 9000, id: 'price_starter_y' },
+      { product: 'prod_pro', recurring: { interval: 'month' }, unit_amount: 2900, id: 'price_pro_m' },
+      { product: 'prod_pro', recurring: { interval: 'year' }, unit_amount: 29000, id: 'price_pro_y' },
     ],
   };
 
   beforeEach(async () => {
-    // Reset modules to clear cached stripe client and plans
     jest.resetModules();
 
     mockStripeInstance = {
@@ -49,20 +43,14 @@ describe('Billing plans service unit tests:', () => {
         list: jest.fn().mockResolvedValue(mockProducts),
       },
       prices: {
-        list: jest.fn().mockImplementation(({ product }) => {
-          if (product === 'prod_starter') return Promise.resolve(mockPricesStarter);
-          if (product === 'prod_pro') return Promise.resolve(mockPricesPro);
-          return Promise.resolve({ data: [] });
-        }),
+        list: jest.fn().mockResolvedValue(mockAllPrices),
       },
     };
 
-    // Mock Stripe constructor
     jest.unstable_mockModule('stripe', () => ({
       default: jest.fn(() => mockStripeInstance),
     }));
 
-    // Mock config with stripe key
     mockConfig = {
       stripe: { secretKey: 'sk_test_123' },
     };
@@ -109,7 +97,7 @@ describe('Billing plans service unit tests:', () => {
     expect(plans[0].planId).toBe('free');
   });
 
-  test('should fetch plans from stripe and sort by price', async () => {
+  test('should fetch plans from stripe and sort by monthlyPrice', async () => {
     const mod = await import('../services/billing.plans.service.js');
     BillingPlansService = mod.default;
 
@@ -161,7 +149,7 @@ describe('Billing plans service unit tests:', () => {
       data: [{ id: 'prod_one', name: 'OneTime', metadata: { planId: 'one' } }],
     });
     mockStripeInstance.prices.list.mockResolvedValue({
-      data: [{ unit_amount: 500, id: 'price_one' }],
+      data: [{ product: 'prod_one', unit_amount: 500, id: 'price_one' }],
     });
 
     const mod = await import('../services/billing.plans.service.js');
@@ -172,5 +160,40 @@ describe('Billing plans service unit tests:', () => {
     expect(plans[0].annualPrice).toBe(0);
     expect(plans[0].stripePriceMonthly).toBeNull();
     expect(plans[0].stripePriceAnnual).toBeNull();
+  });
+
+  test('should handle null unit_amount gracefully', async () => {
+    mockStripeInstance.products.list.mockResolvedValue({
+      data: [{ id: 'prod_metered', name: 'Metered', metadata: { planId: 'metered' } }],
+    });
+    mockStripeInstance.prices.list.mockResolvedValue({
+      data: [{ product: 'prod_metered', recurring: { interval: 'month' }, unit_amount: null, id: 'price_metered' }],
+    });
+
+    const mod = await import('../services/billing.plans.service.js');
+    BillingPlansService = mod.default;
+
+    const plans = await BillingPlansService.getPlans();
+    expect(plans[0].monthlyPrice).toBe(0);
+    expect(plans[0].stripePriceMonthly).toBe('price_metered');
+  });
+
+  test('should fetch products and prices with limit 100', async () => {
+    const mod = await import('../services/billing.plans.service.js');
+    BillingPlansService = mod.default;
+
+    await BillingPlansService.getPlans();
+
+    expect(mockStripeInstance.products.list).toHaveBeenCalledWith({ active: true, limit: 100 });
+    expect(mockStripeInstance.prices.list).toHaveBeenCalledWith({ active: true, limit: 100 });
+  });
+
+  test('should only make one prices.list call regardless of product count', async () => {
+    const mod = await import('../services/billing.plans.service.js');
+    BillingPlansService = mod.default;
+
+    await BillingPlansService.getPlans();
+
+    expect(mockStripeInstance.prices.list).toHaveBeenCalledTimes(1);
   });
 });

@@ -9,6 +9,7 @@ import BillingPlansService from '../services/billing.plans.service.js';
  * @desc Endpoint to get billing plans
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
+ * @returns {Promise<void>}
  */
 const getPlans = async (req, res) => {
   try {

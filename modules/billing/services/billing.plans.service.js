@@ -42,46 +42,54 @@ const getStripe = () => {
 
 /**
  * @desc Fetch plans from Stripe and map to normalized format
+ * @param {Object} stripe - Stripe client instance
  * @returns {Promise<Array>} sorted array of plan objects
  */
 const fetchPlansFromStripe = async (stripe) => {
   const products = await stripe.products.list({
     active: true,
-    expand: ['data.default_price'],
+    limit: 100,
   });
 
-  const plans = await Promise.all(
-    products.data.map(async (product) => {
-      const prices = await stripe.prices.list({
-        product: product.id,
-        active: true,
-      });
+  const prices = await stripe.prices.list({
+    active: true,
+    limit: 100,
+  });
 
-      let monthlyPrice = 0;
-      let annualPrice = 0;
-      let stripePriceMonthly = null;
-      let stripePriceAnnual = null;
+  const pricesByProduct = {};
+  for (const price of prices.data) {
+    if (!pricesByProduct[price.product]) pricesByProduct[price.product] = [];
+    pricesByProduct[price.product].push(price);
+  }
 
-      for (const price of prices.data) {
-        if (price.recurring?.interval === 'month') {
-          monthlyPrice = price.unit_amount / 100;
-          stripePriceMonthly = price.id;
-        } else if (price.recurring?.interval === 'year') {
-          annualPrice = price.unit_amount / 100;
-          stripePriceAnnual = price.id;
-        }
+  const plans = products.data.map((product) => {
+    const productPrices = pricesByProduct[product.id] || [];
+
+    let monthlyPrice = 0;
+    let annualPrice = 0;
+    let stripePriceMonthly = null;
+    let stripePriceAnnual = null;
+
+    for (const price of productPrices) {
+      const amount = typeof price.unit_amount === 'number' ? price.unit_amount : 0;
+      if (price.recurring?.interval === 'month') {
+        monthlyPrice = amount / 100;
+        stripePriceMonthly = price.id;
+      } else if (price.recurring?.interval === 'year') {
+        annualPrice = amount / 100;
+        stripePriceAnnual = price.id;
       }
+    }
 
-      return {
-        planId: product.metadata?.planId || product.id,
-        name: product.name,
-        monthlyPrice,
-        annualPrice,
-        stripePriceMonthly,
-        stripePriceAnnual,
-      };
-    }),
-  );
+    return {
+      planId: product.metadata?.planId || product.id,
+      name: product.name,
+      monthlyPrice,
+      annualPrice,
+      stripePriceMonthly,
+      stripePriceAnnual,
+    };
+  });
 
   return plans.sort((a, b) => a.monthlyPrice - b.monthlyPrice);
 };
