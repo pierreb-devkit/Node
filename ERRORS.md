@@ -24,3 +24,5 @@ Use this file as a compact memory of recurring AI mistakes.
 - [2026-03-13] tests: test file placed outside its module (e.g. lib/middlewares/tests/) -> tests belong in modules/{module}/tests/
 - [2026-03-13] docs: duplicate doc files covering the same topic (e.g. MIGRATION.md + MIGRATIONS.md) -> single file, no duplication
 - [2026-03-14] middleware: assuming config section exists in all environments (e.g. `config.rateLimit`) -> always handle missing config gracefully (passthrough/no-op); dev config often omits sections that only prod defines
+- [2026-03-15] cross-stack: changing a Node API without checking Vue E2E tests -> when modifying an endpoint Vue consumes, run Vue E2E tests before pushing
+- [2026-03-15] pr scope: batching multiple unrelated fixes in one PR -> one fix = one PR to isolate blast radius and reduce iteration loops
