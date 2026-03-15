@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import AuthService from '../services/auth.service.js';
 import UserService from '../../users/services/users.service.js';
 import mails from '../../../lib/helpers/mailer/index.js';
+import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
 import config from '../../../config/index.js';
@@ -46,8 +47,8 @@ const forgot = async (req, res) => {
       to: user.email,
       subject: 'Password Reset',
       params: {
-        displayName: `${user.firstName} ${user.lastName}`,
-        url: `${config.cors.origin[0]}/reset?token=${user.resetPasswordToken}`,
+        displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
+        url: `${getBaseUrl()}/reset?token=${user.resetPasswordToken}`,
         appName: config.app.title,
         appContact: config.app.contact,
       },
@@ -99,7 +100,7 @@ const reset = async (req, res) => {
       to: user.email,
       subject: 'Your password has been changed',
       params: {
-        displayName: `${user.firstName} ${user.lastName}`,
+        displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
         appName: config.app.title,
         appContact: config.app.contact,
       },

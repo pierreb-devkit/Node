@@ -66,7 +66,7 @@ const getMail = async (req, res) => {
       subject: `${config.app.title}: your data`,
       params: {
         result: JSON.stringify(result),
-        displayName: `${req.user.firstName} ${req.user.lastName}`,
+        displayName: [req.user.firstName, req.user.lastName].filter(Boolean).join(' '),
         appName: config.app.title,
         appContact: config.app.contact,
       },

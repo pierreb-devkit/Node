@@ -32,17 +32,7 @@ const tokenCookieOptions = {
  */
 const isMailerConfigured = () => mails.isConfigured();
 
-/**
- * @desc Resolve the first CORS origin as a base URL string.
- * Handles both array and string forms of config.cors.origin.
- * @returns {string} The base URL for building client-facing links.
- */
-const getBaseUrl = () => {
-  const origin = config.cors?.origin;
-  if (Array.isArray(origin) && origin.length > 0) return origin[0];
-  if (typeof origin === 'string') return origin;
-  return '';
-};
+import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
 
 /**
  * @desc Send a verification email to the user with a signed token link
@@ -56,7 +46,7 @@ const sendVerificationEmail = async (user, verificationToken) => {
     to: user.email,
     subject: 'Verify your email address',
     params: {
-      displayName: `${user.firstName} ${user.lastName}`,
+      displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
       url: `${getBaseUrl()}/verify-email?token=${verificationToken}`,
       appName: config.app.title,
       appContact: config.app.contact,
@@ -364,7 +354,7 @@ const oauthCallback = async (req, res, next) => {
   }
   // classic web oAuth
   passport.authenticate(strategy, (err, user) => {
-    const url = config.cors.origin[0];
+    const url = getBaseUrl();
     if (err) {
       const _err = JSON.stringify(err);
       const path = 'token?message=Unprocessable%20Entity';
@@ -378,7 +368,7 @@ const oauthCallback = async (req, res, next) => {
         expiresIn: config.jwt.expiresIn,
       });
       res.cookie('TOKEN', token, tokenCookieOptions);
-      res.redirect(302, `${config.cors.origin[0]}/token`);
+      res.redirect(302, `${getBaseUrl()}/token`);
     }
   })(req, res, next);
 };
