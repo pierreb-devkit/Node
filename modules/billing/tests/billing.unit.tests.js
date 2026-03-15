@@ -121,5 +121,57 @@ describe('Billing unit tests:', () => {
       expect(result.data.plan).toBe('starter');
       done();
     });
+
+    test('should reject invalid ObjectId for organization', (done) => {
+      subscription.organization = 'not-an-objectid';
+
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeDefined();
+      done();
+    });
+
+    test('should accept valid ObjectId for organization', (done) => {
+      subscription.organization = '507f1f77bcf86cd799439011';
+
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+      done();
+    });
+
+    test('should normalize empty stripeCustomerId to undefined', (done) => {
+      subscription.stripeCustomerId = '';
+
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+      expect(result.data.stripeCustomerId).toBeUndefined();
+      done();
+    });
+
+    test('should normalize empty stripeSubscriptionId to undefined', (done) => {
+      subscription.stripeSubscriptionId = '';
+
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+      expect(result.data.stripeSubscriptionId).toBeUndefined();
+      done();
+    });
+
+    test('should preserve valid stripeCustomerId', (done) => {
+      subscription.stripeCustomerId = 'cus_abc123';
+
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+      expect(result.data.stripeCustomerId).toBe('cus_abc123');
+      done();
+    });
+
+    test('should preserve valid stripeSubscriptionId', (done) => {
+      subscription.stripeSubscriptionId = 'sub_xyz789';
+
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+      expect(result.data.stripeSubscriptionId).toBe('sub_xyz789');
+      done();
+    });
   });
 });

@@ -50,8 +50,8 @@ const SubscriptionMongoose = new Schema(
 );
 
 /**
- * @desc Function to add id (+ _id) to all objects
- * @return {String} hex string of the ObjectId
+ * Returns the hex string representation of the document ObjectId.
+ * @returns {string} Hex string of the ObjectId.
  */
 function addID() {
   return this._id.toHexString();
