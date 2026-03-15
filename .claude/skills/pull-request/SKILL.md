@@ -126,6 +126,8 @@ consecutive_zero = 0
 REPEAT:
   1. Wait for CI                        → sleep 30 then gh pr checks <number> --watch
   2. If CI fails                        → fix, /verify, commit, push, consecutive_zero=0, GOTO 1
+  2b. Check mergeable status            → gh pr view $PR --json mergeable --jq .mergeable
+                                           if "CONFLICTING" → report to user and STOP
   3. Grace period                       → sleep 180 + adaptive check (see 6b)
   4. Re-check pending review checks     → gh pr checks <number> — if any still pending, GOTO 3
   5. Read all feedback                  → unresolved threads only (see 6b)
@@ -199,7 +201,7 @@ Wait 30s before watching CI (regular or force-push). Loop back to 6a. Never post
 
 ### 6f. Stop condition
 
-CI green **and** 2 consecutive passes with zero unresolved threads. Then check branch protection:
+CI green **and** 2 consecutive passes with zero unresolved threads. Mergeable status is also checked after every CI pass (step 2b) — conflicts cause an early stop. Final branch protection check:
 
 ```bash
 gh pr view "$PR" --json reviewDecision,mergeable | jq '{reviewDecision, mergeable}'
