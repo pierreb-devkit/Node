@@ -1,15 +1,15 @@
 const config = {
   stripe: {
-    secretKey: 'sk_test_placeholder',
-    webhookSecret: 'whsec_placeholder',
+    secretKey: process.env.DEVKIT_NODE_stripe_secretKey ?? '',
+    webhookSecret: process.env.DEVKIT_NODE_stripe_webhookSecret ?? '',
     prices: {
       starter: {
-        monthly: 'price_starter_monthly_placeholder',
-        annual: 'price_starter_annual_placeholder',
+        monthly: process.env.DEVKIT_NODE_stripe_prices_starter_monthly ?? '',
+        annual: process.env.DEVKIT_NODE_stripe_prices_starter_annual ?? '',
       },
       pro: {
-        monthly: 'price_pro_monthly_placeholder',
-        annual: 'price_pro_annual_placeholder',
+        monthly: process.env.DEVKIT_NODE_stripe_prices_pro_monthly ?? '',
+        annual: process.env.DEVKIT_NODE_stripe_prices_pro_annual ?? '',
       },
     },
   },
