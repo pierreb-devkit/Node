@@ -355,9 +355,8 @@ const acceptInvite = async (token, userId) => {
   membership.inviteToken = null;
   const result = await MembershipRepository.update(membership);
 
-  const userDoc = await UserService.getBrut({ id: String(userId) });
-  if (userDoc && !userDoc.currentOrganization) {
-    await UserService.updateById(userDoc._id, {
+  if (user && !user.currentOrganization) {
+    await UserService.updateById(user._id, {
       currentOrganization: membership.organizationId._id || membership.organizationId,
     });
   }

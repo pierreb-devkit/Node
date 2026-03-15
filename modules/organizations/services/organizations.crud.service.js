@@ -167,13 +167,13 @@ const remove = async (organization) => {
   await MembershipRepository.deleteMany({ organizationId: orgId });
 
   // For each affected user, switch to their next available org or set null
-  for (const u of affectedUsers) {
+  await Promise.all(affectedUsers.map(async (u) => {
     const remaining = await MembershipRepository.list({ userId: u._id, status: 'active' });
     const nextOrg = remaining.length > 0
       ? (remaining[0].organizationId._id || remaining[0].organizationId)
       : null;
     await UserService.updateById(u._id, { currentOrganization: nextOrg });
-  }
+  }));
 
   // Delete all tasks belonging to this organization (Task module may not exist in all projects)
   try {

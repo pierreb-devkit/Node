@@ -181,6 +181,20 @@ describe('Organizations domain join E2E tests:', () => {
         expect(err).toBeFalsy();
       }
     });
+
+    test('member cannot list pending requests — returns empty array — 200', async () => {
+      try {
+        const result = await agentMember
+          .get(`/api/organizations/${org._id}/requests`)
+          .expect(200);
+
+        expect(result.body.data).toBeInstanceOf(Array);
+        expect(result.body.data).toHaveLength(0);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
   });
 
   // Mongoose disconnect

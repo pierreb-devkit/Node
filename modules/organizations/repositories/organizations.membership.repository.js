@@ -40,7 +40,7 @@ const create = (membership) => new Membership(membership).save().then((doc) => d
  * @function get
  * @description Data access operation to fetch a single membership by its ID.
  * @param {String} id - The ID of the membership to fetch.
- * @returns {Object|null} The retrieved membership or null if the ID is not valid.
+ * @returns {Promise<Object|null>} The retrieved membership or null if the ID is not valid.
  */
 const get = (id) => {
   if (!mongoose.Types.ObjectId.isValid(id)) return null;
@@ -86,7 +86,8 @@ const count = (filter) => Membership.countDocuments(filter).exec();
  * @returns {Promise<Object>} A confirmation of the deletion.
  */
 const deleteMany = (filter) => {
-  if (filter) return Membership.deleteMany(filter).exec();
+  if (!filter) throw new Error('deleteMany requires a filter');
+  return Membership.deleteMany(filter).exec();
 };
 
 /**

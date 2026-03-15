@@ -10,7 +10,7 @@ import MembershipService from '../services/organizations.membership.service.js';
  * @description Endpoint to create a pending membership (join request) for an organization.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const create = async (req, res) => {
   try {
@@ -29,7 +29,7 @@ const create = async (req, res) => {
  * @description Endpoint to list pending join requests for an organization (owner/admin).
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const listPending = async (req, res) => {
   try {
@@ -67,7 +67,7 @@ const approve = async (req, res) => {
  * @description Endpoint to reject a pending membership request.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const reject = async (req, res) => {
   try {
@@ -83,7 +83,7 @@ const reject = async (req, res) => {
  * @description Endpoint to list the authenticated user's own pending requests.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const listMine = async (req, res) => {
   try {
@@ -99,7 +99,7 @@ const listMine = async (req, res) => {
  * @description Endpoint to invite a user to an organization by email.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const invite = async (req, res) => {
   try {
@@ -121,7 +121,7 @@ const invite = async (req, res) => {
  * @description Endpoint to accept an organization invite by token.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const acceptInvite = async (req, res) => {
   try {
@@ -138,7 +138,7 @@ const acceptInvite = async (req, res) => {
  * @description Endpoint to get invite details by token.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const getInvite = async (req, res) => {
   try {
@@ -158,7 +158,7 @@ const getInvite = async (req, res) => {
  * @param {Object} res - Express response object
  * @param {Function} next - Express next middleware function
  * @param {String} id - The membership request ID
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const requestByID = async (req, res, next, id) => {
   try {

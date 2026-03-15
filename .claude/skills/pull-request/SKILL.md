@@ -153,13 +153,14 @@ If `no checks reported`, retry up to 5 times (30s apart). If still no checks aft
 
 Grace period: `sleep 180`. If 0 bot comments after 3 min, wait 2 more min.
 
-Read **only unresolved threads** (resolved = ignored). See `references/monitoring.md` for exact commands.
+Read **only unresolved threads** (resolved = ignored). Use `references/monitoring.md` as source of truth.
 
 ```bash
-gh pr view $PR --json reviews,comments
-gh api repos/$OWNER/$REPO/pulls/$PR/comments --paginate | jq 'map({id, user: .user.login, body})'
-gh api repos/$OWNER/$REPO/issues/$PR/comments --paginate | jq 'map({id, user: .user.login, body})'
-# Unresolved threads → see references/monitoring.md
+# Optional context only (do not drive action from these):
+# gh pr view $PR --json reviews,comments
+# gh api repos/$OWNER/$REPO/pulls/$PR/comments --paginate | jq 'map({id, user: .user.login, body})'
+# gh api repos/$OWNER/$REPO/issues/$PR/comments --paginate | jq 'map({id, user: .user.login, body})'
+# Action source of truth: unresolved threads query in references/monitoring.md
 ```
 
 **Actionable** (must fix): change requests, bug reports, missing tests, security issues, code suggestions.
@@ -174,9 +175,11 @@ For each actionable comment, check if the file exists unmodified in upstream:
 
 ```bash
 STACK_REPO=$(git remote get-url devkit-node 2>/dev/null | sed 's|.*github.com[:/]||;s|\.git$||')
-git fetch devkit-node master --quiet 2>/dev/null
+STACK_DEFAULT_BRANCH=$(git remote show devkit-node 2>/dev/null | sed -n '/HEAD branch/s/.*: //p')
+git fetch devkit-node "$STACK_DEFAULT_BRANCH" --quiet 2>/dev/null
 # STACK if exists in upstream AND no local diff; else DOWNSTREAM
-git cat-file -e devkit-node/master:<file-path> 2>/dev/null && git diff --quiet devkit-node/master -- <file-path> 2>/dev/null
+git cat-file -e "devkit-node/$STACK_DEFAULT_BRANCH:<file-path>" 2>/dev/null && \
+  git diff --quiet "devkit-node/$STACK_DEFAULT_BRANCH" -- <file-path> 2>/dev/null
 ```
 
 - **Stack-level** → create issue on stack repo with review comment details, reply with issue link, resolve thread. If `gh issue create` fails, fix locally instead.
@@ -235,7 +238,8 @@ REPEAT:
 ## 8. Conflict resolution
 
 ```bash
-git fetch origin && git rebase origin/HEAD
+BASE_BRANCH=$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')
+git fetch origin "$BASE_BRANCH" && git rebase "origin/$BASE_BRANCH"
 # Resolve conflicts, then: git add <files> && git rebase --continue
 git push --force-with-lease origin HEAD
 ```
