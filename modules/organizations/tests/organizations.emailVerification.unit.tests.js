@@ -75,6 +75,7 @@ describe('Email verification gates:', () => {
   const fakeUserId = new mongoose.Types.ObjectId();
 
   beforeEach(() => {
+    jest.restoreAllMocks();
     jest.clearAllMocks();
   });
 
@@ -230,12 +231,15 @@ describe('Email verification gates:', () => {
       const { default: controller } = await import('../controllers/organizations.controller.js');
 
       mockIsConfigured.mockReturnValue(true);
+      mockOrganizationsRepositoryList.mockResolvedValue([]);
 
       const req = { user: { email: 'test@acme.com', emailVerified: false } };
       const res = mockRes();
 
       await controller.search(req, res);
 
+      // searchByDomain should NOT have been called in the blocked branch
+      expect(mockOrganizationsRepositoryList).not.toHaveBeenCalled();
       // Should return success with empty array
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith(
@@ -250,8 +254,6 @@ describe('Email verification gates:', () => {
       const { default: controller } = await import('../controllers/organizations.controller.js');
 
       mockIsConfigured.mockReturnValue(false);
-
-      // searchByDomain is on the crud service — mock it via the repository
       mockOrganizationsRepositoryList.mockResolvedValue([]);
 
       const req = { user: { email: 'test@acme.com', emailVerified: false } };
@@ -259,6 +261,22 @@ describe('Email verification gates:', () => {
 
       await controller.search(req, res);
 
+      expect(mockOrganizationsRepositoryList).toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    test('should call searchByDomain when mailer is configured and email is verified', async () => {
+      const { default: controller } = await import('../controllers/organizations.controller.js');
+
+      mockIsConfigured.mockReturnValue(true);
+      mockOrganizationsRepositoryList.mockResolvedValue([]);
+
+      const req = { user: { email: 'test@acme.com', emailVerified: true } };
+      const res = mockRes();
+
+      await controller.search(req, res);
+
+      expect(mockOrganizationsRepositoryList).toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(200);
     });
   });

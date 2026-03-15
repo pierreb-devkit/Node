@@ -134,6 +134,7 @@ const listPendingByUser = (userId) => MembershipRepository.list({ userId, status
  */
 const createJoinRequest = async (userId, organizationId) => {
   const user = await UserService.getBrut({ id: String(userId) });
+  if (!user) throw new Error('User not found');
   assertEmailVerified(user);
 
   const existing = await MembershipRepository.findOne({ userId, organizationId, status: { $in: ['active', 'pending'] } });

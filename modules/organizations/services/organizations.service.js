@@ -145,6 +145,7 @@ const handleSignupOrganization = async (user) => {
       organizationSetupRequired: true,
       emailVerificationRequired: true,
       pendingJoin: false,
+      suggestedOrganization: null,
     };
   }
 
