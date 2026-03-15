@@ -5,6 +5,7 @@ import crypto from 'crypto';
 
 import config from '../../../config/index.js';
 import mailer from '../../../lib/helpers/mailer/index.js';
+import { assertEmailVerified } from '../../../lib/helpers/emailVerification.js';
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
 import OrganizationRepository from '../repositories/organizations.repository.js';
 import UserService from '../../users/services/users.service.js';
@@ -128,6 +129,9 @@ const listPendingByUser = (userId) => MembershipRepository.list({ userId, status
  * @returns {Promise<Object>} The created pending membership.
  */
 const createJoinRequest = async (userId, organizationId) => {
+  const user = await UserService.getBrut({ id: String(userId) });
+  assertEmailVerified(user);
+
   const existing = await MembershipRepository.findOne({ userId, organizationId, status: { $in: ['active', 'pending'] } });
   if (existing) {
     if (existing.status === 'active') throw new Error('Already a member of this organization');

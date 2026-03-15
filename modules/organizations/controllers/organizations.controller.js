@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
 import config from '../../../config/index.js';
+import mailer from '../../../lib/helpers/mailer/index.js';
 import policy from '../../../lib/middlewares/policy.js';
 import serializeAbilities from '../../../lib/helpers/abilities.js';
 import OrganizationsService from '../services/organizations.crud.service.js';
@@ -157,6 +158,10 @@ const organizationByPage = async (req, res, next, params) => {
  */
 const search = async (req, res) => {
   try {
+    // Block domain search for unverified users when mailer is configured
+    if (mailer.isConfigured() && !req.user.emailVerified) {
+      return responses.success(res, 'organization search')([]);
+    }
     const organizations = await OrganizationsService.searchByDomain(req.user.email);
     responses.success(res, 'organization search')(organizations);
   } catch (err) {

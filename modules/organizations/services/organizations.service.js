@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import config from '../../../config/index.js';
+import mailer from '../../../lib/helpers/mailer/index.js';
 import policy from '../../../lib/middlewares/policy.js';
 import serializeAbilities from '../../../lib/helpers/abilities.js';
 import OrganizationsRepository from '../repositories/organizations.repository.js';
@@ -134,6 +135,18 @@ const createOrganizationForUser = async ({ name, slug, domain, user, slugGenerat
  */
 const handleSignupOrganization = async (user) => {
   const orgConfig = config.organizations || {};
+
+  // When mailer is configured, require email verification before any org provisioning
+  if (mailer.isConfigured() && !user.emailVerified) {
+    return {
+      organization: null,
+      membership: null,
+      abilities: [],
+      organizationSetupRequired: true,
+      emailVerificationRequired: true,
+      pendingJoin: false,
+    };
+  }
 
   // Case 1: Organizations disabled — create a silent default org
   if (!orgConfig.enabled) {

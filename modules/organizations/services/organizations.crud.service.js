@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import AppError from '../../../lib/helpers/AppError.js';
+import { assertEmailVerified } from '../../../lib/helpers/emailVerification.js';
 import config from '../../../config/index.js';
 
 /**
@@ -65,6 +66,8 @@ const listByUser = async (user) => {
  * @returns {Promise<Object>} A promise resolving to the newly created organization.
  */
 const create = async (body, user) => {
+  assertEmailVerified(user);
+
   // Auto-generate slug from name if not provided
   let slug = body.slug || slugify(body.name);
   let counter = 1;
