@@ -21,6 +21,7 @@ const tokenCookieOptions = {
  * @desc Endpoint to init password reset mail
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
+ * @returns {Promise<void>} Sends a JSON response with reset status.
  */
 const forgot = async (req, res) => {
   let user;
@@ -79,6 +80,7 @@ const validateResetToken = async (req, res) => {
  * @desc Endpoint to reset password from url with token
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
+ * @returns {Promise<void>} Sends a JSON response with the updated user and token.
  */
 const reset = async (req, res) => {
   let user;

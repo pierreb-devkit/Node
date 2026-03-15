@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import config from '../../../config/index.js';
 import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
 import mailer from '../../../lib/helpers/mailer/index.js';
+import { assertEmailVerified } from '../../../lib/helpers/emailVerification.js';
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
 import OrganizationRepository from '../repositories/organizations.repository.js';
 import UserService from '../../users/services/users.service.js';
@@ -123,12 +124,19 @@ const listPendingByUser = (userId) => MembershipRepository.list({ userId, status
 
 /**
  * @function createJoinRequest
- * @description Create a pending membership (join request). Validates no existing active/pending membership.
+ * @description Create a pending membership (join request). When mailer is configured, requires email
+ *   verification first (throws AppError with code FORBIDDEN / status 403 if not verified).
+ *   Also validates no existing active/pending membership and enforces a single pending request limit.
  * @param {String} userId - The ID of the requesting user.
  * @param {String} organizationId - The ID of the organization to join.
  * @returns {Promise<Object>} The created pending membership.
+ * @throws {AppError} If mailer is configured and user email is not verified.
  */
 const createJoinRequest = async (userId, organizationId) => {
+  const user = await UserService.getBrut({ id: String(userId) });
+  if (!user) throw new Error('User not found');
+  assertEmailVerified(user);
+
   const existing = await MembershipRepository.findOne({ userId, organizationId, status: { $in: ['active', 'pending'] } });
   if (existing) {
     if (existing.status === 'active') throw new Error('Already a member of this organization');
@@ -140,7 +148,6 @@ const createJoinRequest = async (userId, organizationId) => {
   const membership = await MembershipRepository.create({ userId, organizationId, role: 'member', status: 'pending' });
 
   if (mailer.isConfigured()) {
-    const user = await UserService.getBrut({ id: String(userId) });
     const org = await OrganizationRepository.get(organizationId);
     if (user?.email && org?.name) {
       const admins = await MembershipRepository.list({ organizationId, role: { $in: ['owner', 'admin'] }, status: 'active' });

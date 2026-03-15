@@ -50,6 +50,7 @@ const get = async (req, res) => {
  * @desc Endpoint to ask the service to get all user data and send it to user mail
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
+ * @returns {Promise<void>} Sends a JSON response confirming the email was sent.
  */
 const getMail = async (req, res) => {
   try {
