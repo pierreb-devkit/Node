@@ -13,10 +13,17 @@ const defaultPopulate = [
 ];
 
 /**
+ * Resolves the identifier from a subscription object or raw id.
+ * @param {Object|string} value - The subscription object or id string.
+ * @returns {string|undefined} The resolved id.
+ */
+const resolveId = (value) => value?._id || value?.id || value;
+
+/**
  * @function list
  * @description Data access operation to fetch all subscriptions from the database with an optional filter.
  * @param {Object} [filter] - Optional filter to apply to the query.
- * @returns {Array} An array of subscriptions.
+ * @returns {Promise<Array>} A promise resolving to an array of subscriptions.
  */
 const list = (filter) => Subscription.find(filter).populate(defaultPopulate).sort('-createdAt').exec();
 
@@ -24,7 +31,7 @@ const list = (filter) => Subscription.find(filter).populate(defaultPopulate).sor
  * @function create
  * @description Data access operation to create a new subscription in the database.
  * @param {Object} subscription - The subscription object to create.
- * @returns {Object} The created subscription.
+ * @returns {Promise<Object>} A promise resolving to the created subscription.
  */
 const create = (subscription) => new Subscription(subscription).save().then((doc) => doc.populate(defaultPopulate));
 
@@ -32,7 +39,7 @@ const create = (subscription) => new Subscription(subscription).save().then((doc
  * @function get
  * @description Data access operation to fetch a single subscription by its ID.
  * @param {String} id - The ID of the subscription to fetch.
- * @returns {Object} The retrieved subscription or null if the ID is not valid.
+ * @returns {Promise<Object|null>} A promise resolving to the retrieved subscription or null if the ID is not valid.
  */
 const get = (id) => {
   if (!mongoose.Types.ObjectId.isValid(id)) return null;
@@ -43,11 +50,14 @@ const get = (id) => {
  * @function update
  * @description Data access operation to update an existing subscription in the database.
  * @param {Object} subscription - The subscription object containing the updated details.
- * @returns {Object} The updated subscription.
+ * @returns {Promise<Object>} A promise resolving to the updated subscription.
  */
 const update = (subscription) => {
-  if (subscription._id) {
-    return Subscription.findByIdAndUpdate(subscription._id, subscription, { returnDocument: 'after', runValidators: true })
+  const id = resolveId(subscription);
+  if (id && mongoose.Types.ObjectId.isValid(id)) {
+    // eslint-disable-next-line no-unused-vars
+    const { _id, id: _virtualId, ...payload } = subscription;
+    return Subscription.findByIdAndUpdate(id, payload, { returnDocument: 'after', runValidators: true })
       .populate(defaultPopulate)
       .exec();
   }
@@ -58,15 +68,19 @@ const update = (subscription) => {
  * @function remove
  * @description Data access operation to delete a single subscription by its ID.
  * @param {Object} subscription - The subscription object to delete.
- * @returns {Object} A confirmation of the deletion.
+ * @returns {Promise<Object|null>} A promise resolving to a confirmation of the deletion or null if invalid.
  */
-const remove = (subscription) => Subscription.deleteOne({ _id: subscription.id }).exec();
+const remove = (subscription) => {
+  const id = resolveId(subscription);
+  if (!id || !mongoose.Types.ObjectId.isValid(id)) return null;
+  return Subscription.deleteOne({ _id: id }).exec();
+};
 
 /**
  * @function findByOrganization
  * @description Data access operation to fetch a subscription by organization ID.
  * @param {String} organizationId - The organization ID.
- * @returns {Object} The retrieved subscription or null.
+ * @returns {Promise<Object|null>} A promise resolving to the retrieved subscription or null.
  */
 const findByOrganization = (organizationId) => {
   if (!mongoose.Types.ObjectId.isValid(organizationId)) return null;
@@ -77,10 +91,12 @@ const findByOrganization = (organizationId) => {
  * @function findByStripeCustomerId
  * @description Data access operation to fetch a subscription by Stripe customer ID.
  * @param {String} stripeCustomerId - The Stripe customer ID.
- * @returns {Object} The retrieved subscription or null.
+ * @returns {Promise<Object|null>} A promise resolving to the retrieved subscription or null.
  */
-const findByStripeCustomerId = (stripeCustomerId) =>
-  Subscription.findOne({ stripeCustomerId }).populate(defaultPopulate).exec();
+const findByStripeCustomerId = (stripeCustomerId) => {
+  if (!stripeCustomerId || !stripeCustomerId.trim()) return null;
+  return Subscription.findOne({ stripeCustomerId }).populate(defaultPopulate).exec();
+};
 
 export default {
   list,
