@@ -130,7 +130,7 @@ const createOrganizationForUser = async ({ name, slug, domain, user, slugGenerat
  *   existing org is returned as `suggestedOrganization`.
  *
  * @param {Object} user - The user object returned by UserService.create (with id, email, firstName, lastName).
- * @returns {Promise<{organization: Object|null, membership: Object|null, abilities: Array, organizationSetupRequired: boolean, suggestedOrganization: Object|null}>}
+ * @returns {Promise<{organization: Object|null, membership: Object|null, abilities: Array, organizationSetupRequired: boolean, emailVerificationRequired: boolean|undefined, suggestedOrganization: Object|null}>}
  *   An object containing the organization context for the signup response.
  */
 const handleSignupOrganization = async (user) => {

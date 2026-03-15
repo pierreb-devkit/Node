@@ -136,6 +136,7 @@ const signup = async (req, res) => {
         pendingJoin: orgResult.pendingJoin || false,
         abilities: orgResult.abilities || [],
         organizationSetupRequired: orgResult.organizationSetupRequired || false,
+        emailVerificationRequired: orgResult.emailVerificationRequired || false,
         suggestedOrganization: orgResult.suggestedOrganization || null,
         type: 'success',
         message: 'Sign up',

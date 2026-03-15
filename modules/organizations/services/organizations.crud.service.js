@@ -61,9 +61,12 @@ const listByUser = async (user) => {
 /**
  * @function create
  * @description Service to create a new organization and make the creator the owner.
+ *   When mailer is configured, requires email verification first (throws AppError
+ *   with code FORBIDDEN / status 403 if not verified).
  * @param {Object} body - The object containing organization details.
  * @param {Object} user - The user creating the organization.
  * @returns {Promise<Object>} A promise resolving to the newly created organization.
+ * @throws {AppError} If mailer is configured and user email is not verified.
  */
 const create = async (body, user) => {
   assertEmailVerified(user);
