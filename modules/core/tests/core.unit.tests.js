@@ -56,7 +56,7 @@ describe('Core unit tests:', () => {
     });
 
     it('assets should contain the correct keys', () => {
-      const expectedKeys = ['allJS', 'allYaml', 'mongooseModels', 'sequelizeModels', 'routes', 'config', 'policies'];
+      const expectedKeys = ['allJS', 'allYaml', 'mongooseModels', 'sequelizeModels', 'preRoutes', 'routes', 'config', 'policies'];
 
       expectedKeys.forEach((key) => {
         expect(assets).toHaveProperty(key);
