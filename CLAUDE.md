@@ -65,7 +65,7 @@ Node / Express / Mongoose / JWT stack from Devkit. Standalone backend or fullsta
 - Keep changes minimal and merge-friendly for downstream
 - Every function: JSDoc header (`@param`, `@returns`)
 - PRs: always use `/pull-request` — never open manually
-- After user correction, evaluate if the pattern belongs in ERRORS.md
+- After user correction, evaluate if the pattern belongs in `ERRORS.md`
 
 ## Skills
 
