@@ -4,6 +4,7 @@
 import crypto from 'crypto';
 
 import config from '../../../config/index.js';
+import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
 import mailer from '../../../lib/helpers/mailer/index.js';
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
 import OrganizationRepository from '../repositories/organizations.repository.js';
@@ -150,10 +151,10 @@ const createJoinRequest = async (userId, organizationId) => {
             subject: `New join request for ${org.name}`,
             template: 'org-request-new',
             params: {
-              requesterName: `${user.firstName} ${user.lastName}`,
+              requesterName: [user.firstName, user.lastName].filter(Boolean).join(' '),
               requesterEmail: user.email,
               orgName: org.name,
-              url: `${config.app?.front || ''}/users/organizations/${organizationId}`,
+              url: `${getBaseUrl()}/users/organizations/${organizationId}`,
               appName: config.app.title,
             },
           }).catch(() => {});
@@ -194,7 +195,7 @@ const approveRequest = async (membership) => {
         subject: `Your request to join ${org.name} has been approved`,
         template: 'org-request-approved',
         params: {
-          displayName: `${user.firstName} ${user.lastName}`,
+          displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
           orgName: org.name,
           appName: config.app.title,
         },
@@ -223,7 +224,7 @@ const rejectRequest = async (membership) => {
         subject: `Your request to join ${org.name}`,
         template: 'org-request-rejected',
         params: {
-          displayName: `${user.firstName} ${user.lastName}`,
+          displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
           orgName: org.name,
           appName: config.app.title,
         },
@@ -305,9 +306,9 @@ const invite = async (organizationId, email, invitedBy) => {
           subject: `You've been invited to join ${org.name}`,
           template: 'org-invite',
           params: {
-            inviterName: `${invitedBy.firstName} ${invitedBy.lastName}`,
+            inviterName: [invitedBy.firstName, invitedBy.lastName].filter(Boolean).join(' '),
             orgName: org.name,
-            url: `${config.app?.front || ''}/invite?token=${inviteToken}`,
+            url: `${getBaseUrl()}/invite?token=${inviteToken}`,
             appName: config.app.title,
             appContact: config.mailer.from,
           },

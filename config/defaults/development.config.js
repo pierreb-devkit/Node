@@ -5,7 +5,6 @@ const config = {
     keywords: 'node, express, mongo, jwt, sequelize, stack, boilerplate',
     googleAnalyticsTrackingID: 'DEVKIT_NODE_app_googleAnalyticsTrackingID',
     contact: 'contact@example.com',
-    front: 'DEVKIT_NODE_app_front',
   },
   swagger: {
     enable: true,
