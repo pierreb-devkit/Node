@@ -2,19 +2,36 @@
  * Module dependencies
  */
 import passport from 'passport';
-import rateLimit from 'express-rate-limit';
 
-import config from '../../../config/index.js';
+import limiters from '../../../lib/middlewares/rateLimiter.js';
 import model from '../../../lib/middlewares/model.js';
-import UsersSchema from '../../users/models/user.schema.js';
+import UsersSchema from '../../users/models/users.schema.js';
 import auth from '../controllers/auth.controller.js';
 import authPassword from '../controllers/auth.password.controller.js';
 
+/**
+ * Register authentication routes on the Express application.
+ * @param {Object} app - Express application instance
+ * @returns {void}
+ */
 export default (app) => {
-  const authLimiter = rateLimit(config.rateLimit.auth);
+  const authLimiter = limiters.auth;
 
-  // Public auth config (no authentication required, rate-limited)
-  app.route('/api/auth/config').get(authLimiter, auth.getConfig);
+  // Auth config — optional JWT: public fields for everyone, org details for authenticated users
+  /**
+   * @desc Middleware that optionally authenticates via JWT, attaching user if valid but allowing unauthenticated requests.
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware function
+   * @returns {void}
+   */
+  const optionalJwt = (req, res, next) => {
+    passport.authenticate('jwt', { session: false }, (err, user) => {
+      if (user) req.user = user;
+      next();
+    })(req, res, next);
+  };
+  app.route('/api/auth/config').get(authLimiter, optionalJwt, auth.getConfig);
 
   // Setting up the users password api
   app.route('/api/auth/forgot').post(authLimiter, authPassword.forgot);
@@ -23,7 +40,15 @@ export default (app) => {
 
   // Setting up the users authentication api
   app.route('/api/auth/signup').post(authLimiter, model.isValid(UsersSchema.User), auth.signup);
-  app.route('/api/auth/signin').post(authLimiter, passport.authenticate('local', { session: false }), auth.signin);
+  app.route('/api/auth/signin').post(authLimiter, auth.signinAuthenticate, auth.signin);
+
+  // Email verification
+  app.route('/api/auth/verify-email/:token').post(authLimiter, auth.verifyEmail);
+  app.route('/api/auth/resend-verification').post(
+    authLimiter,
+    passport.authenticate('jwt', { session: false }),
+    auth.resendVerification,
+  );
 
   // Jwt reset token
   app.route('/api/auth/token').get(passport.authenticate('jwt', { session: false }), auth.token);

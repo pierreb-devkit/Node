@@ -16,3 +16,13 @@ Use this file as a compact memory of recurring AI mistakes.
 - [2026-02-23] pr skill: stopping after `gh pr ready` -> always enter the monitor loop (wait CI → 3min grace → read feedback → iterate) until stop condition is met
 - [2026-02-23] pr skill: skipping issue creation when none found -> always create a GitHub issue before opening a PR (`gh issue create --web` or via CLI)
 - [2026-02-23] zod v4: z.string({ error: 'msg' }) does NOT override invalid_type message -> Zod v4 produces 'Invalid input: expected string, received number'; update test expectations accordingly and remove the no-op error option
+- [2026-03-11] architecture: importing mongoose in controllers/services/helpers -> mongoose must only be imported in repositories and models
+- [2026-03-11] architecture: controller importing a Repository directly -> controllers call Services only; cross-module access goes through the other module's Service
+- [2026-03-11] services: wrapping return values in Promise.resolve() -> unnecessary when calling async/promise-returning functions, just return directly
+- [2026-03-13] architecture: service importing another module's Repository -> use target module's Service
+- [2026-03-13] architecture: middleware using mongoose.model() directly -> use module's Service or Repository
+- [2026-03-13] tests: test file placed outside its module (e.g. lib/middlewares/tests/) -> tests belong in modules/{module}/tests/
+- [2026-03-13] docs: duplicate doc files covering the same topic (e.g. MIGRATION.md + MIGRATIONS.md) -> single file, no duplication
+- [2026-03-14] middleware: assuming config section exists in all environments (e.g. `config.rateLimit`) -> always handle missing config gracefully (passthrough/no-op); dev config often omits sections that only prod defines
+- [2026-03-15] cross-stack: changing a Node API without checking Vue E2E tests -> when modifying an endpoint Vue consumes, run Vue E2E tests before pushing
+- [2026-03-15] pr scope: batching multiple unrelated fixes in one PR -> one fix = one PR to isolate blast radius and reduce iteration loops

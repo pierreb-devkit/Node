@@ -30,7 +30,7 @@ git merge devkit-node/master
 | `config/defaults/development.js`, `production.js`, etc. | `git checkout --theirs <file>` (stack-owned defaults) |
 | `package-lock.json` | `git checkout --theirs package-lock.json` — regenerate after `package.json` is resolved |
 | `ERRORS.md` | Merge stack entries + project entries — never drop lines |
-| `MIGRATION.md` (if present) | Read it (needed for Phase 2), then `git checkout --theirs MIGRATION.md` |
+| `MIGRATIONS.md` (if present) | Read it (needed for Phase 2), then `git checkout --theirs MIGRATIONS.md` |
 | `package.json` | `git checkout --ours package.json` then merge upstream version bumps |
 | Downstream-only new files (new modules, helpers, lib additions, scripts) | Never delete — these do not exist in the stack, `git checkout --ours <file>` if flagged |
 
@@ -88,7 +88,7 @@ Proceed to Phase 2 and track the upstream fix separately — do not block downst
 
 **Goal: project-specific modules work and match stack patterns.**
 
-### 4. Apply MIGRATION.md (if present)
+### 4. Apply MIGRATIONS.md (if present)
 
 Read the last entries — they list breaking changes requiring updates in project modules. Apply each one to non-stack modules.
 

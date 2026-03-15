@@ -1,24 +1,30 @@
 ---
 name: verify
-description: Run the quality loop (lint + tests) to verify code quality and correctness. Use after making any code changes, before committing, or when asked to check/verify the project works.
+description: Run quality loop (audit + lint + tests) to verify code quality, correctness, and security. Use after making changes and before committing.
 ---
 
 # Verify Skill
 
-Run lint → tests and report results.
-
 ## Steps
 
-1. Read `ERRORS.md` — scan changed files for any pattern listed as wrong. Flag violations before running tooling.
-2. Run `npm run lint` to check code quality (read-only, no auto-fix)
-3. Run `npm test` to run all tests
-4. Summarize results:
-   - ✅ All checks passed → ready to commit
-   - ❌ Some checks failed → show what failed and suggest next action
+1. **Diff audit** — review all changes (`git diff main...HEAD` or staged changes) using your knowledge of the stack:
+   - Read `CLAUDE.md` and `ERRORS.md` for conventions, architecture, and known pitfalls
+   - Read the `tasks` reference module structure for layer/naming conventions
+   - Analyze the diff: architecture, security, logic, consistency, error handling
+   - No hardcoded checklist — reason from context. Examples of what to catch:
+     - Routes missing auth/policy middleware
+     - Mongoose docs spread without `.toObject()`
+     - Silent error swallowing (catch + console.log)
+     - Config in wrong location, missing or orphaned files
+     - Cross-module import violations
+     - Inconsistent API response formats
+     - Missing null/undefined checks on async returns
+   - Fix all issues found before proceeding
 
-## Notes
+2. **Lint** — `npm run lint`
 
-- Use `npm run lint` (not `npm run lint:fix`) — `lint:fix` auto-fixes files which is not suitable for verification
-- Does not run tests in watch mode (use `npm run test:watch` manually for that)
-- Does not run coverage (use `npm run test:coverage` manually for that)
-- Does not commit or push changes
+3. **Tests** — check if MongoDB is reachable:
+   - **Infra up** → `npm run test:all` (unit + integration + E2E)
+   - **Infra down** → `npm test` (unit only) + warn: "Integration/E2E skipped — run `docker compose -f docker-compose.test.yml up -d` for full coverage"
+
+4. **Summary:** ✅ All passed → ready to commit | ❌ Failed → show failures, fix, re-run

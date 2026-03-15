@@ -1,0 +1,12 @@
+language: en-US
+early_access: true
+reviews:
+  profile: assertive
+  request_changes_workflow: true
+  high_level_summary: true
+  collapse_walkthrough: false
+  poem: false
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_pause_after_reviewed_commits: 0

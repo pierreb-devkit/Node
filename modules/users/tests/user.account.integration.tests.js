@@ -373,7 +373,7 @@ describe('User integration tests:', () => {
 
     test('should be able to change profile avatar if signed in', async () => {
       try {
-        const result = await agent.post('/api/users/avatar').attach('img', './modules/users/tests/img/default.jpeg').expect(200);
+        const result = await agent.post('/api/users/avatar').attach('avatar', './modules/users/tests/img/default.jpeg').expect(200);
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('profile avatar updated');
         expect(result.body.data).toBeInstanceOf(Object);
@@ -398,7 +398,7 @@ describe('User integration tests:', () => {
 
     test('should not be able to upload a non-image file as a profile avatar', async () => {
       try {
-        const result = await agent.post('/api/users/avatar').attach('img', './modules/users/tests/img/text-file.txt').expect(422);
+        const result = await agent.post('/api/users/avatar').attach('avatar', './modules/users/tests/img/text-file.txt').expect(422);
         expect(result.body.message).toEqual('Unprocessable Entity');
         expect(result.body.description).toEqual('Only image/png,image/jpeg,image/jpg,image/gif files allowed.');
       } catch (err) {
@@ -422,7 +422,7 @@ describe('User integration tests:', () => {
       // First upload an avatar
       let avatarFilename;
       try {
-        const uploadResult = await agent.post('/api/users/avatar').attach('img', './modules/users/tests/img/default.jpeg').expect(200);
+        const uploadResult = await agent.post('/api/users/avatar').attach('avatar', './modules/users/tests/img/default.jpeg').expect(200);
         avatarFilename = uploadResult.body.data.avatar;
         expect(avatarFilename).toBeDefined();
       } catch (err) {
@@ -457,7 +457,7 @@ describe('User integration tests:', () => {
     // TOFIX issue on supertest for large file https://github.com/ladjs/supertest/issues/824
     // test('should not be able to change profile avatar to too big of a file', async () => {
     //   try {
-    //     const result = await agent.post('/api/users/avatar').attach('img', './modules/users/tests/img/default-big.jpeg').expect(422);
+    //     const result = await agent.post('/api/users/avatar').attach('avatar', './modules/users/tests/img/default-big.jpeg').expect(422);
     //     expect(result.body.message).toEqual('Unprocessable Entity');
     //     expect(result.body.description).toEqual('Only files lower than 0.05mo are allowed.');
     //   } catch (err) {

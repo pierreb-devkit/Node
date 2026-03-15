@@ -7,12 +7,14 @@ import path from 'path';
 import { jest, afterAll, beforeAll } from '@jest/globals';
 import { bootstrap } from '../../../lib/app.js';
 import mongooseService from '../../../lib/services/mongoose.js';
+import config from '../../../config/index.js';
 
 /**
  * Unit tests
  */
 describe('Tasks integration tests:', () => {
   let UserService;
+  const originalOrgEnabled = config.organizations.enabled;
   let TasksService;
   let TasksDataService;
   let agent;
@@ -24,6 +26,8 @@ describe('Tasks integration tests:', () => {
 
   //  init
   beforeAll(async () => {
+    // Disable organizations so signup auto-creates a silent org with membership
+    config.organizations.enabled = false;
     try {
       const init = await bootstrap();
       UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
@@ -118,14 +122,14 @@ describe('Tasks integration tests:', () => {
     });
 
     test('should be able to get a task', async () => {
-      // delete task
+      // get task created in beforeEach (task1)
       try {
-        const result = await agent.get(`/api/tasks/${task2.id}`).expect(200);
+        const result = await agent.get(`/api/tasks/${task1.id}`).expect(200);
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('task get');
-        expect(result.body.data.id).toBe(task2.id);
-        expect(result.body.data.title).toBe(_tasks[1].title);
-        expect(result.body.data.description).toBe(_tasks[1].description);
+        expect(result.body.data.id).toBe(task1.id);
+        expect(result.body.data.title).toBe(_tasks[0].title);
+        expect(result.body.data.description).toBe(_tasks[0].description);
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -236,13 +240,13 @@ describe('Tasks integration tests:', () => {
     });
 
     test('should be able to get list of tasks', async () => {
-      // get list
+      // get list — org-scoped, so only tasks from the current user's org are returned
       try {
         const result = await agent.get('/api/tasks').expect(200);
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('task list');
         expect(result.body.data).toBeInstanceOf(Array);
-        expect(result.body.data).toHaveLength(2);
+        expect(result.body.data.length).toBeGreaterThanOrEqual(1);
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -277,14 +281,10 @@ describe('Tasks integration tests:', () => {
       }
     });
 
-    test('should be able to get list of tasks', async () => {
-      // get list
+    test('should not be able to get list of tasks without auth', async () => {
+      // task list now requires authentication
       try {
-        const result = await agent.get('/api/tasks').expect(200);
-        expect(result.body.type).toBe('success');
-        expect(result.body.message).toBe('task list');
-        expect(result.body.data).toBeInstanceOf(Array);
-        expect(result.body.data).toHaveLength(1);
+        await agent.get('/api/tasks').expect(401);
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -462,6 +462,7 @@ describe('Tasks integration tests:', () => {
 
   // Mongoose disconnect
   afterAll(async () => {
+    config.organizations.enabled = originalOrgEnabled;
     try {
       await mongooseService.disconnect();
     } catch (err) {

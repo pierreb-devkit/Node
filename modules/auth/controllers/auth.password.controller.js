@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 
 import AuthService from '../services/auth.service.js';
 import UserService from '../../users/services/users.service.js';
-import mails from '../../../lib/helpers/mails.js';
+import mails from '../../../lib/helpers/mailer/index.js';
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
 import config from '../../../config/index.js';
@@ -37,22 +37,26 @@ const forgot = async (req, res) => {
     };
     user = await UserService.update(user, edit, 'recover');
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    return responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
   }
   // send mail
-  const mail = await mails.sendMail({
-    template: 'reset-password-email',
-    to: user.email,
-    subject: 'Password Reset',
-    params: {
-      displayName: `${user.firstName} ${user.lastName}`,
-      url: `${config.cors.origin[0]}/reset?token=${user.resetPasswordToken}`,
-      appName: config.app.title,
-      appContact: config.app.contact,
-    },
-  });
-  if (!mail.accepted) return responses.error(res, 400, 'Bad Request', 'Failure sending email')();
-  responses.success(res, 'An email has been sent with further instructions')({ status: true });
+  try {
+    const mail = await mails.sendMail({
+      template: 'reset-password-email',
+      to: user.email,
+      subject: 'Password Reset',
+      params: {
+        displayName: `${user.firstName} ${user.lastName}`,
+        url: `${config.cors.origin[0]}/reset?token=${user.resetPasswordToken}`,
+        appName: config.app.title,
+        appContact: config.app.contact,
+      },
+    });
+    if (!mail || !mail.accepted) return responses.error(res, 400, 'Bad Request', 'Failure sending email')();
+    return responses.success(res, 'An email has been sent with further instructions')({ status: true });
+  } catch (_mailErr) {
+    return responses.error(res, 400, 'Bad Request', 'Failure sending email')();
+  }
 };
 
 /**
@@ -89,6 +93,17 @@ const reset = async (req, res) => {
       resetPasswordExpires: null,
     };
     user = await UserService.update(user, edit, 'recover');
+    // send confirmation mail (fire-and-forget)
+    mails.sendMail({
+      template: 'reset-password-confirm-email',
+      to: user.email,
+      subject: 'Your password has been changed',
+      params: {
+        displayName: `${user.firstName} ${user.lastName}`,
+        appName: config.app.title,
+        appContact: config.app.contact,
+      },
+    }).catch(() => {});
     return res
       .status(200)
       .cookie('TOKEN', jwt.sign({ userId: user.id }, config.jwt.secret, { expiresIn: config.jwt.expiresIn }), tokenCookieOptions)
@@ -99,21 +114,8 @@ const reset = async (req, res) => {
         message: 'Password changed successfully',
       });
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    return responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
   }
-  // send mail
-  const mail = await mails.sendMail({
-    template: 'reset-password-confirm-email',
-    to: user.email,
-    subject: 'Your password has been changed',
-    params: {
-      displayName: `${user.firstName} ${user.lastName}`,
-      appName: config.app.title,
-      appContact: config.app.contact,
-    },
-  });
-  if (!mail.accepted) return responses.error(res, 400, 'Bad Request', 'Failure sending email')();
-  responses.success(res, 'An email has been sent with further instructions')({ status: true });
 };
 
 /**

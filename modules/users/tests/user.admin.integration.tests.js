@@ -21,6 +21,21 @@ describe('User admin integration tests:', () => {
   let _user;
   let _userEdited;
 
+  /**
+   * Helper: sign up a user and promote to admin via service layer.
+   * Roles are stripped from signup for security, so admin promotion
+   * must happen server-side after account creation.
+   */
+  const signupAndPromoteAdmin = async (agentInstance, body) => {
+    const safeBody = { ...body };
+    delete safeBody.roles;
+    const result = await agentInstance.post('/api/auth/signup').send(safeBody).expect(200);
+    const created = result.body.user;
+    const brut = await UserService.getBrut({ id: created.id || created._id });
+    await UserService.update(brut, { roles: ['user', 'admin'] }, 'admin');
+    return created;
+  };
+
   //  init
   beforeAll(async () => {
     try {
@@ -74,7 +89,7 @@ describe('User admin integration tests:', () => {
 
     test('should not be able to retrieve a list of users if not admin', async () => {
       try {
-        const result = await agent.get('/api/users').expect(403);
+        const result = await agent.get('/api/admin/users').expect(403);
         expect(result.body.message).toBe('Unauthorized');
         expect(result.body.description).toBe('User is not authorized');
       } catch (err) {
@@ -84,18 +99,15 @@ describe('User admin integration tests:', () => {
     });
 
     test('should be able to retrieve a list of users if admin', async () => {
-      _userEdited.roles = ['user', 'admin'];
-
       try {
-        const result = await agent.post('/api/auth/signup').send(_userEdited).expect(200);
-        userEdited = result.body.user;
+        userEdited = await signupAndPromoteAdmin(agent, { ..._userEdited, roles: ['user', 'admin'] });
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
       }
 
       try {
-        const result = await agent.get('/api/users').expect(200);
+        const result = await agent.get('/api/admin/users').expect(200);
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('user list');
         expect(result.body.data).toBeInstanceOf(Array);
@@ -113,18 +125,15 @@ describe('User admin integration tests:', () => {
     });
 
     test('should be able to retrieve a list of users if admin with pagination', async () => {
-      _userEdited.roles = ['user', 'admin'];
-
       try {
-        const result = await agent.post('/api/auth/signup').send(_userEdited).expect(200);
-        userEdited = result.body.user;
+        userEdited = await signupAndPromoteAdmin(agent, { ..._userEdited, roles: ['user', 'admin'] });
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
       }
 
       try {
-        const result = await agent.get('/api/users/page/0').expect(200);
+        const result = await agent.get('/api/admin/users/page/0').expect(200);
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('user list');
         expect(result.body.data).toBeInstanceOf(Array);
@@ -134,7 +143,7 @@ describe('User admin integration tests:', () => {
       }
 
       try {
-        const result = await agent.get('/api/users/page/0&1').expect(200);
+        const result = await agent.get('/api/admin/users/page/0&1').expect(200);
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('user list');
         expect(result.body.data).toBeInstanceOf(Array);
@@ -145,7 +154,7 @@ describe('User admin integration tests:', () => {
       }
 
       try {
-        const result = await agent.get('/api/users/page/1&1').expect(200);
+        const result = await agent.get('/api/admin/users/page/1&1').expect(200);
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('user list');
         expect(result.body.data).toBeInstanceOf(Array);
@@ -164,18 +173,15 @@ describe('User admin integration tests:', () => {
     });
 
     test('should be able to retrieve a list of users if admin with pagination and search', async () => {
-      _userEdited.roles = ['user', 'admin'];
-
       try {
-        const result = await agent.post('/api/auth/signup').send(_userEdited).expect(200);
-        userEdited = result.body.user;
+        userEdited = await signupAndPromoteAdmin(agent, { ..._userEdited, roles: ['user', 'admin'] });
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
       }
 
       try {
-        const result = await agent.get('/api/users/page/0&20&Admin').expect(200);
+        const result = await agent.get('/api/admin/users/page/0&20&Admin').expect(200);
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('user list');
         expect(result.body.data).toBeInstanceOf(Array);
@@ -193,18 +199,15 @@ describe('User admin integration tests:', () => {
     });
 
     test('should be able to get a single user details if admin', async () => {
-      _userEdited.roles = ['user', 'admin'];
-
       try {
-        const result = await agent.post('/api/auth/signup').send(_userEdited).expect(200);
-        userEdited = result.body.user;
+        userEdited = await signupAndPromoteAdmin(agent, { ..._userEdited, roles: ['user', 'admin'] });
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
       }
 
       try {
-        const result = await agent.get(`/api/users/${userEdited._id}`).expect(200);
+        const result = await agent.get(`/api/admin/users/${userEdited._id}`).expect(200);
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('user get');
         expect(result.body.data).toBeInstanceOf(Object);
@@ -223,11 +226,8 @@ describe('User admin integration tests:', () => {
     });
 
     test('should be able to update a single user details if admin', async () => {
-      _userEdited.roles = ['user', 'admin'];
-
       try {
-        const result = await agent.post('/api/auth/signup').send(_userEdited).expect(200);
-        userEdited = result.body.user;
+        userEdited = await signupAndPromoteAdmin(agent, { ..._userEdited, roles: ['user', 'admin'] });
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -240,7 +240,7 @@ describe('User admin integration tests:', () => {
           roles: ['admin'],
         };
 
-        const result = await agent.put(`/api/users/${userEdited._id}`).send(userUpdate).expect(200);
+        const result = await agent.put(`/api/admin/users/${userEdited._id}`).send(userUpdate).expect(200);
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('user updated');
         expect(result.body.data).toBeInstanceOf(Object);
@@ -264,18 +264,15 @@ describe('User admin integration tests:', () => {
     });
 
     test('should be able to remove a single user if admin', async () => {
-      _userEdited.roles = ['user', 'admin'];
-
       try {
-        const result = await agent.post('/api/auth/signup').send(_userEdited).expect(200);
-        userEdited = result.body.user;
+        userEdited = await signupAndPromoteAdmin(agent, { ..._userEdited, roles: ['user', 'admin'] });
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
       }
 
       try {
-        const result = await agent.delete(`/api/users/${userEdited._id}`).expect(200);
+        const result = await agent.delete(`/api/admin/users/${userEdited._id}`).expect(200);
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('user deleted');
         expect(result.body.data).toBeInstanceOf(Object);
@@ -294,11 +291,8 @@ describe('User admin integration tests:', () => {
     });
 
     test('should return 404 when getting a user with a non-existent id if admin', async () => {
-      _userEdited.roles = ['user', 'admin'];
-
       try {
-        const result = await agent.post('/api/auth/signup').send(_userEdited).expect(200);
-        userEdited = result.body.user;
+        userEdited = await signupAndPromoteAdmin(agent, { ..._userEdited, roles: ['user', 'admin'] });
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -306,7 +300,7 @@ describe('User admin integration tests:', () => {
 
       try {
         // Valid ObjectId format but non-existent user
-        const result = await agent.get('/api/users/000000000000000000000000').expect(404);
+        const result = await agent.get('/api/admin/users/000000000000000000000000').expect(404);
         expect(result.body.message).toBe('Not Found');
       } catch (err) {
         console.log(err);
@@ -322,11 +316,8 @@ describe('User admin integration tests:', () => {
     });
 
     test('should return 422 when pagination params exceed maximum of 3', async () => {
-      _userEdited.roles = ['user', 'admin'];
-
       try {
-        const result = await agent.post('/api/auth/signup').send(_userEdited).expect(200);
-        userEdited = result.body.user;
+        userEdited = await signupAndPromoteAdmin(agent, { ..._userEdited, roles: ['user', 'admin'] });
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -334,7 +325,7 @@ describe('User admin integration tests:', () => {
 
       try {
         // 4 params separated by & exceeds the allowed max of 3
-        const result = await agent.get('/api/users/page/0&10&search&extra').expect(422);
+        const result = await agent.get('/api/admin/users/page/0&10&search&extra').expect(422);
         expect(result.body.message).toBeDefined();
       } catch (err) {
         console.log(err);
@@ -378,15 +369,13 @@ describe('User admin integration tests:', () => {
         expect(err).toBeFalsy();
       }
       try {
-        const adminResult = await agent.post('/api/auth/signup').send({
+        adminUser = await signupAndPromoteAdmin(agent, {
           firstName: 'Admin',
           lastName: 'Error',
           email: 'adminerror@test.com',
           password: 'W@os.jsI$Aw3$0m3',
           provider: 'local',
-          roles: ['user', 'admin'],
-        }).expect(200);
-        adminUser = adminResult.body.user;
+        });
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -395,7 +384,7 @@ describe('User admin integration tests:', () => {
 
     test('should return 422 when list fails', async () => {
       jest.spyOn(UserService, 'list').mockRejectedValueOnce(new Error('DB error'));
-      const result = await agent.get('/api/users').expect(422);
+      const result = await agent.get('/api/admin/users').expect(422);
       expect(result.body.type).toBe('error');
       expect(result.body.message).toBe('Unprocessable Entity');
       expect(result.body.description).toBe('DB error.');
@@ -403,7 +392,7 @@ describe('User admin integration tests:', () => {
 
     test('should return 422 when admin update fails', async () => {
       jest.spyOn(UserService, 'update').mockRejectedValueOnce(new Error('DB error'));
-      const result = await agent.put(`/api/users/${targetUser._id}`).send({ firstName: 'X' }).expect(422);
+      const result = await agent.put(`/api/admin/users/${targetUser._id}`).send({ firstName: 'X' }).expect(422);
       expect(result.body.type).toBe('error');
       expect(result.body.message).toBe('Unprocessable Entity');
       expect(result.body.description).toBe('DB error.');
@@ -411,7 +400,7 @@ describe('User admin integration tests:', () => {
 
     test('should return 422 when admin remove fails', async () => {
       jest.spyOn(UserService, 'remove').mockRejectedValueOnce(new Error('DB error'));
-      const result = await agent.delete(`/api/users/${targetUser._id}`).expect(422);
+      const result = await agent.delete(`/api/admin/users/${targetUser._id}`).expect(422);
       expect(result.body.type).toBe('error');
       expect(result.body.message).toBe('Unprocessable Entity');
       expect(result.body.description).toBe('DB error.');

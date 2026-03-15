@@ -1,19 +1,21 @@
 /**
- * Module dependencies
- * */
-import policy from '../../../lib/middlewares/policy.js';
+ * Admin ability definitions for CASL document-level authorization.
+ * Uses 'UserAdmin' for admin user-management routes (:userId, page/:userPage).
+ * Uses 'UserSelf' read for the admin user list at GET /api/admin/users.
+ */
 
 /**
- * Invoke Users Admin Permissions
+ * Define admin-level user management abilities for an authenticated user.
+ * Only admins can list, get, update, and delete other users.
+ * The admin list at GET /api/admin/users requires read on 'UserSelf'.
+ * @param {Object} user - The authenticated user
+ * @param {Object|null} membership - Optional organization membership (reserved for future use)
+ * @param {Object} builder - CASL AbilityBuilder helpers
+ * @param {Function} builder.can - Grant an ability
  */
-const invokeRolesPolicies = () => {
-  policy.registerRules([
-    { roles: ['admin'], actions: ['read'], subject: '/api/users' },
-    { roles: ['admin'], actions: ['read'], subject: '/api/users/page/:userPage' },
-    { roles: ['admin'], actions: ['read', 'update', 'delete'], subject: '/api/users/:userId' },
-  ]);
-};
-
-export default {
-  invokeRolesPolicies,
-};
+export function adminAbilities(user, membership, { can }) {
+  if (Array.isArray(user?.roles) && user.roles.includes('admin')) {
+    can('manage', 'UserAdmin');
+    can('read', 'UserSelf');
+  }
+}

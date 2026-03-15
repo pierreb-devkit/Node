@@ -18,7 +18,7 @@ Designed to be cloned into downstream projects and kept up-to-date via `git merg
 | Architecture | Layered Architecture : everything is separated in layers, and the upper layers are abstractions of the lower ones, that's why every layer should only reference the immediate lower layer (vertical modules architecture with Repository and Services Pattern)                                                          |
 | Server       | [Node >= 22](https://nodejs.org/en/) - [Express](https://github.com/expressjs/express) - [Helmet](https://github.com/helmetjs/helmet) - [CORS](https://github.com/expressjs/cors) <br> [nodemon](https://github.com/remy/nodemon)                                                                            |
 | Database     | [MongoDB](https://www.mongodb.com/) - [Mongoose](https://github.com/Automattic/mongoose) - GridFS upload <br> [Sequelize](https://github.com/sequelize/sequelize) - PostgreSQL, MySQL, SQLite (option) <br> [JOI](https://github.com/hapijs/joi) - Models & Repository validation                                      |
-| Security     | [passport-jwt](https://github.com/themikenicholson/passport-jwt) - JWT Stateless <br> [bcrypt](https://en.wikipedia.org/wiki/Bcrypt) - [zxcvbn](https://github.com/dropbox/zxcvbn) - Passwords <br> SSL - Express / Reverse Proxy                                                                                     |
+| Security     | [passport-jwt](https://github.com/themikenicholson/passport-jwt) - JWT Stateless <br> [bcrypt](https://en.wikipedia.org/wiki/Bcrypt) - [zxcvbn](https://github.com/dropbox/zxcvbn) - Passwords <br> [CASL](https://casl.js.org/) - Document-level authorization <br> SSL - Express / Reverse Proxy                     |
 | API          | [jsend](https://github.com/omniti-labs/jsend) - Default response wrapper: status, message, data or error                                                                                                                                                                                                              |
 | Upload       | [Mongo GridFS](https://docs.mongodb.com/manual/core/gridfs/) - [Multer](https://github.com/expressjs/multer) - [Sharp](https://github.com/lovell/sharp) - Image stream, all content types                                                                                                                             |
 | Testing      | [Jest](https://github.com/facebook/jest) - [SuperTest](https://github.com/visionmedia/supertest) - Coverage & Watch                                                                                                                                                                                                   |
@@ -35,10 +35,13 @@ Designed to be cloned into downstream projects and kept up-to-date via `git merg
 - **User** : classic register / auth or oAuth (Google, Apple) - profile management (update, avatar upload)
 - **User data privacy** : delete all - get all - send all by mail
 - **Admin** : list users - get user - edit user - delete user
+- **Organizations** : multi-tenant organization management - create, update, delete orgs - member invite, role management (owner/admin/member) - platform admin org listing
+- **CASL v2 Authorization** : document-level permission checks via [@casl/ability](https://casl.js.org/) - replaces route-level role rules with per-document conditions (ownership, org scope)
+- **Migration System** : automatic database migrations at boot - tracks executed scripts in MongoDB - idempotent reruns
 
 ### Examples
 
-- **Tasks** : list - get - add - edit - delete
+- **Tasks** : list - get - add - edit - delete (org-scoped when organization context is present)
 - **File Uploads** : get stream - add - delete - image stream & sharp operations
 
 ## :pushpin: Prerequisites
@@ -118,30 +121,29 @@ Configuration is split between a **global** file and **per-module** files, then 
 
 ### File layout
 
-Only `config.*.js` files participate in the merge. Other config files in module directories (e.g. policy, seed) are loaded separately by their own init logic.
+Config files follow the `module.env.kind.js` naming convention. Init files (Express middleware like passport) use `module.init.js`.
 
 ```text
 config/defaults/
-  config.development.js          ← global defaults (app, db, host, port, log, seed, …)
-  config.production.js           ← production overrides
-  config.test.js                 ← test overrides
+  development.config.js          ← infra only (app, db, api, log, cors, cookie, mailer, seedDB)
+  production.config.js           ← production overrides
+  test.config.js                 ← test overrides
 
 modules/<name>/config/
-  config.development.js          ← module defaults (e.g. uploads, auth, tasks)
-  config.<env>.js                ← module env overrides (optional)
+  <name>.development.config.js   ← module defaults (e.g. auth.development.config.js)
+  <name>.init.js                 ← module init (e.g. auth.init.js — passport setup)
 ```
 
 ### Merge order (priority ascending)
 
 | Layer | Source | Example |
 |-------|--------|---------|
-| 1 | Module development defaults | `modules/*/config/config.development.js` |
-| 2 | Global development defaults | `config/defaults/config.development.js` |
-| 3 | Module env overrides | `modules/*/config/config.<env>.js` |
-| 4 | Global env overrides | `config/defaults/config.<env>.js` |
-| 5 | `DEVKIT_NODE_*` env vars | `DEVKIT_NODE_app_title='my app'` |
+| 1 | Module defaults | `modules/*/config/*.development.config.js` |
+| 2 | Global development defaults | `config/defaults/development.config.js` |
+| 3 | Global env overrides | `config/defaults/<env>.config.js` |
+| 4 | `DEVKIT_NODE_*` env vars | `DEVKIT_NODE_app_title='my app'` |
 
-Layers 3–4 are only applied when `NODE_ENV` is not `development`.
+Layer 3 is only applied when `NODE_ENV` is not `development`.
 
 ### Merge semantics
 
@@ -162,13 +164,29 @@ When running a downstream project that clones this stack, set `NODE_ENV` to the 
 
 ```text
 config/defaults/
-  config.myproject.js            ← global project overrides (optional)
-
-modules/<name>/config/
-  config.myproject.js            ← module project overrides (optional)
+  myproject.config.js            ← global project overrides
 ```
 
-The loader discovers files named `config.${NODE_ENV}.js` — files without the `config.` prefix are ignored.
+The loader discovers files named `${NODE_ENV}.config.js` in `config/defaults/` — module config files are always loaded regardless of environment.
+
+## :building_construction: Organizations API
+
+| Method   | Endpoint                                                | Auth      | Description                 |
+| -------- | ------------------------------------------------------- | --------- | --------------------------- |
+| `GET`    | `/api/organizations`                                    | JWT       | List user's organizations   |
+| `POST`   | `/api/organizations`                                    | JWT       | Create organization         |
+| `GET`    | `/api/organizations/:organizationId`                    | JWT       | Get organization            |
+| `PUT`    | `/api/organizations/:organizationId`                    | JWT       | Update organization         |
+| `DELETE` | `/api/organizations/:organizationId`                    | JWT       | Delete organization         |
+| `GET`    | `/api/organizations/:organizationId/members`            | JWT       | List members                |
+| `POST`   | `/api/organizations/:organizationId/members/invite`     | JWT       | Invite member               |
+| `PUT`    | `/api/organizations/:organizationId/members/:memberId`  | JWT       | Update member role          |
+| `DELETE` | `/api/organizations/:organizationId/members/:memberId`  | JWT       | Remove member               |
+| `GET`    | `/api/admin/organizations`                              | JWT+Admin | List all organizations      |
+| `GET`    | `/api/admin/organizations/:organizationId`              | JWT+Admin | Get any organization        |
+| `DELETE` | `/api/admin/organizations/:organizationId`              | JWT+Admin | Delete any organization     |
+
+> See [MIGRATIONS.md](MIGRATIONS.md) for the full migration guide from route-level CASL to document-level CASL v2.
 
 ## :whale: Docker
 

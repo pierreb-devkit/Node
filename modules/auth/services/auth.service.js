@@ -8,7 +8,7 @@ import zxcvbn from 'zxcvbn';
 
 import config from '../../../config/index.js';
 import AppError from '../../../lib/helpers/AppError.js';
-import UserRepository from '../../users/repositories/user.repository.js';
+import UserService from '../../users/services/users.service.js';
 
 const saltRounds = 10;
 
@@ -20,7 +20,8 @@ const saltRounds = 10;
 const removeSensitive = (user, conf) => {
   if (!user || typeof user !== 'object') return null;
   const keys = conf || config.whitelists.users.default;
-  return _.pick(user, keys);
+  const plain = typeof user.toJSON === 'function' ? user.toJSON() : user;
+  return _.pick(plain, keys);
 };
 
 /**
@@ -32,15 +33,79 @@ const removeSensitive = (user, conf) => {
 const comparePassword = async (userPassword, storedPassword) => bcrypt.compare(String(userPassword), String(storedPassword));
 
 /**
- * @desc Function to authenticate user)
+ * @desc Check whether the user account is currently locked and throw if so
+ * @param {Object} user - Mongoose user document
+ * @returns {Promise<Object>} user with lock state reset when an expired lock is detected
+ */
+const checkLockout = async (user) => {
+  if (user.lockUntil && user.lockUntil > new Date()) {
+    const remainingMs = user.lockUntil.getTime() - Date.now();
+    const remainingMin = Math.ceil(remainingMs / 60000);
+    throw new AppError('Account is locked. Try again later.', {
+      code: 'ACCOUNT_LOCKED',
+      status: 423,
+      details: { message: `Account is locked. Try again in ${remainingMin} minute(s).`, remainingMs },
+    });
+  }
+  // If lock has expired, atomically reset attempts so the user can try again
+  if (user.lockUntil && user.lockUntil <= new Date()) {
+    await UserService.updateById(user._id, { failedLoginAttempts: 0, lockUntil: null });
+    user.failedLoginAttempts = 0;
+    user.lockUntil = null;
+  }
+  return user;
+};
+
+/**
+ * @desc Record a failed login attempt and lock the account when the threshold is reached.
+ * Uses atomic $inc to prevent parallel sign-in attempts from overwriting each other.
+ * @param {Object} user - Mongoose user document
+ * @returns {Promise<void>} resolves after persisting the updated attempt counter
+ */
+const recordFailedAttempt = async (user) => {
+  const maxAttempts = config.auth?.lockout?.maxAttempts ?? 5;
+  const lockMinutes = config.auth?.lockout?.lockDuration ?? 30;
+  await UserService.updateById(user._id, { $inc: { failedLoginAttempts: 1 } });
+  // Re-read the authoritative attempt count from DB after atomic $inc (getBrut to include lockout fields)
+  const updated = await UserService.getBrut({ id: user._id });
+  if (updated && updated.failedLoginAttempts >= maxAttempts) {
+    await UserService.updateById(user._id, { $set: { lockUntil: new Date(Date.now() + lockMinutes * 60 * 1000) } });
+  }
+};
+
+/**
+ * @desc Record a successful login by atomically resetting failed attempts and stamping lastLoginAt
+ * @param {Object} user - Mongoose user document
+ * @returns {Promise<void>} resolves after persisting the login timestamp
+ */
+const recordSuccessfulLogin = async (user) => {
+  await UserService.updateById(user._id, {
+    failedLoginAttempts: 0,
+    lockUntil: null,
+    lastLoginAt: new Date(),
+  });
+};
+
+/**
+ * @desc Function to authenticate user
  * @param {String} email
  * @param {String} password
- * @return {Object} user
+ * @returns {Promise<Object>} sanitized user object on success
  */
 const authenticate = async (email, password) => {
-  const user = await UserRepository.get({ email });
+  const user = await UserService.getBrut({ email });
   if (!user) throw new AppError('invalid user or password.', { code: 'SERVICE_ERROR' });
-  if (await comparePassword(password, user.password)) return removeSensitive(user);
+
+  // Check lockout before attempting password comparison
+  await checkLockout(user);
+
+  if (await comparePassword(password, user.password)) {
+    await recordSuccessfulLogin(user);
+    return removeSensitive(user);
+  }
+
+  // Wrong password — record the failure
+  await recordFailedAttempt(user);
   throw new AppError('invalid user or password.', { code: 'SERVICE_ERROR' });
 };
 
@@ -52,9 +117,9 @@ const authenticate = async (email, password) => {
 const hashPassword = (password) => bcrypt.hash(String(password), saltRounds);
 
 /**
- * @desc Function to hash passwords
+ * @desc Function to check password strength using zxcvbn
  * @param {String} password
- * @return {String} password hashed
+ * @return {String} password if it passes
  */
 const checkPassword = (password) => {
   const result = zxcvbn(password);
@@ -104,4 +169,7 @@ export default {
   hashPassword,
   checkPassword,
   generateRandomPassphrase,
+  checkLockout,
+  recordFailedAttempt,
+  recordSuccessfulLogin,
 };

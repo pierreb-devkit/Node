@@ -3,7 +3,7 @@
  */
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
-import mails from '../../../lib/helpers/mails.js';
+import mails from '../../../lib/helpers/mailer/index.js';
 import config from '../../../config/index.js';
 import UserService from '../services/users.service.js';
 import TaskDataService from '../../tasks/services/tasks.data.service.js';
@@ -72,7 +72,7 @@ const getMail = async (req, res) => {
       },
     });
 
-    if (!mail.accepted) return responses.error(res, 400, 'Bad Request', 'Failure sending email')();
+    if (!mail || !mail.accepted) return responses.error(res, 400, 'Bad Request', 'Failure sending email')();
     responses.success(res, 'An email has been sent to the user email with data')({ status: true });
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);

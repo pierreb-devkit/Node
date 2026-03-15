@@ -38,9 +38,7 @@ npm run commit
 
 ## 3. Verify before PR
 
-Run `/verify` and fix all failures before opening the PR.
-
-> **Coverage thresholds are immutable.** When you run `npm run test:coverage` locally, or when CI/Codecov runs coverage checks, if coverage fails due to threshold violations, add or improve tests — never lower the thresholds (e.g., `coverageThreshold` in `jest.config.js`).
+Run `/verify` and fix all failures before opening the PR. **Never lower coverage thresholds** — add tests instead.
 
 ## 4. Issue
 
@@ -140,191 +138,110 @@ REPEAT:
 
 ### 6a. Wait for CI
 
-After any push (including force-push after rebase), wait before watching to let CI register the new run:
+After any push, wait 30s then watch:
 
 ```bash
 sleep 30
 gh pr checks "$PR" --watch
 ```
 
-If `--watch` returns `no checks reported`, the run hasn't started yet — retry:
+If `no checks reported`, retry up to 5 times (30s apart). If still no checks after 5 retries, report to user and stop.
 
-```bash
-# Retry until checks appear (max 5 attempts, 30s apart)
-CHECKS_FOUND=0
-for i in 1 2 3 4 5; do
-  if output=$(gh pr checks "$PR" 2>&1); then
-    if echo "$output" | grep -q "no checks reported"; then
-      sleep 30  # checks not started yet
-    else
-      echo "$output" && CHECKS_FOUND=1 && break  # checks detected
-    fi
-  else
-    echo "$output" >&2 && sleep 30  # gh command failed, retry
-  fi
-done
-```
-
-**If all 5 retries fail and no checks appear** (`CHECKS_FOUND=0`), CI may be disabled or misconfigured — report to the user and stop. Do not proceed to `--watch`.
-
-```bash
-[ "$CHECKS_FOUND" -eq 1 ] && gh pr checks "$PR" --watch
-```
-
-**If any check fails** → treat as actionable. Fix the issue, run `/verify`, commit, push, and restart from the top of the loop. Do not read review feedback until all CI checks pass.
+**If any check fails** → fix, `/verify`, commit, push, restart loop. Do not read review feedback until CI passes.
 
 ### 6b. Read all feedback — unresolved threads only
 
-After CI passes, apply the grace period:
+Grace period: `sleep 180`. If 0 bot comments after 3 min, wait 2 more min.
+
+Read **only unresolved threads** (resolved = ignored). Use `references/monitoring.md` as source of truth.
 
 ```bash
-sleep 180
+# Optional context only (do not drive action from these):
+# gh pr view $PR --json reviews,comments
+# gh api repos/$OWNER/$REPO/pulls/$PR/comments --paginate | jq 'map({id, user: .user.login, body})'
+# gh api repos/$OWNER/$REPO/issues/$PR/comments --paginate | jq 'map({id, user: .user.login, body})'
+# Action source of truth: unresolved threads query in references/monitoring.md
 ```
-
-If after 3 min the total bot comment count is 0, wait an extra 2 min and re-check (slow bots on large PRs):
-
-```bash
-TOTAL=$(gh api repos/$OWNER/$REPO/issues/$PR/comments --paginate | jq -s 'add | length')
-[ "$TOTAL" -eq 0 ] && sleep 120
-```
-
-Then read **only unresolved threads** — already-resolved threads from previous passes must be ignored:
-
-```bash
-# Reviews and PR-level comments
-gh pr view $PR --json reviews,comments
-
-# Inline review comments — all, then filter unresolved via GraphQL (see references/monitoring.md)
-gh api repos/$OWNER/$REPO/pulls/$PR/comments --paginate | jq 'map({id, user: .user.login, body})'
-
-# Bot / issue comments
-gh api repos/$OWNER/$REPO/issues/$PR/comments --paginate | jq 'map({id, user: .user.login, body})'
-
-# Unresolved threads only (source of truth for what still needs fixing)
-# → see references/monitoring.md "List unresolved threads"
-```
-
-**New actionable** = unresolved review threads not yet replied to in this pass.
 
 **Actionable** (must fix): change requests, bug reports, missing tests, security issues, code suggestions.
 
-**Informational** (no code change needed, but must still be addressed):
-- Examples: "LGTM", approvals, "coverage up from X% to Y%", "no issues found", style preferences without a change request, false positives (e.g. bot references a file that doesn't exist)
-- If the comment is an unresolved **review thread**: reply briefly explaining why no action is needed, then resolve via GraphQL (see `references/monitoring.md`)
-- If the comment is a **PR-level or issue comment** (e.g. codecov report, approval message): reply if useful, but these cannot be resolved via GitHub's thread API — they do not count as unresolved threads
+**Informational** (reply + resolve, no code change): approvals, coverage reports, style preferences without change request, false positives. PR-level comments (codecov, approvals) cannot be resolved via thread API — don't count as unresolved.
 
 ### 6b-bis. Classify stack-level vs downstream comments (downstream projects only)
 
-When running on a **downstream project** (not the stack repo itself), classify each actionable comment before fixing.
+Skip when running directly on the stack repo. Requires `devkit-node` remote (set up by `/update-stack`) — if missing, stop and report.
 
-> The `devkit-node` remote is set up by `/update-stack`. If it does not exist, **stop and report** that stack/downstream classification cannot be performed — instruct the user to run `/update-stack` first. Do not silently treat all comments as downstream.
+For each actionable comment, check if the file exists unmodified in upstream:
 
-1. **Check if the comment targets a stack-level file** — a file that exists in the upstream stack repo and has not been modified downstream:
-   ```bash
-   # Derive the stack repo slug from the devkit-node remote
-   STACK_REPO=$(git remote get-url devkit-node 2>/dev/null | sed 's|.*github.com[:/]||;s|\.git$||')
+```bash
+STACK_REPO=$(git remote get-url devkit-node 2>/dev/null | sed 's|.*github.com[:/]||;s|\.git$||')
+STACK_DEFAULT_BRANCH=$(git remote show devkit-node 2>/dev/null | sed -n '/HEAD branch/s/.*: //p')
+git fetch devkit-node "$STACK_DEFAULT_BRANCH" --quiet 2>/dev/null
+# STACK if exists in upstream AND no local diff; else DOWNSTREAM
+git cat-file -e "devkit-node/$STACK_DEFAULT_BRANCH:<file-path>" 2>/dev/null && \
+  git diff --quiet "devkit-node/$STACK_DEFAULT_BRANCH" -- <file-path> 2>/dev/null
+```
 
-   # Fetch to ensure ref is up-to-date (skip silently if remote missing)
-   git fetch devkit-node master --quiet 2>/dev/null
-
-   # Check: file exists in upstream AND has no downstream diff
-   if git cat-file -e devkit-node/master:<file-path> 2>/dev/null \
-      && git diff --quiet devkit-node/master -- <file-path> 2>/dev/null; then
-     echo "STACK"  # file is unmodified from upstream
-   else
-     echo "DOWNSTREAM"  # file is downstream-only or has local changes
-   fi
-   ```
-
-2. **Stack-level comment** → do NOT fix locally. Instead:
-   - Create an issue on the stack repo (use a heredoc to avoid shell escaping issues):
-     ```bash
-     ISSUE_URL=$(gh issue create --repo "$STACK_REPO" \
-       --title "fix(<scope>): <summary from review comment>" \
-       --body "$(cat <<'BODY'
-     Reported by review bot on <downstream-owner>/<downstream-repo>#<PR>.
-
-     ## Review comment
-     <full comment body>
-
-     ## File
-     `<file-path>`
-     BODY
-     )" \
-       --label "Fix")
-     ```
-   - If `gh issue create` fails (e.g. no access to the stack repo), treat the comment as downstream and fix it locally instead.
-   - On success, reply to the review thread with the created issue link:
-     ```text
-     This comment targets stack-level code from the upstream Devkit Node repo. Created $ISSUE_URL to track the fix upstream.
-     ```
-   - Resolve the thread
-
-3. **Downstream-only comment** (or file modified downstream) → fix locally as usual (section 6c)
-
-> Skip this classification when running directly on the stack repo — all comments are actionable there.
+- **Stack-level** → create issue on stack repo with review comment details, reply with issue link, resolve thread. If `gh issue create` fails, fix locally instead.
+- **Downstream** → fix locally (section 6c).
 
 ### 6c. Fix all actionable comments from this pass
 
-Fix all actionable comments (downstream-only, or all if on the stack repo) in one batch:
-
-1. Run `/verify` — never commit fixes without verifying first
-2. Commit all fixes in one commit using a conventional message:
-   ```bash
-   git commit -m "fix(scope): address review feedback from pass N"
-   ```
-3. Push first — the commit must be visible to reviewers before replying:
-   ```bash
-   git push -u origin HEAD
-   ```
-4. For each fixed comment: reply citing the commit SHA (now visible to reviewers)
-5. For each fixed comment: resolve the thread via GraphQL (see `references/monitoring.md`)
-
-One commit per pass keeps the history clean while keeping each fix traceable to a SHA.
-
-See `references/monitoring.md` for the exact gh API / GraphQL commands.
+Fix all actionable comments in one batch: `/verify` → commit → push → reply with SHA → resolve threads via GraphQL (see `references/monitoring.md`). One commit per pass.
 
 ### 6d. Coverage gaps
 
-When codecov or codeclimate reports missing coverage: add the missing tests, run `/verify`, include in the same commit batch. **Never lower coverage thresholds** — always add tests to meet existing thresholds.
+Add missing tests — **never lower thresholds**. Include in the same commit batch.
 
 ### 6e. After pushing fixes
 
-After a regular push, wait 30s before watching CI (new run takes time to register).
-After a force-push (post-rebase), wait 30s before watching — the old run is being cancelled and replaced.
-
-Loop back to step 6a. Do not attempt to trigger reviewers — reviews arrive on their own if the repo has auto-review configured.
-
-> **Never post `@copilot review` as a PR comment.** That invokes the Copilot coding agent (which can open PRs and issues), not the code reviewer.
+Wait 30s before watching CI (regular or force-push). Loop back to 6a. Never post `@copilot review` — it invokes the coding agent, not the reviewer.
 
 ### 6f. Stop condition
 
-All CI checks pass **and** 2 consecutive polling passes (each after a full grace period) both produce **zero unresolved threads** — this double-pass ensures slow review bots have had time to post before the loop exits.
-
-Before declaring done, check branch protection:
+CI green **and** 2 consecutive passes with zero unresolved threads. Then check branch protection:
 
 ```bash
-gh pr view "$PR" --json reviewDecision,mergeable \
-  | jq '{reviewDecision, mergeable}'
+gh pr view "$PR" --json reviewDecision,mergeable | jq '{reviewDecision, mergeable}'
 ```
 
-- `reviewDecision: "APPROVED"` and `mergeable: "MERGEABLE"` → **STOP ✓**
-- `reviewDecision: "REVIEW_REQUIRED"` → human review is required by branch protection rules — report this to the user and stop the loop
-- `mergeable: "BLOCKED"` → something else is blocking merge (status check, conversation resolution) — report details to the user
+- `APPROVED` + `MERGEABLE` → **STOP ✓**
+- `REVIEW_REQUIRED` → report to user, stop
+- `BLOCKED` → report details to user
 
-**Safety limit:** stop after **10 iterations** of the main loop (the preliminary pass after `gh pr ready` is not counted) even if comments remain — report the situation to the user to avoid infinite loops from unsatisfiable reviewers.
+**Safety limit:** 10 iterations max — report to user if still unresolved.
 
-## 7. Conflict resolution
+## 7. Perfect mode (`--perfect`)
 
-If the branch has conflicts with the default branch (GitHub shows "This branch has conflicts" or `git status` shows conflicts):
+When invoked with `--perfect`, run an outer convergence loop after the standard monitor loop (section 6) completes:
+
+```text
+REPEAT:
+  1. Wait for CodeRabbit          → CodeRabbit auto-triggers on every push. Poll for up to 5 min.
+                                    ONLY if no review appears after 5 min, post:
+                                    `@coderabbitai full review` as PR comment, then wait (see monitoring.md)
+  2. Run monitor loop (section 6) → fix all comments, resolve all threads, CI green
+  3. Run diff audit               → audit `git diff master...HEAD` for security, logic bugs,
+                                    data integrity, API design, performance issues
+  4. If audit has findings        → fix all, commit, push, GOTO 1
+  5. If 0 CodeRabbit comments AND 0 audit findings → run cleanup (step 6), then STOP ✓
+  6. Cleanup outdated threads     → list all threads with isOutdated==true that have NO reply
+                                    explaining the fix. For each, reply with the SHA and a brief
+                                    explanation of how/why it was addressed, then resolve if not
+                                    already resolved.
+```
+
+**Safety limit:** 5 outer iterations max — report to user if still not converged.
+
+**Important:** In section 6c, you MUST reply to every thread before resolving it. Never resolve a thread silently — the reply serves as audit trail.
+
+## 8. Conflict resolution
 
 ```bash
-git fetch origin
-git rebase origin/HEAD
-# Resolve conflicts in each file, then:
-git add <resolved-files>
-git rebase --continue
+BASE_BRANCH=$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')
+git fetch origin "$BASE_BRANCH" && git rebase "origin/$BASE_BRANCH"
+# Resolve conflicts, then: git add <files> && git rebase --continue
 git push --force-with-lease origin HEAD
 ```
 
-After force-push, restart the monitor loop from step 6a — wait 30s before watching CI.
+After force-push, restart from 6a.

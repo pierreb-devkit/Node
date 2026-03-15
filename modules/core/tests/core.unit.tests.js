@@ -65,7 +65,7 @@ describe('Core unit tests:', () => {
 
     it('config should load production configuration in production env', async () => {
       try {
-        const defaultConfig = (await import(path.join(process.cwd(), './config', 'defaults', 'config.production.js'))) || {};
+        const defaultConfig = (await import(path.join(process.cwd(), './config', 'defaults', 'production.config.js'))) || {};
         expect(defaultConfig.default.app.title.split(' - ')[1]).toBe('Production Environment');
       } catch (err) {
         console.log(err);
@@ -560,47 +560,39 @@ describe('Core unit tests:', () => {
 
   describe('Policy', () => {
     beforeAll(async () => {
-      const [homePolicy, tasksPolicy, uploadsPolicy, usersAccountPolicy, usersAdminPolicy] = await Promise.all([
-        import('../../../modules/home/policies/home.policy.js'),
-        import('../../../modules/tasks/policies/tasks.policy.js'),
-        import('../../../modules/uploads/policies/uploads.policy.js'),
-        import('../../../modules/users/policies/users.account.policy.js'),
-        import('../../../modules/users/policies/users.admin.policy.js'),
-      ]);
-      homePolicy.default.invokeRolesPolicies();
-      tasksPolicy.default.invokeRolesPolicies();
-      uploadsPolicy.default.invokeRolesPolicies();
-      usersAccountPolicy.default.invokeRolesPolicies();
-      usersAdminPolicy.default.invokeRolesPolicies();
+      // Auto-discover and register all policy files using the new abilities pattern
+      const policyPaths = await configHelper.getGlobbedPaths(assets.policies);
+      await policy.discoverPolicies(policyPaths);
     });
 
-    it('guest can read public task routes', async () => {
+    it('guest cannot read tasks (org-scoped, JWT required)', async () => {
       const ability = await policy.defineAbilityFor(null);
-      expect(ability.can('read', '/api/tasks')).toBe(true);
+      expect(ability.can('read', 'Task')).toBe(false);
     });
 
     it('guest cannot create tasks', async () => {
       const ability = await policy.defineAbilityFor(null);
-      expect(ability.can('create', '/api/tasks')).toBe(false);
+      expect(ability.can('create', 'Task')).toBe(false);
     });
 
-    it('user can manage tasks', async () => {
-      const ability = await policy.defineAbilityFor({ roles: ['user'] });
-      expect(ability.can('create', '/api/tasks')).toBe(true);
+    it('user can create tasks', async () => {
+      const membership = { organizationId: 'org1' };
+      const ability = await policy.defineAbilityFor({ _id: 'user1', roles: ['user'] }, membership);
+      expect(ability.can('create', 'Task')).toBe(true);
     });
 
-    it('user cannot access admin routes', async () => {
-      const ability = await policy.defineAbilityFor({ roles: ['user'] });
-      expect(ability.can('read', '/api/users')).toBe(false);
+    it('user cannot access admin user routes', async () => {
+      const ability = await policy.defineAbilityFor({ _id: 'user1', roles: ['user'] });
+      expect(ability.can('read', 'UserAdmin')).toBe(false);
     });
 
-    it('admin can access admin routes', async () => {
-      const ability = await policy.defineAbilityFor({ roles: ['admin'] });
-      expect(ability.can('read', '/api/users')).toBe(true);
+    it('admin can access admin user routes', async () => {
+      const ability = await policy.defineAbilityFor({ _id: 'admin1', roles: ['admin'] });
+      expect(ability.can('read', 'UserAdmin')).toBe(true);
     });
 
     it('isAllowed should call next() for HEAD on an allowed route', async () => {
-      const mockReq = { method: 'HEAD', route: { path: '/api/tasks' }, user: { roles: ['user'] } };
+      const mockReq = { method: 'HEAD', route: { path: '/api/users/me' }, user: { _id: 'user1', roles: ['user'] } };
       const mockRes = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       const mockNext = jest.fn();
       await policy.isAllowed(mockReq, mockRes, mockNext);
@@ -608,7 +600,7 @@ describe('Core unit tests:', () => {
     });
 
     it('isAllowed should call next() for OPTIONS on an allowed route', async () => {
-      const mockReq = { method: 'OPTIONS', route: { path: '/api/tasks' }, user: { roles: ['user'] } };
+      const mockReq = { method: 'OPTIONS', route: { path: '/api/users/me' }, user: { _id: 'user1', roles: ['user'] } };
       const mockRes = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       const mockNext = jest.fn();
       await policy.isAllowed(mockReq, mockRes, mockNext);
@@ -616,7 +608,7 @@ describe('Core unit tests:', () => {
     });
 
     it('isAllowed should deny unknown HTTP methods with 405', async () => {
-      const mockReq = { method: 'PROPFIND', route: { path: '/api/tasks' }, user: { roles: ['admin'] } };
+      const mockReq = { method: 'PROPFIND', route: { path: '/api/tasks' }, user: { _id: 'admin1', roles: ['admin'] } };
       const mockRes = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       const mockNext = jest.fn();
       await policy.isAllowed(mockReq, mockRes, mockNext);

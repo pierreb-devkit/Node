@@ -211,7 +211,7 @@ describe('Auth integration tests:', () => {
             password: 'W@os.jsI$Aw3$0m3',
           })
           .expect(401);
-        expect(result.error.text).toBe('Unauthorized');
+        expect(result.body.message).toBe('Unauthorized');
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -249,7 +249,7 @@ describe('Auth integration tests:', () => {
             password: 'WrongPassword!123',
           })
           .expect(401);
-        expect(result.error.text).toBe('Unauthorized');
+        expect(result.body.message).toBe('Unauthorized');
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -355,7 +355,7 @@ describe('Auth integration tests:', () => {
       }
 
       try {
-        const result = await UserService.get({
+        const result = await UserService.getBrut({
           email: user.email,
         });
         expect(typeof result).toBe('object');
@@ -384,7 +384,7 @@ describe('Auth integration tests:', () => {
       }
 
       try {
-        const result = await UserService.get({
+        const result = await UserService.getBrut({
           email: user.email,
         });
         expect(typeof result).toBe('object');
@@ -421,7 +421,7 @@ describe('Auth integration tests:', () => {
       }
 
       try {
-        const result = await UserService.get({
+        const result = await UserService.getBrut({
           email: user.email,
         });
         expect(typeof result).toBe('object');
@@ -807,10 +807,14 @@ describe('Auth integration tests:', () => {
   describe('Config endpoint', () => {
     test('should return sign flags reflecting current config', async () => {
       const result = await agent.get('/api/auth/config').expect(200);
-      expect(result.body.data).toEqual({
+      expect(result.body.data).toMatchObject({
         sign: {
           in: expect.any(Boolean),
           up: expect.any(Boolean),
+        },
+        organizations: {
+          enabled: expect.any(Boolean),
+          domainMatching: expect.any(Boolean),
         },
       });
     });
@@ -829,6 +833,279 @@ describe('Auth integration tests:', () => {
       const result = await agent.get('/api/auth/config').expect(200);
       expect(result.body.data.sign.in).toBe(false);
       config.sign.in = original;
+    });
+
+    test('should return organizations config with enabled and domainMatching', async () => {
+      const original = config.organizations.enabled;
+      config.organizations.enabled = true;
+      const result = await agent.get('/api/auth/config').expect(200);
+      expect(result.body.data.organizations).toBeDefined();
+      expect(result.body.data.organizations.enabled).toBe(true);
+      expect(typeof result.body.data.organizations.domainMatching).toBe('boolean');
+      config.organizations.enabled = original;
+    });
+
+    test('should expose autoCreate in organizations config', async () => {
+      const result = await agent.get('/api/auth/config').expect(200);
+      expect(result.body.data.organizations.autoCreate).toBeDefined();
+    });
+
+    test('should reflect organizations.enabled=false when disabled', async () => {
+      const original = config.organizations.enabled;
+      config.organizations.enabled = false;
+      const result = await agent.get('/api/auth/config').expect(200);
+      expect(result.body.data.organizations.enabled).toBe(false);
+      config.organizations.enabled = original;
+    });
+
+    test('should reflect organizations.enabled=true when enabled', async () => {
+      const original = config.organizations.enabled;
+      config.organizations.enabled = true;
+      const result = await agent.get('/api/auth/config').expect(200);
+      expect(result.body.data.organizations.enabled).toBe(true);
+      config.organizations.enabled = original;
+    });
+  });
+
+  describe('Email verification', () => {
+    const verifyEmail = 'verify@test.com';
+    const verifyPassword = 'W@os.jsI$Aw3$0m3';
+    let verifyUser;
+
+    beforeEach(async () => {
+      try {
+        const result = await agent.post('/api/auth/signup').send({
+          firstName: 'Verify',
+          lastName: 'Test',
+          email: verifyEmail,
+          password: verifyPassword,
+          provider: 'local',
+        }).expect(200);
+        verifyUser = result.body.user;
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should auto-verify email when mailer is not configured', async () => {
+      // In test env, mailer.from starts with DEVKIT_NODE_ so it is treated as unconfigured
+      try {
+        const dbUser = await UserService.getBrut({ email: verifyEmail });
+        expect(dbUser.emailVerified).toBe(true);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should return emailVerified true in signup response when auto-verified', async () => {
+      expect(verifyUser.emailVerified).toBe(true);
+    });
+
+    test('should return 400 for invalid verification token', async () => {
+      try {
+        const result = await agent.post('/api/auth/verify-email/invalid-token-xyz').expect(400);
+        expect(result.body.type).toBe('error');
+        expect(result.body.message).toBe('Bad Request');
+        expect(result.body.description).toBe('Email verification token is invalid or has expired.');
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should verify email with a valid token', async () => {
+      // Manually set a verification token to simulate mailer-configured flow
+      try {
+        const dbUser = await UserService.getBrut({ email: verifyEmail });
+        dbUser.emailVerified = false;
+        dbUser.emailVerificationToken = 'valid-test-token-123';
+        dbUser.emailVerificationExpires = new Date(Date.now() + 24 * 3600000);
+        await dbUser.save();
+
+        const result = await agent.post('/api/auth/verify-email/valid-test-token-123').expect(200);
+        expect(result.body.type).toBe('success');
+        expect(result.body.message).toBe('Email verified successfully');
+        expect(result.body.data.emailVerified).toBe(true);
+
+        const updatedUser = await UserService.getBrut({ email: verifyEmail });
+        expect(updatedUser.emailVerified).toBe(true);
+        expect(updatedUser.emailVerificationToken).toBeNull();
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should return 400 for expired verification token', async () => {
+      try {
+        const dbUser = await UserService.getBrut({ email: verifyEmail });
+        dbUser.emailVerified = false;
+        dbUser.emailVerificationToken = 'expired-test-token-456';
+        dbUser.emailVerificationExpires = new Date(Date.now() - 1000); // expired
+        await dbUser.save();
+
+        const result = await agent.post('/api/auth/verify-email/expired-test-token-456').expect(400);
+        expect(result.body.type).toBe('error');
+        expect(result.body.description).toBe('Email verification token is invalid or has expired.');
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should return 400 when resending verification for already verified email', async () => {
+      try {
+        // Sign in to get auth cookie
+        await agent.post('/api/auth/signin').send({ email: verifyEmail, password: verifyPassword }).expect(200);
+        const result = await agent.post('/api/auth/resend-verification').expect(400);
+        expect(result.body.type).toBe('error');
+        expect(result.body.description).toBe('Email is already verified');
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should return 400 when resending verification but mailer is not configured', async () => {
+      try {
+        const dbUser = await UserService.getBrut({ email: verifyEmail });
+        dbUser.emailVerified = false;
+        await dbUser.save();
+
+        await agent.post('/api/auth/signin').send({ email: verifyEmail, password: verifyPassword }).expect(200);
+        const result = await agent.post('/api/auth/resend-verification').expect(400);
+        expect(result.body.type).toBe('error');
+        expect(result.body.description).toBe('Mail service is not configured');
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    afterEach(async () => {
+      try {
+        if (verifyUser) await UserService.remove(verifyUser);
+      } catch (_) { /* cleanup */ }
+      verifyUser = null;
+    });
+  });
+
+  describe('Account lockout', () => {
+    const lockEmail = 'lockout@test.com';
+    const lockPassword = 'W@os.jsI$Aw3$0m3';
+    let lockUser;
+
+    beforeEach(async () => {
+      try {
+        const result = await agent.post('/api/auth/signup').send({
+          firstName: 'Lock',
+          lastName: 'Test',
+          email: lockEmail,
+          password: lockPassword,
+          provider: 'local',
+        }).expect(200);
+        lockUser = result.body.user;
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should update lastLoginAt on successful login', async () => {
+      try {
+        await agent.post('/api/auth/signin').send({ email: lockEmail, password: lockPassword }).expect(200);
+        const dbUser = await UserService.getBrut({ email: lockEmail });
+        expect(dbUser.lastLoginAt).toBeDefined();
+        expect(dbUser.lastLoginAt).toBeInstanceOf(Date);
+        expect(dbUser.failedLoginAttempts).toBe(0);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should increment failedLoginAttempts on wrong password', async () => {
+      try {
+        await agent.post('/api/auth/signin').send({ email: lockEmail, password: 'WrongP@ss123' }).expect(401);
+        const dbUser = await UserService.getBrut({ email: lockEmail });
+        expect(dbUser.failedLoginAttempts).toBe(1);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should lock account after max failed attempts and return 423', async () => {
+      const maxAttempts = config.auth?.lockout?.maxAttempts ?? 5;
+      try {
+        for (let i = 0; i < maxAttempts; i++) {
+          await agent.post('/api/auth/signin').send({ email: lockEmail, password: 'WrongP@ss123' });
+        }
+        const dbUser = await UserService.getBrut({ email: lockEmail });
+        expect(dbUser.failedLoginAttempts).toBe(maxAttempts);
+        expect(dbUser.lockUntil).toBeDefined();
+        expect(dbUser.lockUntil).toBeInstanceOf(Date);
+        expect(dbUser.lockUntil.getTime()).toBeGreaterThan(Date.now());
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      // Now a valid login should be rejected with 423
+      try {
+        const result = await agent.post('/api/auth/signin').send({ email: lockEmail, password: lockPassword }).expect(423);
+        expect(result.body.type).toBe('error');
+        expect(result.body.message).toBe('Account locked');
+        expect(result.body.description).toMatch(/locked/i);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should allow login after lock expires', async () => {
+      const maxAttempts = config.auth?.lockout?.maxAttempts ?? 5;
+      try {
+        for (let i = 0; i < maxAttempts; i++) {
+          await agent.post('/api/auth/signin').send({ email: lockEmail, password: 'WrongP@ss123' });
+        }
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      // Manually set lockUntil to a past date to simulate expiry
+      try {
+        const dbUser = await UserService.getBrut({ email: lockEmail });
+        dbUser.lockUntil = new Date(Date.now() - 1000);
+        await dbUser.save();
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      // Should now be able to login successfully
+      try {
+        const result = await agent.post('/api/auth/signin').send({ email: lockEmail, password: lockPassword }).expect(200);
+        expect(result.body.user.email).toBe(lockEmail);
+
+        const dbUser = await UserService.getBrut({ email: lockEmail });
+        expect(dbUser.failedLoginAttempts).toBe(0);
+        expect(dbUser.lockUntil).toBeNull();
+        expect(dbUser.lastLoginAt).toBeInstanceOf(Date);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    afterEach(async () => {
+      try {
+        if (lockUser) await UserService.remove(lockUser);
+      } catch (_) { /* cleanup */ }
+      lockUser = null;
     });
   });
 

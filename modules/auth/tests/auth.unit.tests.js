@@ -7,9 +7,10 @@ import { jest } from '@jest/globals';
  * Mocks — must be declared before dynamic imports of the module under test.
  * jest.unstable_mockModule is the correct API for ES module mocking.
  */
-const mockGet = jest.fn();
-jest.unstable_mockModule('../../users/repositories/user.repository.js', () => ({
-  default: { get: mockGet },
+const mockGetBrut = jest.fn();
+const mockUpdateById = jest.fn().mockResolvedValue({});
+jest.unstable_mockModule('../../users/services/users.service.js', () => ({
+  default: { getBrut: mockGetBrut, updateById: mockUpdateById },
 }));
 
 const mockBcryptCompare = jest.fn();
@@ -115,13 +116,13 @@ describe('Auth service unit tests:', () => {
   // ---------------------------------------------------------------------------
   describe('authenticate()', () => {
     test('should throw when user is not found', async () => {
-      mockGet.mockResolvedValueOnce(null);
+      mockGetBrut.mockResolvedValueOnce(null);
       await expect(AuthService.authenticate('a@b.com', 'pass')).rejects.toThrow('invalid user or password.');
     });
 
     test('should return sanitised user when credentials are valid', async () => {
-      const storedUser = { _id: '1', email: 'a@b.com', firstName: 'Joe', password: 'hashed', roles: ['user'], provider: 'local' };
-      mockGet.mockResolvedValueOnce(storedUser);
+      const storedUser = { _id: '1', email: 'a@b.com', firstName: 'Joe', password: 'hashed', roles: ['user'], provider: 'local', save: jest.fn() };
+      mockGetBrut.mockResolvedValueOnce(storedUser);
       mockBcryptCompare.mockResolvedValueOnce(true);
       const result = await AuthService.authenticate('a@b.com', 'plain');
       expect(result.email).toBe('a@b.com');
@@ -129,7 +130,9 @@ describe('Auth service unit tests:', () => {
     });
 
     test('should throw when password does not match', async () => {
-      mockGet.mockResolvedValueOnce({ email: 'a@b.com', password: 'hashed' });
+      mockGetBrut.mockResolvedValueOnce({ _id: '1', email: 'a@b.com', password: 'hashed', save: jest.fn() });
+      // recordFailedAttempt re-reads user via getBrut after atomic $inc
+      mockGetBrut.mockResolvedValueOnce({ _id: '1', email: 'a@b.com', failedLoginAttempts: 1 });
       mockBcryptCompare.mockResolvedValueOnce(false);
       await expect(AuthService.authenticate('a@b.com', 'wrong')).rejects.toThrow('invalid user or password.');
     });

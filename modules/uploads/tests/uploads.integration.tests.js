@@ -65,7 +65,7 @@ describe('Uploads integration tests:', () => {
 
       // add a upload
       try {
-        const result = await agent.post('/api/users/avatar').attach('img', './modules/users/tests/img/default.jpeg').expect(200);
+        const result = await agent.post('/api/users/avatar').attach('avatar', './modules/users/tests/img/default.jpeg').expect(200);
         upload1 = result.body.data.avatar;
       } catch (err) {
         console.log(err);
@@ -219,7 +219,7 @@ describe('Uploads integration tests:', () => {
 
     test('should invalidate access to the old uploaded file after updating it', async () => {
       try {
-        const result = await agent.post('/api/users/avatar').attach('img', './modules/users/tests/img/default.jpeg').expect(200);
+        const result = await agent.post('/api/users/avatar').attach('avatar', './modules/users/tests/img/default.jpeg').expect(200);
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('profile avatar updated');
         expect(result.body.data).toBeInstanceOf(Object);
@@ -299,7 +299,7 @@ describe('Uploads integration tests:', () => {
       const result = await authAgent.post('/api/auth/signup').send({ firstName: 'Public', lastName: 'Test', ...creds, provider: 'local' }).expect(200);
       publicUser = result.body.user;
 
-      const uploadResult = await authAgent.post('/api/users/avatar').attach('img', './modules/users/tests/img/default.jpeg').expect(200);
+      const uploadResult = await authAgent.post('/api/users/avatar').attach('avatar', './modules/users/tests/img/default.jpeg').expect(200);
       publicUpload = uploadResult.body.data.avatar;
     });
 
@@ -351,7 +351,7 @@ describe('Uploads integration tests:', () => {
 
       // add a upload
       try {
-        const result = await agent.post('/api/users/avatar').attach('img', './modules/users/tests/img/default.jpeg').expect(200);
+        const result = await agent.post('/api/users/avatar').attach('avatar', './modules/users/tests/img/default.jpeg').expect(200);
         upload1 = result.body.data.avatar;
       } catch (err) {
         console.log(err);
@@ -398,7 +398,7 @@ describe('Uploads integration tests:', () => {
         _user2.email = 'upload2@test.com';
         const resultUser = await agent.post('/api/auth/signup').send(_user2).expect(200);
         const user = resultUser.body.user;
-        const uploadResult = await agent.post('/api/users/avatar').attach('img', './modules/users/tests/img/default.jpeg').expect(200);
+        const uploadResult = await agent.post('/api/users/avatar').attach('avatar', './modules/users/tests/img/default.jpeg').expect(200);
         const orphanAvatar = uploadResult.body.data.avatar;
         await UserService.remove(user);
         const result = await UploadRepository.purge('avatar', 'users', 'avatar');

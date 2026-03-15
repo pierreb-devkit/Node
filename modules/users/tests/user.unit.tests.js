@@ -1,7 +1,7 @@
 /**
  * Module dependencies.
  */
-import schema from '../models/user.schema.js';
+import schema from '../models/users.schema.js';
 
 /**
  * Unit tests

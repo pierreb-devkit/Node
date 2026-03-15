@@ -80,26 +80,22 @@ const loadModuleConfigs = async (pattern) => {
 const initGlobalConfig = async () => {
   const env = process.env.NODE_ENV || 'development';
 
-  // Layer 1: module development defaults (base layer)
-  let config = await loadModuleConfigs('modules/*/config/config.development.js');
+  // Layer 1: module defaults (base layer)
+  let config = await loadModuleConfigs('modules/*/config/*.development.config.js');
 
   // Layer 2: global development defaults
-  const globalDevPath = path.join(process.cwd(), 'config', 'defaults', 'config.development.js');
+  const globalDevPath = path.join(process.cwd(), 'config', 'defaults', 'development.config.js');
   if (fs.existsSync(globalDevPath)) {
     const globalDev = await loadConfigFile(globalDevPath);
     config = deepMerge(config, globalDev);
   }
 
-  // Layer 3 & 4: environment overrides (only if not development)
+  // Layer 3: environment overrides (only if not development)
   if (env !== 'development') {
-    // Layer 3: module env overrides
-    const moduleEnvPattern = `modules/*/config/config.${env}.js`;
-    const moduleEnvConfigs = await loadModuleConfigs(moduleEnvPattern);
-    const hasModuleEnvConfigs = (await configHelper.getGlobbedPaths(moduleEnvPattern)).length > 0;
-    config = deepMerge(config, moduleEnvConfigs);
+    // (Module env overrides removed — env overrides are central only)
 
-    // Layer 4: global env override
-    const globalEnvPath = path.join(process.cwd(), 'config', 'defaults', `config.${env}.js`);
+    // Layer 3: global env override
+    const globalEnvPath = path.join(process.cwd(), 'config', 'defaults', `${env}.config.js`);
     const hasGlobalEnvConfig = fs.existsSync(globalEnvPath);
     if (hasGlobalEnvConfig) {
       const globalEnv = await loadConfigFile(globalEnvPath);
@@ -107,14 +103,14 @@ const initGlobalConfig = async () => {
     }
 
     // Warn when a non-standard NODE_ENV has no matching config files
-    if (!STANDARD_ENVS.has(env) && !hasModuleEnvConfigs && !hasGlobalEnvConfig) {
+    if (!STANDARD_ENVS.has(env) && !hasGlobalEnvConfig) {
       console.warn(
-        chalk.yellow(`+ Warning: NODE_ENV="${env}" but no config.${env}.js files found — using development defaults. Downstream projects should create config.${env}.js files (see README).`),
+        chalk.yellow(`+ Warning: NODE_ENV="${env}" but no ${env}.config.js found in config/defaults/ — using development defaults. Downstream projects should create config files (see README).`),
       );
     }
   }
 
-  // Layer 5: DEVKIT_NODE_* env vars (final override)
+  // Layer 4: DEVKIT_NODE_* env vars (final override)
   let environmentVars = _.mapKeys(
     _.pickBy(process.env, (_value, key) => key.startsWith('DEVKIT_NODE_')),
     (_v, k) => k.split('_').slice(2).join('.'),

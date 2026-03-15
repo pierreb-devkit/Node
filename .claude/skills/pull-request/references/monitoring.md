@@ -110,5 +110,28 @@ gh pr view $PR --json reviewDecision,mergeable \
 gh pr view $PR --json statusCheckRollup,reviews,reviewRequests | jq .
 ```
 
+## Wait for CodeRabbit after re-trigger
+
+When you post `@coderabbitai full review`, CodeRabbit replies "Full review triggered" immediately — but the actual review has **not started yet**. The `CodeRabbit: pass` status check is **stale** from the previous review. You must wait for the new review summary comment before declaring clean:
+
+```bash
+# Poll until CodeRabbit posts its new review summary (contains "Actionable comments")
+FOUND=0
+for i in $(seq 1 20); do
+  LATEST=$(gh api repos/$OWNER/$REPO/issues/$PR/comments --paginate \
+    --jq '[.[] | select(.user.login=="coderabbitai")] | sort_by(.created_at) | last | (.body // "")[0:200]')
+  if echo "$LATEST" | grep -qiE "actionable|no issues found|walkthrough"; then
+    echo "CodeRabbit review posted"
+    FOUND=1
+    break
+  fi
+  sleep 30
+done
+
+[ "$FOUND" -eq 1 ] || { echo "Timed out waiting for new CodeRabbit summary" >&2; exit 1; }
+```
+
+Only after this should you check for unresolved threads and declare clean.
+
 > **Never post `@copilot review` as a PR comment** — this invokes the Copilot coding agent
 > (which can open PRs and issues), not the code reviewer.
