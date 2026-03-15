@@ -1,0 +1,125 @@
+/**
+ * Module dependencies.
+ */
+import schema from '../models/subscription.schema.js';
+
+/**
+ * Unit tests
+ */
+describe('Billing unit tests:', () => {
+  describe('Subscription schema', () => {
+    let subscription;
+
+    beforeEach(() => {
+      subscription = {
+        organization: '507f1f77bcf86cd799439011',
+        plan: 'free',
+        status: 'active',
+      };
+    });
+
+    test('should be valid a subscription example without problems', (done) => {
+      const result = schema.Subscription.safeParse(subscription);
+      expect(typeof result).toBe('object');
+      expect(result.error).toBeFalsy();
+      done();
+    });
+
+    test('should be able to show an error when trying a schema without organization', (done) => {
+      subscription.organization = '';
+
+      const result = schema.Subscription.safeParse(subscription);
+      expect(typeof result).toBe('object');
+      expect(result.error).toBeDefined();
+      done();
+    });
+
+    test('should be valid with all optional fields', (done) => {
+      subscription.stripeCustomerId = 'cus_123';
+      subscription.stripeSubscriptionId = 'sub_456';
+      subscription.currentPeriodEnd = '2026-12-31T00:00:00.000Z';
+      subscription.cancelAtPeriodEnd = true;
+
+      const result = schema.Subscription.safeParse(subscription);
+      expect(typeof result).toBe('object');
+      expect(result.error).toBeFalsy();
+      expect(result.data.cancelAtPeriodEnd).toBe(true);
+      done();
+    });
+
+    test('should default plan to free', (done) => {
+      delete subscription.plan;
+
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+      expect(result.data.plan).toBe('free');
+      done();
+    });
+
+    test('should default status to active', (done) => {
+      delete subscription.status;
+
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+      expect(result.data.status).toBe('active');
+      done();
+    });
+
+    test('should reject invalid plan value', (done) => {
+      subscription.plan = 'invalid';
+
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeDefined();
+      done();
+    });
+
+    test('should reject invalid status value', (done) => {
+      subscription.status = 'invalid';
+
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeDefined();
+      done();
+    });
+
+    test('should accept all valid plan values', (done) => {
+      for (const plan of ['free', 'starter', 'pro']) {
+        subscription.plan = plan;
+        const result = schema.Subscription.safeParse(subscription);
+        expect(result.error).toBeFalsy();
+      }
+      done();
+    });
+
+    test('should accept all valid status values', (done) => {
+      for (const status of ['active', 'past_due', 'canceled', 'trialing', 'incomplete']) {
+        subscription.status = status;
+        const result = schema.Subscription.safeParse(subscription);
+        expect(result.error).toBeFalsy();
+      }
+      done();
+    });
+
+    test('should default cancelAtPeriodEnd to false', (done) => {
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+      expect(result.data.cancelAtPeriodEnd).toBe(false);
+      done();
+    });
+
+    test('should strip unknown fields with SubscriptionUpdate', (done) => {
+      const update = { plan: 'pro', unknown: 'field' };
+      const result = schema.SubscriptionUpdate.safeParse(update);
+      expect(result.error).toBeFalsy();
+      expect(result.data?.unknown).toBeUndefined();
+      done();
+    });
+
+    test('should allow partial updates with SubscriptionUpdate', (done) => {
+      const update = { plan: 'starter' };
+      const result = schema.SubscriptionUpdate.safeParse(update);
+      expect(result.error).toBeFalsy();
+      expect(result.data.plan).toBe('starter');
+      done();
+    });
+  });
+});
