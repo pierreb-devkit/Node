@@ -46,23 +46,18 @@ const getStripe = () => {
  * @returns {Promise<Array>} sorted array of plan objects
  */
 const fetchPlansFromStripe = async (stripe) => {
-  const products = await stripe.products.list({
-    active: true,
-    limit: 100,
-  });
-
-  const prices = await stripe.prices.list({
-    active: true,
-    limit: 100,
-  });
+  const [products, prices] = await Promise.all([
+    stripe.products.list({ active: true }).autoPagingToArray({ limit: 1000 }),
+    stripe.prices.list({ active: true }).autoPagingToArray({ limit: 1000 }),
+  ]);
 
   const pricesByProduct = {};
-  for (const price of prices.data) {
+  for (const price of prices) {
     if (!pricesByProduct[price.product]) pricesByProduct[price.product] = [];
     pricesByProduct[price.product].push(price);
   }
 
-  const plans = products.data.map((product) => {
+  const plans = products.map((product) => {
     const productPrices = pricesByProduct[product.id] || [];
 
     let monthlyPrice = 0;
@@ -70,6 +65,7 @@ const fetchPlansFromStripe = async (stripe) => {
     let stripePriceMonthly = null;
     let stripePriceAnnual = null;
 
+    // Expects one active price per interval per product; last match wins if duplicates exist
     for (const price of productPrices) {
       const amount = typeof price.unit_amount === 'number' ? price.unit_amount : 0;
       if (price.recurring?.interval === 'month') {

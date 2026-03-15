@@ -16,7 +16,7 @@ const getPlans = async (req, res) => {
     const plans = await BillingPlansService.getPlans();
     responses.success(res, 'billing plans')(plans);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, 500, 'Internal Server Error', 'Failed to retrieve billing plans')(err);
   }
 };
 

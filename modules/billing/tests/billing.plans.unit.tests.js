@@ -4,6 +4,13 @@
 import { jest, beforeEach, afterEach } from '@jest/globals';
 
 /**
+ * Helper to create a mock Stripe list result with autoPagingToArray
+ */
+const mockListResult = (data) => ({
+  autoPagingToArray: jest.fn().mockResolvedValue(data),
+});
+
+/**
  * Unit tests for billing plans service
  */
 describe('Billing plans service unit tests:', () => {
@@ -11,39 +18,27 @@ describe('Billing plans service unit tests:', () => {
   let mockConfig;
   let mockStripeInstance;
 
-  const mockProducts = {
-    data: [
-      {
-        id: 'prod_pro',
-        name: 'Pro',
-        metadata: { planId: 'pro' },
-      },
-      {
-        id: 'prod_starter',
-        name: 'Starter',
-        metadata: { planId: 'starter' },
-      },
-    ],
-  };
+  const productsData = [
+    { id: 'prod_pro', name: 'Pro', metadata: { planId: 'pro' } },
+    { id: 'prod_starter', name: 'Starter', metadata: { planId: 'starter' } },
+  ];
 
-  const mockAllPrices = {
-    data: [
-      { product: 'prod_starter', recurring: { interval: 'month' }, unit_amount: 900, id: 'price_starter_m' },
-      { product: 'prod_starter', recurring: { interval: 'year' }, unit_amount: 9000, id: 'price_starter_y' },
-      { product: 'prod_pro', recurring: { interval: 'month' }, unit_amount: 2900, id: 'price_pro_m' },
-      { product: 'prod_pro', recurring: { interval: 'year' }, unit_amount: 29000, id: 'price_pro_y' },
-    ],
-  };
+  const pricesData = [
+    { product: 'prod_starter', recurring: { interval: 'month' }, unit_amount: 900, id: 'price_starter_m' },
+    { product: 'prod_starter', recurring: { interval: 'year' }, unit_amount: 9000, id: 'price_starter_y' },
+    { product: 'prod_pro', recurring: { interval: 'month' }, unit_amount: 2900, id: 'price_pro_m' },
+    { product: 'prod_pro', recurring: { interval: 'year' }, unit_amount: 29000, id: 'price_pro_y' },
+  ];
 
   beforeEach(async () => {
     jest.resetModules();
 
     mockStripeInstance = {
       products: {
-        list: jest.fn().mockResolvedValue(mockProducts),
+        list: jest.fn().mockReturnValue(mockListResult(productsData)),
       },
       prices: {
-        list: jest.fn().mockResolvedValue(mockAllPrices),
+        list: jest.fn().mockReturnValue(mockListResult(pricesData)),
       },
     };
 
@@ -122,10 +117,8 @@ describe('Billing plans service unit tests:', () => {
   });
 
   test('should fall back to product id when metadata planId is missing', async () => {
-    mockStripeInstance.products.list.mockResolvedValue({
-      data: [{ id: 'prod_basic', name: 'Basic', metadata: {} }],
-    });
-    mockStripeInstance.prices.list.mockResolvedValue({ data: [] });
+    mockStripeInstance.products.list.mockReturnValue(mockListResult([{ id: 'prod_basic', name: 'Basic', metadata: {} }]));
+    mockStripeInstance.prices.list.mockReturnValue(mockListResult([]));
 
     const mod = await import('../services/billing.plans.service.js');
     BillingPlansService = mod.default;
@@ -145,12 +138,12 @@ describe('Billing plans service unit tests:', () => {
   });
 
   test('should handle prices without recurring interval', async () => {
-    mockStripeInstance.products.list.mockResolvedValue({
-      data: [{ id: 'prod_one', name: 'OneTime', metadata: { planId: 'one' } }],
-    });
-    mockStripeInstance.prices.list.mockResolvedValue({
-      data: [{ product: 'prod_one', unit_amount: 500, id: 'price_one' }],
-    });
+    mockStripeInstance.products.list.mockReturnValue(
+      mockListResult([{ id: 'prod_one', name: 'OneTime', metadata: { planId: 'one' } }]),
+    );
+    mockStripeInstance.prices.list.mockReturnValue(
+      mockListResult([{ product: 'prod_one', unit_amount: 500, id: 'price_one' }]),
+    );
 
     const mod = await import('../services/billing.plans.service.js');
     BillingPlansService = mod.default;
@@ -163,12 +156,12 @@ describe('Billing plans service unit tests:', () => {
   });
 
   test('should handle null unit_amount gracefully', async () => {
-    mockStripeInstance.products.list.mockResolvedValue({
-      data: [{ id: 'prod_metered', name: 'Metered', metadata: { planId: 'metered' } }],
-    });
-    mockStripeInstance.prices.list.mockResolvedValue({
-      data: [{ product: 'prod_metered', recurring: { interval: 'month' }, unit_amount: null, id: 'price_metered' }],
-    });
+    mockStripeInstance.products.list.mockReturnValue(
+      mockListResult([{ id: 'prod_metered', name: 'Metered', metadata: { planId: 'metered' } }]),
+    );
+    mockStripeInstance.prices.list.mockReturnValue(
+      mockListResult([{ product: 'prod_metered', recurring: { interval: 'month' }, unit_amount: null, id: 'price_metered' }]),
+    );
 
     const mod = await import('../services/billing.plans.service.js');
     BillingPlansService = mod.default;
@@ -178,14 +171,14 @@ describe('Billing plans service unit tests:', () => {
     expect(plans[0].stripePriceMonthly).toBe('price_metered');
   });
 
-  test('should fetch products and prices with limit 100', async () => {
+  test('should use autoPagingToArray for products and prices', async () => {
     const mod = await import('../services/billing.plans.service.js');
     BillingPlansService = mod.default;
 
     await BillingPlansService.getPlans();
 
-    expect(mockStripeInstance.products.list).toHaveBeenCalledWith({ active: true, limit: 100 });
-    expect(mockStripeInstance.prices.list).toHaveBeenCalledWith({ active: true, limit: 100 });
+    expect(mockStripeInstance.products.list).toHaveBeenCalledWith({ active: true });
+    expect(mockStripeInstance.prices.list).toHaveBeenCalledWith({ active: true });
   });
 
   test('should only make one prices.list call regardless of product count', async () => {
@@ -195,5 +188,22 @@ describe('Billing plans service unit tests:', () => {
     await BillingPlansService.getPlans();
 
     expect(mockStripeInstance.prices.list).toHaveBeenCalledTimes(1);
+  });
+
+  test('should refresh cache after TTL expires', async () => {
+    const mod = await import('../services/billing.plans.service.js');
+    BillingPlansService = mod.default;
+
+    await BillingPlansService.getPlans();
+
+    // Advance time past TTL (1 hour)
+    const originalDateNow = Date.now;
+    Date.now = jest.fn().mockReturnValue(originalDateNow() + 61 * 60 * 1000);
+
+    await BillingPlansService.getPlans();
+
+    expect(mockStripeInstance.products.list).toHaveBeenCalledTimes(2);
+
+    Date.now = originalDateNow;
   });
 });

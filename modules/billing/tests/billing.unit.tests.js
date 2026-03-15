@@ -173,5 +173,15 @@ describe('Billing unit tests:', () => {
       expect(result.data.stripeSubscriptionId).toBe('sub_xyz789');
       done();
     });
+
+    test('should not inject defaults in SubscriptionUpdate partial', (done) => {
+      const update = { plan: 'pro' };
+      const result = schema.SubscriptionUpdate.safeParse(update);
+      expect(result.error).toBeFalsy();
+      expect(result.data.plan).toBe('pro');
+      expect(result.data.status).toBeUndefined();
+      expect(result.data.cancelAtPeriodEnd).toBeUndefined();
+      done();
+    });
   });
 });
