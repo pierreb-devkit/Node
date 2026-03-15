@@ -124,12 +124,13 @@ After `gh pr ready`, enter an autonomous polling loop. Do not wait for the user 
 consecutive_zero = 0
 
 REPEAT:
-  1. Wait for CI                        → sleep 30 then gh pr checks <number> --watch
+  1. Wait for CI                        → sleep 30 then gh pr checks $PR --watch
   2. If CI fails                        → fix, /verify, commit, push, consecutive_zero=0, GOTO 1
-  2b. Check mergeable status            → gh pr view $PR --json mergeable --jq .mergeable
-                                           if "CONFLICTING" → report to user and STOP
+  2b. Check mergeable status            → STATUS=$(gh pr view $PR --json mergeable --jq .mergeable)
+                                           if STATUS == "UNKNOWN" → sleep 10, retry up to 3 times
+                                           if STATUS == "CONFLICTING" → report to user and STOP
   3. Grace period                       → sleep 180 + adaptive check (see 6b)
-  4. Re-check pending review checks     → gh pr checks <number> — if any still pending, GOTO 3
+  4. Re-check pending review checks     → gh pr checks $PR — if any still pending, GOTO 3
   5. Read all feedback                  → unresolved threads only (see 6b)
   6. If actionable comments             → fix all, /verify, commit, push, reply, resolve, consecutive_zero=0, GOTO 1
   7. If non-actionable unresolved       → reply all explaining why, resolve all, consecutive_zero=0, GOTO 5
