@@ -17,7 +17,10 @@ const defaultPopulate = [
  * @param {Object|string} value - The subscription object or id string.
  * @returns {string|undefined} The resolved id.
  */
-const resolveId = (value) => value?._id || value?.id || value;
+const resolveId = (value) => {
+  if (typeof value === 'string' || value instanceof mongoose.Types.ObjectId) return value;
+  return value?._id || value?.id;
+};
 
 /**
  * @function list
@@ -50,11 +53,12 @@ const get = (id) => {
  * @function update
  * @description Data access operation to update an existing subscription in the database.
  * @param {Object} subscription - The subscription object containing the updated details.
- * @returns {Promise<Object>} A promise resolving to the updated subscription.
+ * @returns {Promise<Object>|null} A promise resolving to the updated subscription, or null if the ID is invalid.
  */
 const update = (subscription) => {
   const id = resolveId(subscription);
-  if (id && mongoose.Types.ObjectId.isValid(id)) {
+  if (id !== undefined) {
+    if (!mongoose.Types.ObjectId.isValid(id)) return null;
     // eslint-disable-next-line no-unused-vars
     const { _id, id: _virtualId, ...payload } = subscription;
     return Subscription.findByIdAndUpdate(id, payload, { returnDocument: 'after', runValidators: true })
@@ -94,8 +98,9 @@ const findByOrganization = (organizationId) => {
  * @returns {Promise<Object|null>} A promise resolving to the retrieved subscription or null.
  */
 const findByStripeCustomerId = (stripeCustomerId) => {
-  if (!stripeCustomerId || !stripeCustomerId.trim()) return null;
-  return Subscription.findOne({ stripeCustomerId }).populate(defaultPopulate).exec();
+  const normalizedStripeCustomerId = stripeCustomerId?.trim();
+  if (!normalizedStripeCustomerId) return null;
+  return Subscription.findOne({ stripeCustomerId: normalizedStripeCustomerId }).populate(defaultPopulate).exec();
 };
 
 export default {
