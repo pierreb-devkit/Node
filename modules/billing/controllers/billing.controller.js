@@ -28,7 +28,8 @@ const checkout = async (req, res) => {
  */
 const portal = async (req, res) => {
   try {
-    const url = await BillingService.createPortalSession(req.organization);
+    const { returnUrl } = req.body;
+    const url = await BillingService.createPortalSession(req.organization, returnUrl);
     responses.success(res, 'portal session created')({ url });
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', 'Failed to create portal session')(err);

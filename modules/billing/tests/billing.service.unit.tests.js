@@ -79,6 +79,32 @@ describe('Billing service unit tests:', () => {
       );
     });
 
+    test('should throw when redirect URL is invalid', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_url' } },
+      }));
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      await expect(BillingService.createCheckout(mockOrganization, 'price_123', 'not-a-url', 'http://cancel')).rejects.toThrow(
+        'Invalid redirect URL',
+      );
+    });
+
+    test('should reject URL with wrong domain when config.domain is set', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_domain' }, domain: 'https://myapp.com' },
+      }));
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      await expect(
+        BillingService.createCheckout(mockOrganization, 'price_123', 'http://evil.com/success', 'http://myapp.com/cancel'),
+      ).rejects.toThrow('Invalid redirect URL');
+    });
+
     test('should create customer and subscription when none exists', async () => {
       jest.unstable_mockModule('../../../config/index.js', () => ({
         default: { stripe: { secretKey: 'sk_test_123' } },
@@ -111,7 +137,6 @@ describe('Billing service unit tests:', () => {
       const existingSub = {
         _id: 'sub_existing',
         stripeCustomerId: null,
-        toObject: jest.fn().mockReturnValue({ _id: 'sub_existing', stripeCustomerId: null }),
       };
       mockSubscriptionRepository.findByOrganization.mockResolvedValue(existingSub);
       mockSubscriptionRepository.update.mockResolvedValue({ stripeCustomerId: 'cus_new123' });
@@ -196,7 +221,7 @@ describe('Billing service unit tests:', () => {
       );
     });
 
-    test('should return portal session URL when customer exists', async () => {
+    test('should return portal session URL without returnUrl', async () => {
       jest.unstable_mockModule('../../../config/index.js', () => ({
         default: { stripe: { secretKey: 'sk_test_portal3' } },
       }));
@@ -212,6 +237,38 @@ describe('Billing service unit tests:', () => {
       expect(mockStripeInstance.billingPortal.sessions.create).toHaveBeenCalledWith({
         customer: 'cus_portal',
       });
+    });
+
+    test('should include return_url when returnUrl is provided', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_portal4' } },
+      }));
+
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ stripeCustomerId: 'cus_portal' });
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      const url = await BillingService.createPortalSession(mockOrganization, 'http://app/settings');
+
+      expect(url).toBe('https://billing.stripe.com/portal_123');
+      expect(mockStripeInstance.billingPortal.sessions.create).toHaveBeenCalledWith({
+        customer: 'cus_portal',
+        return_url: 'http://app/settings',
+      });
+    });
+
+    test('should throw when returnUrl is invalid', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_portal5' } },
+      }));
+
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ stripeCustomerId: 'cus_portal' });
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      await expect(BillingService.createPortalSession(mockOrganization, 'not-a-url')).rejects.toThrow('Invalid return URL');
     });
   });
 

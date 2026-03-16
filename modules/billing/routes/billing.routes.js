@@ -3,8 +3,10 @@
  */
 import passport from 'passport';
 
+import model from '../../../lib/middlewares/model.js';
 import policy from '../../../lib/middlewares/policy.js';
 import organization from '../../organizations/middleware/organizations.middleware.js';
+import billingSchema from '../models/billing.subscription.schema.js';
 import billingPlans from '../controllers/billing.plans.controller.js';
 import billing from '../controllers/billing.controller.js';
 
@@ -21,13 +23,13 @@ export default (app) => {
   app
     .route('/api/billing/checkout')
     .all(passport.authenticate('jwt', { session: false }), organization.resolveOrganization, policy.isAllowed)
-    .post(billing.checkout);
+    .post(model.isValid(billingSchema.CheckoutRequest), billing.checkout);
 
   // portal
   app
     .route('/api/billing/portal')
     .all(passport.authenticate('jwt', { session: false }), organization.resolveOrganization, policy.isAllowed)
-    .post(billing.portal);
+    .post(model.isValid(billingSchema.PortalRequest), billing.portal);
 
   // subscription
   app
