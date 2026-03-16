@@ -43,6 +43,7 @@ When a module contains multiple entities (e.g., `billing` with `subscription`, `
 | `billing.subscription.model.mongoose.js` | `subscription.model.mongoose.js` |
 | `billing.subscription.schema.js` | `subscription.schema.js` |
 | `organizations.membership.model.mongoose.js` | `membership.model.mongoose.js` |
+| `organizations.crud.service.js` | `crud.service.js` |
 
 Pattern: `{module}.{entity}[.{name}].{type}.js`
 
