@@ -3,6 +3,8 @@
  */
 import mongoose from 'mongoose';
 
+import config from '../../../config/index.js';
+
 const Schema = mongoose.Schema;
 
 /**
@@ -28,12 +30,12 @@ const SubscriptionMongoose = new Schema(
     },
     plan: {
       type: String,
-      enum: ['free', 'starter', 'pro'],
+      enum: config.billing.plans,
       default: 'free',
     },
     status: {
       type: String,
-      enum: ['active', 'past_due', 'canceled', 'trialing', 'incomplete'],
+      enum: config.billing.statuses,
       default: 'active',
     },
     currentPeriodEnd: {

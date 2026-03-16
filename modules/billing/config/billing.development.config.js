@@ -1,4 +1,10 @@
 const config = {
+  billing: {
+    // Plans available for subscriptions — extend as needed
+    plans: ['free', 'starter', 'pro'],
+    // Stripe subscription statuses — see https://docs.stripe.com/api/subscriptions/object#subscription_object-status
+    statuses: ['active', 'past_due', 'canceled', 'trialing', 'incomplete'],
+  },
   stripe: {
     secretKey: process.env.DEVKIT_NODE_stripe_secretKey ?? '',
     webhookSecret: process.env.DEVKIT_NODE_stripe_webhookSecret ?? '',

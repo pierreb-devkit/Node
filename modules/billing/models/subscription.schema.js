@@ -3,6 +3,8 @@
  */
 import { z } from 'zod';
 
+import config from '../../../config/index.js';
+
 /**
  *  Data Schema
  */
@@ -23,8 +25,8 @@ const Subscription = z.object({
     .trim()
     .optional()
     .transform((val) => (val === '' ? undefined : val)),
-  plan: z.enum(['free', 'starter', 'pro']).default('free'),
-  status: z.enum(['active', 'past_due', 'canceled', 'trialing', 'incomplete']).default('active'),
+  plan: z.enum(config.billing.plans).default('free'),
+  status: z.enum(config.billing.statuses).default('active'),
   currentPeriodEnd: z.coerce.date().nullable().optional(),
   cancelAtPeriodEnd: z.boolean().default(false),
 });

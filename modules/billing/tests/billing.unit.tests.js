@@ -1,6 +1,7 @@
 /**
  * Module dependencies.
  */
+import config from '../../../config/index.js';
 import schema from '../models/subscription.schema.js';
 
 /**
@@ -82,7 +83,7 @@ describe('Billing unit tests:', () => {
     });
 
     test('should accept all valid plan values', (done) => {
-      for (const plan of ['free', 'starter', 'pro']) {
+      for (const plan of config.billing.plans) {
         subscription.plan = plan;
         const result = schema.Subscription.safeParse(subscription);
         expect(result.error).toBeFalsy();
@@ -91,7 +92,7 @@ describe('Billing unit tests:', () => {
     });
 
     test('should accept all valid status values', (done) => {
-      for (const status of ['active', 'past_due', 'canceled', 'trialing', 'incomplete']) {
+      for (const status of config.billing.statuses) {
         subscription.status = status;
         const result = schema.Subscription.safeParse(subscription);
         expect(result.error).toBeFalsy();
