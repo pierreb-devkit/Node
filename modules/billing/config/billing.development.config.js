@@ -3,7 +3,16 @@ const config = {
     // Plans available for subscriptions — extend as needed
     plans: ['free', 'starter', 'pro'],
     // Stripe subscription statuses — see https://docs.stripe.com/api/subscriptions/object#subscription_object-status
-    statuses: ['active', 'past_due', 'canceled', 'trialing', 'incomplete'],
+    statuses: [
+      'incomplete',
+      'incomplete_expired',
+      'trialing',
+      'active',
+      'past_due',
+      'canceled',
+      'unpaid',
+      'paused',
+    ],
   },
   stripe: {
     secretKey: process.env.DEVKIT_NODE_stripe_secretKey ?? '',
