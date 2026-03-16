@@ -41,7 +41,29 @@ const SubscriptionCore = z.object({
 
 const SubscriptionUpdate = SubscriptionCore.partial();
 
+/**
+ * Checkout request body schema
+ */
+const CheckoutRequest = z
+  .object({
+    priceId: z.string().trim().min(1, 'priceId is required'),
+    successUrl: z.string().url('successUrl must be a valid URL'),
+    cancelUrl: z.string().url('cancelUrl must be a valid URL'),
+  })
+  .strict();
+
+/**
+ * Portal request body schema
+ */
+const PortalRequest = z
+  .object({
+    returnUrl: z.string().url('returnUrl must be a valid URL').optional(),
+  })
+  .strict();
+
 export default {
   Subscription,
   SubscriptionUpdate,
+  CheckoutRequest,
+  PortalRequest,
 };
