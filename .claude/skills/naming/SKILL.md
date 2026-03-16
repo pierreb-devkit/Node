@@ -36,12 +36,13 @@ Audit or apply the project's file and folder naming conventions.
 
 ### Multi-entity modules
 
-When a module contains multiple entities (e.g., `organizations` with `membership` and `crud`), files are still prefixed by the **module name**, not the entity:
+When a module contains multiple entities (e.g., `billing` with `subscription`, `organizations` with `membership`), files are still prefixed by the **module name**, not the entity:
 
 | Correct | Wrong |
 | --- | --- |
+| `billing.subscription.model.mongoose.js` | `subscription.model.mongoose.js` |
+| `billing.subscription.schema.js` | `subscription.schema.js` |
 | `organizations.membership.model.mongoose.js` | `membership.model.mongoose.js` |
-| `organizations.membership.service.js` | `membership.service.js` |
 | `organizations.crud.service.js` | `crud.service.js` |
 
 Pattern: `{module}.{entity}[.{name}].{type}.js`

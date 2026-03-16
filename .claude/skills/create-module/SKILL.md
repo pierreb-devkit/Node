@@ -60,6 +60,8 @@ Pattern:
 - Reference in Mongoose model: `enum: config.{section}.{enumName}`
 - Reference in Zod schema: `z.enum(config.{section}.{enumName})`
 
+Example: `config.billing.plans` used in both `billing.subscription.model.mongoose.js` and `billing.subscription.schema.js`.
+
 > Reference: `modules/users/models/users.schema.js` uses `z.enum(config.whitelists.users.roles)`.
 
 ### 5. Apply renames carefully
