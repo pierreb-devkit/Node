@@ -34,6 +34,18 @@ Audit or apply the project's file and folder naming conventions.
 
 > `[.{name}]` is optional — the reference `tasks` module uses the short form (e.g., `tasks.controller.js`, `tasks.service.js`).
 
+### Multi-entity modules
+
+When a module contains multiple entities (e.g., `billing` with `subscription`, `organizations` with `membership`), files are still prefixed by the **module name**, not the entity:
+
+| Correct | Wrong |
+| --- | --- |
+| `billing.subscription.model.mongoose.js` | `subscription.model.mongoose.js` |
+| `billing.subscription.schema.js` | `subscription.schema.js` |
+| `organizations.membership.model.mongoose.js` | `membership.model.mongoose.js` |
+
+Pattern: `{module}.{entity}[.{name}].{type}.js`
+
 ### Naming Tokens
 
 From a module name (e.g., `my-feature`):
