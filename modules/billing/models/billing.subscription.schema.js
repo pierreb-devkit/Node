@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import { z } from 'zod';
+import config from '../../../config/index.js';
 
 /**
  *  Data Schema
@@ -14,9 +15,6 @@ const optionalStripeId = z
   .optional()
   .transform((val) => (val === '' ? undefined : val));
 
-const plans = ['free', 'starter', 'pro'];
-const statuses = ['active', 'past_due', 'canceled', 'trialing', 'incomplete'];
-
 const baseShape = {
   organization: z.string().trim().regex(objectIdRegex, 'organization must be a valid ObjectId'),
   stripeCustomerId: optionalStripeId,
@@ -26,8 +24,8 @@ const baseShape = {
 
 const Subscription = z.object({
   ...baseShape,
-  plan: z.enum(plans).default('free'),
-  status: z.enum(statuses).default('active'),
+  plan: z.enum(config.billing.plans).default('free'),
+  status: z.enum(config.billing.statuses).default('active'),
   cancelAtPeriodEnd: z.boolean().default(false),
 });
 
@@ -36,8 +34,8 @@ const Subscription = z.object({
  */
 const SubscriptionCore = z.object({
   ...baseShape,
-  plan: z.enum(plans),
-  status: z.enum(statuses),
+  plan: z.enum(config.billing.plans),
+  status: z.enum(config.billing.statuses),
   cancelAtPeriodEnd: z.boolean(),
 });
 
