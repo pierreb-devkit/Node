@@ -50,7 +50,7 @@ const get = (id) => {
  * @function update
  * @description Data access operation to update an existing subscription in the database.
  * @param {Object} subscription - The subscription object containing the updated details.
- * @returns {Promise<Object>} A promise resolving to the updated subscription.
+ * @returns {Promise<Object>|null} A promise resolving to the updated subscription, or null if the ID is invalid.
  */
 const update = (subscription) => {
   const id = resolveId(subscription);
