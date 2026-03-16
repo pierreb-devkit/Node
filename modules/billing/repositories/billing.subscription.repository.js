@@ -97,6 +97,18 @@ const findByStripeCustomerId = (stripeCustomerId) => {
   return Subscription.findOne({ stripeCustomerId: normalized }).populate(defaultPopulate).exec();
 };
 
+/**
+ * @function findByStripeSubscriptionId
+ * @description Data access operation to fetch a subscription by Stripe subscription ID.
+ * @param {String} stripeSubscriptionId - The Stripe subscription ID.
+ * @returns {Promise<Object|null>} A promise resolving to the retrieved subscription or null.
+ */
+const findByStripeSubscriptionId = (stripeSubscriptionId) => {
+  const normalized = stripeSubscriptionId?.trim();
+  if (!normalized) return null;
+  return Subscription.findOne({ stripeSubscriptionId: normalized }).populate(defaultPopulate).exec();
+};
+
 export default {
   list,
   create,
@@ -105,4 +117,5 @@ export default {
   remove,
   findByOrganization,
   findByStripeCustomerId,
+  findByStripeSubscriptionId,
 };
