@@ -2,7 +2,7 @@
  * Module dependencies.
  */
 import config from '../../../config/index.js';
-import schema from '../models/subscription.schema.js';
+import schema from '../models/billing.subscription.schema.js';
 
 /**
  * Unit tests
@@ -172,6 +172,16 @@ describe('Billing unit tests:', () => {
       const result = schema.Subscription.safeParse(subscription);
       expect(result.error).toBeFalsy();
       expect(result.data.stripeSubscriptionId).toBe('sub_xyz789');
+      done();
+    });
+
+    test('should not inject defaults in SubscriptionUpdate partial', (done) => {
+      const update = { plan: 'pro' };
+      const result = schema.SubscriptionUpdate.safeParse(update);
+      expect(result.error).toBeFalsy();
+      expect(result.data.plan).toBe('pro');
+      expect(result.data.status).toBeUndefined();
+      expect(result.data.cancelAtPeriodEnd).toBeUndefined();
       done();
     });
   });
