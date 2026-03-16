@@ -1,7 +1,12 @@
 /**
  * Module dependencies
  */
-import billing from '../controllers/billing.plans.controller.js';
+import passport from 'passport';
+
+import policy from '../../../lib/middlewares/policy.js';
+import organization from '../../organizations/middleware/organizations.middleware.js';
+import billingPlans from '../controllers/billing.plans.controller.js';
+import billing from '../controllers/billing.controller.js';
 
 /**
  * @desc Register billing routes
@@ -10,5 +15,23 @@ import billing from '../controllers/billing.plans.controller.js';
  */
 export default (app) => {
   // plans (public)
-  app.route('/api/billing/plans').get(billing.getPlans);
+  app.route('/api/billing/plans').get(billingPlans.getPlans);
+
+  // checkout
+  app
+    .route('/api/billing/checkout')
+    .all(passport.authenticate('jwt', { session: false }), organization.resolveOrganization, policy.isAllowed)
+    .post(billing.checkout);
+
+  // portal
+  app
+    .route('/api/billing/portal')
+    .all(passport.authenticate('jwt', { session: false }), organization.resolveOrganization, policy.isAllowed)
+    .post(billing.portal);
+
+  // subscription
+  app
+    .route('/api/billing/subscription')
+    .all(passport.authenticate('jwt', { session: false }), organization.resolveOrganization, policy.isAllowed)
+    .get(billing.getSubscription);
 };
