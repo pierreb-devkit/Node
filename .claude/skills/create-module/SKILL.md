@@ -51,7 +51,7 @@ Files to check in `modules/{new-module-name}/`:
 - Policy function names
 - Test descriptions and fixture data
 
-### 4b. Config-driven enums
+#### Config-driven enums
 
 Business values (plans, roles, statuses) must be driven by the module config, never hardcoded in models or schemas.
 
@@ -60,9 +60,7 @@ Pattern:
 - Reference in Mongoose model: `enum: config.{section}.{enumName}`
 - Reference in Zod schema: `z.enum(config.{section}.{enumName})`
 
-Example: `config.billing.plans` used in both `billing.subscription.model.mongoose.js` and `billing.subscription.schema.js`.
-
-> Existing reference: `users.schema.js` uses `z.enum(config.whitelists.users.roles)`.
+> Reference: `modules/users/models/users.schema.js` uses `z.enum(config.whitelists.users.roles)`.
 
 ### 5. Apply renames carefully
 
