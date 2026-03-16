@@ -1,7 +1,7 @@
 /**
  * Module dependencies.
  */
-import schema from '../models/subscription.schema.js';
+import schema from '../models/billing.subscription.schema.js';
 
 /**
  * Unit tests
