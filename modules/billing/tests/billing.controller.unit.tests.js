@@ -183,10 +183,13 @@ describe('Billing webhook controller unit tests:', () => {
     const mod = await import('../controllers/billing.webhook.controller.js');
     BillingWebhookController = mod.default;
 
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     const req = { headers: { 'stripe-signature': 'sig_ok' }, body: 'raw' };
     await BillingWebhookController.handleWebhook(req, res);
 
+    expect(consoleSpy).toHaveBeenCalledWith('Stripe webhook handler error:', expect.any(Error));
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: 'Webhook handler failed' });
+    consoleSpy.mockRestore();
   });
 });

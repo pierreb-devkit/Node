@@ -35,6 +35,7 @@ describe('Billing webhook service unit tests:', () => {
     jest.unstable_mockModule('mongoose', () => ({
       default: {
         model: jest.fn().mockReturnValue(mockOrganizationModel),
+        Types: { ObjectId: { isValid: jest.fn().mockReturnValue(true) } },
       },
     }));
   });
@@ -64,7 +65,7 @@ describe('Billing webhook service unit tests:', () => {
         plan: 'pro',
         status: 'active',
       });
-      expect(mockOrganizationModel.findByIdAndUpdate).toHaveBeenCalledWith(orgId, { plan: 'pro' });
+      expect(mockOrganizationModel.findByIdAndUpdate).toHaveBeenCalledWith(orgId, { plan: 'pro' }, { runValidators: true });
     });
 
     test('should update existing subscription on checkout', async () => {
@@ -135,7 +136,7 @@ describe('Billing webhook service unit tests:', () => {
         status: 'active',
         current_period_end: 1700000000,
         cancel_at_period_end: false,
-        items: { data: [{ price: { product: { metadata: { planId: 'pro' } } } }] },
+        items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
       });
 
       expect(mockSubscriptionRepository.update).toHaveBeenCalledWith({
@@ -145,7 +146,7 @@ describe('Billing webhook service unit tests:', () => {
         currentPeriodEnd: new Date(1700000000 * 1000),
         cancelAtPeriodEnd: false,
       });
-      expect(mockOrganizationModel.findByIdAndUpdate).toHaveBeenCalledWith(orgId, { plan: 'pro' });
+      expect(mockOrganizationModel.findByIdAndUpdate).toHaveBeenCalledWith(orgId, { plan: 'pro' }, { runValidators: true });
     });
 
     test('should return early when subscription not found', async () => {
@@ -218,7 +219,7 @@ describe('Billing webhook service unit tests:', () => {
         plan: 'free',
         status: 'canceled',
       });
-      expect(mockOrganizationModel.findByIdAndUpdate).toHaveBeenCalledWith(orgId, { plan: 'free' });
+      expect(mockOrganizationModel.findByIdAndUpdate).toHaveBeenCalledWith(orgId, { plan: 'free' }, { runValidators: true });
     });
 
     test('should return early when subscription not found', async () => {

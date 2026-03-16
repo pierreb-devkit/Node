@@ -8,13 +8,15 @@ import SubscriptionRepository from '../repositories/billing.subscription.reposit
 const Organization = mongoose.model('Organization');
 
 /**
- * @desc Resolve the plan name from a Stripe subscription object
+ * @desc Resolve the plan name from a Stripe subscription object.
+ * In webhook payloads, price.product is typically a string ID (not expanded),
+ * so we check price.metadata first, then fall back to plan.metadata.
  * @param {Object} subscription - Stripe subscription object
  * @returns {string} plan name
  */
 const resolvePlan = (subscription) => {
   const item = subscription.items?.data?.[0];
-  return item?.price?.product?.metadata?.planId || item?.plan?.metadata?.planId || 'free';
+  return item?.price?.metadata?.planId || item?.plan?.metadata?.planId || 'free';
 };
 
 /**
@@ -24,8 +26,8 @@ const resolvePlan = (subscription) => {
  * @returns {Promise<void>}
  */
 const syncOrganizationPlan = async (organizationId, plan) => {
-  if (!organizationId) return;
-  await Organization.findByIdAndUpdate(organizationId, { plan }).exec();
+  if (!organizationId || !mongoose.Types.ObjectId.isValid(organizationId)) return;
+  await Organization.findByIdAndUpdate(organizationId, { plan }, { runValidators: true }).exec();
 };
 
 /**
@@ -38,7 +40,7 @@ const handleCheckoutCompleted = async (session) => {
   const organizationId = metadata?.organizationId;
   const plan = metadata?.plan || 'free';
 
-  if (!organizationId) return;
+  if (!organizationId || !mongoose.Types.ObjectId.isValid(organizationId)) return;
 
   const existing = await SubscriptionRepository.findByOrganization(organizationId);
   if (existing) {

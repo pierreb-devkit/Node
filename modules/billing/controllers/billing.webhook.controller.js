@@ -26,7 +26,7 @@ const getStripe = () => {
  * @desc Endpoint to handle Stripe webhook events
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const handleWebhook = async (req, res) => {
   const stripe = getStripe();
@@ -61,6 +61,7 @@ const handleWebhook = async (req, res) => {
     }
     return res.status(200).json({ received: true });
   } catch (err) {
+    console.error('Stripe webhook handler error:', err);
     return res.status(500).json({ error: 'Webhook handler failed' });
   }
 };
