@@ -10,9 +10,14 @@ describe('Billing service unit tests:', () => {
   let BillingService;
   let mockStripeInstance;
   let mockSubscriptionRepository;
+  let mockPlansService;
 
   const orgId = '507f1f77bcf86cd799439011';
   const mockOrganization = { _id: orgId, name: 'Test Org' };
+  const validPlans = [
+    { planId: 'starter', stripePriceMonthly: 'price_starter_m', stripePriceAnnual: 'price_starter_y' },
+    { planId: 'pro', stripePriceMonthly: 'price_pro_m', stripePriceAnnual: 'price_pro_y' },
+  ];
 
   beforeEach(async () => {
     jest.resetModules();
@@ -46,6 +51,14 @@ describe('Billing service unit tests:', () => {
     jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
       default: mockSubscriptionRepository,
     }));
+
+    mockPlansService = {
+      getPlans: jest.fn().mockResolvedValue(validPlans),
+    };
+
+    jest.unstable_mockModule('../services/billing.plans.service.js', () => ({
+      default: mockPlansService,
+    }));
   });
 
   afterEach(() => {
@@ -61,9 +74,9 @@ describe('Billing service unit tests:', () => {
       const mod = await import('../services/billing.service.js');
       BillingService = mod.default;
 
-      await expect(BillingService.createCheckout(mockOrganization, 'price_123', 'http://ok', 'http://cancel')).rejects.toThrow(
-        'Stripe is not configured',
-      );
+      await expect(
+        BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel'),
+      ).rejects.toThrow('Stripe is not configured');
     });
 
     test('should throw when stripe config is null', async () => {
@@ -74,9 +87,9 @@ describe('Billing service unit tests:', () => {
       const mod = await import('../services/billing.service.js');
       BillingService = mod.default;
 
-      await expect(BillingService.createCheckout(mockOrganization, 'price_123', 'http://ok', 'http://cancel')).rejects.toThrow(
-        'Stripe is not configured',
-      );
+      await expect(
+        BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel'),
+      ).rejects.toThrow('Stripe is not configured');
     });
 
     test('should throw when redirect URL is invalid', async () => {
@@ -87,9 +100,9 @@ describe('Billing service unit tests:', () => {
       const mod = await import('../services/billing.service.js');
       BillingService = mod.default;
 
-      await expect(BillingService.createCheckout(mockOrganization, 'price_123', 'not-a-url', 'http://cancel')).rejects.toThrow(
-        'Invalid redirect URL',
-      );
+      await expect(
+        BillingService.createCheckout(mockOrganization, 'price_starter_m', 'not-a-url', 'http://cancel'),
+      ).rejects.toThrow('Invalid redirect URL');
     });
 
     test('should reject URL with wrong domain when config.domain is set', async () => {
@@ -101,8 +114,21 @@ describe('Billing service unit tests:', () => {
       BillingService = mod.default;
 
       await expect(
-        BillingService.createCheckout(mockOrganization, 'price_123', 'http://evil.com/success', 'http://myapp.com/cancel'),
+        BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://evil.com/success', 'http://myapp.com/cancel'),
       ).rejects.toThrow('Invalid redirect URL');
+    });
+
+    test('should throw when priceId is not in allowed plans', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_price' } },
+      }));
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      await expect(
+        BillingService.createCheckout(mockOrganization, 'price_tampered', 'http://ok', 'http://cancel'),
+      ).rejects.toThrow('Invalid priceId');
     });
 
     test('should create customer and subscription when none exists', async () => {
@@ -110,19 +136,22 @@ describe('Billing service unit tests:', () => {
         default: { stripe: { secretKey: 'sk_test_123' } },
       }));
 
-      mockSubscriptionRepository.findByOrganization.mockResolvedValue(null);
-      mockSubscriptionRepository.create.mockResolvedValue({ stripeCustomerId: 'cus_new123' });
+      const createdSub = { stripeCustomerId: 'cus_new123' };
+      mockSubscriptionRepository.findByOrganization
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(createdSub);
+      mockSubscriptionRepository.create.mockResolvedValue(createdSub);
 
       const mod = await import('../services/billing.service.js');
       BillingService = mod.default;
 
-      const url = await BillingService.createCheckout(mockOrganization, 'price_123', 'http://ok', 'http://cancel');
+      const url = await BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel');
 
       expect(url).toBe('https://checkout.stripe.com/session_123');
-      expect(mockStripeInstance.customers.create).toHaveBeenCalledWith({
-        name: 'Test Org',
-        metadata: { organizationId: orgId },
-      });
+      expect(mockStripeInstance.customers.create).toHaveBeenCalledWith(
+        { name: 'Test Org', metadata: { organizationId: orgId } },
+        { idempotencyKey: `cus_create_${orgId}` },
+      );
       expect(mockSubscriptionRepository.create).toHaveBeenCalledWith({
         organization: orgId,
         stripeCustomerId: 'cus_new123',
@@ -134,17 +163,17 @@ describe('Billing service unit tests:', () => {
         default: { stripe: { secretKey: 'sk_test_456' } },
       }));
 
-      const existingSub = {
-        _id: 'sub_existing',
-        stripeCustomerId: null,
-      };
-      mockSubscriptionRepository.findByOrganization.mockResolvedValue(existingSub);
-      mockSubscriptionRepository.update.mockResolvedValue({ stripeCustomerId: 'cus_new123' });
+      const existingSub = { _id: 'sub_existing', stripeCustomerId: null };
+      const updatedSub = { _id: 'sub_existing', stripeCustomerId: 'cus_new123' };
+      mockSubscriptionRepository.findByOrganization
+        .mockResolvedValueOnce(existingSub)
+        .mockResolvedValueOnce(updatedSub);
+      mockSubscriptionRepository.update.mockResolvedValue(updatedSub);
 
       const mod = await import('../services/billing.service.js');
       BillingService = mod.default;
 
-      const url = await BillingService.createCheckout(mockOrganization, 'price_123', 'http://ok', 'http://cancel');
+      const url = await BillingService.createCheckout(mockOrganization, 'price_pro_y', 'http://ok', 'http://cancel');
 
       expect(url).toBe('https://checkout.stripe.com/session_123');
       expect(mockSubscriptionRepository.update).toHaveBeenCalledWith({
@@ -165,14 +194,14 @@ describe('Billing service unit tests:', () => {
       const mod = await import('../services/billing.service.js');
       BillingService = mod.default;
 
-      const url = await BillingService.createCheckout(mockOrganization, 'price_123', 'http://ok', 'http://cancel');
+      const url = await BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel');
 
       expect(url).toBe('https://checkout.stripe.com/session_123');
       expect(mockStripeInstance.customers.create).not.toHaveBeenCalled();
       expect(mockStripeInstance.checkout.sessions.create).toHaveBeenCalledWith({
         customer: 'cus_existing',
         mode: 'subscription',
-        line_items: [{ price: 'price_123', quantity: 1 }],
+        line_items: [{ price: 'price_starter_m', quantity: 1 }],
         success_url: 'http://ok',
         cancel_url: 'http://cancel',
       });

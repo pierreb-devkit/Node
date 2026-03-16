@@ -4,6 +4,7 @@
 import Stripe from 'stripe';
 
 import config from '../../../config/index.js';
+import BillingPlansService from './billing.plans.service.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 
 /**
@@ -58,14 +59,24 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
     throw new Error('Invalid redirect URL: must use HTTPS and match the application domain');
   }
 
+  // Validate priceId against known active Stripe prices
+  const plans = await BillingPlansService.getPlans();
+  const allowedPriceIds = plans.flatMap((p) => [p.stripePriceMonthly, p.stripePriceAnnual].filter(Boolean));
+  if (!allowedPriceIds.includes(priceId)) {
+    throw new Error('Invalid priceId: must be an active published price');
+  }
+
   // Find or create subscription record with Stripe customer
   let subscription = await SubscriptionRepository.findByOrganization(organization._id);
 
   if (!subscription?.stripeCustomerId) {
-    const customer = await stripe.customers.create({
-      name: organization.name,
-      metadata: { organizationId: String(organization._id) },
-    });
+    const customer = await stripe.customers.create(
+      {
+        name: organization.name,
+        metadata: { organizationId: String(organization._id) },
+      },
+      { idempotencyKey: `cus_create_${String(organization._id)}` },
+    );
 
     if (subscription) {
       subscription = await SubscriptionRepository.update({
@@ -78,6 +89,9 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
         stripeCustomerId: customer.id,
       });
     }
+    // Re-read to handle race: if another request already set stripeCustomerId, use that
+    const latest = await SubscriptionRepository.findByOrganization(organization._id);
+    if (latest?.stripeCustomerId) subscription = latest;
   }
 
   const session = await stripe.checkout.sessions.create({

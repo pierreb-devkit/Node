@@ -16,7 +16,9 @@ const checkout = async (req, res) => {
     const url = await BillingService.createCheckout(req.organization, priceId, successUrl, cancelUrl);
     responses.success(res, 'checkout session created')({ url });
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', 'Failed to create checkout session')(err);
+    const status = err.message?.startsWith('Invalid') || err.message?.includes('not found') ? 422 : 502;
+    const title = status === 422 ? 'Unprocessable Entity' : 'Bad Gateway';
+    responses.error(res, status, title, 'Failed to create checkout session')(err);
   }
 };
 
@@ -32,7 +34,9 @@ const portal = async (req, res) => {
     const url = await BillingService.createPortalSession(req.organization, returnUrl);
     responses.success(res, 'portal session created')({ url });
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', 'Failed to create portal session')(err);
+    const status = err.message?.startsWith('Invalid') || err.message?.includes('not found') ? 422 : 502;
+    const title = status === 422 ? 'Unprocessable Entity' : 'Bad Gateway';
+    responses.error(res, status, title, 'Failed to create portal session')(err);
   }
 };
 
