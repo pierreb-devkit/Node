@@ -3,6 +3,8 @@
  */
 import { z } from 'zod';
 
+import config from '../../../config/index.js';
+
 /**
  * Data Schema
  */
@@ -11,7 +13,7 @@ const Organization = z.object({
   description: z.string().trim().default(''),
   slug: z.string().trim().min(1).toLowerCase().optional(),
   domain: z.string().trim().default(''),
-  plan: z.enum(['free', 'starter', 'pro', 'enterprise']).default('free'),
+  plan: z.enum(config.billing.plans).default('free'),
 });
 
 const OrganizationUpdate = Organization.partial();

@@ -1,7 +1,7 @@
 const config = {
   billing: {
     // Plans available for subscriptions — extend as needed
-    plans: ['free', 'starter', 'pro'],
+    plans: ['free', 'starter', 'pro', 'enterprise'],
     // Stripe subscription statuses — see https://docs.stripe.com/api/subscriptions/object#subscription_object-status
     statuses: [
       'incomplete',

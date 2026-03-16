@@ -3,6 +3,8 @@
  */
 import mongoose from 'mongoose';
 
+import config from '../../../config/index.js';
+
 const Schema = mongoose.Schema;
 
 /**
@@ -34,7 +36,7 @@ const OrganizationMongoose = new Schema(
     },
     plan: {
       type: String,
-      enum: ['free', 'starter', 'pro', 'enterprise'],
+      enum: config.billing.plans,
       default: 'free',
     },
     createdBy: {
