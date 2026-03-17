@@ -124,24 +124,27 @@ describe('Billing service unit tests:', () => {
 
     test('should reject mismatched hostname in production when config.domain is set', async () => {
       const originalEnv = process.env.NODE_ENV;
-      process.env.NODE_ENV = 'production';
+      try {
+        process.env.NODE_ENV = 'production';
 
-      jest.unstable_mockModule('../../../config/index.js', () => ({
-        default: { stripe: { secretKey: 'sk_test_prodcheck' }, domain: 'https://myapp.com' },
-      }));
+        jest.unstable_mockModule('../../../config/index.js', () => ({
+          default: { stripe: { secretKey: 'sk_test_prodcheck' }, domain: 'https://myapp.com' },
+        }));
 
-      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
-        stripeCustomerId: 'cus_existing',
-      });
+        mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+          stripeCustomerId: 'cus_existing',
+        });
 
-      const mod = await import('../services/billing.service.js');
-      BillingService = mod.default;
+        const mod = await import('../services/billing.service.js');
+        BillingService = mod.default;
 
-      await expect(
-        BillingService.createCheckout(mockOrganization, 'price_starter_m', 'https://evil.com/success', 'https://myapp.com/cancel'),
-      ).rejects.toThrow('Invalid redirect URL');
-
-      process.env.NODE_ENV = originalEnv;
+        await expect(
+          BillingService.createCheckout(mockOrganization, 'price_starter_m', 'https://evil.com/success', 'https://myapp.com/cancel'),
+        ).rejects.toThrow('Invalid redirect URL');
+      } finally {
+        if (originalEnv === undefined) delete process.env.NODE_ENV;
+        else process.env.NODE_ENV = originalEnv;
+      }
     });
 
     test('should throw when priceId is not in allowed plans', async () => {
