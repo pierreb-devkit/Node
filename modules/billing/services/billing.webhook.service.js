@@ -42,8 +42,8 @@ const handleCheckoutCompleted = async (session) => {
 
   // Fallback: resolve organizationId from stripeCustomerId if metadata is missing
   if (!organizationId) {
-    const sub = await SubscriptionRepository.findByStripeCustomerId(session.customer);
-    if (sub) organizationId = String(sub.organization);
+    const sub = await SubscriptionRepository.findByStripeCustomerId(stripeCustomerId);
+    if (sub) organizationId = String(sub.organization?._id || sub.organization);
   }
 
   if (!organizationId || !mongoose.Types.ObjectId.isValid(organizationId)) return;

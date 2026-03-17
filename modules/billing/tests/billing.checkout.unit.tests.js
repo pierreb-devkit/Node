@@ -15,8 +15,8 @@ describe('Billing service unit tests:', () => {
   const orgId = '507f1f77bcf86cd799439011';
   const mockOrganization = { _id: orgId, name: 'Test Org' };
   const validPlans = [
-    { planId: 'starter', stripePriceMonthly: 'price_starter_m', stripePriceAnnual: 'price_starter_y' },
-    { planId: 'pro', stripePriceMonthly: 'price_pro_m', stripePriceAnnual: 'price_pro_y' },
+    { planId: 'starter', name: 'Starter', stripePriceMonthly: 'price_starter_m', stripePriceAnnual: 'price_starter_y' },
+    { planId: 'pro', name: 'Pro', stripePriceMonthly: 'price_pro_m', stripePriceAnnual: 'price_pro_y' },
   ];
 
   beforeEach(async () => {
@@ -206,7 +206,7 @@ describe('Billing service unit tests:', () => {
         cancel_url: 'http://cancel',
         metadata: {
           organizationId: orgId,
-          plan: 'free',
+          plan: 'starter',
         },
       });
     });

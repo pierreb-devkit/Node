@@ -114,7 +114,7 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
     cancel_url: cancelUrl,
     metadata: {
       organizationId: String(organization._id),
-      plan: matchedPlan?.name || 'free',
+      plan: matchedPlan?.planId || 'free',
     },
   });
 

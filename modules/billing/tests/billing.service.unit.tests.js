@@ -126,7 +126,7 @@ describe('Billing webhook service unit tests:', () => {
     });
 
     test('should fallback to stripeCustomerId when organizationId is missing in metadata', async () => {
-      mockSubscriptionRepository.findByStripeCustomerId.mockResolvedValue({ organization: orgId });
+      mockSubscriptionRepository.findByStripeCustomerId.mockResolvedValue({ organization: { _id: orgId } });
       mockSubscriptionRepository.findByOrganization.mockResolvedValue(null);
       mockSubscriptionRepository.create.mockResolvedValue({});
 
