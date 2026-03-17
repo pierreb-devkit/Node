@@ -11,7 +11,7 @@ import config from '../../../config/index.js';
 let stripeClient = null;
 
 /**
- * @desc Get or create the Stripe client instance
+ * Get or create the lazily-initialised Stripe client instance.
  * @returns {Object|null} Stripe client or null if not configured
  */
 const getStripe = () => {
