@@ -31,7 +31,8 @@ const getStripe = () => {
 const isAllowedUrl = (url) => {
   try {
     const parsed = new URL(url);
-    const allowHttp = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+    const env = process.env.NODE_ENV || 'development';
+    const allowHttp = env === 'development' || env === 'test';
     if (!allowHttp && parsed.protocol !== 'https:') return false;
     if (config.domain) {
       const configHost = new URL(config.domain.startsWith('http') ? config.domain : `https://${config.domain}`).hostname;
