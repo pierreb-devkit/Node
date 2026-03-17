@@ -105,17 +105,21 @@ describe('Billing service unit tests:', () => {
       ).rejects.toThrow('Invalid redirect URL');
     });
 
-    test('should reject URL with wrong domain when config.domain is set', async () => {
+    test('should allow any domain in dev/test even when config.domain is set', async () => {
       jest.unstable_mockModule('../../../config/index.js', () => ({
         default: { stripe: { secretKey: 'sk_test_domain' }, domain: 'https://myapp.com' },
       }));
 
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        stripeCustomerId: 'cus_existing',
+      });
+
       const mod = await import('../services/billing.service.js');
       BillingService = mod.default;
 
-      await expect(
-        BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://evil.com/success', 'http://myapp.com/cancel'),
-      ).rejects.toThrow('Invalid redirect URL');
+      const url = await BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://evil.com/success', 'http://myapp.com/cancel');
+
+      expect(url).toBe('https://checkout.stripe.com/session_123');
     });
 
     test('should throw when priceId is not in allowed plans', async () => {

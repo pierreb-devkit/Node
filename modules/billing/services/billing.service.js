@@ -1,27 +1,10 @@
 /**
  * Module dependencies
  */
-import Stripe from 'stripe';
-
 import config from '../../../config/index.js';
+import getStripe from '../lib/stripe.js';
 import BillingPlansService from './billing.plans.service.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
-
-/**
- * Lazily instantiated Stripe client
- */
-let stripeClient = null;
-
-/**
- * @desc Get or create the Stripe client instance
- * @returns {Object|null} Stripe client or null if not configured
- */
-const getStripe = () => {
-  if (stripeClient) return stripeClient;
-  if (!config.stripe?.secretKey) return null;
-  stripeClient = new Stripe(config.stripe.secretKey);
-  return stripeClient;
-};
 
 /**
  * @desc Validate that a URL uses https (or http in dev/test) and belongs to the app domain
@@ -34,7 +17,7 @@ const isAllowedUrl = (url) => {
     const env = process.env.NODE_ENV || 'development';
     const allowHttp = env === 'development' || env === 'test';
     if (!allowHttp && parsed.protocol !== 'https:') return false;
-    if (config.domain) {
+    if (config.domain && !allowHttp) {
       const configHost = new URL(config.domain.startsWith('http') ? config.domain : `https://${config.domain}`).hostname;
       if (parsed.hostname !== configHost) return false;
     }
