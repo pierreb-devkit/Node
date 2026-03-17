@@ -20,6 +20,7 @@ describe('Billing webhook service unit tests:', () => {
     mockSubscriptionRepository = {
       findByOrganization: jest.fn(),
       findByStripeSubscriptionId: jest.fn(),
+      findByStripeCustomerId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     };
@@ -108,7 +109,27 @@ describe('Billing webhook service unit tests:', () => {
       );
     });
 
-    test('should return early when organizationId is missing', async () => {
+    test('should return early when organizationId is missing and no customer fallback', async () => {
+      mockSubscriptionRepository.findByStripeCustomerId.mockResolvedValue(null);
+
+      const mod = await import('../services/billing.webhook.service.js');
+      BillingWebhookService = mod.default;
+
+      await BillingWebhookService.handleCheckoutCompleted({
+        customer: 'cus_unknown',
+        subscription: 'sub_456',
+        metadata: {},
+      });
+
+      expect(mockSubscriptionRepository.findByStripeCustomerId).toHaveBeenCalledWith('cus_unknown');
+      expect(mockSubscriptionRepository.findByOrganization).not.toHaveBeenCalled();
+    });
+
+    test('should fallback to stripeCustomerId when organizationId is missing in metadata', async () => {
+      mockSubscriptionRepository.findByStripeCustomerId.mockResolvedValue({ organization: orgId });
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue(null);
+      mockSubscriptionRepository.create.mockResolvedValue({});
+
       const mod = await import('../services/billing.webhook.service.js');
       BillingWebhookService = mod.default;
 
@@ -118,7 +139,10 @@ describe('Billing webhook service unit tests:', () => {
         metadata: {},
       });
 
-      expect(mockSubscriptionRepository.findByOrganization).not.toHaveBeenCalled();
+      expect(mockSubscriptionRepository.findByStripeCustomerId).toHaveBeenCalledWith('cus_123');
+      expect(mockSubscriptionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ organization: orgId }),
+      );
     });
   });
 

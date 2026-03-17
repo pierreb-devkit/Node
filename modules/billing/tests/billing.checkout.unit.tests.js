@@ -204,6 +204,10 @@ describe('Billing service unit tests:', () => {
         line_items: [{ price: 'price_starter_m', quantity: 1 }],
         success_url: 'http://ok',
         cancel_url: 'http://cancel',
+        metadata: {
+          organizationId: orgId,
+          plan: 'free',
+        },
       });
     });
   });

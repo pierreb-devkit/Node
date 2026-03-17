@@ -85,15 +85,26 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
         stripeCustomerId: customer.id,
       });
     } else {
-      subscription = await SubscriptionRepository.create({
-        organization: organization._id,
-        stripeCustomerId: customer.id,
-      });
+      try {
+        subscription = await SubscriptionRepository.create({
+          organization: organization._id,
+          stripeCustomerId: customer.id,
+        });
+      } catch (err) {
+        if (err.code === 11000) {
+          subscription = await SubscriptionRepository.findByOrganization(organization._id);
+        } else {
+          throw err;
+        }
+      }
     }
     // Re-read to handle race: if another request already set stripeCustomerId, use that
     const latest = await SubscriptionRepository.findByOrganization(organization._id);
     if (latest?.stripeCustomerId) subscription = latest;
   }
+
+  // Derive plan name from priceId for checkout metadata
+  const matchedPlan = plans.find((p) => p.stripePriceMonthly === priceId || p.stripePriceAnnual === priceId);
 
   const session = await stripe.checkout.sessions.create({
     customer: subscription.stripeCustomerId,
@@ -101,6 +112,10 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
     line_items: [{ price: priceId, quantity: 1 }],
     success_url: successUrl,
     cancel_url: cancelUrl,
+    metadata: {
+      organizationId: String(organization._id),
+      plan: matchedPlan?.name || 'free',
+    },
   });
 
   return session.url;
