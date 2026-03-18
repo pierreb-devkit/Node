@@ -20,7 +20,8 @@ const isAllowedUrl = (url) => {
     const parsed = new URL(url);
     const env = process.env.NODE_ENV || 'development';
     const allowHttp = env === 'development' || env === 'test';
-    if (!allowHttp && parsed.protocol !== 'https:') return false;
+    const allowedProtocols = allowHttp ? ['http:', 'https:'] : ['https:'];
+    if (!allowedProtocols.includes(parsed.protocol)) return false;
     if (config.domain && !allowHttp) {
       const configHost = new URL(config.domain.startsWith('http') ? config.domain : `https://${config.domain}`).hostname;
       if (parsed.hostname !== configHost) return false;
@@ -48,8 +49,14 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
   }
 
   // Validate priceId against known active Stripe prices and resolve the canonical plan id
+  if (typeof priceId !== 'string' || !priceId.trim()) {
+    throw new Error('Invalid priceId: must be an active published price');
+  }
   const plans = await BillingPlansService.getPlans();
-  const matchedPlan = plans.find((p) => p.stripePriceMonthly === priceId || p.stripePriceAnnual === priceId);
+  const matchedPlan = plans.find(
+    (p) => (p.stripePriceMonthly && p.stripePriceMonthly === priceId)
+      || (p.stripePriceAnnual && p.stripePriceAnnual === priceId),
+  );
   if (!matchedPlan) {
     throw new Error('Invalid priceId: must be an active published price');
   }
