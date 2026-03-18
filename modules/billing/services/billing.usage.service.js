@@ -9,8 +9,8 @@ import UsageRepository from '../repositories/billing.usage.repository.js';
  */
 const currentMonth = () => {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const year = now.getUTCFullYear();
+  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
   return `${year}-${month}`;
 };
 
@@ -29,8 +29,9 @@ const increment = (organizationId, key, amount) => UsageRepository.increment(org
  * @returns {Promise<Object>} The usage document or an object with empty counters.
  */
 const get = async (organizationId) => {
-  const usage = await UsageRepository.get(organizationId, currentMonth());
-  return usage || { organizationId, month: currentMonth(), counters: {} };
+  const month = currentMonth();
+  const usage = await UsageRepository.get(organizationId, month);
+  return usage || { organizationId, month, counters: {} };
 };
 
 /**

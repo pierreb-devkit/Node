@@ -1,7 +1,7 @@
 /**
  * Module dependencies.
  */
-import { jest, beforeEach, afterEach } from '@jest/globals';
+import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globals';
 import schema from '../models/billing.usage.schema.js';
 
 /**
@@ -47,6 +47,18 @@ describe('BillingUsage unit tests:', () => {
 
     test('should show error when month is missing', () => {
       delete usage.month;
+      const result = schema.BillingUsage.safeParse(usage);
+      expect(result.error).toBeDefined();
+    });
+
+    test('should reject semantically invalid month 2026-00', () => {
+      usage.month = '2026-00';
+      const result = schema.BillingUsage.safeParse(usage);
+      expect(result.error).toBeDefined();
+    });
+
+    test('should reject semantically invalid month 2026-13', () => {
+      usage.month = '2026-13';
       const result = schema.BillingUsage.safeParse(usage);
       expect(result.error).toBeDefined();
     });

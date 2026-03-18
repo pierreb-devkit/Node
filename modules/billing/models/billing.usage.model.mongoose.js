@@ -14,7 +14,6 @@ const UsageMongoose = new Schema(
       type: Schema.ObjectId,
       ref: 'Organization',
       required: true,
-      index: true,
     },
     month: {
       type: String,
