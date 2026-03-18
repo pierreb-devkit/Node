@@ -1,30 +1,17 @@
 /**
  * Module dependencies
  */
-import Stripe from 'stripe';
-
 import config from '../../../config/index.js';
+import getStripe from '../lib/stripe.js';
 import BillingPlansService from './billing.plans.service.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 
 /**
- * Lazily instantiated Stripe client
- */
-let stripeClient = null;
-
-/**
- * @desc Get or create the Stripe client instance
- * @returns {Object|null} Stripe client or null if not configured
- */
-const getStripe = () => {
-  if (stripeClient) return stripeClient;
-  if (!config.stripe?.secretKey) return null;
-  stripeClient = new Stripe(config.stripe.secretKey);
-  return stripeClient;
-};
-
-/**
- * @desc Validate that a URL uses https (or http in dev/test) and belongs to the app domain
+ * Validate that a redirect URL is safe for the current environment.
+ * In production the URL must use HTTPS and, when config.domain is set,
+ * its hostname must match the application domain.
+ * In development / test only basic URL parsing is enforced (HTTP allowed,
+ * any hostname accepted) so that localhost workflows are not blocked.
  * @param {String} url - URL to validate
  * @returns {Boolean} true if valid
  */
@@ -33,8 +20,9 @@ const isAllowedUrl = (url) => {
     const parsed = new URL(url);
     const env = process.env.NODE_ENV || 'development';
     const allowHttp = env === 'development' || env === 'test';
-    if (!allowHttp && parsed.protocol !== 'https:') return false;
-    if (config.domain) {
+    const allowedProtocols = allowHttp ? ['http:', 'https:'] : ['https:'];
+    if (!allowedProtocols.includes(parsed.protocol)) return false;
+    if (config.domain && !allowHttp) {
       const configHost = new URL(config.domain.startsWith('http') ? config.domain : `https://${config.domain}`).hostname;
       if (parsed.hostname !== configHost) return false;
     }
@@ -57,13 +45,19 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
   if (!stripe) throw new Error('Stripe is not configured');
 
   if (!isAllowedUrl(successUrl) || !isAllowedUrl(cancelUrl)) {
-    throw new Error('Invalid redirect URL: must use HTTPS and match the application domain');
+    throw new Error('Invalid redirect URL: must be a valid URL (production requires HTTPS and a matching application domain)');
   }
 
-  // Validate priceId against known active Stripe prices
+  // Validate priceId against known active Stripe prices and resolve the canonical plan id
+  if (typeof priceId !== 'string' || !priceId.trim()) {
+    throw new Error('Invalid priceId: must be an active published price');
+  }
   const plans = await BillingPlansService.getPlans();
-  const allowedPriceIds = plans.flatMap((p) => [p.stripePriceMonthly, p.stripePriceAnnual].filter(Boolean));
-  if (!allowedPriceIds.includes(priceId)) {
+  const matchedPlan = plans.find(
+    (p) => (p.stripePriceMonthly && p.stripePriceMonthly === priceId)
+      || (p.stripePriceAnnual && p.stripePriceAnnual === priceId),
+  );
+  if (!matchedPlan) {
     throw new Error('Invalid priceId: must be an active published price');
   }
 
@@ -103,9 +97,6 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
     if (latest?.stripeCustomerId) subscription = latest;
   }
 
-  // Derive plan name from priceId for checkout metadata
-  const matchedPlan = plans.find((p) => p.stripePriceMonthly === priceId || p.stripePriceAnnual === priceId);
-
   const session = await stripe.checkout.sessions.create({
     customer: subscription.stripeCustomerId,
     mode: 'subscription',
@@ -114,7 +105,7 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
     cancel_url: cancelUrl,
     metadata: {
       organizationId: String(organization._id),
-      plan: matchedPlan?.planId || 'free',
+      plan: matchedPlan.planId,
     },
   });
 
@@ -136,7 +127,7 @@ const createPortalSession = async (organization, returnUrl) => {
 
   const params = { customer: subscription.stripeCustomerId };
   if (returnUrl) {
-    if (!isAllowedUrl(returnUrl)) throw new Error('Invalid return URL: must use HTTPS and match the application domain');
+    if (!isAllowedUrl(returnUrl)) throw new Error('Invalid return URL: must be a valid URL (production requires HTTPS and a matching application domain)');
     params.return_url = returnUrl;
   }
 
