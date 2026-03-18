@@ -13,7 +13,7 @@ const Organization = mongoose.model('Organization');
  * Plan rank lookup — higher index means higher-tier plan.
  * Used to determine upgrade vs downgrade.
  */
-const planRanks = Object.fromEntries(config.billing.plans.map((p, i) => [p, i]));
+const planRanks = Object.fromEntries((config.billing?.plans || []).map((p, i) => [p, i]));
 
 /**
  * @desc Resolve the plan name from a Stripe subscription object.

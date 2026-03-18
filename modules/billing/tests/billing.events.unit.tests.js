@@ -38,6 +38,14 @@ describe('Billing plan.changed event unit tests:', () => {
       },
     }));
 
+    jest.unstable_mockModule('../../../config/index.js', () => ({
+      default: {
+        billing: {
+          plans: ['free', 'starter', 'pro', 'enterprise'],
+        },
+      },
+    }));
+
     // Import service and events from the same module context
     const mod = await import('../services/billing.webhook.service.js');
     BillingWebhookService = mod.default;
