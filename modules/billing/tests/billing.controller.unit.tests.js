@@ -113,7 +113,7 @@ describe('Billing webhook controller unit tests:', () => {
     const req = { headers: { 'stripe-signature': 'sig_ok' }, body: 'raw' };
     await BillingWebhookController.handleWebhook(req, res);
 
-    expect(mockBillingWebhookService.handleSubscriptionUpdated).toHaveBeenCalledWith({ id: 'sub_123' });
+    expect(mockBillingWebhookService.handleSubscriptionUpdated).toHaveBeenCalledWith({ id: 'sub_123' }, eventData);
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
