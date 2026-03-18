@@ -48,7 +48,7 @@ describe('requireQuota middleware:', () => {
       default: mockConfig,
     }));
 
-    const mod = await import('../middlewares/billing.quota.middleware.js');
+    const mod = await import('../middlewares/billing.requireQuota.js');
     requireQuota = mod.default;
 
     req = {
@@ -86,11 +86,10 @@ describe('requireQuota middleware:', () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(429);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'QUOTA_EXCEEDED',
-      resource: 'scraps',
-      action: 'create',
-      limit: 3,
-      current: 3,
+      type: 'error',
+      message: 'Quota exceeded',
+      code: 429,
+      status: 429,
     }));
   });
 
@@ -113,7 +112,8 @@ describe('requireQuota middleware:', () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(429);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-      limit: 3,
+      type: 'error',
+      code: 429,
     }));
   });
 
@@ -126,7 +126,8 @@ describe('requireQuota middleware:', () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(429);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-      limit: 3,
+      type: 'error',
+      code: 429,
     }));
   });
 
@@ -146,14 +147,13 @@ describe('requireQuota middleware:', () => {
     await requireQuota('scraps', 'execute')(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(429);
-    expect(res.json).toHaveBeenCalledWith({
-      type: 'QUOTA_EXCEEDED',
-      resource: 'scraps',
-      action: 'execute',
-      limit: 100,
-      current: 100,
-      upgradeUrl: '/billing/plans',
-    });
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'error',
+      message: 'Quota exceeded',
+      code: 429,
+      status: 429,
+      description: 'You have reached the usage limit for this resource',
+    }));
   });
 
   test('should return 403 when organization context is missing', async () => {

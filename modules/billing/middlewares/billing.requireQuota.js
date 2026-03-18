@@ -12,6 +12,11 @@ import responses from '../../../lib/helpers/responses.js';
  * Reads limits from `config.billing.quotas[plan][resource][action]` and
  * compares against the current month's usage via BillingUsageService.
  *
+ * When no quota is configured for the plan/resource/action combination
+ * (limit is `null` or `undefined`), the request is allowed through.
+ * When the limit is `Infinity`, the request is also allowed without
+ * checking usage (unlimited plan).
+ *
  * Expects `req.organization` to be set by resolveOrganization upstream.
  *
  * @param {string} resource - The quota resource name (e.g. 'scraps').
@@ -19,6 +24,13 @@ import responses from '../../../lib/helpers/responses.js';
  * @returns {Function} Express middleware function.
  */
 function requireQuota(resource, action) {
+  /**
+   * Enforce quota for a resource/action and block requests when limit is reached.
+   * @param {import('express').Request} req - Express request object.
+   * @param {import('express').Response} res - Express response object.
+   * @param {import('express').NextFunction} next - Express next callback.
+   * @returns {Promise<void>} Resolves when middleware handling completes.
+   */
   return async function requireQuotaMiddleware(req, res, next) {
     if (!req.organization) {
       return responses.error(res, 403, 'Forbidden', 'Organization context is required to check quota')();
@@ -45,7 +57,7 @@ function requireQuota(resource, action) {
       const current = usage.counters[counterKey] || 0;
 
       if (current >= limit) {
-        return res.status(429).json({
+        return responses.error(res, 429, 'Quota exceeded', 'You have reached the usage limit for this resource')({
           type: 'QUOTA_EXCEEDED',
           resource,
           action,
