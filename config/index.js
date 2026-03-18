@@ -135,6 +135,7 @@ const initGlobalConfig = async () => {
   configHelper.initSecureMode(config);
   // Print a warning if config.domain is not set
   if (process.env.NODE_ENV !== 'test') configHelper.validateDomainIsSet(config);
+  if (process.env.NODE_ENV !== 'test') configHelper.validateJwtSecret(config);
   // Expose configuration utilities
   const conf = { ...config };
   conf.utils = {

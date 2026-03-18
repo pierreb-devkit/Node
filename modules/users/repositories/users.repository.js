@@ -76,7 +76,14 @@ const get = (user = {}) => {
  * @param {Object} mongoose input request
  * @returns {Array} users
  */
-const search = (input) => User.find(input).exec();
+const search = (input) => {
+  for (const value of Object.values(input)) {
+    if (typeof value === 'object' && value !== null) {
+      throw new Error('Invalid search parameter');
+    }
+  }
+  return User.find(input).exec();
+};
 
 /**
  * @desc Function to update a user in db

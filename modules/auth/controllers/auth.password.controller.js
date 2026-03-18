@@ -27,9 +27,10 @@ const forgot = async (req, res) => {
   let user;
   // check input
   if (!req.body.email) return responses.error(res, 422, 'Unprocessable Entity', 'Mail field must not be blank')();
+  const email = String(req.body.email);
   // get user generate and add token
   try {
-    user = await UserService.getBrut({ email: req.body.email });
+    user = await UserService.getBrut({ email });
     if (!user) return responses.error(res, 400, 'Bad Request', 'No account with that email has been found')();
     if (user.provider !== 'local')
       return responses.error(res, 400, 'Bad Request', `It seems like you signed up using your ${user.provider} account`)();
@@ -68,7 +69,7 @@ const forgot = async (req, res) => {
  */
 const validateResetToken = async (req, res) => {
   try {
-    const user = await UserService.getBrut({ resetPasswordToken: req.params.token });
+    const user = await UserService.getBrut({ resetPasswordToken: String(req.params.token) });
     if (!user || !user.email) return res.redirect('/api/password/reset/invalid');
     res.redirect(`/api/password/reset/${req.params.token}`);
   } catch (_err) {
@@ -86,9 +87,10 @@ const reset = async (req, res) => {
   let user;
   // check input
   if (!req.body.token || !req.body.newPassword) return responses.error(res, 400, 'Bad Request', 'Password or Token fields must not be blank')();
+  const token = String(req.body.token);
   // get user by token, update with new password, login again
   try {
-    user = await UserService.getBrut({ resetPasswordToken: req.body.token });
+    user = await UserService.getBrut({ resetPasswordToken: token });
     if (!user || !user.email) return responses.error(res, 400, 'Bad Request', 'Password reset token is invalid or has expired.')();
     const edit = {
       password: await AuthService.hashPassword(req.body.newPassword),
