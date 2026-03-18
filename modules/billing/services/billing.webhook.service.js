@@ -3,9 +3,17 @@
  */
 import mongoose from 'mongoose';
 
+import config from '../../../config/index.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
+import billingEvents from '../lib/events.js';
 
 const Organization = mongoose.model('Organization');
+
+/**
+ * Plan rank lookup — higher index means higher-tier plan.
+ * Used to determine upgrade vs downgrade.
+ */
+const planRanks = Object.fromEntries(config.billing.plans.map((p, i) => [p, i]));
 
 /**
  * @desc Resolve the plan name from a Stripe subscription object.
@@ -75,20 +83,39 @@ const handleCheckoutCompleted = async (session) => {
  * @param {Object} subscription - Stripe subscription object
  * @returns {Promise<void>}
  */
-const handleSubscriptionUpdated = async (subscription) => {
+const handleSubscriptionUpdated = async (subscription, event) => {
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(subscription.id);
   if (!existing) return;
 
-  const plan = resolvePlan(subscription);
+  const newPlan = resolvePlan(subscription);
   await SubscriptionRepository.update({
     _id: existing._id,
-    plan,
+    plan: newPlan,
     status: subscription.status,
     currentPeriodEnd: new Date(subscription.current_period_end * 1000),
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
   });
 
-  await syncOrganizationPlan(existing.organization?._id || existing.organization, plan);
+  const organizationId = String(existing.organization?._id || existing.organization);
+  await syncOrganizationPlan(organizationId, newPlan);
+
+  // Detect plan change from previous_attributes and emit event
+  const previousItems = event?.data?.previous_attributes?.items?.data;
+  if (previousItems) {
+    const previousPlan = previousItems[0]?.price?.metadata?.planId
+      || previousItems[0]?.plan?.metadata?.planId
+      || null;
+    if (previousPlan && previousPlan !== newPlan) {
+      const isDowngrade = (planRanks[previousPlan] ?? -1) > (planRanks[newPlan] ?? -1);
+      billingEvents.emit('plan.changed', {
+        organizationId,
+        previousPlan,
+        newPlan,
+        subscription,
+        isDowngrade,
+      });
+    }
+  }
 };
 
 /**

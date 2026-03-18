@@ -31,7 +31,7 @@ const handleWebhook = async (req, res) => {
         await BillingWebhookService.handleCheckoutCompleted(event.data.object);
         break;
       case 'customer.subscription.updated':
-        await BillingWebhookService.handleSubscriptionUpdated(event.data.object);
+        await BillingWebhookService.handleSubscriptionUpdated(event.data.object, event);
         break;
       case 'customer.subscription.deleted':
         await BillingWebhookService.handleSubscriptionDeleted(event.data.object);
