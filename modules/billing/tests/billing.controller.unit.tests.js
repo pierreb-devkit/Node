@@ -77,7 +77,7 @@ describe('Billing webhook controller unit tests:', () => {
     await BillingWebhookController.handleWebhook(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Webhook signature verification failed: bad signature' });
+    expect(res.json).toHaveBeenCalledWith({ error: 'Webhook signature verification failed' });
   });
 
   test('should handle checkout.session.completed event', async () => {

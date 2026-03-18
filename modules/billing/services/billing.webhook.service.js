@@ -37,8 +37,14 @@ const syncOrganizationPlan = async (organizationId, plan) => {
  */
 const handleCheckoutCompleted = async (session) => {
   const { customer: stripeCustomerId, subscription: stripeSubscriptionId, metadata } = session;
-  const organizationId = metadata?.organizationId;
+  let organizationId = metadata?.organizationId;
   const plan = metadata?.plan || 'free';
+
+  // Fallback: resolve organizationId from stripeCustomerId if metadata is missing
+  if (!organizationId) {
+    const sub = await SubscriptionRepository.findByStripeCustomerId(stripeCustomerId);
+    if (sub) organizationId = String(sub.organization?._id || sub.organization);
+  }
 
   if (!organizationId || !mongoose.Types.ObjectId.isValid(organizationId)) return;
 
