@@ -81,6 +81,7 @@ const handleCheckoutCompleted = async (session) => {
 /**
  * @desc Handle customer.subscription.updated event — sync subscription state
  * @param {Object} subscription - Stripe subscription object
+ * @param {Object} event - Full Stripe event (with data.previous_attributes for plan change detection)
  * @returns {Promise<void>}
  */
 const handleSubscriptionUpdated = async (subscription, event) => {
@@ -106,14 +107,18 @@ const handleSubscriptionUpdated = async (subscription, event) => {
       || previousItems[0]?.plan?.metadata?.planId
       || null;
     if (previousPlan && previousPlan !== newPlan) {
-      const isDowngrade = (planRanks[previousPlan] ?? -1) > (planRanks[newPlan] ?? -1);
-      billingEvents.emit('plan.changed', {
-        organizationId,
-        previousPlan,
-        newPlan,
-        subscription,
-        isDowngrade,
-      });
+      const prevRank = planRanks[previousPlan];
+      const newRank = planRanks[newPlan];
+      const isDowngrade = prevRank != null && newRank != null ? prevRank > newRank : null;
+      try {
+        billingEvents.emit('plan.changed', {
+          organizationId,
+          previousPlan,
+          newPlan,
+          subscription,
+          isDowngrade,
+        });
+      } catch { /* listener errors must not disrupt webhook processing */ }
     }
   }
 };
