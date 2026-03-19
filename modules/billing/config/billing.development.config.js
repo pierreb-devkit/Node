@@ -2,6 +2,12 @@ const config = {
   billing: {
     // Plans available for subscriptions — extend as needed
     plans: ['free', 'starter', 'pro', 'enterprise'],
+    // Quotas — downstream projects override these per plan:
+    // quotas: {
+    //   free:    { documents: { create: 10, export: 50 } },
+    //   starter: { documents: { create: 100, export: 500 } },
+    //   pro:     { documents: { create: Infinity, export: Infinity } },
+    // },
     // Stripe subscription statuses — see https://docs.stripe.com/api/subscriptions/object#subscription_object-status
     statuses: [
       'incomplete',
