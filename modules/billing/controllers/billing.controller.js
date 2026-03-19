@@ -1,8 +1,10 @@
 /**
  * Module dependencies
  */
+import config from '../../../config/index.js';
 import responses from '../../../lib/helpers/responses.js';
 import BillingService from '../services/billing.service.js';
+import BillingUsageService from '../services/billing.usage.service.js';
 
 /**
  * @desc Endpoint to create a Stripe Checkout session
@@ -55,8 +57,50 @@ const getSubscription = async (req, res) => {
   }
 };
 
+/**
+ * @desc Endpoint to get billing usage for the current organization
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+const getUsage = async (req, res) => {
+  try {
+    // Determine current plan via service layer
+    const subscription = await BillingService.getSubscription(req.organization._id);
+    const activeStatuses = ['active', 'trialing'];
+    const plan = (!subscription || !activeStatuses.includes(subscription.status)) ? 'free' : (subscription.plan || 'free');
+
+    // Get usage counters (includes month field)
+    const usage = await BillingUsageService.get(req.organization._id.toString());
+
+    // Flatten quotas config into { "resource.action": limit } format
+    // Normalize Infinity to null for JSON-safe serialization
+    const quotas = config.billing?.quotas;
+    let limits = {};
+    if (quotas?.[plan]) {
+      const planQuotas = quotas[plan];
+      for (const resource of Object.keys(planQuotas)) {
+        for (const action of Object.keys(planQuotas[resource])) {
+          const rawLimit = planQuotas[resource][action];
+          limits[`${resource}.${action}`] = Number.isFinite(rawLimit) ? rawLimit : null;
+        }
+      }
+    }
+
+    responses.success(res, 'billing usage')({
+      plan,
+      period: usage.month,
+      usage: usage.counters || {},
+      limits,
+    });
+  } catch (err) {
+    responses.error(res, 500, 'Internal Server Error', 'Failed to retrieve billing usage')(err);
+  }
+};
+
 export default {
   checkout,
   portal,
   getSubscription,
+  getUsage,
 };
