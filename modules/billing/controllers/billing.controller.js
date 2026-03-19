@@ -1,8 +1,11 @@
 /**
  * Module dependencies
  */
+import config from '../../../config/index.js';
 import responses from '../../../lib/helpers/responses.js';
 import BillingService from '../services/billing.service.js';
+import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
+import BillingUsageService from '../services/billing.usage.service.js';
 
 /**
  * @desc Endpoint to create a Stripe Checkout session
@@ -55,8 +58,53 @@ const getSubscription = async (req, res) => {
   }
 };
 
+/**
+ * @desc Endpoint to get billing usage for the current organization
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+const getUsage = async (req, res) => {
+  try {
+    // Determine current plan
+    const subscription = await SubscriptionRepository.findByOrganization(req.organization._id);
+    const plan = (!subscription || subscription.status === 'past_due') ? 'free' : (subscription.plan || 'free');
+
+    // Get usage counters
+    const usage = await BillingUsageService.get(req.organization._id.toString());
+
+    // Compute current month UTC for period
+    const now = new Date();
+    const year = now.getUTCFullYear();
+    const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+    const period = `${year}-${month}`;
+
+    // Flatten quotas config into { "resource.action": limit } format
+    const quotas = config.billing?.quotas;
+    let limits = {};
+    if (quotas?.[plan]) {
+      const planQuotas = quotas[plan];
+      for (const resource of Object.keys(planQuotas)) {
+        for (const action of Object.keys(planQuotas[resource])) {
+          limits[`${resource}.${action}`] = planQuotas[resource][action];
+        }
+      }
+    }
+
+    responses.success(res, 'billing usage')({
+      plan,
+      period,
+      usage: usage.counters || {},
+      limits,
+    });
+  } catch (err) {
+    responses.error(res, 500, 'Internal Server Error', 'Failed to retrieve billing usage')(err);
+  }
+};
+
 export default {
   checkout,
   portal,
   getSubscription,
+  getUsage,
 };

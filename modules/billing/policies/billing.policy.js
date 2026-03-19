@@ -24,6 +24,7 @@ export function billingAbilities(user, membership, { can, cannot }) {
   can('create', 'BillingCheckout');
   can('create', 'BillingPortal');
   can('read', 'BillingSubscription');
+  can('read', 'BillingUsage');
 }
 
 /**

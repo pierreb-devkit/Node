@@ -36,4 +36,10 @@ export default (app) => {
     .route('/api/billing/subscription')
     .all(passport.authenticate('jwt', { session: false }), organization.resolveOrganization, policy.isAllowed)
     .get(billing.getSubscription);
+
+  // usage
+  app
+    .route('/api/billing/usage')
+    .all(passport.authenticate('jwt', { session: false }), organization.resolveOrganization, policy.isAllowed)
+    .get(billing.getUsage);
 };
