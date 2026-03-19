@@ -1,6 +1,7 @@
 /**
  * Module dependencies
  */
+import { activeStatuses } from '../lib/constants.js';
 import config from '../../../config/index.js';
 import responses from '../../../lib/helpers/responses.js';
 import BillingService from '../services/billing.service.js';
@@ -67,7 +68,6 @@ const getUsage = async (req, res) => {
   try {
     // Determine current plan via service layer
     const subscription = await BillingService.getSubscription(req.organization._id);
-    const activeStatuses = ['active', 'trialing'];
     const plan = (!subscription || !activeStatuses.includes(subscription.status)) ? 'free' : (subscription.plan || 'free');
 
     // Get usage counters (includes month field)

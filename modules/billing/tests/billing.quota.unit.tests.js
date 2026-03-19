@@ -117,19 +117,22 @@ describe('requireQuota middleware:', () => {
     }));
   });
 
-  test('should treat past_due subscription as free plan', async () => {
-    mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'starter', status: 'past_due' });
-    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps.create': 3 } });
+  test.each(['past_due', 'canceled', 'unpaid', 'incomplete', 'incomplete_expired', 'paused'])(
+    'should treat %s subscription as free plan',
+    async (status) => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'starter', status });
+      mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps.create': 3 } });
 
-    await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('scraps', 'create')(req, res, next);
 
-    expect(next).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(429);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'error',
-      code: 429,
-    }));
-  });
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(429);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'error',
+        code: 429,
+      }));
+    },
+  );
 
   test('should allow unlimited (Infinity) without checking usage', async () => {
     mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro', status: 'active' });
@@ -171,48 +174,6 @@ describe('requireQuota middleware:', () => {
     await requireQuota('unknownResource', 'create')(req, res, next);
 
     expect(next).toHaveBeenCalled();
-  });
-
-  test('should treat canceled subscription as free plan', async () => {
-    mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'starter', status: 'canceled' });
-    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps.create': 3 } });
-
-    await requireQuota('scraps', 'create')(req, res, next);
-
-    expect(next).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(429);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'error',
-      code: 429,
-    }));
-  });
-
-  test('should treat unpaid subscription as free plan', async () => {
-    mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'starter', status: 'unpaid' });
-    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps.create': 3 } });
-
-    await requireQuota('scraps', 'create')(req, res, next);
-
-    expect(next).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(429);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'error',
-      code: 429,
-    }));
-  });
-
-  test('should treat incomplete subscription as free plan', async () => {
-    mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'starter', status: 'incomplete' });
-    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps.create': 3 } });
-
-    await requireQuota('scraps', 'create')(req, res, next);
-
-    expect(next).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(429);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'error',
-      code: 429,
-    }));
   });
 
   test('should use subscription plan when status is trialing', async () => {
