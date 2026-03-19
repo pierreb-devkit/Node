@@ -97,8 +97,15 @@ describe('Billing usage endpoint unit tests:', () => {
     }));
   });
 
-  test('should return free plan when subscription is past_due', async () => {
-    mockBillingService.getSubscription.mockResolvedValue({ plan: 'starter', status: 'past_due' });
+  test.each([
+    'past_due',
+    'canceled',
+    'unpaid',
+    'incomplete',
+    'incomplete_expired',
+    'paused',
+  ])('should return free plan when subscription status is %s', async (status) => {
+    mockBillingService.getSubscription.mockResolvedValue({ plan: 'starter', status });
     mockBillingUsageService.get.mockResolvedValue({ month: '2026-03', counters: { 'documents.create': 2 } });
 
     const req = { organization: { _id: orgId } };
@@ -109,6 +116,22 @@ describe('Billing usage endpoint unit tests:', () => {
       data: expect.objectContaining({
         plan: 'free',
         limits: { 'documents.create': 5, 'requests.execute': 100 },
+      }),
+    }));
+  });
+
+  test('should return paid plan when subscription status is trialing', async () => {
+    mockBillingService.getSubscription.mockResolvedValue({ plan: 'starter', status: 'trialing' });
+    mockBillingUsageService.get.mockResolvedValue({ month: '2026-03', counters: {} });
+
+    const req = { organization: { _id: orgId } };
+    await billingController.getUsage(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        plan: 'starter',
+        limits: { 'documents.create': 20, 'requests.execute': 2000 },
       }),
     }));
   });

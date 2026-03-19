@@ -67,7 +67,8 @@ const getUsage = async (req, res) => {
   try {
     // Determine current plan via service layer
     const subscription = await BillingService.getSubscription(req.organization._id);
-    const plan = (!subscription || subscription.status === 'past_due') ? 'free' : (subscription.plan || 'free');
+    const activeStatuses = ['active', 'trialing'];
+    const plan = (!subscription || !activeStatuses.includes(subscription.status)) ? 'free' : (subscription.plan || 'free');
 
     // Get usage counters (includes month field)
     const usage = await BillingUsageService.get(req.organization._id.toString());
