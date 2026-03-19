@@ -37,9 +37,10 @@ function requireQuota(resource, action) {
     }
 
     try {
-      // Determine current plan — default to free when no subscription or past_due
+      // Determine current plan — default to free when subscription is missing or inactive
       const subscription = await SubscriptionRepository.findByOrganization(req.organization._id);
-      const plan = (!subscription || subscription.status === 'past_due') ? 'free' : (subscription.plan || 'free');
+      const activeStatuses = ['active', 'trialing'];
+      const plan = (!subscription || !activeStatuses.includes(subscription.status)) ? 'free' : (subscription.plan || 'free');
 
       // Look up quota limit from config
       const quotas = config.billing?.quotas;

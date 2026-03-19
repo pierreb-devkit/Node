@@ -173,6 +173,58 @@ describe('requireQuota middleware:', () => {
     expect(next).toHaveBeenCalled();
   });
 
+  test('should treat canceled subscription as free plan', async () => {
+    mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'starter', status: 'canceled' });
+    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps.create': 3 } });
+
+    await requireQuota('scraps', 'create')(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'error',
+      code: 429,
+    }));
+  });
+
+  test('should treat unpaid subscription as free plan', async () => {
+    mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'starter', status: 'unpaid' });
+    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps.create': 3 } });
+
+    await requireQuota('scraps', 'create')(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'error',
+      code: 429,
+    }));
+  });
+
+  test('should treat incomplete subscription as free plan', async () => {
+    mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'starter', status: 'incomplete' });
+    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps.create': 3 } });
+
+    await requireQuota('scraps', 'create')(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'error',
+      code: 429,
+    }));
+  });
+
+  test('should use subscription plan when status is trialing', async () => {
+    mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'starter', status: 'trialing' });
+    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps.create': 15 } });
+
+    await requireQuota('scraps', 'create')(req, res, next);
+
+    expect(next).toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
   test('should treat zero usage as under quota', async () => {
     mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'free', status: 'active' });
     mockBillingUsageService.get.mockResolvedValue({ counters: {} });
