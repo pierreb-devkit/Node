@@ -23,8 +23,8 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js",
+    "start": "node --env-file=.env server.js",
+    "dev": "node --env-file=.env --watch server.js",
     "debug": "nodemon --inspect server.js",
     "prod": "cross-env NODE_ENV=production node server.js --name=node",
     "test": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --runInBand --testPathPatterns='unit'",

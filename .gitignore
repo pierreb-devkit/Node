@@ -19,6 +19,10 @@ coverage/
 
 # waos Node app and assets
 # ======================
+# Environment files (secrets)
+.env
+.env.*
+!.env.example
 public/dist/
 public/swagger.yml
 config/env/local.js
