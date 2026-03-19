@@ -4,7 +4,6 @@
 import config from '../../../config/index.js';
 import responses from '../../../lib/helpers/responses.js';
 import BillingService from '../services/billing.service.js';
-import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import BillingUsageService from '../services/billing.usage.service.js';
 
 /**
@@ -66,34 +65,30 @@ const getSubscription = async (req, res) => {
  */
 const getUsage = async (req, res) => {
   try {
-    // Determine current plan
-    const subscription = await SubscriptionRepository.findByOrganization(req.organization._id);
+    // Determine current plan via service layer
+    const subscription = await BillingService.getSubscription(req.organization._id);
     const plan = (!subscription || subscription.status === 'past_due') ? 'free' : (subscription.plan || 'free');
 
-    // Get usage counters
+    // Get usage counters (includes month field)
     const usage = await BillingUsageService.get(req.organization._id.toString());
 
-    // Compute current month UTC for period
-    const now = new Date();
-    const year = now.getUTCFullYear();
-    const month = String(now.getUTCMonth() + 1).padStart(2, '0');
-    const period = `${year}-${month}`;
-
     // Flatten quotas config into { "resource.action": limit } format
+    // Normalize Infinity to null for JSON-safe serialization
     const quotas = config.billing?.quotas;
     let limits = {};
     if (quotas?.[plan]) {
       const planQuotas = quotas[plan];
       for (const resource of Object.keys(planQuotas)) {
         for (const action of Object.keys(planQuotas[resource])) {
-          limits[`${resource}.${action}`] = planQuotas[resource][action];
+          const rawLimit = planQuotas[resource][action];
+          limits[`${resource}.${action}`] = Number.isFinite(rawLimit) ? rawLimit : null;
         }
       }
     }
 
     responses.success(res, 'billing usage')({
       plan,
-      period,
+      period: usage.month,
       usage: usage.counters || {},
       limits,
     });
