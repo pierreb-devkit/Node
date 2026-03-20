@@ -10,6 +10,18 @@ import billingEvents from '../lib/events.js';
 const Organization = mongoose.model('Organization');
 
 /**
+ * Valid plan names from config (immutable set for O(1) lookups).
+ */
+const validPlans = new Set(config.billing?.plans || ['free', 'starter', 'pro', 'enterprise']);
+
+/**
+ * @desc Validate that a plan name is a known enum value.
+ * @param {string} plan - The plan name to validate.
+ * @returns {string|null} The plan name if valid, null otherwise.
+ */
+const validatePlan = (plan) => (validPlans.has(plan) ? plan : null);
+
+/**
  * Plan rank lookup — higher index means higher-tier plan.
  * Used to determine upgrade vs downgrade.
  */
@@ -24,7 +36,8 @@ const planRanks = Object.fromEntries((config.billing?.plans || []).map((p, i) =>
  */
 const resolvePlan = (subscription) => {
   const item = subscription.items?.data?.[0];
-  return item?.price?.metadata?.planId || item?.plan?.metadata?.planId || 'free';
+  const raw = item?.price?.metadata?.planId || item?.plan?.metadata?.planId;
+  return validatePlan(raw) || 'free';
 };
 
 /**
@@ -46,7 +59,7 @@ const syncOrganizationPlan = async (organizationId, plan) => {
 const handleCheckoutCompleted = async (session) => {
   const { customer: stripeCustomerId, subscription: stripeSubscriptionId, metadata } = session;
   let organizationId = metadata?.organizationId;
-  const plan = metadata?.plan || 'free';
+  const plan = validatePlan(metadata?.plan) || 'free';
 
   // Fallback: resolve organizationId from stripeCustomerId if metadata is missing
   if (!organizationId) {
