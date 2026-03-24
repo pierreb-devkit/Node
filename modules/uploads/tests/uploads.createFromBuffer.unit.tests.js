@@ -149,7 +149,18 @@ describe('Uploads createFromBuffer unit tests:', () => {
     expect(mockGridfs.createFromBuffer).not.toHaveBeenCalled();
   });
 
+  test('should accept empty buffer (0-byte file)', async () => {
+    const emptyBuffer = Buffer.alloc(0);
+    mockGridfs.createFromBuffer.mockResolvedValue({ ...fakeFile, length: 0 });
+
+    const result = await UploadsService.createFromBuffer(emptyBuffer, 'image/jpeg', 'snapshot');
+    expect(result).toBeDefined();
+    expect(result.length).toBe(0);
+    expect(mockGridfs.createFromBuffer).toHaveBeenCalledTimes(1);
+  });
+
   test('should throw error when kind has no formats configured', async () => {
+    // Adding 'broken' kind at runtime — service reads config dynamically via module reference
     mockConfig.uploads.broken = { kind: 'broken', limits: { fileSize: 1024 } };
 
     await expect(
