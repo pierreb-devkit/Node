@@ -91,20 +91,20 @@ describe('Home integration tests:', () => {
       }
     });
 
-    test('should return 422 when GitHub API fails for releases', async () => {
+    test('should return empty releases gracefully when GitHub API fails', async () => {
       axios.get.mockRejectedValueOnce(new Error('GitHub API unavailable'));
-      const result = await agent.get('/api/home/releases').expect(422);
-      expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
-      expect(result.body.description).toBe('GitHub API unavailable.');
+      const result = await agent.get('/api/home/releases').expect(200);
+      expect(result.body.type).toBe('success');
+      expect(result.body.message).toBe('releases');
+      expect(result.body.data).toEqual([]);
     });
 
-    test('should return 422 when GitHub API fails for changelogs', async () => {
+    test('should return empty changelogs gracefully when GitHub API fails', async () => {
       axios.get.mockRejectedValueOnce(new Error('GitHub API unavailable'));
-      const result = await agent.get('/api/home/changelogs').expect(422);
-      expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
-      expect(result.body.description).toBe('GitHub API unavailable.');
+      const result = await agent.get('/api/home/changelogs').expect(200);
+      expect(result.body.type).toBe('success');
+      expect(result.body.message).toBe('changelogs');
+      expect(result.body.data).toEqual([]);
     });
 
     test('should use Authorization header when a token is configured for releases', async () => {
