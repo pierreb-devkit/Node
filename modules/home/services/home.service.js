@@ -28,8 +28,8 @@ const page = async (name) => {
 };
 
 /**
- * @desc Function to get all versions
- * @return {Promise} All versions
+ * @desc Fetch releases from configured GitHub repos. Returns an empty array on API failure (graceful degradation).
+ * @return {Promise<Array<{title: string, list: Array}>>} Releases grouped by repo, or [] on error
  */
 const releases = async () => {
   try {
@@ -54,8 +54,8 @@ const releases = async () => {
 };
 
 /**
- * @desc Function to get all changelogs
- * @return {Promise} All changelogs
+ * @desc Fetch changelogs from configured GitHub repos. Returns an empty array on API failure (graceful degradation).
+ * @return {Promise<Array<{title: string, markdown: string}>>} Changelogs grouped by repo, or [] on error
  */
 const changelogs = async () => {
   try {
