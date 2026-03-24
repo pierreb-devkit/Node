@@ -32,21 +32,25 @@ const page = async (name) => {
  * @return {Promise} All versions
  */
 const releases = async () => {
-  const requests = config.repos.map((item) =>
-    axios.get(`https://api.github.com/repos/${item.owner}/${item.repo}/releases`, {
-      headers: item.token ? { Authorization: `token ${item.token}` } : {},
-    }),
-  );
-  let results = await axios.all(requests);
-  results = results.map((result, i) => ({
-    title: config.repos[i].title,
-    list: result.data.map((release) => ({
-      name: release.name,
-      prerelease: release.prerelease,
-      published_at: release.published_at,
-    })),
-  }));
-  return Promise.resolve(results);
+  try {
+    const requests = config.repos.map((item) =>
+      axios.get(`https://api.github.com/repos/${item.owner}/${item.repo}/releases`, {
+        headers: item.token ? { Authorization: `token ${item.token}` } : {},
+      }),
+    );
+    let results = await axios.all(requests);
+    results = results.map((result, i) => ({
+      title: config.repos[i].title,
+      list: result.data.map((release) => ({
+        name: release.name,
+        prerelease: release.prerelease,
+        published_at: release.published_at,
+      })),
+    }));
+    return results;
+  } catch (_err) {
+    return [];
+  }
 };
 
 /**
@@ -54,18 +58,22 @@ const releases = async () => {
  * @return {Promise} All changelogs
  */
 const changelogs = async () => {
-  const repos = _.filter(config.repos, (repo) => repo.changelog);
-  const requests = repos.map((item) =>
-    axios.get(`https://api.github.com/repos/${item.owner}/${item.repo}/contents/${item.changelog}`, {
-      headers: item.token ? { Authorization: `token ${item.token}` } : {},
-    }),
-  );
-  let results = await axios.all(requests);
-  results = results.map((result, i) => ({
-    title: config.repos[i].title,
-    markdown: Base64.decode(result.data.content),
-  }));
-  return Promise.resolve(results);
+  try {
+    const repos = _.filter(config.repos, (repo) => repo.changelog);
+    const requests = repos.map((item) =>
+      axios.get(`https://api.github.com/repos/${item.owner}/${item.repo}/contents/${item.changelog}`, {
+        headers: item.token ? { Authorization: `token ${item.token}` } : {},
+      }),
+    );
+    let results = await axios.all(requests);
+    results = results.map((result, i) => ({
+      title: repos[i].title,
+      markdown: Base64.decode(result.data.content),
+    }));
+    return results;
+  } catch (_err) {
+    return [];
+  }
 };
 
 /**
