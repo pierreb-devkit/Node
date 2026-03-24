@@ -67,6 +67,13 @@ Node / Express / Mongoose / JWT stack from Devkit. Standalone backend or fullsta
 - PRs: always use `/pull-request` — never open manually
 - After user correction, evaluate if the pattern belongs in `ERRORS.md`
 
+## Workflow rules
+
+- **Never push directly to master/main.** Always create a branch, push, create a PR, wait for CI green + review, then merge.
+- **Never lower coverage thresholds** in `jest.config.js`. If coverage drops after adding code, write tests for the new project modules to bring it back above thresholds.
+- **Audit existing modules before implementing.** Before creating new storage, file handling, or utility code, check `modules/` for existing solutions (e.g., `uploads` module for file storage via GridFS).
+- **Always run `/verify` after any code change** before declaring done. CI must be green.
+
 ## Skills
 
 | Skill | Description |
