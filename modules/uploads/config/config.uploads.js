@@ -15,6 +15,13 @@ const config = {
         operations: ['blur', 'bw', 'blur&bw'],
       },
     },
+    snapshot: {
+      kind: 'snapshot',
+      formats: ['image/jpeg', 'image/png'],
+      limits: {
+        fileSize: 5 * 1024 * 1024, // Max file size in bytes (5 MB)
+      },
+    },
   },
 };
 

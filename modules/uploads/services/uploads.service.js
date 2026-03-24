@@ -1,7 +1,12 @@
 /**
  * Module dependencies
  */
+import crypto from 'crypto';
+
+import config from '../../../config/index.js';
+import AppError from '../../../lib/helpers/AppError.js';
 import multerService from '../../../lib/services/multer.js';
+import gridfs from '../../../lib/services/gridfs.js';
 import UploadRepository from '../repositories/uploads.repository.js';
 
 /**
@@ -53,9 +58,38 @@ const remove = async (upload) => {
   return Promise.resolve(result);
 };
 
+/**
+ * @desc Store a buffer as an upload programmatically (no HTTP request)
+ * @param {Buffer} buffer - File content
+ * @param {string} contentType - MIME type (e.g., 'image/jpeg')
+ * @param {string} kind - Upload kind matching config (e.g., 'snapshot')
+ * @param {Object} metadata - Additional metadata (user, organizationId, etc.)
+ * @returns {Promise<Object>} The created upload document
+ */
+const createFromBuffer = async (buffer, contentType, kind, metadata = {}) => {
+  const kindConfig = config.uploads?.[kind];
+  if (!kindConfig) throw new AppError(`Upload: unknown kind "${kind}"`, { code: 'SERVICE_ERROR', status: 422 });
+
+  if (!kindConfig.formats.includes(contentType)) {
+    throw new AppError(`Upload: content type "${contentType}" not allowed for kind "${kind}"`, { code: 'SERVICE_ERROR', status: 422 });
+  }
+
+  if (kindConfig.limits?.fileSize && buffer.length > kindConfig.limits.fileSize) {
+    throw new AppError(`Upload: buffer size ${buffer.length} exceeds limit ${kindConfig.limits.fileSize}`, { code: 'SERVICE_ERROR', status: 422 });
+  }
+
+  const MIME_TO_EXT = { 'image/jpeg': 'jpeg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'application/pdf': 'pdf' };
+  const ext = MIME_TO_EXT[contentType] || 'bin';
+  const filename = `${crypto.randomBytes(32).toString('hex')}.${ext}`;
+
+  const result = await gridfs.createFromBuffer(buffer, filename, contentType, { ...metadata, kind, contentType });
+  return result;
+};
+
 export default {
   get,
   getStream,
   update,
   remove,
+  createFromBuffer,
 };
