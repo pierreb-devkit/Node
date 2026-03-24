@@ -9,6 +9,14 @@ import multerService from '../../../lib/services/multer.js';
 import gridfs from '../../../lib/services/gridfs.js';
 import UploadRepository from '../repositories/uploads.repository.js';
 
+const MIME_TO_EXT = {
+  'image/jpeg': 'jpeg',
+  'image/jpg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'application/pdf': 'pdf',
+};
+
 /**
  * @desc Function to ask repository to get an upload
  * @param {String} uploadName
@@ -67,8 +75,16 @@ const remove = async (upload) => {
  * @returns {Promise<Object>} The created upload document
  */
 const createFromBuffer = async (buffer, contentType, kind, metadata = {}) => {
+  if (!Buffer.isBuffer(buffer)) {
+    throw new AppError('Upload: buffer is required and must be a Buffer', { code: 'SERVICE_ERROR', status: 422 });
+  }
+
   const kindConfig = config.uploads?.[kind];
   if (!kindConfig) throw new AppError(`Upload: unknown kind "${kind}"`, { code: 'SERVICE_ERROR', status: 422 });
+
+  if (!Array.isArray(kindConfig.formats)) {
+    throw new AppError(`Upload: kind "${kind}" has no formats configured`, { code: 'SERVICE_ERROR', status: 500 });
+  }
 
   if (!kindConfig.formats.includes(contentType)) {
     throw new AppError(`Upload: content type "${contentType}" not allowed for kind "${kind}"`, { code: 'SERVICE_ERROR', status: 422 });
@@ -78,7 +94,6 @@ const createFromBuffer = async (buffer, contentType, kind, metadata = {}) => {
     throw new AppError(`Upload: buffer size ${buffer.length} exceeds limit ${kindConfig.limits.fileSize}`, { code: 'SERVICE_ERROR', status: 422 });
   }
 
-  const MIME_TO_EXT = { 'image/jpeg': 'jpeg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'application/pdf': 'pdf' };
   const ext = MIME_TO_EXT[contentType] || 'bin';
   const filename = `${crypto.randomBytes(32).toString('hex')}.${ext}`;
 

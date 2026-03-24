@@ -128,4 +128,34 @@ describe('Uploads createFromBuffer unit tests:', () => {
 
     expect(mockGridfs.createFromBuffer).not.toHaveBeenCalled();
   });
+
+  test('should throw error when buffer is null or undefined', async () => {
+    await expect(
+      UploadsService.createFromBuffer(null, 'image/jpeg', 'snapshot'),
+    ).rejects.toThrow(/buffer is required/);
+
+    await expect(
+      UploadsService.createFromBuffer(undefined, 'image/jpeg', 'snapshot'),
+    ).rejects.toThrow(/buffer is required/);
+
+    expect(mockGridfs.createFromBuffer).not.toHaveBeenCalled();
+  });
+
+  test('should throw error when buffer is not a Buffer', async () => {
+    await expect(
+      UploadsService.createFromBuffer('not a buffer', 'image/jpeg', 'snapshot'),
+    ).rejects.toThrow(/buffer is required/);
+
+    expect(mockGridfs.createFromBuffer).not.toHaveBeenCalled();
+  });
+
+  test('should throw error when kind has no formats configured', async () => {
+    mockConfig.uploads.broken = { kind: 'broken', limits: { fileSize: 1024 } };
+
+    await expect(
+      UploadsService.createFromBuffer(Buffer.alloc(10), 'image/jpeg', 'broken'),
+    ).rejects.toThrow(/no formats configured/);
+
+    expect(mockGridfs.createFromBuffer).not.toHaveBeenCalled();
+  });
 });
