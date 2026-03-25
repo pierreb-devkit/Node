@@ -137,13 +137,13 @@ describe('Analytics comprehensive tests:', () => {
       responseTimes.forEach((t) => expect(t).toBeGreaterThanOrEqual(0));
     });
 
-    test('should include query string in tracked endpoint', async () => {
+    test('should strip query string from tracked endpoint', async () => {
       await request(app).get('/api/search?q=test&page=1').expect(200);
 
       expect(mockTrack).toHaveBeenCalledWith(
         expect.any(String),
         'api_request',
-        expect.objectContaining({ endpoint: '/api/search?q=test&page=1' }),
+        expect.objectContaining({ endpoint: '/api/search' }),
         expect.anything(),
       );
     });
@@ -199,7 +199,7 @@ describe('Analytics comprehensive tests:', () => {
 
       jest.unstable_mockModule('../services/analytics.service.js', () => ({
         default: {
-          init: mockInit,
+          init: mockInit.mockResolvedValue(undefined),
           track: jest.fn(),
           identify: jest.fn(),
           groupIdentify: mockGroupIdentify,
@@ -221,7 +221,7 @@ describe('Analytics comprehensive tests:', () => {
 
     test('should call AnalyticsService.init() and register middleware', async () => {
       const { default: initAnalytics } = await import('../analytics.init.js');
-      initAnalytics(mockApp);
+      await initAnalytics(mockApp);
 
       expect(mockInit).toHaveBeenCalledTimes(1);
       expect(mockApp.use).toHaveBeenCalledTimes(1);
@@ -232,7 +232,7 @@ describe('Analytics comprehensive tests:', () => {
       const { default: billingEvents } = await import('../../billing/lib/events.js');
       const { default: initAnalytics } = await import('../analytics.init.js');
 
-      initAnalytics(mockApp);
+      await initAnalytics(mockApp);
 
       billingEvents.emit('plan.changed', {
         organizationId: 'org-test',
@@ -254,7 +254,7 @@ describe('Analytics comprehensive tests:', () => {
       const { default: billingEvents } = await import('../../billing/lib/events.js');
       const { default: initAnalytics } = await import('../analytics.init.js');
 
-      initAnalytics(mockApp);
+      await initAnalytics(mockApp);
 
       expect(() => {
         billingEvents.emit('plan.changed', {
@@ -268,7 +268,7 @@ describe('Analytics comprehensive tests:', () => {
       const { default: billingEvents } = await import('../../billing/lib/events.js');
       const { default: initAnalytics } = await import('../analytics.init.js');
 
-      initAnalytics(mockApp);
+      await initAnalytics(mockApp);
 
       billingEvents.emit('plan.changed', {
         organizationId: { toString: () => '507f1f77bcf86cd799439011' },
