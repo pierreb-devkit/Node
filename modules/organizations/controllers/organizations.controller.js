@@ -10,6 +10,7 @@ import policy from '../../../lib/middlewares/policy.js';
 import serializeAbilities from '../../../lib/helpers/abilities.js';
 import OrganizationsService from '../services/organizations.crud.service.js';
 import MembershipService from '../services/organizations.membership.service.js';
+import AnalyticsService from '../../analytics/services/analytics.service.js';
 
 const tokenCookieOptions = {
   httpOnly: true,
@@ -43,6 +44,15 @@ const list = async (req, res) => {
 const create = async (req, res) => {
   try {
     const organization = await OrganizationsService.create(req.body, req.user);
+
+    // Analytics groupIdentify — fire-and-forget, never break org flow
+    try {
+      AnalyticsService.groupIdentify('company', String(organization._id || organization.id), {
+        name: organization.name,
+        createdAt: organization.createdAt,
+      });
+    } catch (_) { /* analytics must not break org creation */ }
+
     responses.success(res, 'organization created')(organization);
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
@@ -71,6 +81,14 @@ const get = (req, res) => {
 const update = async (req, res) => {
   try {
     const organization = await OrganizationsService.update(req.organization, req.body);
+
+    // Analytics groupIdentify — fire-and-forget, never break org flow
+    try {
+      AnalyticsService.groupIdentify('company', String(organization._id || organization.id), {
+        name: organization.name,
+      });
+    } catch (_) { /* analytics must not break org update */ }
+
     responses.success(res, 'organization updated')(organization);
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
