@@ -23,8 +23,9 @@ description: Run quality loop (audit + lint + tests) to verify code quality, cor
 
 2. **Lint** — `npm run lint`
 
-3. **Tests** — check if MongoDB is reachable:
-   - **Infra up** → `npm run test:all` (unit + integration + E2E)
-   - **Infra down** → `npm test` (unit only) + warn: "Integration/E2E skipped — run `docker compose -f docker-compose.test.yml up -d` for full coverage"
+3. **Tests + coverage** — check if MongoDB is reachable:
+   - **Infra up** → `npm run test:coverage` (all tests + coverage enforcement)
+   - **Infra down** → `npm run test:coverage -- --testPathPattern='unit'` (unit only + coverage) + warn: "Integration/E2E skipped — run `docker compose -f docker-compose.test.yml up -d` for full coverage"
+   - If coverage drops below thresholds (jest.config.js) → fail. Add tests, never lower thresholds.
 
 4. **Summary:** ✅ All passed → ready to commit | ❌ Failed → show failures, fix, re-run
