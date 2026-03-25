@@ -1,13 +1,11 @@
 /**
  * Module dependencies
  */
-import { PostHog } from 'posthog-node';
-
 import config from '../../../config/index.js';
 
 /**
  * PostHog client instance (null when not configured)
- * @type {PostHog|null}
+ * @type {import('posthog-node').PostHog|null}
  */
 let client = null;
 
@@ -16,11 +14,16 @@ let client = null;
  * When `posthog.apiKey` is absent the service stays in no-op mode —
  * every public method silently returns without side-effects so that
  * downstream projects that don't use PostHog are never affected.
- * @returns {void}
+ *
+ * The `posthog-node` SDK is lazy-loaded (dynamic import) so that
+ * applications running on Node versions outside the SDK's engine
+ * range never pay the import cost when analytics is unconfigured.
+ * @returns {Promise<void>}
  */
-const init = () => {
+const init = async () => {
   const { apiKey, host } = config.posthog ?? {};
   if (!apiKey) return;
+  const { PostHog } = await import('posthog-node');
   client = new PostHog(apiKey, { host: host || 'https://us.i.posthog.com' });
 };
 

@@ -40,7 +40,7 @@ describe('Analytics service unit tests:', () => {
       const mod = await import('../services/analytics.service.js');
       AnalyticsService = mod.default;
 
-      AnalyticsService.init();
+      await AnalyticsService.init();
       AnalyticsService.track('user-1', 'test-event');
       AnalyticsService.identify('user-1', { name: 'Alice' });
       AnalyticsService.groupIdentify('company', 'org-1', { name: 'Acme' });
@@ -57,7 +57,7 @@ describe('Analytics service unit tests:', () => {
       const mod = await import('../services/analytics.service.js');
       AnalyticsService = mod.default;
 
-      AnalyticsService.init();
+      await AnalyticsService.init();
       AnalyticsService.track('user-1', 'test-event');
 
       const { PostHog } = await import('posthog-node');
@@ -72,7 +72,7 @@ describe('Analytics service unit tests:', () => {
       const mod = await import('../services/analytics.service.js');
       AnalyticsService = mod.default;
 
-      AnalyticsService.init();
+      await AnalyticsService.init();
 
       const result = await AnalyticsService.getFeatureFlag('my-flag', 'user-1');
       expect(result).toBeUndefined();
@@ -86,7 +86,7 @@ describe('Analytics service unit tests:', () => {
       const mod = await import('../services/analytics.service.js');
       AnalyticsService = mod.default;
 
-      AnalyticsService.init();
+      await AnalyticsService.init();
 
       const result = await AnalyticsService.isFeatureEnabled('my-flag', 'user-1');
       expect(result).toBeUndefined();
@@ -100,7 +100,7 @@ describe('Analytics service unit tests:', () => {
       const mod = await import('../services/analytics.service.js');
       AnalyticsService = mod.default;
 
-      AnalyticsService.init();
+      await AnalyticsService.init();
       await expect(AnalyticsService.shutdown()).resolves.toBeUndefined();
     });
   });
@@ -121,7 +121,7 @@ describe('Analytics service unit tests:', () => {
       const mod = await import('../services/analytics.service.js');
       AnalyticsService = mod.default;
 
-      AnalyticsService.init();
+      await AnalyticsService.init();
 
       const { PostHog } = await import('posthog-node');
       expect(PostHog).toHaveBeenCalledWith('phc_test_key', { host: 'https://test.posthog.com' });
@@ -145,7 +145,7 @@ describe('Analytics service unit tests:', () => {
       const mod = await import('../services/analytics.service.js');
       AnalyticsService = mod.default;
 
-      AnalyticsService.init();
+      await AnalyticsService.init();
 
       const { PostHog } = await import('posthog-node');
       expect(PostHog).toHaveBeenCalledWith('phc_test_key', { host: 'https://us.i.posthog.com' });
@@ -155,7 +155,7 @@ describe('Analytics service unit tests:', () => {
       const mod = await import('../services/analytics.service.js');
       AnalyticsService = mod.default;
 
-      AnalyticsService.init();
+      await AnalyticsService.init();
       AnalyticsService.track('user-1', 'page_view', { path: '/' }, { company: 'org-1' });
 
       expect(mockPostHogInstance.capture).toHaveBeenCalledWith({
@@ -170,7 +170,7 @@ describe('Analytics service unit tests:', () => {
       const mod = await import('../services/analytics.service.js');
       AnalyticsService = mod.default;
 
-      AnalyticsService.init();
+      await AnalyticsService.init();
       AnalyticsService.identify('user-1', { email: 'a@b.com' });
 
       expect(mockPostHogInstance.identify).toHaveBeenCalledWith({
@@ -183,7 +183,7 @@ describe('Analytics service unit tests:', () => {
       const mod = await import('../services/analytics.service.js');
       AnalyticsService = mod.default;
 
-      AnalyticsService.init();
+      await AnalyticsService.init();
       AnalyticsService.groupIdentify('company', 'org-1', { name: 'Acme' });
 
       expect(mockPostHogInstance.groupIdentify).toHaveBeenCalledWith({
@@ -197,7 +197,7 @@ describe('Analytics service unit tests:', () => {
       const mod = await import('../services/analytics.service.js');
       AnalyticsService = mod.default;
 
-      AnalyticsService.init();
+      await AnalyticsService.init();
       const result = await AnalyticsService.getFeatureFlag('my-flag', 'user-1', { groups: {} });
 
       expect(mockPostHogInstance.getFeatureFlag).toHaveBeenCalledWith('my-flag', 'user-1', { groups: {} });
@@ -208,7 +208,7 @@ describe('Analytics service unit tests:', () => {
       const mod = await import('../services/analytics.service.js');
       AnalyticsService = mod.default;
 
-      AnalyticsService.init();
+      await AnalyticsService.init();
       const result = await AnalyticsService.isFeatureEnabled('my-flag', 'user-1', { groups: {} });
 
       expect(mockPostHogInstance.isFeatureEnabled).toHaveBeenCalledWith('my-flag', 'user-1', { groups: {} });
@@ -219,7 +219,7 @@ describe('Analytics service unit tests:', () => {
       const mod = await import('../services/analytics.service.js');
       AnalyticsService = mod.default;
 
-      AnalyticsService.init();
+      await AnalyticsService.init();
       await AnalyticsService.shutdown();
 
       expect(mockPostHogInstance.shutdown).toHaveBeenCalled();
@@ -229,7 +229,7 @@ describe('Analytics service unit tests:', () => {
       const mod = await import('../services/analytics.service.js');
       AnalyticsService = mod.default;
 
-      AnalyticsService.init();
+      await AnalyticsService.init();
       await AnalyticsService.shutdown();
 
       // After shutdown, track should be a no-op (no error thrown)
