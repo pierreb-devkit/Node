@@ -18,6 +18,7 @@ import serializeAbilities from '../../../lib/helpers/abilities.js';
 import AuthOrganizationService from '../../organizations/services/organizations.service.js';
 import OrganizationCrudService from '../../organizations/services/organizations.crud.service.js';
 import MembershipService from '../../organizations/services/organizations.membership.service.js';
+import AnalyticsService from '../../analytics/services/analytics.service.js';
 
 const tokenCookieOptions = {
   httpOnly: true,
@@ -105,6 +106,16 @@ const signup = async (req, res) => {
       throw orgErr;
     }
 
+    // Analytics identify — fire-and-forget, never break signup flow
+    try {
+      AnalyticsService.identify(String(user.id), {
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        provider: user.provider,
+      });
+    } catch (_) { /* analytics must not break auth */ }
+
     const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
       expiresIn: config.jwt.expiresIn,
     });
@@ -181,6 +192,16 @@ const signin = async (req, res) => {
       user.currentOrganization._id || user.currentOrganization,
     );
   }
+
+  // Analytics identify — fire-and-forget, never break signin flow
+  try {
+    AnalyticsService.identify(String(user.id || user._id), {
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      lastLoginAt: user.lastLoginAt,
+    });
+  } catch (_) { /* analytics must not break auth */ }
 
   const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
     expiresIn: config.jwt.expiresIn,
