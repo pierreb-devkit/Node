@@ -447,9 +447,13 @@ describe('Analytics groupIdentify on billing plan.changed event:', () => {
         identify: jest.fn(),
         groupIdentify: mockGroupIdentify,
         track: jest.fn(),
-        init: jest.fn(),
+        init: jest.fn().mockResolvedValue(undefined),
         shutdown: jest.fn(),
       },
+    }));
+
+    jest.unstable_mockModule('../middlewares/analytics.middleware.js', () => ({
+      default: jest.fn((_req, _res, next) => next()),
     }));
 
     // Import the real billing events emitter
@@ -466,7 +470,7 @@ describe('Analytics groupIdentify on billing plan.changed event:', () => {
     const { default: initAnalytics } = await import('../analytics.init.js');
 
     const mockApp = { use: jest.fn() };
-    initAnalytics(mockApp);
+    await initAnalytics(mockApp);
 
     billingEvents.emit('plan.changed', {
       organizationId: 'org-billing-1',
@@ -484,7 +488,7 @@ describe('Analytics groupIdentify on billing plan.changed event:', () => {
     const { default: initAnalytics } = await import('../analytics.init.js');
 
     const mockApp = { use: jest.fn() };
-    initAnalytics(mockApp);
+    await initAnalytics(mockApp);
 
     // Should not throw
     expect(() => {
