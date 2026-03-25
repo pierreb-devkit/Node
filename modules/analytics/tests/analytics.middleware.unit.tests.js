@@ -8,6 +8,7 @@ import { jest, beforeEach, afterEach, describe, test, expect } from '@jest/globa
  */
 describe('Analytics middleware unit tests:', () => {
   let analyticsMiddleware;
+  let createAnalyticsMiddleware;
   let mockTrack;
 
   /** @type {import('express').Request} */
@@ -30,6 +31,7 @@ describe('Analytics middleware unit tests:', () => {
 
     const mod = await import('../middlewares/analytics.middleware.js');
     analyticsMiddleware = mod.default;
+    createAnalyticsMiddleware = mod.createAnalyticsMiddleware;
 
     // Build minimal Express-like req/res mocks
     req = {
@@ -113,7 +115,7 @@ describe('Analytics middleware unit tests:', () => {
       'anonymous',
       'api_request',
       expect.any(Object),
-      expect.anything(),
+      { company: 'org-456' },
     );
   });
 
@@ -192,5 +194,36 @@ describe('Analytics middleware unit tests:', () => {
       expect.objectContaining({ endpoint: '/api/fallback' }),
       expect.anything(),
     );
+  });
+
+  test('should strip query strings from endpoint', () => {
+    req.originalUrl = '/api/tasks?page=1&secret=abc';
+    analyticsMiddleware(req, res, next);
+    triggerFinish();
+
+    expect(mockTrack).toHaveBeenCalledWith(
+      expect.any(String),
+      'api_request',
+      expect.objectContaining({ endpoint: '/api/tasks' }),
+      expect.anything(),
+    );
+  });
+
+  test('should accept custom skipPrefixes via createAnalyticsMiddleware', () => {
+    const customMiddleware = createAnalyticsMiddleware({ skipPrefixes: ['/custom'] });
+    req.originalUrl = '/custom/path';
+    customMiddleware(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.on).not.toHaveBeenCalled();
+  });
+
+  test('should not skip default prefixes when custom skipPrefixes provided', () => {
+    const customMiddleware = createAnalyticsMiddleware({ skipPrefixes: ['/custom'] });
+    req.originalUrl = '/api/health';
+    customMiddleware(req, res, next);
+
+    // /api/health is NOT in the custom prefixes, so it should be tracked
+    expect(res.on).toHaveBeenCalledWith('finish', expect.any(Function));
   });
 });
