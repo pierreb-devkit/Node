@@ -77,7 +77,7 @@ If an action affects another user:
 - [ ] Error responses have user-friendly `description` field
 
 **Tests:**
-- [ ] Tests: add unit + integration tests. Add E2E (`*.e2e.tests.js`) only if the change affects a critical user flow (auth, org onboarding, invite/join).
+- [ ] Tests: add unit (`*.unit.tests.js`) + integration (`*.integration.tests.js`) tests. Add E2E (`*.e2e.tests.js`) only if the change affects a critical user flow (auth, org onboarding, invite/join).
 
 **Modularity:**
 - [ ] Isolated in ONE module (or justified)

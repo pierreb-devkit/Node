@@ -135,7 +135,7 @@ REPEAT:
   6. If actionable comments             → fix all, /verify, commit, push, reply, resolve, consecutive_zero=0, GOTO 1
   7. If non-actionable unresolved       → reply all explaining why, resolve all, consecutive_zero=0, GOTO 5
   8. If zero unresolved threads         → consecutive_zero++
-                                           if consecutive_zero >= 3 → check branch protection (see 6f), then STOP ✓
+                                           if consecutive_zero >= 3 (~9 min) → check branch protection (see 6f), then STOP ✓
                                            else GOTO 3
 ```
 
@@ -202,7 +202,7 @@ Wait 30s before watching CI (regular or force-push). Loop back to 6a. Never post
 
 ### 6f. Stop condition
 
-CI green **and** 2 consecutive passes with zero unresolved threads. Mergeable status is also checked after every CI pass (step 2b) — conflicts cause an early stop. Final branch protection check:
+CI green **and** 3 consecutive passes (~9 min of grace periods) with zero unresolved threads. Mergeable status is also checked after every CI pass (step 2b) — conflicts cause an early stop. Final branch protection check:
 
 ```bash
 gh pr view "$PR" --json reviewDecision,mergeable | jq '{reviewDecision, mergeable}'
@@ -210,6 +210,7 @@ gh pr view "$PR" --json reviewDecision,mergeable | jq '{reviewDecision, mergeabl
 
 - `APPROVED` + `MERGEABLE` → **STOP ✓**
 - `REVIEW_REQUIRED` → report to user, stop
+- `CHANGES_REQUESTED` → report to user, stop
 - `BLOCKED` → report details to user
 
 **Safety limit:** 10 iterations max — report to user if still unresolved.
