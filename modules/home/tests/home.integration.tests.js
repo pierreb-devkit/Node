@@ -146,6 +146,20 @@ describe('Home integration tests:', () => {
       expect(result.body.data.memory).toBeDefined();
       expect(result.body.data.memory.heapUsed).toBeDefined();
     });
+
+    test('should return 503 when health status is degraded', async () => {
+      jest.spyOn(HomeService, 'getHealthStatus').mockReturnValueOnce({
+        status: 'degraded',
+        db: 'disconnected',
+        uptime: 0,
+        version: '0.0.0',
+        memory: process.memoryUsage(),
+      });
+      const result = await agent.get('/api/health').expect(503);
+      expect(result.body.type).toBe('error');
+      expect(result.body.message).toBe('Service Unavailable');
+      expect(result.body.description).toBe('degraded');
+    });
   });
 
   describe('Errors', () => {

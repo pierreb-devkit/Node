@@ -23,7 +23,7 @@ const AuditLog = z.object({
  * Query filter schema for list endpoint
  */
 const AuditQuery = z.object({
-  action: z.string().trim().optional(),
+  action: z.string().trim().min(1).optional(),
   userId: z.string().trim().regex(objectIdRegex, 'must be a valid ObjectId').optional(),
   orgId: z.string().trim().regex(objectIdRegex, 'must be a valid ObjectId').optional(),
   page: z.coerce.number().int().min(1).default(1),

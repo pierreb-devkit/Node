@@ -21,6 +21,15 @@ jest.unstable_mockModule('../../../config/index.js', () => ({
   },
 }));
 
+// Mock logger to avoid winston config dependency in unit tests
+jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+  default: {
+    error: jest.fn(),
+    warn: jest.fn(),
+    info: jest.fn(),
+  },
+}));
+
 /**
  * Unit tests
  */

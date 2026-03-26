@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import config from '../../../config/index.js';
+import logger from '../../../lib/services/logger.js';
 import AuditRepository from '../repositories/audit.repository.js';
 import AuditSchema from '../models/audit.schema.js';
 
@@ -40,9 +41,7 @@ const log = async ({ action, req, targetType, targetId, metadata } = {}) => {
   // Validate entry against Zod schema before persisting
   const parsed = AuditSchema.AuditLog.safeParse(entry);
   if (!parsed.success) {
-    if (process.env.NODE_ENV !== 'test') {
-      console.error('AuditLog validation failed:', parsed.error.flatten());
-    }
+    logger.error('AuditLog validation failed:', { errors: parsed.error.flatten() });
     return null;
   }
 
@@ -50,9 +49,7 @@ const log = async ({ action, req, targetType, targetId, metadata } = {}) => {
     return await AuditRepository.create(parsed.data);
   } catch (err) {
     // Audit must never break the main flow
-    if (process.env.NODE_ENV !== 'test') {
-      console.error('AuditLog write failed:', err.message);
-    }
+    logger.error('AuditLog write failed:', { message: err.message });
     return null;
   }
 };
