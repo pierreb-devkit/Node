@@ -60,7 +60,7 @@ const log = async ({ action, req, targetType, targetId, metadata } = {}) => {
  * @param {Object} filter - Query filter { action, userId, orgId }
  * @param {number} page - Page number
  * @param {number} perPage - Items per page
- * @returns {Promise<Object>} Paginated result
+ * @returns {Promise<{data: Array<Object>, total: number, page: number, perPage: number}>} Paginated result
  */
 const list = async (filter = {}, page = 1, perPage = 20) => {
   // Build clean filter (remove undefined values)
