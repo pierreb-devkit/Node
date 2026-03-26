@@ -7,6 +7,9 @@ import billingEvents from './lib/events.js';
 /**
  * Billing module initialisation.
  * Wires cross-module integrations that depend on services from lib.
+ *
+ * @param {import('express').Application} app - Express application instance
+ * @returns {Promise<void>}
  */
 // eslint-disable-next-line no-unused-vars
 export default async (app) => {
