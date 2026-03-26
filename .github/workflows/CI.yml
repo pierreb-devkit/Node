@@ -13,6 +13,11 @@ jobs:
     services:
       mongo:
         image: mongo:7
+        options: >-
+          --health-cmd="mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
 
     env:
       DEVKIT_NODE_db_uri: mongodb://mongo:27017/NodeTest
