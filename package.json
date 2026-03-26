@@ -76,7 +76,7 @@
     "lodash": "^4.17.23",
     "lusca": "^1.7.0",
     "method-override": "^3.0.0",
-    "mongoose": "^9.3.2",
+    "mongoose": "^9.3.3",
     "morgan": "^1.10.1",
     "multer": "^2.1.1",
     "nodemailer": "^8.0.4",
