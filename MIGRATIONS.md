@@ -4,6 +4,31 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Audit GDPR Flags (2026-03-26)
+
+New config flags to control IP and User-Agent capture in audit logs for GDPR compliance.
+
+### Configuration
+
+Add to your audit config (e.g. `modules/audit/config/audit.development.config.js`):
+
+```js
+audit: {
+  captureIp: true,          // set false to stop storing client IP addresses
+  captureUserAgent: true,   // set false to stop storing User-Agent strings
+}
+```
+
+Both default to `true` (backward compatible). When set to `false`, the audit log stores an empty string instead of the real value.
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the change
+2. Optionally set `captureIp: false` and/or `captureUserAgent: false` in your audit config for GDPR compliance
+3. No DB migration needed — existing entries are unaffected
+
+---
+
 ## Logging & Monitoring (2026-03-26)
 
 Structured logging, audit trail, Sentry error capture, and enriched health check.

@@ -14,11 +14,12 @@ jest.unstable_mockModule('../repositories/audit.repository.js', () => ({
   },
 }));
 
-// Mock config
+// Mock config (mutable so individual tests can override flags)
+const mockConfig = {
+  audit: { enabled: true, ttlDays: 90, captureIp: true, captureUserAgent: true },
+};
 jest.unstable_mockModule('../../../config/index.js', () => ({
-  default: {
-    audit: { enabled: true, ttlDays: 90 },
-  },
+  default: mockConfig,
 }));
 
 // Mock logger to avoid winston config dependency in unit tests
@@ -46,6 +47,8 @@ describe('AuditService unit tests:', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+    // Reset config to defaults
+    mockConfig.audit = { enabled: true, ttlDays: 90, captureIp: true, captureUserAgent: true };
   });
 
   test('should log an audit entry with request context', async () => {
@@ -110,5 +113,52 @@ describe('AuditService unit tests:', () => {
     const userId = '507f1f77bcf86cd799439011';
     await AuditService.list({ action: undefined, userId }, 1, 10);
     expect(mockList).toHaveBeenCalledWith({ userId }, 1, 10);
+  });
+
+  // GDPR config flag tests
+  test('should capture IP when captureIp is true (default)', async () => {
+    mockConfig.audit = { enabled: true, ttlDays: 90, captureIp: true, captureUserAgent: true };
+    const req = { ip: '10.0.0.1', headers: { 'user-agent': 'Bot/1.0' } };
+    await AuditService.log({ action: 'test.ip', req });
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    const arg = mockCreate.mock.calls[0][0];
+    expect(arg.ip).toBe('10.0.0.1');
+  });
+
+  test('should set IP to empty string when captureIp is false', async () => {
+    mockConfig.audit = { enabled: true, ttlDays: 90, captureIp: false, captureUserAgent: true };
+    const req = { ip: '10.0.0.1', headers: { 'user-agent': 'Bot/1.0' } };
+    await AuditService.log({ action: 'test.ip', req });
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    const arg = mockCreate.mock.calls[0][0];
+    expect(arg.ip).toBe('');
+  });
+
+  test('should capture User-Agent when captureUserAgent is true (default)', async () => {
+    mockConfig.audit = { enabled: true, ttlDays: 90, captureIp: true, captureUserAgent: true };
+    const req = { ip: '10.0.0.1', headers: { 'user-agent': 'Bot/1.0' } };
+    await AuditService.log({ action: 'test.ua', req });
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    const arg = mockCreate.mock.calls[0][0];
+    expect(arg.userAgent).toBe('Bot/1.0');
+  });
+
+  test('should set User-Agent to empty string when captureUserAgent is false', async () => {
+    mockConfig.audit = { enabled: true, ttlDays: 90, captureIp: true, captureUserAgent: false };
+    const req = { ip: '10.0.0.1', headers: { 'user-agent': 'Bot/1.0' } };
+    await AuditService.log({ action: 'test.ua', req });
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    const arg = mockCreate.mock.calls[0][0];
+    expect(arg.userAgent).toBe('');
+  });
+
+  test('should default to capturing IP and User-Agent when config keys are undefined', async () => {
+    mockConfig.audit = { enabled: true, ttlDays: 90 };
+    const req = { ip: '192.168.1.1', headers: { 'user-agent': 'DefaultBot/2.0' } };
+    await AuditService.log({ action: 'test.defaults', req });
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    const arg = mockCreate.mock.calls[0][0];
+    expect(arg.ip).toBe('192.168.1.1');
+    expect(arg.userAgent).toBe('DefaultBot/2.0');
   });
 });
