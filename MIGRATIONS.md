@@ -4,6 +4,45 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## PostHog Analytics (2026-03-26)
+
+Server-side analytics, user/org identification, API auto-capture, and feature flags via PostHog.
+
+### New module
+
+`modules/analytics/` — auto-discovered, no manual registration needed.
+
+### Configuration
+
+Uncomment and set in your env-specific config (e.g. `modules/analytics/config/analytics.development.config.js`):
+
+```js
+posthog: {
+  apiKey: process.env.DEVKIT_NODE_posthog_apiKey ?? '',
+  host: process.env.DEVKIT_NODE_posthog_host ?? 'https://us.i.posthog.com',
+}
+```
+
+All features are no-op when `apiKey` is empty — safe to deploy without PostHog.
+
+### What's included
+
+| Feature | File | Notes |
+|---------|------|-------|
+| Analytics service | `analytics.service.js` | `track()`, `identify()`, `groupIdentify()` |
+| Auto-capture middleware | `analytics.middleware.js` | Captures `api_request` on all routes (except health/public) |
+| Feature flags service | `analytics.featureFlags.service.js` | `isEnabled()` (safe default `false` when not configured), `getVariant()` (`undefined` when not configured) |
+| `requireFeatureFlag` middleware | `analytics.requireFeatureFlag.js` | 401 when unauthenticated, 403 when flag disabled, fail-open when analytics not configured |
+| Billing integration | `analytics.init.js` | Listens to `plan.changed` event → `groupIdentify` |
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the new module
+2. Set env vars: `DEVKIT_NODE_posthog_apiKey`, `DEVKIT_NODE_posthog_host`
+3. No DB migration needed — all data stored in PostHog
+
+---
+
 ## Organizations & CASL v2 (2026-03-13)
 
 This guide is for downstream projects (e.g. lou-node, pierreb-node) migrating to the new organizations + CASL document-level authorization system introduced on the `feature/signup-org-flow` branch.
