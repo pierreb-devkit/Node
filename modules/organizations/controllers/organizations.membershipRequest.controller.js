@@ -4,7 +4,6 @@
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
 import MembershipService from '../services/organizations.membership.service.js';
-import AuditService from '../../audit/services/audit.service.js';
 
 /**
  * @function create
@@ -111,14 +110,6 @@ const invite = async (req, res) => {
       email,
       req.user,
     );
-    // Audit — fire-and-forget
-    AuditService.log({
-      action: 'invitation.create',
-      req,
-      targetType: 'Organization',
-      targetId: String(req.organization._id || req.organization.id),
-      metadata: { email },
-    }).catch(() => {});
     responses.success(res, 'invitation sent')(result);
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
@@ -136,13 +127,6 @@ const acceptInvite = async (req, res) => {
   try {
     const { token } = req.params;
     const membership = await MembershipService.acceptInvite(token, req.user._id || req.user.id);
-    // Audit — fire-and-forget
-    AuditService.log({
-      action: 'invitation.accept',
-      req,
-      targetType: 'Membership',
-      targetId: String(membership._id || membership.id),
-    }).catch(() => {});
     responses.success(res, 'invitation accepted')(membership);
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);

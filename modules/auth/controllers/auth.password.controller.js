@@ -10,7 +10,6 @@ import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
 import config from '../../../config/index.js';
-import AuditService from '../../audit/services/audit.service.js';
 
 const tokenCookieOptions = {
   httpOnly: true,
@@ -99,8 +98,6 @@ const reset = async (req, res) => {
       resetPasswordExpires: null,
     };
     user = await UserService.update(user, edit, 'recover');
-    // Audit — fire-and-forget
-    AuditService.log({ action: 'auth.password.reset', req, targetType: 'User', targetId: String(user.id) }).catch(() => {});
     // send confirmation mail (fire-and-forget)
     mails.sendMail({
       template: 'reset-password-confirm-email',
@@ -143,8 +140,6 @@ const updatePassword = async (req, res) => {
     if (req.body.newPassword !== req.body.verifyPassword) return responses.error(res, 422, 'Unprocessable Entity', 'Passwords do not match')();
     password = AuthService.checkPassword(req.body.newPassword);
     user = await UserService.update(user, { password }, 'recover');
-    // Audit — fire-and-forget
-    AuditService.log({ action: 'auth.password.change', req, targetType: 'User', targetId: String(user.id) }).catch(() => {});
     return res
       .status(200)
       .cookie('TOKEN', jwt.sign({ userId: user.id }, config.jwt.secret, { expiresIn: config.jwt.expiresIn }), tokenCookieOptions)

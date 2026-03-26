@@ -6,7 +6,6 @@ import config from '../../../config/index.js';
 import responses from '../../../lib/helpers/responses.js';
 import BillingService from '../services/billing.service.js';
 import BillingUsageService from '../services/billing.usage.service.js';
-import AuditService from '../../audit/services/audit.service.js';
 
 /**
  * @desc Endpoint to create a Stripe Checkout session
@@ -18,14 +17,6 @@ const checkout = async (req, res) => {
   try {
     const { priceId, successUrl, cancelUrl } = req.body;
     const url = await BillingService.createCheckout(req.organization, priceId, successUrl, cancelUrl);
-    // Audit — fire-and-forget
-    AuditService.log({
-      action: 'billing.checkout',
-      req,
-      targetType: 'Organization',
-      targetId: String(req.organization._id || req.organization.id),
-      metadata: { priceId },
-    }).catch(() => {});
     responses.success(res, 'checkout session created')({ url });
   } catch (err) {
     const status = err.message?.startsWith('Invalid') || err.message?.includes('not found') ? 422 : 502;
@@ -44,13 +35,6 @@ const portal = async (req, res) => {
   try {
     const { returnUrl } = req.body;
     const url = await BillingService.createPortalSession(req.organization, returnUrl);
-    // Audit — fire-and-forget
-    AuditService.log({
-      action: 'billing.portal',
-      req,
-      targetType: 'Organization',
-      targetId: String(req.organization._id || req.organization.id),
-    }).catch(() => {});
     responses.success(res, 'portal session created')({ url });
   } catch (err) {
     const status = err.message?.startsWith('Invalid') || err.message?.includes('not found') ? 422 : 502;
