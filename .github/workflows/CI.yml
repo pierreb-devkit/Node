@@ -7,21 +7,23 @@ on:
 jobs:
   test:
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: node:lts
     timeout-minutes: 15
 
     services:
       mongo:
         image: mongo:7
-        ports:
-          - 27017:27017
+        options: >-
+          --health-cmd="mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DEVKIT_NODE_db_uri: mongodb://mongo:27017/NodeTest
 
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-          cache: npm
 
       - run: npm ci
 
