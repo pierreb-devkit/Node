@@ -4,6 +4,72 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Logging & Monitoring (2026-03-26)
+
+Structured logging, audit trail, Sentry error capture, and enriched health check.
+
+### New module
+
+`modules/audit/` — auto-discovered, no manual registration needed.
+
+### New dependencies
+
+- `@sentry/node` — error tracking (no-op when unconfigured)
+
+### Configuration
+
+Add to your env-specific config or override via `DEVKIT_NODE_*` env vars:
+
+```js
+// Audit log (modules/audit/config/audit.development.config.js)
+audit: {
+  enabled: true,                    // set false to disable audit logging
+  ttlDays: 90,                      // auto-purge after N days (MongoDB TTL index)
+}
+
+// Sentry (config/defaults/development.config.js)
+sentry: {
+  dsn: '',                          // Sentry DSN — empty = disabled
+  environment: 'development',
+  enabled: false,
+}
+
+// Logging (config/defaults/development.config.js)
+log: {
+  json: false,                      // true = structured JSON output (recommended for prod)
+  level: 'info',                    // Winston log level
+}
+```
+
+All features are no-op when not configured — safe to deploy without Sentry or audit.
+
+### What's included
+
+| Feature | File | Notes |
+|---------|------|-------|
+| Winston JSON logging | `lib/services/logger.js` | Structured JSON when `log.json: true`, configurable level |
+| X-Request-ID | `lib/middlewares/requestId.js` | UUID per request, `req.id` + response header |
+| Sentry SDK | `lib/services/sentry.js` | Error capture, no-op when DSN empty |
+| AuditLog model | `audit.model.mongoose.js` | TTL index, auto-purge via `audit.ttlDays` |
+| Audit middleware | `audit.middleware.js` | Auto-captures POST/PUT/DELETE mutations (same pattern as analytics) |
+| Audit API | `GET /api/audit` | Admin-only, paginated, filterable by action/userId/orgId |
+| Audit policy | `audit.policy.js` | CASL: admin read-only |
+| Health endpoint | `GET /api/health` | Public: `{ status }`, Admin (JWT): `{ status, db, uptime, version, memory }` |
+
+### New MongoDB collection
+
+| Collection | Model | Purpose | TTL |
+|------------|-------|---------|-----|
+| `auditlogs` | `AuditLog` | Action audit trail (who did what when) | Configurable via `audit.ttlDays` |
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the new modules
+2. Set env vars if needed: `DEVKIT_NODE_sentry__dsn`, `DEVKIT_NODE_audit__ttlDays`
+3. No DB migration needed — collection and TTL index auto-created on first write
+
+---
+
 ## PostHog Analytics (2026-03-26)
 
 Server-side analytics, user/org identification, API auto-capture, and feature flags via PostHog.
