@@ -20,7 +20,6 @@ Uncomment and set in your env-specific config (e.g. `modules/analytics/config/an
 posthog: {
   apiKey: process.env.DEVKIT_NODE_posthog_apiKey ?? '',
   host: process.env.DEVKIT_NODE_posthog_host ?? 'https://us.i.posthog.com',
-  personalApiKey: process.env.DEVKIT_NODE_posthog_personalApiKey ?? '',
 }
 ```
 
@@ -32,16 +31,15 @@ All features are no-op when `apiKey` is empty — safe to deploy without PostHog
 |---------|------|-------|
 | Analytics service | `analytics.service.js` | `track()`, `identify()`, `groupIdentify()` |
 | Auto-capture middleware | `analytics.middleware.js` | Captures `api_request` on all routes (except health/public) |
-| Feature flags service | `analytics.featureFlags.service.js` | `isEnabled()`, `getVariant()` — fails open when not configured |
-| `requireFeatureFlag` middleware | `analytics.requireFeatureFlag.js` | 403 when flag disabled, allows when analytics not configured |
+| Feature flags service | `analytics.featureFlags.service.js` | `isEnabled()` (safe default `false` when not configured), `getVariant()` (`undefined` when not configured) |
+| `requireFeatureFlag` middleware | `analytics.requireFeatureFlag.js` | 401 when unauthenticated, 403 when flag disabled, fail-open when analytics not configured |
 | Billing integration | `analytics.init.js` | Listens to `plan.changed` event → `groupIdentify` |
 
 ### Action for downstream
 
 1. Run `/update-stack` to pull the new module
 2. Set env vars: `DEVKIT_NODE_posthog_apiKey`, `DEVKIT_NODE_posthog_host`
-3. Optionally set `DEVKIT_NODE_posthog_personalApiKey` for local feature flag evaluation
-4. No DB migration needed — all data stored in PostHog
+3. No DB migration needed — all data stored in PostHog
 
 ---
 
