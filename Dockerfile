@@ -7,8 +7,9 @@ USER node
 WORKDIR /home/node
 
 # Install app dependencies & setup
+ARG NODE_ENV=production
 COPY --chown=node:node package*.json ./
-RUN npm install --production
+RUN if [ "$NODE_ENV" = "test" ]; then npm install; else npm install --production; fi
 COPY --chown=node:node . .
 
 # Expose
