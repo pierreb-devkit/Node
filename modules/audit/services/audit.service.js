@@ -33,8 +33,8 @@ const log = async ({ action, req, targetType, targetId, metadata } = {}) => {
     const oid = req.organization?._id || req.organization?.id;
     if (uid) entry.userId = String(uid);
     if (oid) entry.orgId = String(oid);
-    entry.ip = req.ip || req.connection?.remoteAddress || '';
-    entry.userAgent = req.headers?.['user-agent'] || '';
+    entry.ip = config.audit?.captureIp !== false ? (req.ip || req.connection?.remoteAddress || '') : '';
+    entry.userAgent = config.audit?.captureUserAgent !== false ? (req.headers?.['user-agent'] || '') : '';
   }
 
   try {
