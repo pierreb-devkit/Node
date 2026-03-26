@@ -99,6 +99,10 @@ const config = {
     environment: process.env.DEVKIT_NODE_sentry_environment || 'development',
     enabled: false,
   },
+  posthog: {
+    // apiKey: process.env.DEVKIT_NODE_posthog_apiKey ?? '',
+    // host: process.env.DEVKIT_NODE_posthog_host ?? 'https://us.i.posthog.com',
+  },
   domain: '',
   cookie: {
     secure: false, // false in dev (HTTP localhost)
