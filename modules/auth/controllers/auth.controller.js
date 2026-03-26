@@ -18,7 +18,7 @@ import serializeAbilities from '../../../lib/helpers/abilities.js';
 import AuthOrganizationService from '../../organizations/services/organizations.service.js';
 import OrganizationCrudService from '../../organizations/services/organizations.crud.service.js';
 import MembershipService from '../../organizations/services/organizations.membership.service.js';
-import AnalyticsService from '../../analytics/services/analytics.service.js';
+import AnalyticsService from '../../../lib/services/analytics.js';
 
 const tokenCookieOptions = {
   httpOnly: true,

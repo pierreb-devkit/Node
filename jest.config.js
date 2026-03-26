@@ -41,8 +41,6 @@ export default {
     '!<rootDir>/modules/auth/strategies/clerk/**',
     // Exclude passport init glue — just serializeUser/deserializeUser + strategy loader
     '!<rootDir>/modules/auth/auth.init.js',
-    // Exclude analytics init glue — just calls AnalyticsService.init()
-    '!<rootDir>/modules/analytics/analytics.init.js',
     // Exclude audit init glue — just logs activation status
     '!<rootDir>/modules/audit/audit.init.js',
     // Exclude dead code — never imported anywhere in the codebase

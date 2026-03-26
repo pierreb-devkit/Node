@@ -10,7 +10,7 @@ import policy from '../../../lib/middlewares/policy.js';
 import serializeAbilities from '../../../lib/helpers/abilities.js';
 import OrganizationsService from '../services/organizations.crud.service.js';
 import MembershipService from '../services/organizations.membership.service.js';
-import AnalyticsService from '../../analytics/services/analytics.service.js';
+import AnalyticsService from '../../../lib/services/analytics.js';
 
 const tokenCookieOptions = {
   httpOnly: true,
