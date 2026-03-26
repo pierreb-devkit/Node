@@ -18,6 +18,7 @@ describe('Home integration tests:', () => {
   let agent;
   let HomeService;
   let adminToken;
+  let originalOrganizationsEnabled;
 
   //  init
   beforeAll(async () => {
@@ -32,6 +33,7 @@ describe('Home integration tests:', () => {
       throw new Error(`Unexpected GitHub API URL: ${url}`);
     });
     try {
+      originalOrganizationsEnabled = config.organizations.enabled;
       config.organizations.enabled = false;
       const init = await bootstrap();
       HomeService = (await import(path.resolve('./modules/home/services/home.service.js'))).default;
@@ -205,6 +207,7 @@ describe('Home integration tests:', () => {
   // Mongoose disconnect
   afterAll(async () => {
     jest.restoreAllMocks();
+    config.organizations.enabled = originalOrganizationsEnabled;
     try {
       await mongooseService.disconnect();
     } catch (err) {

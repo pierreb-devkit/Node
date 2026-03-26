@@ -3,6 +3,8 @@
  */
 import mongoose from 'mongoose';
 
+import AuditSchema from '../models/audit.schema.js';
+
 /**
  * Lazy model accessor — avoids MissingSchemaError when audit.repository.js
  * is transitively imported before Mongoose models are loaded (e.g. in
@@ -12,12 +14,28 @@ import mongoose from 'mongoose';
 const getModel = () => mongoose.model('AuditLog');
 
 /**
+ * Validate an audit log entry against the Zod schema.
+ * @param {Object} data - Raw audit log data
+ * @returns {{ success: boolean, data?: Object, error?: import('zod').ZodError }} Parse result
+ */
+const validate = (data) => AuditSchema.AuditLog.safeParse(data);
+
+/**
  * @function create
- * @description Create a new audit log entry.
+ * @description Create a new audit log entry after schema validation.
  * @param {Object} data - Audit log data
  * @returns {Promise<Object>} The created audit log entry
+ * @throws {Error} When schema validation fails
  */
-const create = (data) => new (getModel())(data).save();
+const create = (data) => {
+  const parsed = validate(data);
+  if (!parsed.success) {
+    const err = new Error('AuditLog validation failed');
+    err.validationErrors = parsed.error.flatten();
+    throw err;
+  }
+  return new (getModel())(parsed.data).save();
+};
 
 /**
  * @function list

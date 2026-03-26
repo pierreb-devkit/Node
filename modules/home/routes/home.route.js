@@ -10,6 +10,7 @@ import home from '../controllers/home.controller.js';
  * @param {Object} req - Express request
  * @param {Object} res - Express response
  * @param {Function} next - Express next
+ * @returns {void}
  */
 const optionalAuth = (req, res, next) => {
   passport.authenticate('jwt', { session: false }, (_err, user) => {
@@ -19,7 +20,9 @@ const optionalAuth = (req, res, next) => {
 };
 
 /**
- * Routes
+ * Register home routes.
+ * @param {import('express').Application} app - Express app instance
+ * @returns {void}
  */
 export default (app) => {
   // health check — public, enriched response for admins

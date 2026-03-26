@@ -4,7 +4,6 @@
 import config from '../../../config/index.js';
 import logger from '../../../lib/services/logger.js';
 import AuditRepository from '../repositories/audit.repository.js';
-import AuditSchema from '../models/audit.schema.js';
 
 /**
  * @function log
@@ -38,15 +37,8 @@ const log = async ({ action, req, targetType, targetId, metadata } = {}) => {
     entry.userAgent = req.headers?.['user-agent'] || '';
   }
 
-  // Validate entry against Zod schema before persisting
-  const parsed = AuditSchema.AuditLog.safeParse(entry);
-  if (!parsed.success) {
-    logger.error('AuditLog validation failed:', { errors: parsed.error.flatten() });
-    return null;
-  }
-
   try {
-    return await AuditRepository.create(parsed.data);
+    return await AuditRepository.create(entry);
   } catch (err) {
     // Audit must never break the main flow
     logger.error('AuditLog write failed:', { message: err.message });
