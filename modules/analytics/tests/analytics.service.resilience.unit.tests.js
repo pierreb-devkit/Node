@@ -33,7 +33,7 @@ describe('Analytics service resilience tests:', () => {
 
     const mod = await import('../services/analytics.service.js');
     AnalyticsService = mod.default;
-    AnalyticsService.init();
+    await AnalyticsService.init();
   });
 
   afterEach(() => {

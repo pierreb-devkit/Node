@@ -80,10 +80,27 @@ const pageByName = async (req, res, next, name) => {
   }
 };
 
+/**
+ * @desc Health check endpoint
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {void}
+ */
+const health = (req, res) => {
+  const data = HomeService.getHealthStatus();
+  const isAdmin = req.user?.roles?.includes('admin');
+  const payload = isAdmin ? data : { status: data.status };
+  if (data.status !== 'ok') {
+    return responses.error(res, 503, 'Service Unavailable', 'degraded')(payload);
+  }
+  responses.success(res, 'health check')(payload);
+};
+
 export default {
   releases,
   changelogs,
   team,
   page,
   pageByName,
+  health,
 };
