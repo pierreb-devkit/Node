@@ -120,6 +120,7 @@ describe('AuditService unit tests:', () => {
     mockConfig.audit = { enabled: true, ttlDays: 90, captureIp: true, captureUserAgent: true };
     const req = { ip: '10.0.0.1', headers: { 'user-agent': 'Bot/1.0' } };
     await AuditService.log({ action: 'test.ip', req });
+    expect(mockCreate).toHaveBeenCalledTimes(1);
     const arg = mockCreate.mock.calls[0][0];
     expect(arg.ip).toBe('10.0.0.1');
   });
@@ -128,6 +129,7 @@ describe('AuditService unit tests:', () => {
     mockConfig.audit = { enabled: true, ttlDays: 90, captureIp: false, captureUserAgent: true };
     const req = { ip: '10.0.0.1', headers: { 'user-agent': 'Bot/1.0' } };
     await AuditService.log({ action: 'test.ip', req });
+    expect(mockCreate).toHaveBeenCalledTimes(1);
     const arg = mockCreate.mock.calls[0][0];
     expect(arg.ip).toBe('');
   });
@@ -136,6 +138,7 @@ describe('AuditService unit tests:', () => {
     mockConfig.audit = { enabled: true, ttlDays: 90, captureIp: true, captureUserAgent: true };
     const req = { ip: '10.0.0.1', headers: { 'user-agent': 'Bot/1.0' } };
     await AuditService.log({ action: 'test.ua', req });
+    expect(mockCreate).toHaveBeenCalledTimes(1);
     const arg = mockCreate.mock.calls[0][0];
     expect(arg.userAgent).toBe('Bot/1.0');
   });
@@ -144,7 +147,18 @@ describe('AuditService unit tests:', () => {
     mockConfig.audit = { enabled: true, ttlDays: 90, captureIp: true, captureUserAgent: false };
     const req = { ip: '10.0.0.1', headers: { 'user-agent': 'Bot/1.0' } };
     await AuditService.log({ action: 'test.ua', req });
+    expect(mockCreate).toHaveBeenCalledTimes(1);
     const arg = mockCreate.mock.calls[0][0];
     expect(arg.userAgent).toBe('');
+  });
+
+  test('should default to capturing IP and User-Agent when config keys are undefined', async () => {
+    mockConfig.audit = { enabled: true, ttlDays: 90 };
+    const req = { ip: '192.168.1.1', headers: { 'user-agent': 'DefaultBot/2.0' } };
+    await AuditService.log({ action: 'test.defaults', req });
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    const arg = mockCreate.mock.calls[0][0];
+    expect(arg.ip).toBe('192.168.1.1');
+    expect(arg.userAgent).toBe('DefaultBot/2.0');
   });
 });
