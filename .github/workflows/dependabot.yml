@@ -8,6 +8,7 @@ permissions:
 jobs:
   auto-merge:
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 5
     if: github.actor == 'dependabot[bot]'
     steps:
       - name: Dependabot metadata
