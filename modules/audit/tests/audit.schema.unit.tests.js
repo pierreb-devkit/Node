@@ -53,13 +53,18 @@ describe('AuditLog schema unit tests:', () => {
   test('should validate AuditQuery with custom values', () => {
     const result = schema.AuditQuery.safeParse({
       action: 'auth.login',
-      userId: 'user1',
+      userId: '507f1f77bcf86cd799439011',
       page: '3',
       perPage: '50',
     });
     expect(result.success).toBe(true);
     expect(result.data.page).toBe(3);
     expect(result.data.perPage).toBe(50);
+  });
+
+  test('should reject non-ObjectId userId in AuditQuery', () => {
+    const result = schema.AuditQuery.safeParse({ userId: 'user1' });
+    expect(result.success).toBe(false);
   });
 
   test('should reject perPage over 100', () => {

@@ -44,7 +44,11 @@ const list = async (filter, page, perPage) => {
  * @returns {Promise<Object>} Deletion result
  */
 const deleteMany = (filter) => {
-  if (filter) return getModel().deleteMany(filter).exec();
+  if (!filter || Object.keys(filter).length === 0) {
+    // Require explicit filter to prevent accidental full collection wipe
+    return Promise.resolve({ deletedCount: 0 });
+  }
+  return getModel().deleteMany(filter).exec();
 };
 
 export default {

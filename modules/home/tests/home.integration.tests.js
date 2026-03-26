@@ -135,6 +135,17 @@ describe('Home integration tests:', () => {
       });
       config.repos = originalRepos;
     });
+
+    test('should return health status', async () => {
+      const result = await agent.get('/api/health').expect(200);
+      expect(result.body.type).toBe('success');
+      expect(result.body.message).toBe('health check');
+      expect(result.body.data.status).toBe('ok');
+      expect(result.body.data.db).toBe('connected');
+      expect(typeof result.body.data.uptime).toBe('number');
+      expect(result.body.data.memory).toBeDefined();
+      expect(result.body.data.memory.heapUsed).toBeDefined();
+    });
   });
 
   describe('Errors', () => {

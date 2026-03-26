@@ -6,6 +6,7 @@ import path from 'path';
 import _ from 'lodash';
 import { Base64 } from 'js-base64';
 import { promises as fs } from 'fs';
+import mongoose from 'mongoose';
 
 import AuthService from '../../auth/services/auth.service.js';
 import config from '../../../config/index.js';
@@ -85,9 +86,26 @@ const team = async () => {
   return Promise.resolve(result.map((user) => AuthService.removeSensitive(user)));
 };
 
+/**
+ * @desc Build health status including database connectivity.
+ * @returns {{ status: string, db: string, uptime: number, version: string, memory: Object }}
+ */
+const getHealthStatus = () => {
+  const mongoStates = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+  const dbState = mongoose.connection.readyState;
+  return {
+    status: dbState === 1 ? 'ok' : 'degraded',
+    db: mongoStates[dbState] || 'unknown',
+    uptime: Math.floor(process.uptime()),
+    version: config.package?.version || process.env.npm_package_version || '0.0.0',
+    memory: process.memoryUsage(),
+  };
+};
+
 export default {
   page,
   releases,
   changelogs,
   team,
+  getHealthStatus,
 };

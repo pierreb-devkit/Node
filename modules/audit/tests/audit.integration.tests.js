@@ -121,13 +121,4 @@ describe('Audit integration tests:', () => {
     expect(result.body.data.data.length).toBeLessThanOrEqual(1);
     expect(result.body.data.perPage).toBe(1);
   });
-
-  test('should return health status', async () => {
-    const result = await adminAgent.get('/api/health').expect(200);
-    expect(result.body.status).toBe('ok');
-    expect(result.body.db).toBe('connected');
-    expect(typeof result.body.uptime).toBe('number');
-    expect(result.body.memory).toBeDefined();
-    expect(result.body.memory.heapUsed).toBeDefined();
-  });
 });

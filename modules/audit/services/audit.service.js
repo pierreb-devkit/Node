@@ -3,6 +3,7 @@
  */
 import config from '../../../config/index.js';
 import AuditRepository from '../repositories/audit.repository.js';
+import AuditSchema from '../models/audit.schema.js';
 
 /**
  * @function log
@@ -17,6 +18,7 @@ import AuditRepository from '../repositories/audit.repository.js';
  */
 const log = async ({ action, req, targetType, targetId, metadata } = {}) => {
   if (!config.audit?.enabled) return null;
+  if (!action) return null;
 
   const entry = {
     action,
@@ -25,16 +27,27 @@ const log = async ({ action, req, targetType, targetId, metadata } = {}) => {
     metadata: metadata || {},
   };
 
-  // Extract context from request if available
+  // Extract context from request if available (coerce ObjectIds to strings)
   if (req) {
-    entry.userId = req.user?._id || req.user?.id || undefined;
-    entry.orgId = req.organization?._id || req.organization?.id || undefined;
+    const uid = req.user?._id || req.user?.id;
+    const oid = req.organization?._id || req.organization?.id;
+    if (uid) entry.userId = String(uid);
+    if (oid) entry.orgId = String(oid);
     entry.ip = req.ip || req.connection?.remoteAddress || '';
     entry.userAgent = req.headers?.['user-agent'] || '';
   }
 
+  // Validate entry against Zod schema before persisting
+  const parsed = AuditSchema.AuditLog.safeParse(entry);
+  if (!parsed.success) {
+    if (process.env.NODE_ENV !== 'test') {
+      console.error('AuditLog validation failed:', parsed.error.flatten());
+    }
+    return null;
+  }
+
   try {
-    return await AuditRepository.create(entry);
+    return await AuditRepository.create(parsed.data);
   } catch (err) {
     // Audit must never break the main flow
     if (process.env.NODE_ENV !== 'test') {

@@ -7,7 +7,9 @@ import policy from '../../../lib/middlewares/policy.js';
 import audit from '../controllers/audit.controller.js';
 
 /**
- * Routes
+ * Register audit routes.
+ * @param {import('express').Application} app - Express application instance
+ * @returns {void}
  */
 export default (app) => {
   // Audit log — admin only, paginated, filterable

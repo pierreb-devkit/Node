@@ -2,7 +2,6 @@
  * Module dependencies
  */
 import fs from 'fs';
-import mongoose from 'mongoose';
 
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
@@ -85,21 +84,14 @@ const pageByName = async (req, res, next, name) => {
  * @desc Health check endpoint
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
+ * @returns {void}
  */
 const health = (req, res) => {
-  const mongoStates = ['disconnected', 'connected', 'connecting', 'disconnecting'];
-  const dbState = mongoose.connection.readyState;
-
-  const data = {
-    status: dbState === 1 ? 'ok' : 'degraded',
-    db: mongoStates[dbState] || 'unknown',
-    uptime: Math.floor(process.uptime()),
-    version: process.env.npm_package_version || '0.0.0',
-    memory: process.memoryUsage(),
-  };
-
-  const httpStatus = data.status === 'ok' ? 200 : 503;
-  res.status(httpStatus).json(data);
+  const data = HomeService.getHealthStatus();
+  if (data.status !== 'ok') {
+    return responses.error(res, 503, 'Service Unavailable', 'degraded')(data);
+  }
+  responses.success(res, 'health check')(data);
 };
 
 export default {

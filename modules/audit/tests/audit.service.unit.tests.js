@@ -40,9 +40,11 @@ describe('AuditService unit tests:', () => {
   });
 
   test('should log an audit entry with request context', async () => {
+    const userId = '507f1f77bcf86cd799439011';
+    const orgId = '507f1f77bcf86cd799439012';
     const req = {
-      user: { _id: 'user123' },
-      organization: { _id: 'org456' },
+      user: { _id: userId },
+      organization: { _id: orgId },
       ip: '127.0.0.1',
       headers: { 'user-agent': 'TestAgent/1.0' },
     };
@@ -51,19 +53,19 @@ describe('AuditService unit tests:', () => {
       action: 'auth.login',
       req,
       targetType: 'User',
-      targetId: 'user123',
+      targetId: userId,
       metadata: { foo: 'bar' },
     });
 
     expect(mockCreate).toHaveBeenCalledTimes(1);
     const arg = mockCreate.mock.calls[0][0];
     expect(arg.action).toBe('auth.login');
-    expect(arg.userId).toBe('user123');
-    expect(arg.orgId).toBe('org456');
+    expect(arg.userId).toBe(userId);
+    expect(arg.orgId).toBe(orgId);
     expect(arg.ip).toBe('127.0.0.1');
     expect(arg.userAgent).toBe('TestAgent/1.0');
     expect(arg.targetType).toBe('User');
-    expect(arg.targetId).toBe('user123');
+    expect(arg.targetId).toBe(userId);
     expect(arg.metadata).toEqual({ foo: 'bar' });
   });
 
@@ -96,7 +98,8 @@ describe('AuditService unit tests:', () => {
   });
 
   test('should strip undefined filter values', async () => {
-    await AuditService.list({ action: undefined, userId: 'user1' }, 1, 10);
-    expect(mockList).toHaveBeenCalledWith({ userId: 'user1' }, 1, 10);
+    const userId = '507f1f77bcf86cd799439011';
+    await AuditService.list({ action: undefined, userId }, 1, 10);
+    expect(mockList).toHaveBeenCalledWith({ userId }, 1, 10);
   });
 });

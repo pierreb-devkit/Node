@@ -11,11 +11,15 @@ import AuditSchema from '../models/audit.schema.js';
  * @description Endpoint to fetch paginated audit logs (admin only).
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
+ * @returns {Promise<void>}
  */
 const list = async (req, res) => {
   try {
     const parsed = AuditSchema.AuditQuery.safeParse(req.query);
-    const query = parsed.success ? parsed.data : { page: 1, perPage: 20 };
+    if (!parsed.success) {
+      return responses.error(res, 400, 'Bad Request', 'Invalid query parameters')(parsed.error);
+    }
+    const query = parsed.data;
 
     const result = await AuditService.list(
       { action: query.action, userId: query.userId, orgId: query.orgId },
