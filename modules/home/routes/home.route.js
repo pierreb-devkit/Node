@@ -8,6 +8,8 @@ import home from '../controllers/home.controller.js';
  * Routes
  */
 export default (app) => {
+  // health check — public, no auth
+  app.route('/api/health').get(home.health);
   // changelogs
   app.route('/api/home/releases').all(policy.isAllowed).get(home.releases);
   // changelogs

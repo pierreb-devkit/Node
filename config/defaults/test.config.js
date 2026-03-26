@@ -9,6 +9,14 @@ const config = {
     uri: 'mongodb://127.0.0.1:27017/NodeTest',
     debug: false,
   },
+  audit: {
+    enabled: true,
+    ttlDays: 1,
+  },
+  sentry: {
+    dsn: '',
+    enabled: false,
+  },
   organizations: {
     enabled: false,
     domainMatching: false,

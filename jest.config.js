@@ -43,6 +43,8 @@ export default {
     '!<rootDir>/modules/auth/auth.init.js',
     // Exclude analytics init glue — just calls AnalyticsService.init()
     '!<rootDir>/modules/analytics/analytics.init.js',
+    // Exclude audit init glue — just logs activation status
+    '!<rootDir>/modules/audit/audit.init.js',
     // Exclude dead code — never imported anywhere in the codebase
     '!<rootDir>/modules/users/services/users.data.service.js',
     // Exclude server bootstrap — startup orchestration, tested indirectly via integration tests
@@ -177,7 +179,7 @@ export default {
   // testLocationInResults: false,
 
   // The glob patterns Jest uses to detect test files
-  testMatch: ['<rootDir>/modules/*/tests/**/*.js'],
+  testMatch: ['<rootDir>/modules/*/tests/**/*.js', '<rootDir>/lib/**/tests/**/*.js'],
 
   // An array of regexp pattern strings that are matched against all test paths, matched tests are skipped
   testPathIgnorePatterns: ['/node_modules/'],

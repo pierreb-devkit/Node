@@ -50,7 +50,11 @@ const config = {
     // logging with Morgan - https://github.com/expressjs/morgan
     // Can specify one of 'combined', 'common', 'dev', 'short', 'tiny', 'custom'
     format: 'custom',
-    pattern: ':id :email :method :url :status :response-time ms - :res[content-length]', // only for custom format
+    pattern: ':requestId :id :email :method :url :status :response-time ms - :res[content-length]', // only for custom format
+    // Structured JSON output for Winston console transport (enable in production)
+    json: false,
+    // Winston log level: error, warn, info, http, verbose, debug, silly
+    level: 'info',
     fileLogger: {
       directoryPath: process.cwd(),
       fileName: 'app.log',
@@ -89,6 +93,11 @@ const config = {
   },
   trust: {
     proxy: false,
+  },
+  sentry: {
+    dsn: process.env.DEVKIT_NODE_sentry_dsn || '',
+    environment: process.env.DEVKIT_NODE_sentry_environment || 'development',
+    enabled: false,
   },
   domain: '',
   cookie: {

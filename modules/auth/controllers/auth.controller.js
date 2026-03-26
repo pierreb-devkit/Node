@@ -19,6 +19,7 @@ import AuthOrganizationService from '../../organizations/services/organizations.
 import OrganizationCrudService from '../../organizations/services/organizations.crud.service.js';
 import MembershipService from '../../organizations/services/organizations.membership.service.js';
 import AnalyticsService from '../../analytics/services/analytics.service.js';
+import AuditService from '../../audit/services/audit.service.js';
 
 const tokenCookieOptions = {
   httpOnly: true,
@@ -116,6 +117,9 @@ const signup = async (req, res) => {
       });
     } catch (_) { /* analytics must not break auth */ }
 
+    // Audit — fire-and-forget, never break signup flow
+    AuditService.log({ action: 'auth.signup', req, targetType: 'User', targetId: String(user.id) }).catch(() => {});
+
     const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
       expiresIn: config.jwt.expiresIn,
     });
@@ -155,7 +159,6 @@ const signup = async (req, res) => {
  * @returns {void} Calls next on success or sends a 423/401/500 response on failure
  */
 const signinAuthenticate = (req, res, next) => {
-  // eslint-disable-next-line no-unused-vars
   passport.authenticate('local', { session: false }, (err, user, info) => {
     if (err && err.code === 'ACCOUNT_LOCKED') {
       return responses.error(res, 423, 'Account locked', err.details?.message || 'Account is locked. Try again later.')(err);
@@ -202,6 +205,9 @@ const signin = async (req, res) => {
       lastLoginAt: user.lastLoginAt,
     });
   } catch (_) { /* analytics must not break auth */ }
+
+  // Audit — fire-and-forget, never break signin flow
+  AuditService.log({ action: 'auth.login', req, targetType: 'User', targetId: String(user.id || user._id) }).catch(() => {});
 
   const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
     expiresIn: config.jwt.expiresIn,
