@@ -3,6 +3,8 @@
  */
 import { jest } from '@jest/globals';
 import axios from 'axios';
+import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import path from 'path';
 import request from 'supertest';
 
@@ -15,6 +17,7 @@ import config from '../../../config/index.js';
 describe('Home integration tests:', () => {
   let agent;
   let HomeService;
+  let adminToken;
 
   //  init
   beforeAll(async () => {
@@ -29,9 +32,22 @@ describe('Home integration tests:', () => {
       throw new Error(`Unexpected GitHub API URL: ${url}`);
     });
     try {
+      config.organizations.enabled = false;
       const init = await bootstrap();
       HomeService = (await import(path.resolve('./modules/home/services/home.service.js'))).default;
       agent = request.agent(init.app);
+
+      // Create admin user and sign JWT for health endpoint test
+      const User = mongoose.model('User');
+      const admin = await User.create({
+        firstName: 'Admin',
+        lastName: 'Health',
+        email: 'admin-health@test.com',
+        password: 'W@os.jsI$Aw3$0m3',
+        provider: 'local',
+        roles: ['admin'],
+      });
+      adminToken = jwt.sign({ userId: admin.id }, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
     } catch (err) {
       console.log(err);
       expect(err).toBeFalsy();
@@ -136,10 +152,17 @@ describe('Home integration tests:', () => {
       config.repos = originalRepos;
     });
 
-    test('should return health status', async () => {
+    test('should return minimal health status without auth', async () => {
       const result = await agent.get('/api/health').expect(200);
       expect(result.body.type).toBe('success');
-      expect(result.body.message).toBe('health check');
+      expect(result.body.data.status).toBe('ok');
+      expect(result.body.data.db).toBeUndefined();
+      expect(result.body.data.memory).toBeUndefined();
+    });
+
+    test('should return detailed health status for admin', async () => {
+      const result = await agent.get('/api/health').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+      expect(result.body.type).toBe('success');
       expect(result.body.data.status).toBe('ok');
       expect(result.body.data.db).toBe('connected');
       expect(typeof result.body.data.uptime).toBe('number');
@@ -158,7 +181,6 @@ describe('Home integration tests:', () => {
       const result = await agent.get('/api/health').expect(503);
       expect(result.body.type).toBe('error');
       expect(result.body.message).toBe('Service Unavailable');
-      expect(result.body.description).toBe('degraded');
     });
   });
 
