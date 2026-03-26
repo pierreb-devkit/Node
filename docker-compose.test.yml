@@ -10,7 +10,10 @@ services:
       retries: 5
 
   test:
-    build: .
+    build:
+      context: .
+      args:
+        NODE_ENV: test
     command: npm run test:all
     depends_on:
       mongo:
@@ -18,3 +21,6 @@ services:
     environment:
       NODE_ENV: test
       DEVKIT_NODE_db_uri: mongodb://mongo:27017/NodeTest
+      DEVKIT_NODE_api_host: 0.0.0.0
+      DEVKIT_NODE_trust_proxy: "true"
+      DEVKIT_NODE_cors_origin: "['http://localhost:8080']"
