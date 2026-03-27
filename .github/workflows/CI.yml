@@ -7,12 +7,13 @@ on:
 jobs:
   test:
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
-    container: node:lts
     timeout-minutes: 30
 
     services:
       mongo:
         image: mongo:7
+        ports:
+          - 27017:27017
         options: >-
           --health-cmd="mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"
           --health-interval=10s
@@ -21,10 +22,17 @@ jobs:
 
     env:
       NODE_ENV: ${{ vars.APP_ENV || 'test' }}
-      DEVKIT_NODE_db_uri: ${{ secrets.MONGO_URI || vars.MONGO_URI || 'mongodb://mongo:27017/NodeTest' }}
+      DEVKIT_NODE_db_uri: ${{ secrets.MONGO_URI || vars.MONGO_URI || 'mongodb://localhost:27017/NodeTest' }}
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        if: ${{ !vars.RUNNER }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
 
       - name: Wait for MongoDB
         run: |
