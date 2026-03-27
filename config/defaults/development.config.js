@@ -109,14 +109,17 @@ const config = {
     sameSite: 'strict',
   },
   mailer: {
-    provider: 'DEVKIT_NODE_mailer_provider',
+    provider: 'nodemailer', // 'nodemailer' (default) or 'resend'
     from: 'DEVKIT_NODE_mailer_from',
     options: {
+      // nodemailer options
       service: 'DEVKIT_NODE_mailer_options_service',
       auth: {
         user: 'DEVKIT_NODE_mailer_options_auth_user',
         pass: 'DEVKIT_NODE_mailer_options_auth_pass',
       },
+      // resend options
+      apiKey: 'DEVKIT_NODE_mailer_options_apiKey',
     },
   },
   seedDB: {
