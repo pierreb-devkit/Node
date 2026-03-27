@@ -3,6 +3,14 @@ name: CI
 on:
   pull_request:
     branches: [master, main]
+    paths-ignore:
+      - '**/*.md'
+      - 'documentation/**'
+      - '.claude/**'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -38,3 +46,8 @@ jobs:
       - run: npm run lint
 
       - run: npm run test:coverage
+
+      - uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: ${{ github.repository }}
