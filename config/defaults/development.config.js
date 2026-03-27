@@ -109,7 +109,7 @@ const config = {
     sameSite: 'strict',
   },
   mailer: {
-    provider: 'DEVKIT_NODE_mailer_provider', // 'nodemailer' (default) or 'resend'
+    provider: 'nodemailer', // 'nodemailer' (default) or 'resend'
     from: 'DEVKIT_NODE_mailer_from',
     options: {
       // nodemailer options
