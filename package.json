@@ -67,7 +67,7 @@
     "express-rate-limit": "^8.3.1",
     "generate-password": "^1.7.1",
     "glob": "^13.0.6",
-    "handlebars": "^4.7.8",
+    "handlebars": "^4.7.9",
     "helmet": "~8.1.0",
     "inquirer": "^13.3.2",
     "jest-environment-jsdom": "^30.3.0",
