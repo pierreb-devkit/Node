@@ -20,10 +20,15 @@ jobs:
           --health-retries=10
 
     env:
-      DEVKIT_NODE_db_uri: mongodb://mongo:27017/NodeTest
+      NODE_ENV: ${{ vars.APP_ENV || 'test' }}
+      DEVKIT_NODE_db_uri: ${{ vars.MONGO_URI || 'mongodb://mongo:27017/NodeTest' }}
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Wait for MongoDB
+        run: |
+          timeout 30 bash -c 'until node -e "const s=require(\"net\").createConnection({host:\"mongo\",port:27017});s.on(\"connect\",()=>{s.end();process.exit(0)});s.on(\"error\",()=>process.exit(1))" 2>/dev/null; do sleep 1; done'
 
       - run: npm ci
 
