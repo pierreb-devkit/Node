@@ -96,6 +96,20 @@ const health = (req, res) => {
   responses.success(res, 'health check')(payload);
 };
 
+/**
+ * @desc Endpoint to return SaaS readiness checks (admin only)
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+const readiness = (req, res) => {
+  try {
+    const data = HomeService.getReadinessStatus();
+    responses.success(res, 'readiness check')(data);
+  } catch (err) {
+    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+  }
+};
+
 export default {
   releases,
   changelogs,
@@ -103,4 +117,5 @@ export default {
   page,
   pageByName,
   health,
+  readiness,
 };

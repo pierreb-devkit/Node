@@ -19,6 +19,7 @@ describe('Home integration tests:', () => {
   let HomeService;
   let adminToken;
   let adminUser;
+  let userToken;
   let originalOrganizationsEnabled;
 
   //  init
@@ -52,6 +53,17 @@ describe('Home integration tests:', () => {
         roles: ['admin'],
       });
       adminToken = jwt.sign({ userId: adminUser.id }, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
+
+      // Create regular user and sign JWT for readiness auth tests
+      const regularUser = await User.create({
+        firstName: 'Regular',
+        lastName: 'User',
+        email: 'regular-readiness@test.com',
+        password: 'W@os.jsI$Aw3$0m3',
+        provider: 'local',
+        roles: ['user'],
+      });
+      userToken = jwt.sign({ userId: regularUser.id }, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
     } catch (err) {
       console.log(err);
       expect(err).toBeFalsy();
@@ -185,6 +197,40 @@ describe('Home integration tests:', () => {
       const result = await agent.get('/api/health').expect(503);
       expect(result.body.type).toBe('error');
       expect(result.body.message).toBe('Service Unavailable');
+    });
+  });
+
+  describe('Readiness', () => {
+    test('should return 401 for unauthenticated user', async () => {
+      const result = await agent.get('/api/admin/readiness').expect(401);
+      expect(result.body).toBeDefined();
+    });
+
+    test('should return 403 for regular user', async () => {
+      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${userToken}`).expect(403);
+      expect(result.body.type).toBe('error');
+    });
+
+    test('should return 200 with readiness checks for admin', async () => {
+      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+      expect(result.body.type).toBe('success');
+      expect(result.body.message).toBe('readiness check');
+      expect(result.body.data).toBeInstanceOf(Array);
+      expect(result.body.data.length).toBeGreaterThan(0);
+    });
+
+    test('should return correct shape for each readiness check', async () => {
+      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+      const expectedCategories = ['config', 'security', 'auth', 'mail', 'billing', 'analytics', 'monitoring'];
+      const categories = result.body.data.map((c) => c.category);
+      expect(categories).toEqual(expectedCategories);
+      result.body.data.forEach((item) => {
+        expect(item).toHaveProperty('category');
+        expect(item).toHaveProperty('status');
+        expect(item).toHaveProperty('message');
+        expect(['ok', 'warning']).toContain(item.status);
+        expect(typeof item.message).toBe('string');
+      });
     });
   });
 
