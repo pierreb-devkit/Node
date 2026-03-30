@@ -63,7 +63,7 @@ describe('Billing usage endpoint unit tests:', () => {
 
   test('should return usage and limits for active subscription', async () => {
     mockBillingService.getSubscription.mockResolvedValue({ plan: 'starter', status: 'active' });
-    mockBillingUsageService.get.mockResolvedValue({ month: '2026-03', counters: { 'documents.create': 5, 'requests.execute': 42 } });
+    mockBillingUsageService.get.mockResolvedValue({ month: '2026-03', counters: { 'documents_create': 5, 'requests_execute': 42 } });
 
     const req = { organization: { _id: orgId } };
     await billingController.getUsage(req, res);
@@ -74,8 +74,8 @@ describe('Billing usage endpoint unit tests:', () => {
       message: 'billing usage',
       data: expect.objectContaining({
         plan: 'starter',
-        usage: { 'documents.create': 5, 'requests.execute': 42 },
-        limits: { 'documents.create': 20, 'requests.execute': 2000 },
+        usage: { 'documents_create': 5, 'requests_execute': 42 },
+        limits: { 'documents_create': 20, 'requests_execute': 2000 },
       }),
     }));
   });
@@ -92,7 +92,7 @@ describe('Billing usage endpoint unit tests:', () => {
       type: 'success',
       data: expect.objectContaining({
         plan: 'free',
-        limits: { 'documents.create': 5, 'requests.execute': 100 },
+        limits: { 'documents_create': 5, 'requests_execute': 100 },
       }),
     }));
   });
@@ -106,7 +106,7 @@ describe('Billing usage endpoint unit tests:', () => {
     'paused',
   ])('should return free plan when subscription status is %s', async (status) => {
     mockBillingService.getSubscription.mockResolvedValue({ plan: 'starter', status });
-    mockBillingUsageService.get.mockResolvedValue({ month: '2026-03', counters: { 'documents.create': 2 } });
+    mockBillingUsageService.get.mockResolvedValue({ month: '2026-03', counters: { 'documents_create': 2 } });
 
     const req = { organization: { _id: orgId } };
     await billingController.getUsage(req, res);
@@ -115,7 +115,7 @@ describe('Billing usage endpoint unit tests:', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         plan: 'free',
-        limits: { 'documents.create': 5, 'requests.execute': 100 },
+        limits: { 'documents_create': 5, 'requests_execute': 100 },
       }),
     }));
   });
@@ -131,7 +131,7 @@ describe('Billing usage endpoint unit tests:', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         plan: 'starter',
-        limits: { 'documents.create': 20, 'requests.execute': 2000 },
+        limits: { 'documents_create': 20, 'requests_execute': 2000 },
       }),
     }));
   });
@@ -163,7 +163,7 @@ describe('Billing usage endpoint unit tests:', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         plan: 'pro',
-        limits: { 'documents.create': null, 'requests.execute': null },
+        limits: { 'documents_create': null, 'requests_execute': null },
       }),
     }));
   });
