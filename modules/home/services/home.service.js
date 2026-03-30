@@ -119,10 +119,11 @@ const getReadinessStatus = () => {
   const checks = [];
 
   // config — domain
+  const domainSet = isSet(config.domain);
   checks.push({
     category: 'config',
-    status: isSet(config.domain) ? 'ok' : 'warning',
-    message: isSet(config.domain) ? 'Domain configured' : 'Domain not configured',
+    status: domainSet ? 'ok' : 'warning',
+    message: domainSet ? 'Domain configured' : 'Domain not configured',
   });
 
   // security — JWT secret

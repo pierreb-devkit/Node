@@ -13,7 +13,7 @@
 export function homeAbilities(user, membership, { can }) {
   can('read', 'Home');
   if (Array.isArray(user?.roles) && user.roles.includes('admin')) {
-    can('read', 'Readiness');
+    can('manage', 'Readiness');
   }
 }
 

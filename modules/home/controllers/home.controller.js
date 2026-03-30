@@ -97,9 +97,10 @@ const health = (req, res) => {
 };
 
 /**
- * @desc Endpoint to return SaaS readiness checks (admin only)
+ * @desc Endpoint to return SaaS readiness checks (admin only).
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
+ * @returns {void}
  */
 const readiness = (req, res) => {
   try {
