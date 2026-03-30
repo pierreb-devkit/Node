@@ -89,7 +89,7 @@ If an action affects another user:
 - [ ] Templates created for each email type
 
 **Error documentation:**
-- [ ] If a non-obvious bug was fixed, document it in `ERRORS.md` (root of repo) with: symptom, root cause, fix
+- [ ] If a non-obvious bug was fixed, add a single-line entry to `ERRORS.md` (root of repo) using format: `[YYYY-MM-DD] <scope>: <wrong> -> <right>` (see existing examples in `ERRORS.md`)
 
 ### 8b. Elegance check
 
