@@ -82,7 +82,7 @@ const getUsage = async (req, res) => {
       for (const resource of Object.keys(planQuotas)) {
         for (const action of Object.keys(planQuotas[resource])) {
           const rawLimit = planQuotas[resource][action];
-          limits[`${resource}.${action}`] = Number.isFinite(rawLimit) ? rawLimit : null;
+          limits[`${resource}_${action}`] = Number.isFinite(rawLimit) ? rawLimit : null;
         }
       }
     }

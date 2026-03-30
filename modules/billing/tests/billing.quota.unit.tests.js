@@ -69,7 +69,7 @@ describe('requireQuota middleware:', () => {
 
   test('should allow request when under quota', async () => {
     mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'free', status: 'active' });
-    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps.create': 1 } });
+    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps_create': 1 } });
 
     await requireQuota('scraps', 'create')(req, res, next);
 
@@ -79,7 +79,7 @@ describe('requireQuota middleware:', () => {
 
   test('should return 429 when at quota limit', async () => {
     mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'free', status: 'active' });
-    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps.create': 3 } });
+    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps_create': 3 } });
 
     await requireQuota('scraps', 'create')(req, res, next);
 
@@ -95,7 +95,7 @@ describe('requireQuota middleware:', () => {
 
   test('should return 429 when over quota limit', async () => {
     mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'free', status: 'active' });
-    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps.create': 5 } });
+    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps_create': 5 } });
 
     await requireQuota('scraps', 'create')(req, res, next);
 
@@ -105,7 +105,7 @@ describe('requireQuota middleware:', () => {
 
   test('should treat missing subscription as free plan', async () => {
     mockSubscriptionRepository.findByOrganization.mockResolvedValue(null);
-    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps.create': 3 } });
+    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps_create': 3 } });
 
     await requireQuota('scraps', 'create')(req, res, next);
 
@@ -121,7 +121,7 @@ describe('requireQuota middleware:', () => {
     'should treat %s subscription as free plan',
     async (status) => {
       mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'starter', status });
-      mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps.create': 3 } });
+      mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps_create': 3 } });
 
       await requireQuota('scraps', 'create')(req, res, next);
 
@@ -145,7 +145,7 @@ describe('requireQuota middleware:', () => {
 
   test('should return correct error payload with upgradeUrl', async () => {
     mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'free', status: 'active' });
-    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps.execute': 100 } });
+    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps_execute': 100 } });
 
     await requireQuota('scraps', 'execute')(req, res, next);
 
@@ -178,7 +178,7 @@ describe('requireQuota middleware:', () => {
 
   test('should use subscription plan when status is trialing', async () => {
     mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'starter', status: 'trialing' });
-    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps.create': 15 } });
+    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps_create': 15 } });
 
     await requireQuota('scraps', 'create')(req, res, next);
 

@@ -41,7 +41,7 @@ Increment counters after successful operations:
 import BillingUsageService from '../billing/services/billing.usage.service.js';
 
 // After creating a document
-await BillingUsageService.increment(organizationId, 'documents.create', 1);
+await BillingUsageService.increment(organizationId, 'documents_create', 1);
 ```
 
 ### Usage Endpoint
