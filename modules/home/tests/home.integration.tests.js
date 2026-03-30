@@ -18,6 +18,7 @@ describe('Home integration tests:', () => {
   let agent;
   let HomeService;
   let adminToken;
+  let adminUser;
   let originalOrganizationsEnabled;
 
   //  init
@@ -41,15 +42,16 @@ describe('Home integration tests:', () => {
 
       // Create admin user and sign JWT for health endpoint test
       const User = mongoose.model('User');
-      const admin = await User.create({
+      await User.deleteOne({ email: 'admin-home-health@test.com' });
+      adminUser = await User.create({
         firstName: 'Admin',
         lastName: 'Health',
-        email: 'admin-health@test.com',
+        email: 'admin-home-health@test.com',
         password: 'W@os.jsI$Aw3$0m3',
         provider: 'local',
         roles: ['admin'],
       });
-      adminToken = jwt.sign({ userId: admin.id }, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
+      adminToken = jwt.sign({ userId: adminUser.id }, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
     } catch (err) {
       console.log(err);
       expect(err).toBeFalsy();
@@ -204,10 +206,16 @@ describe('Home integration tests:', () => {
     });
   });
 
-  // Mongoose disconnect
+  // Cleanup and mongoose disconnect
   afterAll(async () => {
     jest.restoreAllMocks();
     config.organizations.enabled = originalOrganizationsEnabled;
+    try {
+      if (adminUser) {
+        const User = mongoose.model('User');
+        await User.deleteOne({ _id: adminUser._id });
+      }
+    } catch (_) { /* cleanup – ignore errors */ }
     try {
       await mongooseService.disconnect();
     } catch (err) {
