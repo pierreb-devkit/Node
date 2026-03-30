@@ -14,9 +14,9 @@ import mailer from '../../../lib/helpers/mailer/index.js';
 import HomeRepository from '../repositories/home.repository.js';
 
 /**
- * @desc Check whether a config value is meaningfully set (truthy, non-empty, not a DEVKIT placeholder).
+ * @desc Check whether a config value is meaningfully set (non-empty string, not a DEVKIT placeholder).
  * @param {*} value - Config value to check
- * @returns {boolean} true if set and not a placeholder
+ * @returns {boolean} true if value is a non-empty string and not a DEVKIT_NODE_ placeholder
  */
 const isSet = (value) => !!(value && typeof value === 'string' && value.trim() !== '' && !value.startsWith('DEVKIT_NODE_'));
 
@@ -126,11 +126,12 @@ const getReadinessStatus = () => {
   });
 
   // security — JWT secret
-  const jwtDefault = config.jwt?.secret === 'WaosSecretKeyExampleToChnageAbsolutely';
+  const jwtSecret = config.jwt?.secret;
+  const jwtInsecure = !jwtSecret || jwtSecret.trim() === '' || jwtSecret === 'WaosSecretKeyExampleToChnageAbsolutely';
   checks.push({
     category: 'security',
-    status: jwtDefault ? 'warning' : 'ok',
-    message: jwtDefault ? 'JWT secret is default — change it before production' : 'JWT secret is custom',
+    status: jwtInsecure ? 'warning' : 'ok',
+    message: jwtInsecure ? 'JWT secret is missing or default — change it before production' : 'JWT secret is custom',
   });
 
   // auth — OAuth providers
@@ -143,13 +144,12 @@ const getReadinessStatus = () => {
     message: oAuthProviders.length > 0 ? `OAuth configured (${oAuthProviders.join(', ')})` : 'No OAuth provider configured',
   });
 
-  // mail — mailer from
+  // mail — mailer
   const mailConfigured = mailer.isConfigured();
-  const mailProvider = config.mailer?.provider || 'nodemailer';
   checks.push({
     category: 'mail',
     status: mailConfigured ? 'ok' : 'warning',
-    message: mailConfigured ? `Mail configured (${mailProvider})` : 'No mail provider configured',
+    message: mailConfigured ? 'Mail provider configured' : 'No mail provider configured',
   });
 
   // billing — Stripe
