@@ -88,6 +88,9 @@ If an action affects another user:
 - [ ] Actions affecting other users trigger email (if configured)
 - [ ] Templates created for each email type
 
+**Error documentation:**
+- [ ] If a non-obvious bug was fixed, document it in `ERRORS.md` (root of repo) with: symptom, root cause, fix
+
 ### 8b. Elegance check
 
 For non-trivial changes: pause and ask yourself "is there a simpler or more elegant approach?" If the current implementation feels hacky, refactor before proceeding.
