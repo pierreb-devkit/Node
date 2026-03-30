@@ -79,6 +79,10 @@ If an action affects another user:
 **Tests:**
 - [ ] Tests: add unit (`*.unit.tests.js`) + integration (`*.integration.tests.js`) tests. Add E2E (`*.e2e.tests.js`) only if the change affects a critical user flow (auth, org onboarding, invite/join).
 
+**Schema consistency:**
+- [ ] New enum values added to ALL schema definitions (Mongoose model `enum`, Zod `z.enum`, tests)
+- [ ] Grep existing enum values to find all locations before committing
+
 **Modularity:**
 - [ ] Isolated in ONE module (or justified)
 - [ ] No cross-module Repository/Model imports (use target module's Service)
@@ -87,6 +91,9 @@ If an action affects another user:
 **Notifications:**
 - [ ] Actions affecting other users trigger email (if configured)
 - [ ] Templates created for each email type
+
+**Error documentation:**
+- [ ] If a non-obvious bug was fixed, document it in `ERRORS.md` (root of repo) with: symptom, root cause, fix
 
 ### 8b. Elegance check
 
