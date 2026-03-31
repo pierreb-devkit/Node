@@ -3,6 +3,7 @@
  */
 import config from '../../../config/index.js';
 import mailer from '../../../lib/helpers/mailer/index.js';
+import logger from '../../../lib/services/logger.js';
 import policy from '../../../lib/middlewares/policy.js';
 import serializeAbilities from '../../../lib/helpers/abilities.js';
 import OrganizationsRepository from '../repositories/organizations.repository.js';
@@ -98,10 +99,10 @@ const createOrganizationForUser = async ({ name, slug, domain, user, slugGenerat
     } catch (err) {
       // Clean up any partially created artifacts to avoid orphaned records
       if (membership) {
-        await MembershipRepository.deleteMany({ _id: membership._id }).catch(() => {});
+        await MembershipRepository.deleteMany({ _id: membership._id }).catch((e) => logger.error('organizations.service.createOrganizationForUser: rollback membership failed', e));
       }
       if (organization) {
-        await OrganizationsRepository.remove(organization).catch(() => {});
+        await OrganizationsRepository.remove(organization).catch((e) => logger.error('organizations.service.createOrganizationForUser: rollback organization failed', e));
       }
       // Retry on MongoDB duplicate key error for slug collisions (TOCTOU race)
       if (err.code === 11000 && err.message?.includes('slug') && attempt < maxRetries - 1) {

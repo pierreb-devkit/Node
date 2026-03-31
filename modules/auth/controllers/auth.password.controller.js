@@ -10,6 +10,7 @@ import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
 import config from '../../../config/index.js';
+import logger from '../../../lib/services/logger.js';
 
 const tokenCookieOptions = {
   httpOnly: true,
@@ -108,7 +109,7 @@ const reset = async (req, res) => {
         appName: config.app.title,
         appContact: config.app.contact,
       },
-    }).catch(() => {});
+    }).catch((err) => logger.warn('auth.password.reset: confirmation email failed', err));
     return res
       .status(200)
       .cookie('TOKEN', jwt.sign({ userId: user.id }, config.jwt.secret, { expiresIn: config.jwt.expiresIn }), tokenCookieOptions)

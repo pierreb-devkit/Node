@@ -4,6 +4,7 @@
 import crypto from 'crypto';
 
 import config from '../../../config/index.js';
+import logger from '../../../lib/services/logger.js';
 import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
 import mailer from '../../../lib/helpers/mailer/index.js';
 import { assertEmailVerified } from '../../../lib/helpers/emailVerification.js';
@@ -164,7 +165,7 @@ const createJoinRequest = async (userId, organizationId) => {
               url: `${getBaseUrl()}/users/organizations/${organizationId}`,
               appName: config.app.title,
             },
-          }).catch(() => {});
+          }).catch((err) => logger.warn('organizations.membership.createJoinRequest: admin notification email failed', err));
         }
       }
     }
@@ -206,7 +207,7 @@ const approveRequest = async (membership) => {
           orgName: org.name,
           appName: config.app.title,
         },
-      }).catch(() => {});
+      }).catch((err) => logger.warn('organizations.membership.approveRequest: approval email failed', err));
     }
   }
 
@@ -235,7 +236,7 @@ const rejectRequest = async (membership) => {
           orgName: org.name,
           appName: config.app.title,
         },
-      }).catch(() => {});
+      }).catch((err) => logger.warn('organizations.membership.rejectRequest: rejection email failed', err));
     }
   }
   return MembershipRepository.remove(membership);

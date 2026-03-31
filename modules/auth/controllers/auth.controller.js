@@ -19,6 +19,7 @@ import AuthOrganizationService from '../../organizations/services/organizations.
 import OrganizationCrudService from '../../organizations/services/organizations.crud.service.js';
 import MembershipService from '../../organizations/services/organizations.membership.service.js';
 import AnalyticsService from '../../../lib/services/analytics.js';
+import logger from '../../../lib/services/logger.js';
 
 const tokenCookieOptions = {
   httpOnly: true,
@@ -79,7 +80,7 @@ const signup = async (req, res) => {
           emailVerificationExpires: Date.now() + 24 * 3600000, // 24 hours
         }, 'recover');
         // Send verification email (best-effort, do not block signup)
-        sendVerificationEmail(user, verificationToken).catch(() => {});
+        sendVerificationEmail(user, verificationToken).catch((err) => logger.warn('auth.signup: verification email failed', err));
       } else {
         // No mailer configured — auto-verify so dev/test are not blocked
         const brutUser = await UserService.getBrut({ id: user.id });
