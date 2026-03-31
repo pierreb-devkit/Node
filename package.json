@@ -89,7 +89,7 @@
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",
     "posthog-node": "^5.28.9",
-    "resend": "^6.9.4",
+    "resend": "^6.10.0",
     "sequelize": "^6.37.8",
     "sharp": "^0.34.5",
     "snyk": "^1.1303.2",
