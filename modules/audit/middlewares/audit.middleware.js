@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import AuditService from '../services/audit.service.js';
+import logger from '../../../lib/services/logger.js';
 
 /**
  * Default route prefixes to skip when auto-capturing audit events.
@@ -126,7 +127,7 @@ const createAuditMiddleware = (options = {}) => {
         req,
         targetType,
         targetId,
-      }).catch(() => {});
+      }).catch((err) => logger.error('audit.middleware: audit log write failed', { message: err?.message, stack: err?.stack }));
     });
 
     return next();

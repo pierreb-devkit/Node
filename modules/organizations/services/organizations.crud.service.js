@@ -4,6 +4,7 @@
 import AppError from '../../../lib/helpers/AppError.js';
 import { assertEmailVerified } from '../../../lib/helpers/emailVerification.js';
 import config from '../../../config/index.js';
+import logger from '../../../lib/services/logger.js';
 
 /**
  * @desc Escape regex-special characters in a user-provided string.
@@ -112,8 +113,8 @@ const create = async (body, user) => {
     await UserService.updateById(user.id || user._id, { currentOrganization: result._id });
   } catch (err) {
     // Rollback partially created artifacts
-    if (membership) await MembershipRepository.deleteMany({ _id: membership._id }).catch(() => {});
-    await OrganizationsRepository.remove(result).catch(() => {});
+    if (membership) await MembershipRepository.deleteMany({ _id: membership._id }).catch((e) => logger.error('organizations.crud.create: rollback membership failed', { message: e?.message, stack: e?.stack }));
+    await OrganizationsRepository.remove(result).catch((e) => logger.error('organizations.crud.create: rollback organization failed', { message: e?.message, stack: e?.stack }));
     throw err;
   }
 
