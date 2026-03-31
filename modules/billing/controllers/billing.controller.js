@@ -73,7 +73,7 @@ const getUsage = async (req, res) => {
     // Get usage counters (includes month field)
     const usage = await BillingUsageService.get(req.organization._id.toString());
 
-    // Flatten quotas config into { "resource.action": limit } format
+    // Flatten quotas config into { "resource_action": limit } format
     // Normalize Infinity to null for JSON-safe serialization
     const quotas = config.billing?.quotas;
     let limits = {};
@@ -82,7 +82,7 @@ const getUsage = async (req, res) => {
       for (const resource of Object.keys(planQuotas)) {
         for (const action of Object.keys(planQuotas[resource])) {
           const rawLimit = planQuotas[resource][action];
-          limits[`${resource}.${action}`] = Number.isFinite(rawLimit) ? rawLimit : null;
+          limits[`${resource}_${action}`] = Number.isFinite(rawLimit) ? rawLimit : null;
         }
       }
     }

@@ -54,7 +54,7 @@ function requireQuota(resource, action) {
 
       // Check current usage
       const usage = await BillingUsageService.get(req.organization._id.toString());
-      const counterKey = `${resource}.${action}`;
+      const counterKey = `${resource}_${action}`;
       const current = usage.counters[counterKey] || 0;
 
       if (current >= limit) {
