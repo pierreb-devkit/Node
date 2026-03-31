@@ -135,7 +135,7 @@ describe('auth.controller silent-catch error logging:', () => {
 
       expect(mockWarn).toHaveBeenCalledWith(
         'auth.signup: verification email failed',
-        emailError,
+        { message: emailError.message, stack: emailError.stack },
       );
     });
   });
@@ -218,7 +218,7 @@ describe('auth.password.controller silent-catch error logging:', () => {
 
       expect(mockWarn).toHaveBeenCalledWith(
         'auth.password.reset: confirmation email failed',
-        emailError,
+        { message: emailError.message, stack: emailError.stack },
       );
     });
   });

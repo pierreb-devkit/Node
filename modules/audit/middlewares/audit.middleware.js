@@ -127,7 +127,7 @@ const createAuditMiddleware = (options = {}) => {
         req,
         targetType,
         targetId,
-      }).catch((err) => logger.error('audit.middleware: audit log write failed', err));
+      }).catch((err) => logger.error('audit.middleware: audit log write failed', { message: err?.message, stack: err?.stack }));
     });
 
     return next();

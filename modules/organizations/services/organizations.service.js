@@ -99,10 +99,10 @@ const createOrganizationForUser = async ({ name, slug, domain, user, slugGenerat
     } catch (err) {
       // Clean up any partially created artifacts to avoid orphaned records
       if (membership) {
-        await MembershipRepository.deleteMany({ _id: membership._id }).catch((e) => logger.error('organizations.service.createOrganizationForUser: rollback membership failed', e));
+        await MembershipRepository.deleteMany({ _id: membership._id }).catch((e) => logger.error('organizations.service.createOrganizationForUser: rollback membership failed', { message: e?.message, stack: e?.stack }));
       }
       if (organization) {
-        await OrganizationsRepository.remove(organization).catch((e) => logger.error('organizations.service.createOrganizationForUser: rollback organization failed', e));
+        await OrganizationsRepository.remove(organization).catch((e) => logger.error('organizations.service.createOrganizationForUser: rollback organization failed', { message: e?.message, stack: e?.stack }));
       }
       // Retry on MongoDB duplicate key error for slug collisions (TOCTOU race)
       if (err.code === 11000 && err.message?.includes('slug') && attempt < maxRetries - 1) {

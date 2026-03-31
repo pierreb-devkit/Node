@@ -165,7 +165,7 @@ const createJoinRequest = async (userId, organizationId) => {
               url: `${getBaseUrl()}/users/organizations/${organizationId}`,
               appName: config.app.title,
             },
-          }).catch((err) => logger.warn('organizations.membership.createJoinRequest: admin notification email failed', err));
+          }).catch((err) => logger.warn('organizations.membership.createJoinRequest: admin notification email failed', { message: err?.message, stack: err?.stack }));
         }
       }
     }
@@ -207,7 +207,7 @@ const approveRequest = async (membership) => {
           orgName: org.name,
           appName: config.app.title,
         },
-      }).catch((err) => logger.warn('organizations.membership.approveRequest: approval email failed', err));
+      }).catch((err) => logger.warn('organizations.membership.approveRequest: approval email failed', { message: err?.message, stack: err?.stack }));
     }
   }
 
@@ -236,7 +236,7 @@ const rejectRequest = async (membership) => {
           orgName: org.name,
           appName: config.app.title,
         },
-      }).catch((err) => logger.warn('organizations.membership.rejectRequest: rejection email failed', err));
+      }).catch((err) => logger.warn('organizations.membership.rejectRequest: rejection email failed', { message: err?.message, stack: err?.stack }));
     }
   }
   return MembershipRepository.remove(membership);

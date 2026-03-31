@@ -80,7 +80,7 @@ const signup = async (req, res) => {
           emailVerificationExpires: Date.now() + 24 * 3600000, // 24 hours
         }, 'recover');
         // Send verification email (best-effort, do not block signup)
-        sendVerificationEmail(user, verificationToken).catch((err) => logger.warn('auth.signup: verification email failed', err));
+        sendVerificationEmail(user, verificationToken).catch((err) => logger.warn('auth.signup: verification email failed', { message: err?.message, stack: err?.stack }));
       } else {
         // No mailer configured — auto-verify so dev/test are not blocked
         const brutUser = await UserService.getBrut({ id: user.id });

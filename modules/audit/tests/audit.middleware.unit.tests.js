@@ -13,6 +13,11 @@ jest.unstable_mockModule('../services/audit.service.js', () => ({
   },
 }));
 
+const mockLoggerError = jest.fn();
+jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+  default: { error: mockLoggerError, warn: jest.fn(), info: jest.fn() },
+}));
+
 /**
  * Unit tests for audit middleware
  */
@@ -224,8 +229,9 @@ describe('Audit middleware unit tests:', () => {
     expect(mockLog).not.toHaveBeenCalled();
   });
 
-  test('should not throw when AuditService.log rejects', () => {
-    mockLog = jest.fn().mockRejectedValue(new Error('DB down'));
+  test('should not throw when AuditService.log rejects and should log the error', async () => {
+    const dbError = new Error('DB down');
+    mockLog = jest.fn().mockRejectedValue(dbError);
     const middleware = createAuditMiddleware();
     const req = createReq();
     const res = createRes(200);
@@ -234,5 +240,11 @@ describe('Audit middleware unit tests:', () => {
     middleware(req, res, next);
     // Should not throw
     expect(() => res.emit('finish')).not.toThrow();
+    // Allow the .catch() handler to run
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      'audit.middleware: audit log write failed',
+      { message: dbError.message, stack: dbError.stack },
+    );
   });
 });

@@ -82,7 +82,7 @@ describe('organizations.membership.service silent-catch error logging:', () => {
 
     expect(mockWarn).toHaveBeenCalledWith(
       'organizations.membership.createJoinRequest: admin notification email failed',
-      emailError,
+      { message: emailError.message, stack: emailError.stack },
     );
   });
 
@@ -107,7 +107,7 @@ describe('organizations.membership.service silent-catch error logging:', () => {
 
     expect(mockWarn).toHaveBeenCalledWith(
       'organizations.membership.approveRequest: approval email failed',
-      emailError,
+      { message: emailError.message, stack: emailError.stack },
     );
   });
 
@@ -128,7 +128,7 @@ describe('organizations.membership.service silent-catch error logging:', () => {
 
     expect(mockWarn).toHaveBeenCalledWith(
       'organizations.membership.rejectRequest: rejection email failed',
-      emailError,
+      { message: emailError.message, stack: emailError.stack },
     );
   });
 });

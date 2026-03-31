@@ -77,7 +77,7 @@ describe('organizations.crud.service silent-catch error logging:', () => {
 
     expect(mockError).toHaveBeenCalledWith(
       'organizations.crud.create: rollback membership failed',
-      rollbackError,
+      { message: rollbackError.message, stack: rollbackError.stack },
     );
   });
 });

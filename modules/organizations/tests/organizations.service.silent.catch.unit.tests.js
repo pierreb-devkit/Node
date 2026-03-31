@@ -85,7 +85,7 @@ describe('organizations.service silent-catch error logging:', () => {
 
     expect(mockError).toHaveBeenCalledWith(
       'organizations.service.createOrganizationForUser: rollback membership failed',
-      rollbackError,
+      { message: rollbackError.message, stack: rollbackError.stack },
     );
   });
 });

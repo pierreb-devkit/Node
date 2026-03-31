@@ -109,7 +109,7 @@ const reset = async (req, res) => {
         appName: config.app.title,
         appContact: config.app.contact,
       },
-    }).catch((err) => logger.warn('auth.password.reset: confirmation email failed', err));
+    }).catch((err) => logger.warn('auth.password.reset: confirmation email failed', { message: err?.message, stack: err?.stack }));
     return res
       .status(200)
       .cookie('TOKEN', jwt.sign({ userId: user.id }, config.jwt.secret, { expiresIn: config.jwt.expiresIn }), tokenCookieOptions)
