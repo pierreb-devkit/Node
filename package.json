@@ -24,9 +24,9 @@
   },
   "scripts": {
     "start": "node server.js",
-    "start:billing": "node --env-file-if-exists=.env server.js",
+    "start:env": "node --env-file-if-exists=.env server.js",
     "dev": "node --watch server.js",
-    "dev:billing": "node --env-file-if-exists=.env --watch server.js",
+    "dev:env": "node --env-file-if-exists=.env --watch server.js",
     "debug": "nodemon --inspect server.js",
     "prod": "cross-env NODE_ENV=production node server.js --name=node",
     "test": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --runInBand --testPathPatterns='unit'",
