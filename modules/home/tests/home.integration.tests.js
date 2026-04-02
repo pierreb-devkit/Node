@@ -19,6 +19,8 @@ describe('Home integration tests:', () => {
   let HomeService;
   let adminToken;
   let adminUser;
+  let userToken;
+  let regularUser;
   let originalOrganizationsEnabled;
 
   //  init
@@ -52,6 +54,18 @@ describe('Home integration tests:', () => {
         roles: ['admin'],
       });
       adminToken = jwt.sign({ userId: adminUser.id }, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
+
+      // Create regular user and sign JWT for readiness auth tests
+      await User.deleteOne({ email: 'regular-readiness@test.com' });
+      regularUser = await User.create({
+        firstName: 'Regular',
+        lastName: 'User',
+        email: 'regular-readiness@test.com',
+        password: 'W@os.jsI$Aw3$0m3',
+        provider: 'local',
+        roles: ['user'],
+      });
+      userToken = jwt.sign({ userId: regularUser.id }, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
     } catch (err) {
       console.log(err);
       expect(err).toBeFalsy();
@@ -188,6 +202,154 @@ describe('Home integration tests:', () => {
     });
   });
 
+  describe('Readiness', () => {
+    test('should return 401 for unauthenticated user', async () => {
+      const result = await agent.get('/api/admin/readiness').expect(401);
+      expect(result.body).toBeDefined();
+      expect(result.status).toBe(401);
+    });
+
+    test('should return 403 for regular user', async () => {
+      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${userToken}`).expect(403);
+      expect(result.body.type).toBe('error');
+    });
+
+    test('should return 200 with readiness checks for admin', async () => {
+      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+      expect(result.body.type).toBe('success');
+      expect(result.body.message).toBe('readiness check');
+      expect(result.body.data).toBeInstanceOf(Array);
+      expect(result.body.data.length).toBeGreaterThan(0);
+    });
+
+    test('should return correct shape for each readiness check', async () => {
+      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+      const expectedCategories = ['config', 'security', 'auth', 'mail', 'billing', 'analytics', 'monitoring'];
+      const categories = result.body.data.map((c) => c.category);
+      expect(categories).toEqual(expectedCategories);
+      result.body.data.forEach((item) => {
+        expect(item).toHaveProperty('category');
+        expect(item).toHaveProperty('status');
+        expect(item).toHaveProperty('message');
+        expect(['ok', 'warning']).toContain(item.status);
+        expect(typeof item.message).toBe('string');
+      });
+    });
+
+    test('should report ok status when config values are properly set', async () => {
+      const mailer = (await import('../../../lib/helpers/mailer/index.js')).default;
+      const origDomain = config.domain;
+      const origJwt = config.jwt.secret;
+      const origOAuth = config.oAuth;
+      const origStripe = config.stripe;
+      const origPosthog = config.posthog;
+      const origSentry = config.sentry;
+      const mailerSpy = jest.spyOn(mailer, 'isConfigured').mockReturnValue(true);
+      try {
+        config.domain = 'example.com';
+        config.jwt.secret = 'a-real-custom-secret-key';
+        config.oAuth = { google: { clientID: 'google-id' }, apple: { clientID: 'apple-id' } };
+        config.stripe = { secretKey: 'sk_test_123' };
+        config.posthog = { apiKey: 'phk_123' };
+        config.sentry = { dsn: 'https://sentry.io/123' };
+
+        const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+        result.body.data.forEach((item) => {
+          expect(item.status).toBe('ok');
+        });
+        // Verify OAuth message includes both providers
+        const authCheck = result.body.data.find((c) => c.category === 'auth');
+        expect(authCheck.message).toContain('Google');
+        expect(authCheck.message).toContain('Apple');
+      } finally {
+        config.domain = origDomain;
+        config.jwt.secret = origJwt;
+        config.oAuth = origOAuth;
+        config.stripe = origStripe;
+        config.posthog = origPosthog;
+        config.sentry = origSentry;
+        mailerSpy.mockRestore();
+      }
+    });
+
+    test('should report warning when JWT secret is the default value', async () => {
+      const origJwt = config.jwt.secret;
+      try {
+        config.jwt.secret = 'WaosSecretKeyExampleToChnageAbsolutely';
+        const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+        const secCheck = result.body.data.find((c) => c.category === 'security');
+        expect(secCheck.status).toBe('warning');
+        expect(secCheck.message).toContain('default');
+      } finally {
+        config.jwt.secret = origJwt;
+      }
+    });
+
+    test('should report warning when domain is a DEVKIT placeholder', async () => {
+      const origDomain = config.domain;
+      try {
+        config.domain = 'DEVKIT_NODE_DOMAIN';
+        const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+        const cfgCheck = result.body.data.find((c) => c.category === 'config');
+        expect(cfgCheck.status).toBe('warning');
+      } finally {
+        config.domain = origDomain;
+      }
+    });
+
+    test('should handle only Google OAuth configured', async () => {
+      const origOAuth = config.oAuth;
+      try {
+        config.oAuth = { google: { clientID: 'google-id' }, apple: {} };
+        const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+        const authCheck = result.body.data.find((c) => c.category === 'auth');
+        expect(authCheck.status).toBe('ok');
+        expect(authCheck.message).toContain('Google');
+        expect(authCheck.message).not.toContain('Apple');
+      } finally {
+        config.oAuth = origOAuth;
+      }
+    });
+
+    test('should report warning when config values are empty strings or whitespace', async () => {
+      const origDomain = config.domain;
+      const origStripe = config.stripe;
+      try {
+        config.domain = '   ';
+        config.stripe = { secretKey: '' };
+        const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+        const cfgCheck = result.body.data.find((c) => c.category === 'config');
+        const billingCheck = result.body.data.find((c) => c.category === 'billing');
+        expect(cfgCheck.status).toBe('warning');
+        expect(billingCheck.status).toBe('warning');
+      } finally {
+        config.domain = origDomain;
+        config.stripe = origStripe;
+      }
+    });
+
+    test('should report warning when JWT secret is empty', async () => {
+      const origJwt = config.jwt.secret;
+      try {
+        config.jwt.secret = '';
+        const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+        const secCheck = result.body.data.find((c) => c.category === 'security');
+        expect(secCheck.status).toBe('warning');
+      } finally {
+        config.jwt.secret = origJwt;
+      }
+    });
+
+    test('should return 422 when readiness service throws', async () => {
+      jest.spyOn(HomeService, 'getReadinessStatus').mockImplementationOnce(() => {
+        throw new Error('config error');
+      });
+      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(422);
+      expect(result.body.type).toBe('error');
+      expect(result.body.description).toBe('config error.');
+    });
+  });
+
   describe('Errors', () => {
     test('should return 422 when team service fails', async () => {
       jest.spyOn(HomeService, 'team').mockRejectedValueOnce(new Error('DB error'));
@@ -211,9 +373,10 @@ describe('Home integration tests:', () => {
     jest.restoreAllMocks();
     config.organizations.enabled = originalOrganizationsEnabled;
     try {
-      if (adminUser) {
+      if (adminUser || regularUser) {
         const User = mongoose.model('User');
-        await User.deleteOne({ _id: adminUser._id });
+        if (adminUser) await User.deleteOne({ _id: adminUser._id });
+        if (regularUser) await User.deleteOne({ _id: regularUser._id });
       }
     } catch (_) { /* cleanup – ignore errors */ }
     try {

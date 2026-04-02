@@ -35,6 +35,8 @@ export default (app) => {
   app.route('/api/home/team').all(policy.isAllowed).get(home.team);
   // markdown files
   app.route('/api/home/pages/:name').all(policy.isAllowed).get(home.page);
+  // readiness check — admin only (JWT + CASL)
+  app.route('/api/admin/readiness').all(passport.authenticate('jwt', { session: false }), policy.isAllowed).get(home.readiness);
 
   // Finish by binding the task middleware
   app.param('name', home.pageByName);

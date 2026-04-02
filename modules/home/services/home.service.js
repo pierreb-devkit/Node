@@ -10,7 +10,15 @@ import mongoose from 'mongoose';
 
 import AuthService from '../../auth/services/auth.service.js';
 import config from '../../../config/index.js';
+import mailer from '../../../lib/helpers/mailer/index.js';
 import HomeRepository from '../repositories/home.repository.js';
+
+/**
+ * @desc Check whether a config value is meaningfully set (non-empty, not a DEVKIT placeholder).
+ * @param {*} value - Config value to check
+ * @returns {boolean} true when value is a non-empty string and not a DEVKIT_NODE_ placeholder
+ */
+const isSet = (value) => !!(value && typeof value === 'string' && value.trim() !== '' && !value.startsWith('DEVKIT_NODE_'));
 
 /**
  * @desc Function to get all admin users in db
@@ -102,10 +110,81 @@ const getHealthStatus = () => {
   };
 };
 
+/**
+ * @desc Run SaaS readiness checks against current configuration.
+ * Each check returns { category, status, message }.
+ * @returns {Array<{category: string, status: string, message: string}>}
+ */
+const getReadinessStatus = () => {
+  const checks = [];
+
+  // config — domain
+  const domainSet = isSet(config.domain);
+  checks.push({
+    category: 'config',
+    status: domainSet ? 'ok' : 'warning',
+    message: domainSet ? 'Domain configured' : 'Domain not configured',
+  });
+
+  // security — JWT secret
+  const jwtSecret = config.jwt?.secret;
+  const jwtInsecure = !jwtSecret || jwtSecret.trim() === '' || jwtSecret === 'WaosSecretKeyExampleToChnageAbsolutely';
+  checks.push({
+    category: 'security',
+    status: jwtInsecure ? 'warning' : 'ok',
+    message: jwtInsecure ? 'JWT secret is missing or default — change it before production' : 'JWT secret is custom',
+  });
+
+  // auth — OAuth providers
+  const oAuthProviders = [];
+  if (isSet(config.oAuth?.google?.clientID)) oAuthProviders.push('Google');
+  if (isSet(config.oAuth?.apple?.clientID)) oAuthProviders.push('Apple');
+  checks.push({
+    category: 'auth',
+    status: oAuthProviders.length > 0 ? 'ok' : 'warning',
+    message: oAuthProviders.length > 0 ? `OAuth configured (${oAuthProviders.join(', ')})` : 'No OAuth provider configured',
+  });
+
+  // mail — mailer
+  const mailConfigured = mailer.isConfigured();
+  checks.push({
+    category: 'mail',
+    status: mailConfigured ? 'ok' : 'warning',
+    message: mailConfigured ? 'Mail provider configured' : 'No mail provider configured',
+  });
+
+  // billing — Stripe
+  const stripeConfigured = isSet(config.stripe?.secretKey);
+  checks.push({
+    category: 'billing',
+    status: stripeConfigured ? 'ok' : 'warning',
+    message: stripeConfigured ? 'Stripe configured' : 'Stripe not configured',
+  });
+
+  // analytics — PostHog
+  const posthogConfigured = isSet(config.posthog?.apiKey);
+  checks.push({
+    category: 'analytics',
+    status: posthogConfigured ? 'ok' : 'warning',
+    message: posthogConfigured ? 'PostHog configured' : 'PostHog not configured',
+  });
+
+  // monitoring — Sentry
+  const sentryConfigured = isSet(config.sentry?.dsn);
+  checks.push({
+    category: 'monitoring',
+    status: sentryConfigured ? 'ok' : 'warning',
+    message: sentryConfigured ? 'Sentry configured' : 'Sentry not configured',
+  });
+
+  return checks;
+};
+
 export default {
   page,
   releases,
   changelogs,
   team,
   getHealthStatus,
+  getReadinessStatus,
 };
