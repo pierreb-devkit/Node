@@ -204,6 +204,7 @@ describe('Home integration tests:', () => {
     test('should return 401 for unauthenticated user', async () => {
       const result = await agent.get('/api/admin/readiness').expect(401);
       expect(result.body).toBeDefined();
+      expect(result.status).toBe(401);
     });
 
     test('should return 403 for regular user', async () => {
@@ -242,83 +243,99 @@ describe('Home integration tests:', () => {
       const origPosthog = config.posthog;
       const origSentry = config.sentry;
       const mailerSpy = jest.spyOn(mailer, 'isConfigured').mockReturnValue(true);
+      try {
+        config.domain = 'example.com';
+        config.jwt.secret = 'a-real-custom-secret-key';
+        config.oAuth = { google: { clientID: 'google-id' }, apple: { clientID: 'apple-id' } };
+        config.stripe = { secretKey: 'sk_test_123' };
+        config.posthog = { apiKey: 'phk_123' };
+        config.sentry = { dsn: 'https://sentry.io/123' };
 
-      config.domain = 'example.com';
-      config.jwt.secret = 'a-real-custom-secret-key';
-      config.oAuth = { google: { clientID: 'google-id' }, apple: { clientID: 'apple-id' } };
-      config.stripe = { secretKey: 'sk_test_123' };
-      config.posthog = { apiKey: 'phk_123' };
-      config.sentry = { dsn: 'https://sentry.io/123' };
-
-      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
-      result.body.data.forEach((item) => {
-        expect(item.status).toBe('ok');
-      });
-      // Verify OAuth message includes both providers
-      const authCheck = result.body.data.find((c) => c.category === 'auth');
-      expect(authCheck.message).toContain('Google');
-      expect(authCheck.message).toContain('Apple');
-
-      config.domain = origDomain;
-      config.jwt.secret = origJwt;
-      config.oAuth = origOAuth;
-      config.stripe = origStripe;
-      config.posthog = origPosthog;
-      config.sentry = origSentry;
-      mailerSpy.mockRestore();
+        const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+        result.body.data.forEach((item) => {
+          expect(item.status).toBe('ok');
+        });
+        // Verify OAuth message includes both providers
+        const authCheck = result.body.data.find((c) => c.category === 'auth');
+        expect(authCheck.message).toContain('Google');
+        expect(authCheck.message).toContain('Apple');
+      } finally {
+        config.domain = origDomain;
+        config.jwt.secret = origJwt;
+        config.oAuth = origOAuth;
+        config.stripe = origStripe;
+        config.posthog = origPosthog;
+        config.sentry = origSentry;
+        mailerSpy.mockRestore();
+      }
     });
 
     test('should report warning when JWT secret is the default value', async () => {
       const origJwt = config.jwt.secret;
-      config.jwt.secret = 'WaosSecretKeyExampleToChnageAbsolutely';
-      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
-      const secCheck = result.body.data.find((c) => c.category === 'security');
-      expect(secCheck.status).toBe('warning');
-      expect(secCheck.message).toContain('default');
-      config.jwt.secret = origJwt;
+      try {
+        config.jwt.secret = 'WaosSecretKeyExampleToChnageAbsolutely';
+        const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+        const secCheck = result.body.data.find((c) => c.category === 'security');
+        expect(secCheck.status).toBe('warning');
+        expect(secCheck.message).toContain('default');
+      } finally {
+        config.jwt.secret = origJwt;
+      }
     });
 
     test('should report warning when domain is a DEVKIT placeholder', async () => {
       const origDomain = config.domain;
-      config.domain = 'DEVKIT_NODE_DOMAIN';
-      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
-      const cfgCheck = result.body.data.find((c) => c.category === 'config');
-      expect(cfgCheck.status).toBe('warning');
-      config.domain = origDomain;
+      try {
+        config.domain = 'DEVKIT_NODE_DOMAIN';
+        const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+        const cfgCheck = result.body.data.find((c) => c.category === 'config');
+        expect(cfgCheck.status).toBe('warning');
+      } finally {
+        config.domain = origDomain;
+      }
     });
 
     test('should handle only Google OAuth configured', async () => {
       const origOAuth = config.oAuth;
-      config.oAuth = { google: { clientID: 'google-id' }, apple: {} };
-      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
-      const authCheck = result.body.data.find((c) => c.category === 'auth');
-      expect(authCheck.status).toBe('ok');
-      expect(authCheck.message).toContain('Google');
-      expect(authCheck.message).not.toContain('Apple');
-      config.oAuth = origOAuth;
+      try {
+        config.oAuth = { google: { clientID: 'google-id' }, apple: {} };
+        const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+        const authCheck = result.body.data.find((c) => c.category === 'auth');
+        expect(authCheck.status).toBe('ok');
+        expect(authCheck.message).toContain('Google');
+        expect(authCheck.message).not.toContain('Apple');
+      } finally {
+        config.oAuth = origOAuth;
+      }
     });
 
     test('should report warning when config values are empty strings or whitespace', async () => {
       const origDomain = config.domain;
       const origStripe = config.stripe;
-      config.domain = '   ';
-      config.stripe = { secretKey: '' };
-      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
-      const cfgCheck = result.body.data.find((c) => c.category === 'config');
-      const billingCheck = result.body.data.find((c) => c.category === 'billing');
-      expect(cfgCheck.status).toBe('warning');
-      expect(billingCheck.status).toBe('warning');
-      config.domain = origDomain;
-      config.stripe = origStripe;
+      try {
+        config.domain = '   ';
+        config.stripe = { secretKey: '' };
+        const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+        const cfgCheck = result.body.data.find((c) => c.category === 'config');
+        const billingCheck = result.body.data.find((c) => c.category === 'billing');
+        expect(cfgCheck.status).toBe('warning');
+        expect(billingCheck.status).toBe('warning');
+      } finally {
+        config.domain = origDomain;
+        config.stripe = origStripe;
+      }
     });
 
     test('should report warning when JWT secret is empty', async () => {
       const origJwt = config.jwt.secret;
-      config.jwt.secret = '';
-      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
-      const secCheck = result.body.data.find((c) => c.category === 'security');
-      expect(secCheck.status).toBe('warning');
-      config.jwt.secret = origJwt;
+      try {
+        config.jwt.secret = '';
+        const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+        const secCheck = result.body.data.find((c) => c.category === 'security');
+        expect(secCheck.status).toBe('warning');
+      } finally {
+        config.jwt.secret = origJwt;
+      }
     });
 
     test('should return 422 when readiness service throws', async () => {
