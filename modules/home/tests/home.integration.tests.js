@@ -20,6 +20,7 @@ describe('Home integration tests:', () => {
   let adminToken;
   let adminUser;
   let userToken;
+  let regularUser;
   let originalOrganizationsEnabled;
 
   //  init
@@ -55,7 +56,8 @@ describe('Home integration tests:', () => {
       adminToken = jwt.sign({ userId: adminUser.id }, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
 
       // Create regular user and sign JWT for readiness auth tests
-      const regularUser = await User.create({
+      await User.deleteOne({ email: 'regular-readiness@test.com' });
+      regularUser = await User.create({
         firstName: 'Regular',
         lastName: 'User',
         email: 'regular-readiness@test.com',
@@ -371,9 +373,10 @@ describe('Home integration tests:', () => {
     jest.restoreAllMocks();
     config.organizations.enabled = originalOrganizationsEnabled;
     try {
-      if (adminUser) {
+      if (adminUser || regularUser) {
         const User = mongoose.model('User');
-        await User.deleteOne({ _id: adminUser._id });
+        if (adminUser) await User.deleteOne({ _id: adminUser._id });
+        if (regularUser) await User.deleteOne({ _id: regularUser._id });
       }
     } catch (_) { /* cleanup – ignore errors */ }
     try {
