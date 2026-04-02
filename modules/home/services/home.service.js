@@ -14,9 +14,9 @@ import mailer from '../../../lib/helpers/mailer/index.js';
 import HomeRepository from '../repositories/home.repository.js';
 
 /**
- * @desc Check whether a config value is meaningfully set (non-empty string, not a DEVKIT placeholder).
+ * @desc Check whether a config value is meaningfully set (non-empty, not a DEVKIT placeholder).
  * @param {*} value - Config value to check
- * @returns {boolean} true if value is a non-empty string and not a DEVKIT_NODE_ placeholder
+ * @returns {boolean} true when value is a non-empty string and not a DEVKIT_NODE_ placeholder
  */
 const isSet = (value) => !!(value && typeof value === 'string' && value.trim() !== '' && !value.startsWith('DEVKIT_NODE_'));
 
