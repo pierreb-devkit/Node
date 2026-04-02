@@ -232,6 +232,80 @@ describe('Home integration tests:', () => {
         expect(typeof item.message).toBe('string');
       });
     });
+
+    test('should report ok status when config values are properly set', async () => {
+      const mailer = (await import('../../../lib/helpers/mailer/index.js')).default;
+      const origDomain = config.domain;
+      const origJwt = config.jwt.secret;
+      const origOAuth = config.oAuth;
+      const origStripe = config.stripe;
+      const origPosthog = config.posthog;
+      const origSentry = config.sentry;
+      const mailerSpy = jest.spyOn(mailer, 'isConfigured').mockReturnValue(true);
+
+      config.domain = 'example.com';
+      config.jwt.secret = 'a-real-custom-secret-key';
+      config.oAuth = { google: { clientID: 'google-id' }, apple: { clientID: 'apple-id' } };
+      config.stripe = { secretKey: 'sk_test_123' };
+      config.posthog = { apiKey: 'phk_123' };
+      config.sentry = { dsn: 'https://sentry.io/123' };
+
+      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+      result.body.data.forEach((item) => {
+        expect(item.status).toBe('ok');
+      });
+      // Verify OAuth message includes both providers
+      const authCheck = result.body.data.find((c) => c.category === 'auth');
+      expect(authCheck.message).toContain('Google');
+      expect(authCheck.message).toContain('Apple');
+
+      config.domain = origDomain;
+      config.jwt.secret = origJwt;
+      config.oAuth = origOAuth;
+      config.stripe = origStripe;
+      config.posthog = origPosthog;
+      config.sentry = origSentry;
+      mailerSpy.mockRestore();
+    });
+
+    test('should report warning when JWT secret is the default value', async () => {
+      const origJwt = config.jwt.secret;
+      config.jwt.secret = 'WaosSecretKeyExampleToChnageAbsolutely';
+      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+      const secCheck = result.body.data.find((c) => c.category === 'security');
+      expect(secCheck.status).toBe('warning');
+      expect(secCheck.message).toContain('default');
+      config.jwt.secret = origJwt;
+    });
+
+    test('should report warning when domain is a DEVKIT placeholder', async () => {
+      const origDomain = config.domain;
+      config.domain = 'DEVKIT_NODE_DOMAIN';
+      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+      const cfgCheck = result.body.data.find((c) => c.category === 'config');
+      expect(cfgCheck.status).toBe('warning');
+      config.domain = origDomain;
+    });
+
+    test('should handle only Google OAuth configured', async () => {
+      const origOAuth = config.oAuth;
+      config.oAuth = { google: { clientID: 'google-id' }, apple: {} };
+      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+      const authCheck = result.body.data.find((c) => c.category === 'auth');
+      expect(authCheck.status).toBe('ok');
+      expect(authCheck.message).toContain('Google');
+      expect(authCheck.message).not.toContain('Apple');
+      config.oAuth = origOAuth;
+    });
+
+    test('should return 422 when readiness service throws', async () => {
+      jest.spyOn(HomeService, 'getReadinessStatus').mockImplementationOnce(() => {
+        throw new Error('config error');
+      });
+      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(422);
+      expect(result.body.type).toBe('error');
+      expect(result.body.description).toBe('config error.');
+    });
   });
 
   describe('Errors', () => {
