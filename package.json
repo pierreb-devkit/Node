@@ -96,7 +96,7 @@
     "stripe": "^21.0.1",
     "supertest": "^7.2.2",
     "swagger-ui-express": "^5.0.1",
-    "ts-jest": "^29.4.6",
+    "ts-jest": "^29.4.9",
     "winston": "^3.19.0",
     "zod": "^4.3.6",
     "zxcvbn": "^4.4.2"
