@@ -298,6 +298,29 @@ describe('Home integration tests:', () => {
       config.oAuth = origOAuth;
     });
 
+    test('should report warning when config values are empty strings or whitespace', async () => {
+      const origDomain = config.domain;
+      const origStripe = config.stripe;
+      config.domain = '   ';
+      config.stripe = { secretKey: '' };
+      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+      const cfgCheck = result.body.data.find((c) => c.category === 'config');
+      const billingCheck = result.body.data.find((c) => c.category === 'billing');
+      expect(cfgCheck.status).toBe('warning');
+      expect(billingCheck.status).toBe('warning');
+      config.domain = origDomain;
+      config.stripe = origStripe;
+    });
+
+    test('should report warning when JWT secret is empty', async () => {
+      const origJwt = config.jwt.secret;
+      config.jwt.secret = '';
+      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+      const secCheck = result.body.data.find((c) => c.category === 'security');
+      expect(secCheck.status).toBe('warning');
+      config.jwt.secret = origJwt;
+    });
+
     test('should return 422 when readiness service throws', async () => {
       jest.spyOn(HomeService, 'getReadinessStatus').mockImplementationOnce(() => {
         throw new Error('config error');
