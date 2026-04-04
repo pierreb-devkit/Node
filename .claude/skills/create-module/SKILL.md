@@ -64,13 +64,12 @@ Example: `config.billing.plans` used in both `billing.subscription.model.mongoos
 
 > Reference: `modules/users/models/users.schema.js` uses `z.enum(config.whitelists.users.roles)`.
 
-### 5. Create policy & authorization
+### 5. Module autonomy
 
-- Create `modules/{module}/policies/{module}.policy.js` exporting:
-  - `{module}Abilities(user, membership, { can, cannot })` — CASL ability builder
-  - `{module}SubjectRegistration()` — calls `registerDocumentSubject()` and `registerPathSubject()` to self-register subjects
-- Routes use `authorize(action, subject)` helper from `lib/helpers/authorize.js`
-- **NEVER modify `lib/middlewares/policy.js`** — subjects and abilities are auto-discovered from module policy files
+- Everything the module needs lives inside `modules/{module}/` — policies, config, routes, tests, doc
+- Module registers its own capabilities (subjects, abilities, config) via exports — auto-discovered by the core
+- **NEVER modify shared files** (`lib/middlewares/`, `lib/services/`, `config/`) to add module-specific logic
+- If the module needs authorization: create `policies/{module}.policy.js` with ability builder + subject registration exports
 
 ### 6. Apply renames carefully
 
