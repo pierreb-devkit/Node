@@ -9,6 +9,7 @@
  * Exact matches are registered first (highest priority), then prefix fallback.
  * @param {Object} registry - Subject registration helpers
  * @param {Function} registry.registerPathSubject - Register route path → subject type
+ * @returns {void}
  */
 export function usersSubjectRegistration({ registerPathSubject }) {
   // Exact matches — checked before prefix fallback

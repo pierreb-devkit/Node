@@ -6,6 +6,7 @@
  * Register home-related subjects for path-level resolution.
  * @param {Object} registry - Subject registration helpers
  * @param {Function} registry.registerPathSubject - Register route path → subject type
+ * @returns {void}
  */
 export function homeSubjectRegistration({ registerPathSubject }) {
   registerPathSubject((p) => p.startsWith('/api/home'), 'Home');

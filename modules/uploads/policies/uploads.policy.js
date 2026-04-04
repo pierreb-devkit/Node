@@ -7,6 +7,7 @@
  * @param {Object} registry - Subject registration helpers
  * @param {Function} registry.registerDocumentSubject - Register req property → subject type
  * @param {Function} registry.registerPathSubject - Register route path → subject type
+ * @returns {void}
  */
 export function uploadSubjectRegistration({ registerDocumentSubject, registerPathSubject }) {
   registerDocumentSubject('upload', 'Upload');
