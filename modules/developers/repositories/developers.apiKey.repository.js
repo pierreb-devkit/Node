@@ -42,7 +42,7 @@ const create = (apiKey) => new ApiKey(apiKey).save();
  * @returns {Promise<Object|null>}
  */
 const get = (id) => {
-  if (!mongoose.Types.ObjectId.isValid(id)) return null;
+  if (!mongoose.Types.ObjectId.isValid(id)) return Promise.resolve(null);
   return ApiKey.findById(id).exec();
 };
 
@@ -53,7 +53,7 @@ const get = (id) => {
  * @returns {Promise<Object|null>}
  */
 const revoke = (id) => {
-  if (!mongoose.Types.ObjectId.isValid(id)) return null;
+  if (!mongoose.Types.ObjectId.isValid(id)) return Promise.resolve(null);
   return ApiKey.findByIdAndUpdate(
     id,
     { revoked: true },
@@ -82,7 +82,10 @@ const findByHashedKey = (hashedKey) => ApiKey.findOne({
  * @param {String} id - The API key ID
  * @returns {Promise<Object|null>}
  */
-const updateLastUsed = (id) => ApiKey.findByIdAndUpdate(id, { lastUsedAt: new Date() }).exec();
+const updateLastUsed = (id) => {
+  if (!mongoose.Types.ObjectId.isValid(id)) return Promise.resolve(null);
+  return ApiKey.findByIdAndUpdate(id, { lastUsedAt: new Date() }).exec();
+};
 
 export default {
   list,

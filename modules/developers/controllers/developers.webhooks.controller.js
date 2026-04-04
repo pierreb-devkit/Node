@@ -13,8 +13,8 @@ import WebhookDispatchService from '../services/developers.webhook.dispatch.serv
  */
 const list = async (req, res) => {
   try {
-    const page = parseInt(req.query.page, 10) || 1;
-    const perPage = parseInt(req.query.perPage, 10) || 20;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const perPage = Math.min(100, Math.max(1, parseInt(req.query.perPage, 10) || 20));
     const result = await WebhookService.list(req.organization._id, page, perPage);
     responses.success(res, 'webhooks')(result);
   } catch (err) {
@@ -85,8 +85,8 @@ const remove = async (req, res) => {
  */
 const listDeliveries = async (req, res) => {
   try {
-    const page = parseInt(req.query.page, 10) || 1;
-    const perPage = parseInt(req.query.perPage, 10) || 20;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const perPage = Math.min(100, Math.max(1, parseInt(req.query.perPage, 10) || 20));
     const result = await WebhookService.listDeliveries(req.webhook._id, page, perPage);
     responses.success(res, 'webhook deliveries')(result);
   } catch (err) {

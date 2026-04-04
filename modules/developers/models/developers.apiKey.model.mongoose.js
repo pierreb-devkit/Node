@@ -69,9 +69,18 @@ function addID() {
  * Model configuration
  */
 ApiKeyMongoose.virtual('id').get(addID);
-// Ensure virtual fields are serialised.
+// Ensure virtual fields are serialised — strip hashedKey from API responses.
 ApiKeyMongoose.set('toJSON', {
   virtuals: true,
+  transform(_doc, ret) {
+    delete ret.hashedKey;
+    return ret;
+  },
 });
+
+/**
+ * Index for fast lookup by hashedKey during authentication.
+ */
+ApiKeyMongoose.index({ hashedKey: 1 });
 
 mongoose.model('ApiKey', ApiKeyMongoose);

@@ -10,6 +10,7 @@ describe('Developers Webhooks controller unit tests:', () => {
   let controller;
   let mockWebhookService;
   let mockDispatchService;
+  let mockResponses;
   let mockRes;
 
   const orgId = '507f1f77bcf86cd799439011';
@@ -30,6 +31,11 @@ describe('Developers Webhooks controller unit tests:', () => {
       sendTestPing: jest.fn(),
     };
 
+    mockResponses = {
+      success: jest.fn((res, msg) => (data) => ({ type: 'success', message: msg, data })),
+      error: jest.fn((res, status, msg, desc) => () => ({ type: 'error', status, message: msg, description: desc })),
+    };
+
     jest.unstable_mockModule('../services/developers.webhook.service.js', () => ({
       default: mockWebhookService,
     }));
@@ -39,10 +45,7 @@ describe('Developers Webhooks controller unit tests:', () => {
     }));
 
     jest.unstable_mockModule('../../../lib/helpers/responses.js', () => ({
-      default: {
-        success: jest.fn((res, msg) => (data) => ({ type: 'success', message: msg, data })),
-        error: jest.fn((res, status, msg, desc) => () => ({ type: 'error', message: msg, description: desc })),
-      },
+      default: mockResponses,
     }));
 
     const mod = await import('../controllers/developers.webhooks.controller.js');
@@ -66,6 +69,25 @@ describe('Developers Webhooks controller unit tests:', () => {
       await controller.list(req, mockRes);
 
       expect(mockWebhookService.list).toHaveBeenCalledWith(orgId, 1, 20);
+      expect(mockResponses.success).toHaveBeenCalledWith(mockRes, 'webhooks');
+    });
+
+    test('should clamp negative page and perPage to safe values', async () => {
+      const req = { organization: { _id: orgId }, query: { page: '-5', perPage: '-10' } };
+      mockWebhookService.list.mockResolvedValue({ data: [], total: 0 });
+
+      await controller.list(req, mockRes);
+
+      expect(mockWebhookService.list).toHaveBeenCalledWith(orgId, 1, 1);
+    });
+
+    test('should cap perPage to 100', async () => {
+      const req = { organization: { _id: orgId }, query: { perPage: '500' } };
+      mockWebhookService.list.mockResolvedValue({ data: [], total: 0 });
+
+      await controller.list(req, mockRes);
+
+      expect(mockWebhookService.list).toHaveBeenCalledWith(orgId, 1, 100);
     });
   });
 
@@ -85,17 +107,18 @@ describe('Developers Webhooks controller unit tests:', () => {
         { _id: 'user1' },
         orgId,
       );
+      expect(mockResponses.success).toHaveBeenCalledWith(mockRes, 'webhook created');
     });
   });
 
   describe('get', () => {
-    test('should return the loaded webhook from req', () => {
+    test('should return the loaded webhook from req via responses.success', () => {
       const webhook = { _id: 'wh1', url: 'https://example.com' };
       const req = { webhook };
 
       controller.get(req, mockRes);
 
-      // Should call responses.success
+      expect(mockResponses.success).toHaveBeenCalledWith(mockRes, 'webhook');
     });
   });
 
@@ -108,6 +131,7 @@ describe('Developers Webhooks controller unit tests:', () => {
       await controller.update(req, mockRes);
 
       expect(mockWebhookService.update).toHaveBeenCalledWith(webhook, { active: false });
+      expect(mockResponses.success).toHaveBeenCalledWith(mockRes, 'webhook updated');
     });
   });
 
@@ -119,6 +143,7 @@ describe('Developers Webhooks controller unit tests:', () => {
       await controller.remove(req, mockRes);
 
       expect(mockWebhookService.remove).toHaveBeenCalledWith('wh1');
+      expect(mockResponses.success).toHaveBeenCalledWith(mockRes, 'webhook deleted');
     });
   });
 
@@ -130,6 +155,7 @@ describe('Developers Webhooks controller unit tests:', () => {
       await controller.listDeliveries(req, mockRes);
 
       expect(mockWebhookService.listDeliveries).toHaveBeenCalledWith('wh1', 1, 20);
+      expect(mockResponses.success).toHaveBeenCalledWith(mockRes, 'webhook deliveries');
     });
   });
 
@@ -142,6 +168,7 @@ describe('Developers Webhooks controller unit tests:', () => {
       await controller.testPing(req, mockRes);
 
       expect(mockDispatchService.sendTestPing).toHaveBeenCalledWith(webhook);
+      expect(mockResponses.success).toHaveBeenCalledWith(mockRes, 'test ping sent');
     });
   });
 
@@ -165,6 +192,7 @@ describe('Developers Webhooks controller unit tests:', () => {
       await controller.webhookByID(req, mockRes, next, 'wh1');
 
       expect(next).not.toHaveBeenCalled();
+      expect(mockResponses.error).toHaveBeenCalledWith(mockRes, 404, 'Not Found', 'No webhook with that identifier has been found');
     });
   });
 });

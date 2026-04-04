@@ -6,6 +6,11 @@ import mongoose from 'mongoose';
 const WebhookDelivery = mongoose.model('WebhookDelivery');
 
 /**
+ * Maximum number of delivery attempts before giving up.
+ */
+const MAX_RETRY_ATTEMPTS = 3;
+
+/**
  * @function list
  * @description List paginated delivery records for a given webhook.
  * @param {String} webhookId - The webhook ID
@@ -51,7 +56,7 @@ const update = (delivery) => delivery.save();
 const findPendingRetries = () => WebhookDelivery.find({
   success: false,
   nextRetryAt: { $lte: new Date() },
-  attempts: { $lt: 3 },
+  attempts: { $lt: MAX_RETRY_ATTEMPTS },
 }).exec();
 
 export default {

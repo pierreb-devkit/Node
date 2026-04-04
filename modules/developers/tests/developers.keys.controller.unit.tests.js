@@ -9,6 +9,7 @@ import { jest, beforeEach, afterEach } from '@jest/globals';
 describe('Developers Keys controller unit tests:', () => {
   let controller;
   let mockApiKeyService;
+  let mockResponses;
   let mockRes;
 
   const orgId = '507f1f77bcf86cd799439011';
@@ -23,15 +24,17 @@ describe('Developers Keys controller unit tests:', () => {
       revoke: jest.fn(),
     };
 
+    mockResponses = {
+      success: jest.fn((res, msg) => (data) => ({ type: 'success', message: msg, data })),
+      error: jest.fn((res, status, msg, desc) => () => ({ type: 'error', status, message: msg, description: desc })),
+    };
+
     jest.unstable_mockModule('../services/developers.apiKey.service.js', () => ({
       default: mockApiKeyService,
     }));
 
     jest.unstable_mockModule('../../../lib/helpers/responses.js', () => ({
-      default: {
-        success: jest.fn((res, msg) => (data) => ({ type: 'success', message: msg, data })),
-        error: jest.fn((res, status, msg, desc) => () => ({ type: 'error', message: msg, description: desc })),
-      },
+      default: mockResponses,
     }));
 
     const mod = await import('../controllers/developers.keys.controller.js');
@@ -55,6 +58,7 @@ describe('Developers Keys controller unit tests:', () => {
       await controller.list(req, mockRes);
 
       expect(mockApiKeyService.list).toHaveBeenCalledWith(orgId, 1, 20);
+      expect(mockResponses.success).toHaveBeenCalledWith(mockRes, 'ApiKeys');
     });
 
     test('should pass pagination query params to service', async () => {
@@ -64,6 +68,15 @@ describe('Developers Keys controller unit tests:', () => {
       await controller.list(req, mockRes);
 
       expect(mockApiKeyService.list).toHaveBeenCalledWith(orgId, 2, 10);
+    });
+
+    test('should clamp negative page and perPage to safe values', async () => {
+      const req = { organization: { _id: orgId }, query: { page: '-5', perPage: '-10' } };
+      mockApiKeyService.list.mockResolvedValue({ data: [], total: 0 });
+
+      await controller.list(req, mockRes);
+
+      expect(mockApiKeyService.list).toHaveBeenCalledWith(orgId, 1, 1);
     });
   });
 
@@ -83,9 +96,10 @@ describe('Developers Keys controller unit tests:', () => {
         { _id: 'user1' },
         orgId,
       );
+      expect(mockResponses.success).toHaveBeenCalledWith(mockRes, 'ApiKey created');
     });
 
-    test('should handle service errors', async () => {
+    test('should handle service errors with 500 response', async () => {
       const req = {
         body: { name: 'Key' },
         user: { _id: 'user1' },
@@ -94,7 +108,8 @@ describe('Developers Keys controller unit tests:', () => {
       mockApiKeyService.create.mockRejectedValue(new Error('fail'));
 
       await controller.create(req, mockRes);
-      // Controller should not throw
+
+      expect(mockResponses.error).toHaveBeenCalledWith(mockRes, 500, 'Internal Server Error', 'Failed to create API key');
     });
   });
 
@@ -106,6 +121,7 @@ describe('Developers Keys controller unit tests:', () => {
       await controller.revoke(req, mockRes);
 
       expect(mockApiKeyService.revoke).toHaveBeenCalledWith('k1');
+      expect(mockResponses.success).toHaveBeenCalledWith(mockRes, 'ApiKey revoked');
     });
   });
 
@@ -129,6 +145,7 @@ describe('Developers Keys controller unit tests:', () => {
       await controller.apiKeyByID(req, mockRes, next, 'k1');
 
       expect(next).not.toHaveBeenCalled();
+      expect(mockResponses.error).toHaveBeenCalledWith(mockRes, 404, 'Not Found', 'No API key with that identifier has been found');
     });
   });
 });

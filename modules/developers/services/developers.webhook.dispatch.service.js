@@ -7,6 +7,7 @@ import WebhookDeliveryRepository from '../repositories/developers.webhookDeliver
 
 const TIMEOUT_MS = 10000;
 const RESPONSE_BODY_MAX = 1000;
+const MAX_RETRY_ATTEMPTS = 3;
 
 /**
  * Retry delay schedule (in ms) indexed by attempt number (1-based).
@@ -52,7 +53,7 @@ const deliverWebhook = async (webhook, event, payload) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Webhook-Signature': `sha256=${signature}`,
+        'X-Signature-256': `sha256=${signature}`,
         'X-Webhook-Event': event,
       },
       body,
@@ -113,7 +114,12 @@ const retryPending = async () => {
 
   for (const delivery of deliveries) {
     const webhook = await WebhookRepository.get(String(delivery.webhook));
-    if (!webhook || !webhook.active) continue;
+    if (!webhook || !webhook.active) {
+      // Finalize skipped retries — mark as permanently failed so they are not re-scanned
+      delivery.nextRetryAt = null;
+      await WebhookDeliveryRepository.update(delivery);
+      continue;
+    }
 
     const body = JSON.stringify(delivery.payload);
     const signature = signPayload(body, webhook.secret);
@@ -125,7 +131,7 @@ const retryPending = async () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Webhook-Signature': `sha256=${signature}`,
+          'X-Signature-256': `sha256=${signature}`,
           'X-Webhook-Event': delivery.event,
         },
         body,
@@ -141,8 +147,8 @@ const retryPending = async () => {
       delivery.duration = duration;
       delivery.success = isSuccess;
       delivery.attempts = nextAttempt;
-      delivery.nextRetryAt = (!isSuccess && nextAttempt < 3)
-        ? new Date(Date.now() + (RETRY_DELAYS[nextAttempt] || RETRY_DELAYS[3]))
+      delivery.nextRetryAt = (!isSuccess && nextAttempt <= MAX_RETRY_ATTEMPTS)
+        ? new Date(Date.now() + (RETRY_DELAYS[nextAttempt] || RETRY_DELAYS[MAX_RETRY_ATTEMPTS]))
         : null;
 
       await WebhookDeliveryRepository.update(delivery);
@@ -152,8 +158,8 @@ const retryPending = async () => {
       delivery.duration = duration;
       delivery.success = false;
       delivery.attempts = nextAttempt;
-      delivery.nextRetryAt = nextAttempt < 3
-        ? new Date(Date.now() + (RETRY_DELAYS[nextAttempt] || RETRY_DELAYS[3]))
+      delivery.nextRetryAt = nextAttempt <= MAX_RETRY_ATTEMPTS
+        ? new Date(Date.now() + (RETRY_DELAYS[nextAttempt] || RETRY_DELAYS[MAX_RETRY_ATTEMPTS]))
         : null;
 
       await WebhookDeliveryRepository.update(delivery);

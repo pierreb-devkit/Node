@@ -75,4 +75,9 @@ WebhookDeliveryMongoose.set('toJSON', {
   virtuals: true,
 });
 
+/**
+ * Compound index for retry queries: find failed deliveries due for retry.
+ */
+WebhookDeliveryMongoose.index({ success: 1, nextRetryAt: 1, attempts: 1 });
+
 mongoose.model('WebhookDelivery', WebhookDeliveryMongoose);

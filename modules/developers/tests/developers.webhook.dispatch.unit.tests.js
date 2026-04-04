@@ -109,9 +109,9 @@ describe('Developers Webhook dispatch service unit tests:', () => {
         }),
       );
 
-      // Check the X-Webhook-Signature header format
+      // Check the X-Signature-256 header format
       const callArgs = mockFetch.mock.calls[0][1];
-      expect(callArgs.headers['X-Webhook-Signature']).toMatch(/^sha256=[a-f0-9]{64}$/);
+      expect(callArgs.headers['X-Signature-256']).toMatch(/^sha256=[a-f0-9]{64}$/);
 
       expect(result.success).toBe(true);
       expect(result.statusCode).toBe(200);
@@ -255,36 +255,44 @@ describe('Developers Webhook dispatch service unit tests:', () => {
       expect(delivery.success).toBe(true);
     });
 
-    test('should skip inactive webhooks on retry', async () => {
+    test('should finalize and skip inactive webhooks on retry', async () => {
       const delivery = {
         _id: 'd1',
         webhook: 'wh1',
         event: 'scrap.success',
         payload: {},
         attempts: 1,
+        save: jest.fn().mockResolvedValue(true),
       };
       mockDeliveryRepository.findPendingRetries.mockResolvedValue([delivery]);
       mockWebhookRepository.get.mockResolvedValue({ _id: 'wh1', active: false });
+      mockDeliveryRepository.update.mockImplementation((d) => d.save());
 
       await DispatchService.retryPending();
 
       expect(mockFetch).not.toHaveBeenCalled();
+      expect(delivery.nextRetryAt).toBeNull();
+      expect(mockDeliveryRepository.update).toHaveBeenCalledWith(delivery);
     });
 
-    test('should skip when webhook no longer exists', async () => {
+    test('should finalize when webhook no longer exists', async () => {
       const delivery = {
         _id: 'd1',
         webhook: 'wh1',
         event: 'scrap.success',
         payload: {},
         attempts: 1,
+        save: jest.fn().mockResolvedValue(true),
       };
       mockDeliveryRepository.findPendingRetries.mockResolvedValue([delivery]);
       mockWebhookRepository.get.mockResolvedValue(null);
+      mockDeliveryRepository.update.mockImplementation((d) => d.save());
 
       await DispatchService.retryPending();
 
       expect(mockFetch).not.toHaveBeenCalled();
+      expect(delivery.nextRetryAt).toBeNull();
+      expect(mockDeliveryRepository.update).toHaveBeenCalledWith(delivery);
     });
 
     test('should handle fetch error on retry', async () => {
@@ -314,7 +322,7 @@ describe('Developers Webhook dispatch service unit tests:', () => {
       expect(delivery.nextRetryAt).toBeDefined();
     });
 
-    test('should clear nextRetryAt on final attempt', async () => {
+    test('should schedule retry on attempt 3 (third retry)', async () => {
       const delivery = {
         _id: 'd1',
         webhook: 'wh1',
@@ -341,6 +349,37 @@ describe('Developers Webhook dispatch service unit tests:', () => {
       await DispatchService.retryPending();
 
       expect(delivery.attempts).toBe(3);
+      // nextAttempt (3) <= MAX_RETRY_ATTEMPTS (3), so retry is still scheduled
+      expect(delivery.nextRetryAt).toBeInstanceOf(Date);
+    });
+
+    test('should clear nextRetryAt after exceeding max attempts', async () => {
+      const delivery = {
+        _id: 'd1',
+        webhook: 'wh1',
+        event: 'scrap.success',
+        payload: {},
+        attempts: 3,
+        save: jest.fn().mockResolvedValue(true),
+      };
+      const webhook = {
+        _id: 'wh1',
+        url: 'https://example.com/hook',
+        secret: 'whsec_test',
+        active: true,
+      };
+      mockDeliveryRepository.findPendingRetries.mockResolvedValue([delivery]);
+      mockWebhookRepository.get.mockResolvedValue(webhook);
+      mockDeliveryRepository.update.mockImplementation((d) => d.save());
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 500,
+        text: () => Promise.resolve('Error'),
+      });
+
+      await DispatchService.retryPending();
+
+      expect(delivery.attempts).toBe(4);
       expect(delivery.nextRetryAt).toBeNull();
     });
   });

@@ -17,7 +17,7 @@ const WebhookCreate = z
     events: z
       .array(z.enum(supportedEvents))
       .min(1, 'at least one event is required'),
-    description: z.string().max(200, 'description must be at most 200 characters').optional(),
+    description: z.string().trim().max(200, 'description must be at most 200 characters').optional(),
   })
   .strict();
 
@@ -29,7 +29,7 @@ const WebhookUpdate = z
       .min(1, 'at least one event is required')
       .optional(),
     active: z.boolean().optional(),
-    description: z.string().max(200, 'description must be at most 200 characters').optional(),
+    description: z.string().trim().max(200, 'description must be at most 200 characters').optional(),
   })
   .strict();
 

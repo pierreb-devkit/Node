@@ -12,8 +12,8 @@ import ApiKeyService from '../services/developers.apiKey.service.js';
  */
 const list = async (req, res) => {
   try {
-    const page = parseInt(req.query.page, 10) || 1;
-    const perPage = parseInt(req.query.perPage, 10) || 20;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const perPage = Math.min(100, Math.max(1, parseInt(req.query.perPage, 10) || 20));
     const result = await ApiKeyService.list(req.organization._id, page, perPage);
     responses.success(res, 'ApiKeys')(result);
   } catch (err) {

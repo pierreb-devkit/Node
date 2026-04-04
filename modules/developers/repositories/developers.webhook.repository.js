@@ -42,7 +42,7 @@ const create = (webhook) => new Webhook(webhook).save();
  * @returns {Promise<Object|null>}
  */
 const get = (id) => {
-  if (!mongoose.Types.ObjectId.isValid(id)) return null;
+  if (!mongoose.Types.ObjectId.isValid(id)) return Promise.resolve(null);
   return Webhook.findById(id).exec();
 };
 

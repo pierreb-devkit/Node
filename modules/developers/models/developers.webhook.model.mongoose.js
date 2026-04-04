@@ -66,9 +66,13 @@ function addID() {
  * Model configuration
  */
 WebhookMongoose.virtual('id').get(addID);
-// Ensure virtual fields are serialised.
+// Ensure virtual fields are serialised — strip secret from API responses.
 WebhookMongoose.set('toJSON', {
   virtuals: true,
+  transform(_doc, ret) {
+    delete ret.secret;
+    return ret;
+  },
 });
 
 mongoose.model('Webhook', WebhookMongoose);
