@@ -15,7 +15,7 @@ description: Implement a new feature or modify existing functionality. Use when 
 ### 2. Module boundaries
 
 - All new code isolated inside the target module (`modules/{module}/`)
-- No modifications to shared core files (`lib/middlewares/`, `lib/services/`, `config/`)
+- No modifications to shared core files (`lib/middlewares/`, `lib/services/`, `config/`) — except `config/templates/` for new email templates
 - Module registers its own capabilities via exports (policies, subjects, config) — auto-discovered by the core
 
 ### 3. Analyze flows & edge cases
@@ -90,7 +90,7 @@ If an action affects another user:
 - [ ] Grep existing enum values to find all locations before committing
 
 **Module autonomy:**
-- [ ] No changes to shared files (`lib/middlewares/`, `lib/services/`, `config/`)
+- [ ] No changes to shared files (`lib/middlewares/`, `lib/services/`, `config/`) — except `config/templates/` for new email templates
 - [ ] Module self-registers capabilities (subjects, abilities) via policy exports
 - [ ] New routes/middleware defined inside the module boundary
 

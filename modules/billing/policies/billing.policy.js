@@ -7,6 +7,7 @@
  * Billing uses exact route matches since each route maps to a distinct subject.
  * @param {Object} registry - Subject registration helpers
  * @param {Function} registry.registerPathSubject - Register route path → subject type
+ * @returns {void}
  */
 export function billingSubjectRegistration({ registerPathSubject }) {
   registerPathSubject('/api/billing/checkout', 'BillingCheckout');
@@ -14,6 +15,9 @@ export function billingSubjectRegistration({ registerPathSubject }) {
   registerPathSubject('/api/billing/subscription', 'BillingSubscription');
   registerPathSubject('/api/billing/usage', 'BillingUsage');
   registerPathSubject('/api/billing/plans', 'BillingPlans');
+  // Webhook is mounted in billing.preroute.js before body parsing and auth middleware,
+  // so it bypasses policy.isAllowed entirely. Registered here for documentation completeness.
+  registerPathSubject('/api/billing/webhook', 'BillingWebhook');
 }
 
 /**

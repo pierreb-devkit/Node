@@ -23,6 +23,8 @@ Subject resolution in `lib/middlewares/policy.js` is now registry-based instead 
 3. `policy.isAllowed` continues to work unchanged — no route file modifications needed
 4. Optional: use `authorize(action, subject)` from `lib/helpers/authorize.js` for simple route guards
 
+> **Deprecation**: The existing `policy.isAllowed` middleware continues to work unchanged. The new `authorize()` helper is optional and recommended for new routes. No deprecation timeline is set — both approaches coexist.
+
 ---
 
 ## Audit GDPR Flags (2026-03-26)

@@ -19,8 +19,8 @@ export function organizationSubjectRegistration({ registerDocumentSubject, regis
     return p.startsWith('/api/organizations') || p.startsWith('/api/admin/organizations');
   });
   registerPathSubject((p) => p.startsWith('/api/admin/organizations'), 'Organization');
-  registerPathSubject((p) => p.includes('/requests'), 'Membership');
-  registerPathSubject((p) => p.includes('/members'), 'Membership');
+  registerPathSubject((p) => p.startsWith('/api/organizations') && p.includes('/requests'), 'Membership');
+  registerPathSubject((p) => p.startsWith('/api/organizations') && p.includes('/members'), 'Membership');
   registerPathSubject((p) => p.startsWith('/api/organizations'), 'Organization');
 }
 
