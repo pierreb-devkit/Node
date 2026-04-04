@@ -4,6 +4,29 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Decentralized Policy Subject Resolution (2026-04-03)
+
+Subject resolution in `lib/middlewares/policy.js` is now registry-based instead of hardcoded. Each module's policy file exports a `*SubjectRegistration()` function that registers its own document-level and path-level subjects during `discoverPolicies()`.
+
+### What changed
+
+- `resolveSubject()` iterates `documentSubjectRegistry` instead of hardcoded if/else chain
+- `deriveSubjectType()` iterates `pathSubjectRegistry` instead of hardcoded if/else chain
+- New exports: `registerDocumentSubject`, `registerPathSubject`
+- New helper: `lib/helpers/authorize.js` — simple middleware for route-level CASL checks
+- Each module policy file now exports a `*SubjectRegistration({ registerDocumentSubject, registerPathSubject })` function
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the change
+2. If you have custom modules with policy files, add a `*SubjectRegistration()` export following the pattern in any existing module (e.g. `modules/tasks/policies/tasks.policy.js`)
+3. `policy.isAllowed` continues to work unchanged — no route file modifications needed
+4. Optional: use `authorize(action, subject)` from `lib/helpers/authorize.js` for simple route guards
+
+> **Deprecation notice**: `policy.isAllowed` is supported for this release cycle only. New routes should use `authorize(action, subject)` from `lib/helpers/authorize.js`. Custom modules using `policy.isAllowed` should migrate to `authorize()` before the next major version. The legacy middleware will be removed once all built-in module routes have been migrated.
+
+---
+
 ## Audit GDPR Flags (2026-03-26)
 
 New config flags to control IP and User-Agent capture in audit logs for GDPR compliance.

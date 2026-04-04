@@ -17,6 +17,9 @@ description: Run quality loop (audit + lint + tests) to verify code quality, cor
      - Silent error swallowing (catch + console.log)
      - Config in wrong location, missing or orphaned files
      - Cross-module import violations
+     - Module-specific logic added to shared files (`lib/middlewares/`, `lib/services/`, `config/`)
+     - Module not self-registering its capabilities (subjects, abilities, config)
+     - Cross-module dependencies that should use the target module's service instead
      - Inconsistent API response formats
      - Missing null/undefined checks on async returns
    - Fix all issues found before proceeding

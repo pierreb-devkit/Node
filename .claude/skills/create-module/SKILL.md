@@ -64,12 +64,19 @@ Example: `config.billing.plans` used in both `billing.subscription.model.mongoos
 
 > Reference: `modules/users/models/users.schema.js` uses `z.enum(config.whitelists.users.roles)`.
 
-### 5. Apply renames carefully
+### 5. Module autonomy
+
+- Everything the module needs lives inside `modules/{module}/` — policies, config, routes, tests, doc
+- Module registers its own capabilities (subjects, abilities, config) via exports — auto-discovered by the core
+- **NEVER modify shared files** (`lib/middlewares/`, `lib/services/`, `config/`) to add module-specific logic
+- If the module needs authorization: create `policies/{module}.policy.js` with ability builder + subject registration exports
+
+### 6. Apply renames carefully
 
 - Case-sensitive, whole-word matches where possible
 - Show plan before applying if many files affected
 - Don't rename unrelated code (e.g., "tasks" in comments about other features)
 
-### 6. Verify & report
+### 7. Verify & report
 
 Run `/verify`, then report: module path, renamed tokens, lint/test results, next steps (customize schema/services — routes auto-discovered via `modules/*/routes/*.js`).

@@ -5,6 +5,27 @@
  */
 
 /**
+ * Register user account-related subjects for path-level resolution.
+ * Exact matches are registered first (highest priority), then prefix fallback.
+ * @param {Object} registry - Subject registration helpers
+ * @param {Function} registry.registerPathSubject - Register route path → subject type
+ * @returns {void}
+ */
+export function usersSubjectRegistration({ registerPathSubject }) {
+  // Exact matches — checked before prefix fallback
+  registerPathSubject('/api/users/me', 'UserAccount');
+  registerPathSubject('/api/users/terms', 'UserAccount');
+  registerPathSubject('/api/users/password', 'UserAccount');
+  registerPathSubject('/api/users/avatar', 'UserAccount');
+  registerPathSubject('/api/users/data', 'UserAccount');
+  registerPathSubject('/api/users/data/mail', 'UserAccount');
+  registerPathSubject('/api/users/stats', 'UserStats');
+  registerPathSubject('/api/users', 'UserSelf');
+  // Prefix fallback for any other /api/users/* routes
+  registerPathSubject((p) => p.startsWith('/api/users'), 'UserAccount');
+}
+
+/**
  * Define account-related abilities for an authenticated user.
  * Regular users can manage their own account via self-service routes.
  * 'UserSelf' only grants update and delete — read on /api/users is admin-only.

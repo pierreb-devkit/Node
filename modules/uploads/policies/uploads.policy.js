@@ -3,6 +3,18 @@
  */
 
 /**
+ * Register upload-related subjects for document-level and path-level resolution.
+ * @param {Object} registry - Subject registration helpers
+ * @param {Function} registry.registerDocumentSubject - Register req property → subject type
+ * @param {Function} registry.registerPathSubject - Register route path → subject type
+ * @returns {void}
+ */
+export function uploadSubjectRegistration({ registerDocumentSubject, registerPathSubject }) {
+  registerDocumentSubject('upload', 'Upload');
+  registerPathSubject((p) => p.startsWith('/api/uploads'), 'Upload');
+}
+
+/**
  * Define upload-related abilities for an authenticated user.
  * Platform admins get full access. Regular users can read any upload
  * and delete their own uploads (ownership via metadata.user).

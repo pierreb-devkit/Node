@@ -3,6 +3,19 @@
  */
 
 /**
+ * Register task-related subjects for document-level and path-level resolution.
+ * Called automatically by discoverPolicies() during startup.
+ * @param {Object} registry - Subject registration helpers
+ * @param {Function} registry.registerDocumentSubject - Register req property → subject type
+ * @param {Function} registry.registerPathSubject - Register route path → subject type
+ * @returns {void}
+ */
+export function taskSubjectRegistration({ registerDocumentSubject, registerPathSubject }) {
+  registerDocumentSubject('task', 'Task');
+  registerPathSubject((p) => p.startsWith('/api/tasks'), 'Task');
+}
+
+/**
  * Define task-related abilities for an authenticated user.
  * Platform admins get full access. When an organization membership exists,
  * abilities are scoped to the organization via organizationId conditions.

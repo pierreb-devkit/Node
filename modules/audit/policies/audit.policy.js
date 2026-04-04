@@ -3,6 +3,16 @@
  */
 
 /**
+ * Register audit-related subjects for path-level resolution.
+ * @param {Object} registry - Subject registration helpers
+ * @param {Function} registry.registerPathSubject - Register route path → subject type
+ * @returns {void}
+ */
+export function auditSubjectRegistration({ registerPathSubject }) {
+  registerPathSubject((p) => p.startsWith('/api/audit'), 'AuditLog');
+}
+
+/**
  * Define audit-related abilities for an authenticated user.
  * Only platform admins can read audit logs.
  * @param {Object} user - The authenticated user

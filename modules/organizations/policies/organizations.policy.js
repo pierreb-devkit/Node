@@ -3,6 +3,29 @@
  */
 
 /**
+ * Register organization-related subjects for document-level and path-level resolution.
+ * The organization document subject uses a guard to exclude billing routes (which
+ * set req.organization but authorize via their own path-derived subjects).
+ * @param {Object} registry - Subject registration helpers
+ * @param {Function} registry.registerDocumentSubject - Register req property → subject type
+ * @param {Function} registry.registerPathSubject - Register route path → subject type
+ * @returns {void}
+ */
+export function organizationSubjectRegistration({ registerDocumentSubject, registerPathSubject }) {
+  registerDocumentSubject('membershipDoc', 'Membership');
+  // Guard: only resolve req.organization as an Organization subject on actual organization routes.
+  // Other modules (billing, tasks, etc.) also set req.organization but authorize via their own subjects.
+  registerDocumentSubject('organization', 'Organization', (req) => {
+    const p = req.route?.path || '';
+    return p.startsWith('/api/organizations') || p.startsWith('/api/admin/organizations');
+  });
+  registerPathSubject((p) => p.startsWith('/api/admin/organizations'), 'Organization');
+  registerPathSubject((p) => p.startsWith('/api/organizations') && p.includes('/requests'), 'Membership');
+  registerPathSubject((p) => p.startsWith('/api/organizations') && p.includes('/members'), 'Membership');
+  registerPathSubject((p) => p.startsWith('/api/organizations'), 'Organization');
+}
+
+/**
  * Define organization-related abilities for an authenticated user.
  * Platform admins get full access. Regular users get abilities based on
  * their organization membership role (owner, admin, member).
