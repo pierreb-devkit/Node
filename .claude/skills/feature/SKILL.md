@@ -12,7 +12,13 @@ description: Implement a new feature or modify existing functionality. Use when 
 - Which module? Default to **ONE** unless justified.
 - **If the module doesn't exist** → run `/create-module` to scaffold it first, then continue.
 
-### 2. Analyze flows & edge cases
+### 2. Module boundaries
+
+- All new code isolated inside the target module (`modules/{module}/`)
+- No modifications to shared core files (`lib/middlewares/`, `lib/services/`, `config/`)
+- Module registers its own capabilities via exports (policies, subjects, config) — auto-discovered by the core
+
+### 3. Analyze flows & edge cases
 
 For each user-facing flow this feature creates or modifies, identify:
 
@@ -22,13 +28,13 @@ For each user-facing flow this feature creates or modifies, identify:
 - **Retry edge** — can the user retry after failure/rejection? (check unique indexes)
 - **Multi-user impact** — who else is affected? Do they need notification?
 
-### 3. Check boilerplate resilience
+### 4. Check boilerplate resilience
 
 - Works WITHOUT mailer configured? (graceful skip, no crash)
 - Works WITHOUT organizations enabled?
 - No hard dependency on external services for core flow?
 
-### 4. Present plan & ask questions
+### 5. Present plan & ask questions
 
 **STOP and present to the user:**
 - Flows identified (happy + error + edge cases)
@@ -39,7 +45,7 @@ For each user-facing flow this feature creates or modifies, identify:
 
 ## Phase 1 — Implementation
 
-### 5. Apply layer rules
+### 6. Apply layer rules
 
 Strict order — never skip or reverse:
 
@@ -51,14 +57,14 @@ Routes → Controllers → Services → Repositories → Models
 - **Services**: Business logic, call repositories, throw `AppError`
 - **Repositories**: Database only — sole layer importing mongoose
 
-### 6. Apply modularity rules
+### 7. Apply modularity rules
 
 - Isolate inside module boundary
 - No cross-module imports unless justified (shared code → `lib/helpers/`)
 - **No cross-module Repository/Model imports** — a service must never import another module's repositories or models; use the target module's Service instead
 - Follow `/naming` conventions
 
-### 7. Handle notifications
+### 8. Handle notifications
 
 If an action affects another user:
 - Use `lib/helpers/mailer/` abstraction (never nodemailer directly)
@@ -68,7 +74,7 @@ If an action affects another user:
 
 ## Phase 2 — Definition of Done
 
-### 8. Self-review checklist
+### 9. Self-review checklist
 
 **Edge cases:**
 - [ ] "Last one" handled (last owner can't leave/be demoted)
@@ -83,6 +89,11 @@ If an action affects another user:
 - [ ] New enum values added to ALL schema definitions (Mongoose model `enum`, Zod `z.enum`, tests)
 - [ ] Grep existing enum values to find all locations before committing
 
+**Module autonomy:**
+- [ ] No changes to shared files (`lib/middlewares/`, `lib/services/`, `config/`)
+- [ ] Module self-registers capabilities (subjects, abilities) via policy exports
+- [ ] New routes/middleware defined inside the module boundary
+
 **Modularity:**
 - [ ] Isolated in ONE module (or justified)
 - [ ] No cross-module Repository/Model imports (use target module's Service)
@@ -95,10 +106,10 @@ If an action affects another user:
 **Error documentation:**
 - [ ] If a non-obvious bug was fixed, add a single-line entry to `ERRORS.md` (root of repo) using format: `[YYYY-MM-DD] <scope>: <wrong> -> <right>` (see existing examples in `ERRORS.md`)
 
-### 8b. Elegance check
+### 9b. Elegance check
 
 For non-trivial changes: pause and ask yourself "is there a simpler or more elegant approach?" If the current implementation feels hacky, refactor before proceeding.
 
-### 9. Run `/verify`
+### 10. Run `/verify`
 
-### 10. Run `/pull-request`
+### 11. Run `/pull-request`
