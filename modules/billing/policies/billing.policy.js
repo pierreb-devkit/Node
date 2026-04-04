@@ -3,6 +3,20 @@
  */
 
 /**
+ * Register billing-related subjects for path-level resolution.
+ * Billing uses exact route matches since each route maps to a distinct subject.
+ * @param {Object} registry - Subject registration helpers
+ * @param {Function} registry.registerPathSubject - Register route path → subject type
+ */
+export function billingSubjectRegistration({ registerPathSubject }) {
+  registerPathSubject('/api/billing/checkout', 'BillingCheckout');
+  registerPathSubject('/api/billing/portal', 'BillingPortal');
+  registerPathSubject('/api/billing/subscription', 'BillingSubscription');
+  registerPathSubject('/api/billing/usage', 'BillingUsage');
+  registerPathSubject('/api/billing/plans', 'BillingPlans');
+}
+
+/**
  * Define billing-related abilities for an authenticated user.
  * Any authenticated user with an organization membership can manage billing.
  * @param {Object} user - The authenticated user

@@ -3,6 +3,16 @@
  */
 
 /**
+ * Register home-related subjects for path-level resolution.
+ * @param {Object} registry - Subject registration helpers
+ * @param {Function} registry.registerPathSubject - Register route path → subject type
+ */
+export function homeSubjectRegistration({ registerPathSubject }) {
+  registerPathSubject((p) => p.startsWith('/api/home'), 'Home');
+  registerPathSubject('/api/admin/readiness', 'Readiness');
+}
+
+/**
  * Define home-related abilities for an authenticated user.
  * All authenticated users can read home content (releases, changelogs, team, pages).
  * @param {Object} user - The authenticated user
