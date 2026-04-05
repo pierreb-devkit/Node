@@ -466,6 +466,58 @@ describe('Core unit tests:', () => {
   });
 
   describe('Express service', () => {
+    describe('initSwagger', () => {
+      let originalSwagger;
+      let originalFiles;
+
+      beforeEach(() => {
+        originalSwagger = config.swagger;
+        originalFiles = config.files;
+      });
+
+      afterEach(() => {
+        config.swagger = originalSwagger;
+        config.files = originalFiles;
+      });
+
+      it('should register /api/spec.json and /api/docs when swagger is enabled', () => {
+        config.swagger = { enable: true };
+        config.files = { ...config.files, swagger: [path.join(process.cwd(), 'modules/core/doc/index.yml')] };
+        const mockGet = jest.fn();
+        const mockUse = jest.fn();
+        const mockApp = { get: mockGet, use: mockUse };
+        expressService.initSwagger(mockApp);
+        expect(mockGet).toHaveBeenCalledWith('/api/spec.json', expect.any(Function));
+        expect(mockUse).toHaveBeenCalledWith('/api/docs', expect.any(Function));
+      });
+
+      it('should serve merged spec as JSON from /api/spec.json handler', () => {
+        config.swagger = { enable: true };
+        config.files = { ...config.files, swagger: [path.join(process.cwd(), 'modules/core/doc/index.yml')] };
+        const mockGet = jest.fn();
+        const mockUse = jest.fn();
+        const mockApp = { get: mockGet, use: mockUse };
+        expressService.initSwagger(mockApp);
+        // Extract the handler registered for /api/spec.json
+        const handler = mockGet.mock.calls.find((c) => c[0] === '/api/spec.json')[1];
+        const mockRes = { json: jest.fn() };
+        handler({}, mockRes);
+        expect(mockRes.json).toHaveBeenCalledWith(
+          expect.objectContaining({ openapi: '3.0.0' }),
+        );
+      });
+
+      it('should not register routes when swagger is disabled', () => {
+        config.swagger = { enable: false };
+        const mockGet = jest.fn();
+        const mockUse = jest.fn();
+        const mockApp = { get: mockGet, use: mockUse };
+        expressService.initSwagger(mockApp);
+        expect(mockGet).not.toHaveBeenCalled();
+        expect(mockUse).not.toHaveBeenCalled();
+      });
+    });
+
     describe('trust proxy', () => {
       let originalTrust;
 

@@ -8,10 +8,6 @@ const config = {
   },
   swagger: {
     enable: true,
-    options: {
-      swaggerUrl: '/api/docs/swagger.yml',
-      explore: true,
-    },
   },
   api: {
     protocol: 'http',
