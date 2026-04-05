@@ -40,6 +40,9 @@ components:
           type: string
         description:
           type: string
+        error:
+          type: string
+          description: JSON-stringified error details included only in non-production environments.
 
   responses:
     Unauthorized:

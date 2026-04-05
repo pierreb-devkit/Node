@@ -53,6 +53,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
 
     post:
       tags:
@@ -122,7 +124,7 @@ paths:
       tags:
         - Tasks
       summary: Update a task
-      description: Updates an existing task. All fields in the request body are optional (partial update). Ownership is enforced by CASL policy.
+      description: Updates an existing task. Both `title` and `description` are required — omitting a field will overwrite it with `undefined`. Ownership is enforced by CASL policy.
       security:
         - bearerAuth: []
       parameters:
@@ -177,10 +179,20 @@ paths:
                     properties:
                       data:
                         type: object
+                        required:
+                          - id
+                          - acknowledged
+                          - deletedCount
                         properties:
                           id:
                             type: string
                             example: '507f1f77bcf86cd799439011'
+                          acknowledged:
+                            type: boolean
+                            example: true
+                          deletedCount:
+                            type: integer
+                            example: 1
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -205,7 +217,8 @@ components:
       name: x-organization-id
       in: header
       required: false
-      description: Organization ID header used to scope the request
+      deprecated: true
+      description: Deprecated and ignored by tasks endpoints. Organization scope for tasks is resolved from the organizationId path parameter when present, otherwise from the authenticated user's currentOrganization.
       schema:
         type: string
         example: '507f1f77bcf86cd799439011'
