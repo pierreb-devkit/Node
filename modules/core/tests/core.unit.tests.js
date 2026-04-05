@@ -547,6 +547,41 @@ describe('Core unit tests:', () => {
         expect(mockGet).not.toHaveBeenCalled();
         expect(mockUse).not.toHaveBeenCalled();
       });
+
+      it('should warn and skip registration when swagger file list is empty', () => {
+        config.swagger = { enable: true };
+        config.files = { ...config.files, swagger: [] };
+        const mockGet = jest.fn();
+        const mockUse = jest.fn();
+        const mockApp = { get: mockGet, use: mockUse };
+        expressService.initSwagger(mockApp);
+        expect(mockGet).not.toHaveBeenCalled();
+        expect(mockUse).not.toHaveBeenCalled();
+      });
+
+      it('should throw with file path context when a YAML file fails to load', () => {
+        config.swagger = { enable: true };
+        config.files = { ...config.files, swagger: ['/nonexistent/path/bad.yml'] };
+        const mockApp = { get: jest.fn(), use: jest.fn() };
+        expect(() => expressService.initSwagger(mockApp)).toThrow('[swagger] failed to load /nonexistent/path/bad.yml');
+      });
+
+      it('should skip YAML files that do not parse to a plain object and still register routes from valid ones', () => {
+        // Write a temp YAML file that parses to a scalar string (not an object) — triggers the non-object guard
+        import('fs').then((fsMod) => {
+          const tmpFile = path.join('/tmp', `test-scalar-${Date.now()}.yml`);
+          fsMod.default.writeFileSync(tmpFile, 'just a string value\n');
+          const validFile = path.join(process.cwd(), 'modules/core/doc/index.yml');
+          config.swagger = { enable: true };
+          config.files = { ...config.files, swagger: [tmpFile, validFile] };
+          const mockGet = jest.fn();
+          const mockUse = jest.fn();
+          const mockApp = { get: mockGet, use: mockUse };
+          expressService.initSwagger(mockApp);
+          expect(mockGet).toHaveBeenCalledWith('/api/spec.json', expect.any(Function));
+          fsMod.default.unlinkSync(tmpFile);
+        });
+      });
     });
 
     describe('trust proxy', () => {
