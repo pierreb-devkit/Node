@@ -566,11 +566,12 @@ describe('Core unit tests:', () => {
         expect(() => expressService.initSwagger(mockApp)).toThrow('[swagger] failed to load /nonexistent/path/bad.yml');
       });
 
-      it('should skip YAML files that do not parse to a plain object and still register routes from valid ones', () => {
+      it('should skip YAML files that do not parse to a plain object and still register routes from valid ones', async () => {
         // Write a temp YAML file that parses to a scalar string (not an object) — triggers the non-object guard
-        import('fs').then((fsMod) => {
-          const tmpFile = path.join('/tmp', `test-scalar-${Date.now()}.yml`);
-          fsMod.default.writeFileSync(tmpFile, 'just a string value\n');
+        const { default: fsMod } = await import('fs');
+        const tmpFile = path.join('/tmp', `test-scalar-${Date.now()}.yml`);
+        fsMod.writeFileSync(tmpFile, 'just a string value\n');
+        try {
           const validFile = path.join(process.cwd(), 'modules/core/doc/index.yml');
           config.swagger = { enable: true };
           config.files = { ...config.files, swagger: [tmpFile, validFile] };
@@ -579,8 +580,9 @@ describe('Core unit tests:', () => {
           const mockApp = { get: mockGet, use: mockUse };
           expressService.initSwagger(mockApp);
           expect(mockGet).toHaveBeenCalledWith('/api/spec.json', expect.any(Function));
-          fsMod.default.unlinkSync(tmpFile);
-        });
+        } finally {
+          fsMod.unlinkSync(tmpFile);
+        }
       });
     });
 
