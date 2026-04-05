@@ -1,0 +1,279 @@
+tags:
+  - name: Tasks
+    description: CRUD operations for tasks
+
+paths:
+  /api/tasks/stats:
+    get:
+      tags:
+        - Tasks
+      summary: Get task statistics
+      description: Returns the estimated total number of tasks. Public endpoint — no authentication required.
+      responses:
+        '200':
+          description: Task statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: integer
+                        example: 42
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /api/tasks:
+    get:
+      tags:
+        - Tasks
+      summary: List tasks
+      description: Returns all tasks scoped to the current organization. Requires authentication.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+      responses:
+        '200':
+          description: Task list retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Task'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags:
+        - Tasks
+      summary: Create a task
+      description: Creates a new task scoped to the current organization. The requesting user is set as the task owner.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreate'
+      responses:
+        '200':
+          description: Task created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Task'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /api/tasks/{taskId}:
+    get:
+      tags:
+        - Tasks
+      summary: Get a task
+      description: Returns a single task by ID. Ownership is enforced by CASL policy.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Task retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Task'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - Tasks
+      summary: Update a task
+      description: Updates an existing task. All fields in the request body are optional (partial update). Ownership is enforced by CASL policy.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskUpdate'
+      responses:
+        '200':
+          description: Task updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Task'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+    delete:
+      tags:
+        - Tasks
+      summary: Delete a task
+      description: Deletes a task by ID. Ownership is enforced by CASL policy.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Task deleted successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                            example: '507f1f77bcf86cd799439011'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+components:
+  parameters:
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      description: MongoDB ObjectId of the task
+      schema:
+        type: string
+        example: '507f1f77bcf86cd799439011'
+
+    OrganizationId:
+      name: x-organization-id
+      in: header
+      required: false
+      description: Organization ID header used to scope the request
+      schema:
+        type: string
+        example: '507f1f77bcf86cd799439011'
+
+  schemas:
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+          example: '507f1f77bcf86cd799439011'
+        title:
+          type: string
+          example: 'Implement OpenAPI docs'
+        description:
+          type: string
+          example: 'Document the tasks module API'
+        user:
+          $ref: '#/components/schemas/TaskUser'
+        organizationId:
+          type: string
+          example: '507f1f77bcf86cd799439011'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TaskUser:
+      type: object
+      description: Populated user reference (subset of fields)
+      properties:
+        id:
+          type: string
+          example: '507f1f77bcf86cd799439011'
+        email:
+          type: string
+          format: email
+          example: 'user@example.com'
+        firstName:
+          type: string
+          example: 'Jane'
+        lastName:
+          type: string
+          example: 'Doe'
+
+    TaskCreate:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: string
+          minLength: 1
+          example: 'Implement OpenAPI docs'
+        description:
+          type: string
+          default: ''
+          example: 'Document the tasks module API'
+
+    TaskUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          example: 'Implement OpenAPI docs'
+        description:
+          type: string
+          example: 'Document the tasks module API'

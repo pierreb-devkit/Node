@@ -4,6 +4,23 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## OpenAPI Module Documentation (2026-04-04)
+
+Modules can now ship their own OpenAPI YAML in `modules/{name}/doc/{name}.yml`. These files are auto-discovered via the `modules/*/doc/*.yml` glob, merged into the base spec from `modules/core/doc/index.yml`, and served at `/api/spec.json` (+ Scalar UI at `/api/docs`).
+
+### What changed
+
+- `modules/core/doc/index.yml` — added shared component schemas (`SuccessResponse`, `ErrorResponse`) and reusable responses (`Unauthorized`, `Forbidden`, `NotFound`, `UnprocessableEntity`)
+- `modules/tasks/doc/tasks.yml` — reference OpenAPI doc for the tasks module (all CRUD + stats endpoints)
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the change
+2. No breaking change — existing modules without a `doc/` folder are unaffected
+3. To document a custom module, create `modules/{name}/doc/{name}.yml` with paths, schemas, and tags
+
+---
+
 ## Scalar replaces swagger-ui-express (2026-04-04)
 
 `swagger-ui-express` has been removed. The API documentation UI is now powered by [Scalar](https://scalar.com/) via `@scalar/express-api-reference`.
