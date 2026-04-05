@@ -16,7 +16,10 @@ export function organizationSubjectRegistration({ registerDocumentSubject, regis
   // Guard: only resolve req.organization as an Organization subject on actual organization routes.
   // Other modules (billing, tasks, etc.) also set req.organization but authorize via their own subjects.
   registerDocumentSubject('organization', 'Organization', (req) => {
-    const p = req.route?.path || '';
+    if (!req.route?.path) {
+      return false;
+    }
+    const p = req.route.path;
     return p.startsWith('/api/organizations') || p.startsWith('/api/admin/organizations');
   });
   registerPathSubject((p) => p.startsWith('/api/admin/organizations'), 'Organization');
