@@ -83,7 +83,7 @@ describe('Audit middleware unit tests:', () => {
     const middleware = createAuditMiddleware();
     const next = jest.fn();
 
-    const prefixes = ['/public/file.js', '/favicon.ico', '/api/docs/swagger', '/api/health'];
+    const prefixes = ['/public/file.js', '/favicon.ico', '/api/docs', '/api/health'];
     for (const url of prefixes) {
       const req = createReq({ method: 'POST', originalUrl: url });
       const res = createRes();

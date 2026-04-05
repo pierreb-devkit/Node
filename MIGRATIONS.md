@@ -4,6 +4,28 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Scalar replaces swagger-ui-express (2026-04-04)
+
+`swagger-ui-express` has been removed. The API documentation UI is now powered by [Scalar](https://scalar.com/) via `@scalar/express-api-reference`.
+
+### What changed
+
+- `initSwagger()` in `lib/services/express.js` no longer writes `./public/swagger.yml` to disk
+- New endpoint `GET /api/spec.json` serves the merged OpenAPI spec as JSON
+- `/api/docs` now serves the Scalar UI instead of Swagger UI
+- Removed unused swagger config options: `swaggerUrl`, `explore`
+- Removed dependency: `swagger-ui-express`
+- Added dependency: `@scalar/express-api-reference`
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the change
+2. Remove any references to `./public/swagger.yml` — it is no longer generated
+3. If you customized swagger options (e.g. `swaggerUrl`, `explore`), remove them — they are no longer used
+4. The `/api/docs` and `/api/spec.json` routes are available as before
+
+---
+
 ## Module Activation Config (2026-04-05)
 
 Per-module `activated: true/false` config flag. When `activated: false`, the module's routes, policies, models, and swagger YAML are excluded from the app entirely.
