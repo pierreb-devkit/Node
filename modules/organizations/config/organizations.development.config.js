@@ -1,5 +1,6 @@
 const config = {
   organizations: {
+    activated: true,
     enabled: true, // false → B2C mode, organizations invisible
     autoCreate: true, // automatically create/join orgs at signup
     domainMatching: true, // match users to existing orgs by email domain
