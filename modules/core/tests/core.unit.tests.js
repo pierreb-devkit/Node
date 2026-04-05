@@ -584,6 +584,25 @@ describe('Core unit tests:', () => {
           fsMod.unlinkSync(tmpFile);
         }
       });
+
+      it('should warn and skip registration when all YAML files produce an empty spec', async () => {
+        // Write a temp YAML file that parses to a scalar — after filter(Boolean), contents is empty → spec is {}
+        const { default: fsMod } = await import('fs');
+        const tmpFile = path.join('/tmp', `test-scalar-only-${Date.now()}.yml`);
+        fsMod.writeFileSync(tmpFile, 'just a string value\n');
+        try {
+          config.swagger = { enable: true };
+          config.files = { ...config.files, swagger: [tmpFile] };
+          const mockGet = jest.fn();
+          const mockUse = jest.fn();
+          const mockApp = { get: mockGet, use: mockUse };
+          expressService.initSwagger(mockApp);
+          expect(mockGet).not.toHaveBeenCalled();
+          expect(mockUse).not.toHaveBeenCalled();
+        } finally {
+          fsMod.unlinkSync(tmpFile);
+        }
+      });
     });
 
     describe('trust proxy', () => {

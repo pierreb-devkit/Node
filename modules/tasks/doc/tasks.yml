@@ -124,7 +124,7 @@ paths:
       tags:
         - Tasks
       summary: Update a task
-      description: Updates an existing task. Both `title` and `description` are required — omitting a field will overwrite it with `undefined`. Ownership is enforced by CASL policy.
+      description: Updates an existing task. All fields are optional — only provided fields are updated. Ownership is enforced by CASL policy.
       security:
         - bearerAuth: []
       parameters:
