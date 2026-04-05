@@ -9,3 +9,62 @@ components:
       type: "http"
       scheme: "bearer"
       bearerFormat: "JWT"
+
+  schemas:
+    SuccessResponse:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - success
+        message:
+          type: string
+        data:
+          description: Response payload (type varies by endpoint)
+
+    ErrorResponse:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - error
+        message:
+          type: string
+        code:
+          type: integer
+        status:
+          type: integer
+        errorCode:
+          type: string
+        description:
+          type: string
+        error:
+          type: string
+          description: JSON-stringified error details included only in non-production environments.
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT token — Passport JWT middleware returns 401 with an empty body (no JSON envelope)
+
+    Forbidden:
+      description: Insufficient permissions (CASL policy denied)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    UnprocessableEntity:
+      description: Validation or business logic error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

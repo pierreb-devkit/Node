@@ -60,8 +60,8 @@ const get = async (id) => {
  * @returns {Promise} A promise resolving to the updated task.
  */
 const update = async (task, body) => {
-  task.title = body.title;
-  task.description = body.description;
+  if (body.title !== undefined) task.title = body.title;
+  if (body.description !== undefined) task.description = body.description;
 
   const result = await TasksRepository.update(task);
   return result;

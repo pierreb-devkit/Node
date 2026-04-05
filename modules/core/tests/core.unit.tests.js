@@ -507,6 +507,37 @@ describe('Core unit tests:', () => {
         );
       });
 
+      it('should merge multiple module YAML files and include paths from each', () => {
+        config.swagger = { enable: true };
+        config.files = {
+          ...config.files,
+          swagger: [
+            path.join(process.cwd(), 'modules/core/doc/index.yml'),
+            path.join(process.cwd(), 'modules/tasks/doc/tasks.yml'),
+          ],
+        };
+        const mockGet = jest.fn();
+        const mockUse = jest.fn();
+        const mockApp = { get: mockGet, use: mockUse };
+        expressService.initSwagger(mockApp);
+        const handler = mockGet.mock.calls.find((c) => c[0] === '/api/spec.json')[1];
+        const mockRes = { json: jest.fn() };
+        handler({}, mockRes);
+        expect(mockRes.json).toHaveBeenCalledWith(
+          expect.objectContaining({
+            openapi: '3.0.0',
+            paths: expect.objectContaining({
+              '/api/tasks': expect.any(Object),
+            }),
+            components: expect.objectContaining({
+              schemas: expect.objectContaining({
+                Task: expect.any(Object),
+              }),
+            }),
+          }),
+        );
+      });
+
       it('should not register routes when swagger is disabled', () => {
         config.swagger = { enable: false };
         const mockGet = jest.fn();
@@ -515,6 +546,62 @@ describe('Core unit tests:', () => {
         expressService.initSwagger(mockApp);
         expect(mockGet).not.toHaveBeenCalled();
         expect(mockUse).not.toHaveBeenCalled();
+      });
+
+      it('should warn and skip registration when swagger file list is empty', () => {
+        config.swagger = { enable: true };
+        config.files = { ...config.files, swagger: [] };
+        const mockGet = jest.fn();
+        const mockUse = jest.fn();
+        const mockApp = { get: mockGet, use: mockUse };
+        expressService.initSwagger(mockApp);
+        expect(mockGet).not.toHaveBeenCalled();
+        expect(mockUse).not.toHaveBeenCalled();
+      });
+
+      it('should throw with file path context when a YAML file fails to load', () => {
+        config.swagger = { enable: true };
+        config.files = { ...config.files, swagger: ['/nonexistent/path/bad.yml'] };
+        const mockApp = { get: jest.fn(), use: jest.fn() };
+        expect(() => expressService.initSwagger(mockApp)).toThrow('[swagger] failed to load /nonexistent/path/bad.yml');
+      });
+
+      it('should skip YAML files that do not parse to a plain object and still register routes from valid ones', async () => {
+        // Write a temp YAML file that parses to a scalar string (not an object) — triggers the non-object guard
+        const { default: fsMod } = await import('fs');
+        const tmpFile = path.join('/tmp', `test-scalar-${Date.now()}.yml`);
+        fsMod.writeFileSync(tmpFile, 'just a string value\n');
+        try {
+          const validFile = path.join(process.cwd(), 'modules/core/doc/index.yml');
+          config.swagger = { enable: true };
+          config.files = { ...config.files, swagger: [tmpFile, validFile] };
+          const mockGet = jest.fn();
+          const mockUse = jest.fn();
+          const mockApp = { get: mockGet, use: mockUse };
+          expressService.initSwagger(mockApp);
+          expect(mockGet).toHaveBeenCalledWith('/api/spec.json', expect.any(Function));
+        } finally {
+          fsMod.unlinkSync(tmpFile);
+        }
+      });
+
+      it('should warn and skip registration when all YAML files produce an empty spec', async () => {
+        // Write a temp YAML file that parses to a scalar — after filter(Boolean), contents is empty → spec is {}
+        const { default: fsMod } = await import('fs');
+        const tmpFile = path.join('/tmp', `test-scalar-only-${Date.now()}.yml`);
+        fsMod.writeFileSync(tmpFile, 'just a string value\n');
+        try {
+          config.swagger = { enable: true };
+          config.files = { ...config.files, swagger: [tmpFile] };
+          const mockGet = jest.fn();
+          const mockUse = jest.fn();
+          const mockApp = { get: mockGet, use: mockUse };
+          expressService.initSwagger(mockApp);
+          expect(mockGet).not.toHaveBeenCalled();
+          expect(mockUse).not.toHaveBeenCalled();
+        } finally {
+          fsMod.unlinkSync(tmpFile);
+        }
       });
     });
 
