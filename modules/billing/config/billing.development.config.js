@@ -1,5 +1,6 @@
 const config = {
   billing: {
+    activated: true,
     // Plans available for subscriptions — extend as needed
     plans: ['free', 'starter', 'pro', 'enterprise'],
     // Quotas — downstream projects override these per plan:

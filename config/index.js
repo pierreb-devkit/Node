@@ -131,6 +131,13 @@ const initGlobalConfig = async () => {
   config = deepMerge(config, { package: packageJSON });
   // Initialize global globbed files
   config = deepMerge(config, { files: await configHelper.initGlobalConfigFiles(assets) });
+  // Filter files by module activation (deactivated modules are excluded)
+  const fileKeys = ['swagger', 'mongooseModels', 'sequelizeModels', 'preRoutes', 'routes', 'configs', 'policies'];
+  for (const key of fileKeys) {
+    if (config.files[key]) {
+      config.files[key] = configHelper.filterByActivation(config.files[key], config);
+    }
+  }
   // Init Secure SSL if can be used
   configHelper.initSecureMode(config);
   // Print a warning if config.domain is not set

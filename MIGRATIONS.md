@@ -4,6 +4,30 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Module Activation Config (2026-04-05)
+
+Per-module `activated: true/false` config flag. When `activated: false`, the module's routes, policies, models, and swagger YAML are excluded from the app entirely.
+
+### What changed
+
+- New `filterByActivation(files, config)` in `lib/helpers/config.js` — filters all globbed file arrays by module activation status
+- `config/index.js` applies filtering after config merge to: routes, policies, models, swagger YAML, preRoutes, configs
+- Core modules (`core`, `auth`, `users`, `home`) are always active regardless of flag
+- New module config files with `activated: true` default: `audit`, `billing`, `organizations`, `uploads`, `tasks`
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the change
+2. No breaking change — all modules default to `activated: true` (backward compatible)
+3. To deactivate a module, set `DEVKIT_NODE_{moduleName}_activated=false` in env vars or override in config:
+   ```js
+   // config/defaults/development.config.js
+   tasks: { activated: false }
+   ```
+4. If you have custom modules, add `activated: true` in their config file to be explicit
+
+---
+
 ## Decentralized Policy Subject Resolution (2026-04-03)
 
 Subject resolution in `lib/middlewares/policy.js` is now registry-based instead of hardcoded. Each module's policy file exports a `*SubjectRegistration()` function that registers its own document-level and path-level subjects during `discoverPolicies()`.
