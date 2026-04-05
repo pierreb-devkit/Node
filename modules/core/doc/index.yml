@@ -46,11 +46,7 @@ components:
 
   responses:
     Unauthorized:
-      description: Missing or invalid JWT token
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
+      description: Missing or invalid JWT token — Passport JWT middleware returns 401 with an empty body (no JSON envelope)
 
     Forbidden:
       description: Insufficient permissions (CASL policy denied)

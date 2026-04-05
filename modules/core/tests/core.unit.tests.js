@@ -507,6 +507,37 @@ describe('Core unit tests:', () => {
         );
       });
 
+      it('should merge multiple module YAML files and include paths from each', () => {
+        config.swagger = { enable: true };
+        config.files = {
+          ...config.files,
+          swagger: [
+            path.join(process.cwd(), 'modules/core/doc/index.yml'),
+            path.join(process.cwd(), 'modules/tasks/doc/tasks.yml'),
+          ],
+        };
+        const mockGet = jest.fn();
+        const mockUse = jest.fn();
+        const mockApp = { get: mockGet, use: mockUse };
+        expressService.initSwagger(mockApp);
+        const handler = mockGet.mock.calls.find((c) => c[0] === '/api/spec.json')[1];
+        const mockRes = { json: jest.fn() };
+        handler({}, mockRes);
+        expect(mockRes.json).toHaveBeenCalledWith(
+          expect.objectContaining({
+            openapi: '3.0.0',
+            paths: expect.objectContaining({
+              '/api/tasks': expect.any(Object),
+            }),
+            components: expect.objectContaining({
+              schemas: expect.objectContaining({
+                Task: expect.any(Object),
+              }),
+            }),
+          }),
+        );
+      });
+
       it('should not register routes when swagger is disabled', () => {
         config.swagger = { enable: false };
         const mockGet = jest.fn();
