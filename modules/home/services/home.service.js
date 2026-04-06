@@ -8,7 +8,7 @@ import { Base64 } from 'js-base64';
 import { promises as fs } from 'fs';
 import mongoose from 'mongoose';
 
-import AuthService from '../../auth/services/auth.service.js';
+import UserService from '../../users/services/users.service.js';
 import config from '../../../config/index.js';
 import mailer from '../../../lib/helpers/mailer/index.js';
 import HomeRepository from '../repositories/home.repository.js';
@@ -91,7 +91,7 @@ const changelogs = async () => {
  */
 const team = async () => {
   const result = await HomeRepository.team();
-  return Promise.resolve(result.map((user) => AuthService.removeSensitive(user)));
+  return Promise.resolve(result.map((user) => UserService.removeSensitive(user)));
 };
 
 /**

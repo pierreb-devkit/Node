@@ -10,6 +10,19 @@ import MembershipService from '../../organizations/services/organizations.member
 import OrganizationsCrudService from '../../organizations/services/organizations.crud.service.js';
 
 /**
+ * @desc Remove sensitive data from user object, returning only whitelisted keys.
+ * @param {Object} user - Mongoose document or plain user object
+ * @param {Array} [conf] - Optional list of keys to pick. Defaults to config.whitelists.users.default.
+ * @return {Object|null} sanitized user object or null
+ */
+const removeSensitive = (user, conf) => {
+  if (!user || typeof user !== 'object') return null;
+  const keys = conf || config.whitelists.users.default;
+  const plain = typeof user.toJSON === 'function' ? user.toJSON() : user;
+  return _.pick(plain, keys);
+};
+
+/**
  * @desc Function to get all users in db
  * @param {String} search
  * @param {Int} page
@@ -18,7 +31,7 @@ import OrganizationsCrudService from '../../organizations/services/organizations
  */
 const list = async (search, page, perPage) => {
   const result = await UserRepository.list(search, page || 0, perPage || 20);
-  return result.map((user) => AuthService.removeSensitive(user));
+  return result.map((user) => removeSensitive(user));
 };
 
 /**
@@ -41,7 +54,7 @@ const create = async (user) => {
   }
   const result = await UserRepository.create(user);
   // Remove sensitive data before return
-  return AuthService.removeSensitive(result);
+  return removeSensitive(result);
 };
 
 /**
@@ -51,7 +64,7 @@ const create = async (user) => {
  */
 const search = async (input) => {
   const result = await UserRepository.search(input);
-  return result.map((user) => AuthService.removeSensitive(user));
+  return result.map((user) => removeSensitive(user));
 };
 
 /**
@@ -61,7 +74,7 @@ const search = async (input) => {
  */
 const get = async (user) => {
   const result = await UserRepository.get(user);
-  return AuthService.removeSensitive(result);
+  return removeSensitive(result);
 };
 
 /**
@@ -82,12 +95,12 @@ const getBrut = async (user) => {
  * @return {Promise} user -
  */
 const update = async (user, body, option) => {
-  if (!option) user = _.assignIn(user, AuthService.removeSensitive(body, config.whitelists.users.update));
-  else if (option === 'admin') user = _.assignIn(user, AuthService.removeSensitive(body, config.whitelists.users.updateAdmin));
-  else if (option === 'recover') user = _.assignIn(user, AuthService.removeSensitive(body, config.whitelists.users.recover));
+  if (!option) user = _.assignIn(user, removeSensitive(body, config.whitelists.users.update));
+  else if (option === 'admin') user = _.assignIn(user, removeSensitive(body, config.whitelists.users.updateAdmin));
+  else if (option === 'recover') user = _.assignIn(user, removeSensitive(body, config.whitelists.users.recover));
 
   const result = await UserRepository.update(user);
-  return AuthService.removeSensitive(result);
+  return removeSensitive(result);
 };
 
 /**
@@ -98,7 +111,7 @@ const update = async (user, body, option) => {
 const terms = async (user) => {
   user = _.assignIn(user, { terms: new Date() });
   const result = await UserRepository.update(user);
-  return AuthService.removeSensitive(result);
+  return removeSensitive(result);
 };
 
 /**
@@ -196,4 +209,5 @@ export default {
   findByIdAndUpdatePopulated,
   searchByNameOrEmail,
   findByEmail,
+  removeSensitive,
 };
