@@ -10,13 +10,16 @@ import AuditRepository from '../repositories/audit.repository.js';
  * @description Record an audit log entry. No-op when audit is disabled.
  * @param {Object} params
  * @param {string} params.action - Action identifier (e.g. 'auth.login', 'billing.subscribe')
- * @param {Object} [params.req] - Express request object (extracts userId, orgId, ip, userAgent)
+ * @param {string} [params.userId] - ID of the acting user
+ * @param {string} [params.organizationId] - ID of the organization context
+ * @param {string} [params.ip] - IP address of the request
+ * @param {string} [params.userAgent] - User-agent of the request
  * @param {string} [params.targetType] - Type of the target entity
  * @param {string} [params.targetId] - ID of the target entity
  * @param {Object} [params.metadata] - Additional metadata
  * @returns {Promise<Object|null>} The created audit log entry or null if disabled
  */
-const log = async ({ action, req, targetType, targetId, metadata } = {}) => {
+const log = async ({ action, userId, organizationId, ip, userAgent, targetType, targetId, metadata } = {}) => {
   if (!config.audit?.enabled) return null;
   if (!action) return null;
 
@@ -27,15 +30,10 @@ const log = async ({ action, req, targetType, targetId, metadata } = {}) => {
     metadata: metadata || {},
   };
 
-  // Extract context from request if available (coerce ObjectIds to strings)
-  if (req) {
-    const uid = req.user?._id || req.user?.id;
-    const oid = req.organization?._id || req.organization?.id;
-    if (uid) entry.userId = String(uid);
-    if (oid) entry.orgId = String(oid);
-    entry.ip = config.audit?.captureIp !== false ? (req.ip || req.connection?.remoteAddress || '') : '';
-    entry.userAgent = config.audit?.captureUserAgent !== false ? (req.headers?.['user-agent'] || '') : '';
-  }
+  if (userId) entry.userId = String(userId);
+  if (organizationId) entry.orgId = String(organizationId);
+  if (ip !== undefined) entry.ip = ip || '';
+  if (userAgent !== undefined) entry.userAgent = userAgent || '';
 
   try {
     return await AuditRepository.create(entry);
