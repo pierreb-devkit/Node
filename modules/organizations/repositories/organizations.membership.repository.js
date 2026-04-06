@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import mongoose from 'mongoose';
+import { MEMBERSHIP_STATUSES } from '../lib/constants.js';
 
 const Membership = mongoose.model('Membership');
 
@@ -98,7 +99,7 @@ const deleteMany = (filter) => {
  */
 const aggregateCountByOrganizations = (orgIds) =>
   Membership.aggregate([
-    { $match: { organizationId: { $in: orgIds }, status: 'active' } },
+    { $match: { organizationId: { $in: orgIds }, status: MEMBERSHIP_STATUSES.ACTIVE } },
     { $group: { _id: '$organizationId', count: { $sum: 1 } } },
   ]);
 
@@ -109,7 +110,7 @@ const aggregateCountByOrganizations = (orgIds) =>
  * @returns {Promise<Array>} An array of memberships.
  */
 const listByUsers = (userIds) =>
-  Membership.find({ userId: { $in: userIds }, status: 'active' }).populate(defaultPopulate).sort('-createdAt').exec();
+  Membership.find({ userId: { $in: userIds }, status: MEMBERSHIP_STATUSES.ACTIVE }).populate(defaultPopulate).sort('-createdAt').exec();
 
 export default {
   list,

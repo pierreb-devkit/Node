@@ -8,10 +8,10 @@ import { Base64 } from 'js-base64';
 import { promises as fs } from 'fs';
 import mongoose from 'mongoose';
 
-import AuthService from '../../auth/services/auth.service.js';
 import config from '../../../config/index.js';
 import mailer from '../../../lib/helpers/mailer/index.js';
 import HomeRepository from '../repositories/home.repository.js';
+import { removeSensitive } from '../../users/utils/sanitizeUser.js';
 
 /**
  * @desc Check whether a config value is meaningfully set (non-empty, not a DEVKIT placeholder).
@@ -21,19 +21,20 @@ import HomeRepository from '../repositories/home.repository.js';
 const isSet = (value) => !!(value && typeof value === 'string' && value.trim() !== '' && !value.startsWith('DEVKIT_NODE_'));
 
 /**
- * @desc Function to get all admin users in db
- * @return {Promise} All users
+ * @desc Function to get page content from markdown file
+ * @param {string} name - The name of the markdown file
+ * @returns {Promise<Array>} Page content array
  */
 const page = async (name) => {
   const markdown = await fs.readFile(path.resolve(`./config/markdown/${name}.md`), 'utf8');
   const test = await fs.stat(path.resolve(`./config/markdown/${name}.md`));
-  return Promise.resolve([
+  return [
     {
       title: _.startCase(name),
       updatedAt: test.mtime,
       markdown,
     },
-  ]);
+  ];
 };
 
 /**
@@ -87,11 +88,11 @@ const changelogs = async () => {
 
 /**
  * @desc Function to get all admin users in db
- * @return {Promise} All users
+ * @returns {Promise<Array>} All users (sanitized)
  */
 const team = async () => {
   const result = await HomeRepository.team();
-  return Promise.resolve(result.map((user) => AuthService.removeSensitive(user)));
+  return result.map((user) => removeSensitive(user));
 };
 
 /**

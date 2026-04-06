@@ -11,6 +11,25 @@ import { assertEmailVerified } from '../../../lib/helpers/emailVerification.js';
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
 import OrganizationRepository from '../repositories/organizations.repository.js';
 import UserService from '../../users/services/users.service.js';
+import { MEMBERSHIP_STATUSES, MEMBERSHIP_ROLES } from '../lib/constants.js';
+
+/**
+ * @function validateLastOwnerProtection
+ * @description Throws if there is only one active owner left in the organization.
+ * @param {String} organizationId - The ID of the organization to check.
+ * @returns {Promise<void>}
+ * @throws {Error} If the organization has only one active owner.
+ */
+const validateLastOwnerProtection = async (organizationId) => {
+  const ownerCount = await MembershipRepository.count({
+    organizationId,
+    role: MEMBERSHIP_ROLES.OWNER,
+    status: MEMBERSHIP_STATUSES.ACTIVE,
+  });
+  if (ownerCount <= 1) {
+    throw new Error('Organization must have at least one active owner');
+  }
+};
 
 /**
  * @function list
@@ -22,7 +41,7 @@ import UserService from '../../users/services/users.service.js';
  * @returns {Promise<Array>} A promise that resolves to the list of memberships.
  */
 const list = async (organizationId, search, page, perPage) => {
-  const filter = { organizationId, status: 'active' };
+  const filter = { organizationId, status: MEMBERSHIP_STATUSES.ACTIVE };
   if (search) {
     const matchingUsers = await UserService.searchByNameOrEmail(search);
     filter.userId = { $in: matchingUsers.map((u) => u._id) };
@@ -36,7 +55,7 @@ const list = async (organizationId, search, page, perPage) => {
  * @param {String} userId - The ID of the user.
  * @returns {Promise<Array>} A promise that resolves to the list of memberships.
  */
-const listByUser = (userId) => MembershipRepository.list({ userId, status: 'active' });
+const listByUser = (userId) => MembershipRepository.list({ userId, status: MEMBERSHIP_STATUSES.ACTIVE });
 
 /**
  * @function get
@@ -54,7 +73,7 @@ const get = (id) => MembershipRepository.get(id);
  * @returns {Promise<Object|null>} A promise resolving to the membership or null.
  */
 const findByUserAndOrganization = (userId, organizationId) =>
-  MembershipRepository.findOne({ userId, organizationId, status: 'active' });
+  MembershipRepository.findOne({ userId, organizationId, status: MEMBERSHIP_STATUSES.ACTIVE });
 
 /**
  * @function create
@@ -72,10 +91,9 @@ const create = (data) => MembershipRepository.create(data);
  * @returns {Promise<Object>} A promise resolving to the updated membership.
  */
 const updateRole = async (membership, role) => {
-  if (membership.role === 'owner' && role !== 'owner') {
+  if (membership.role === MEMBERSHIP_ROLES.OWNER && role !== MEMBERSHIP_ROLES.OWNER) {
     const orgId = membership.organizationId._id || membership.organizationId;
-    const ownerCount = await MembershipRepository.count({ organizationId: orgId, role: 'owner', status: 'active' });
-    if (ownerCount <= 1) throw new Error('Cannot change role of the last owner');
+    await validateLastOwnerProtection(orgId);
   }
   membership.role = role;
   return MembershipRepository.update(membership);
@@ -88,10 +106,9 @@ const updateRole = async (membership, role) => {
  * @returns {Promise<Object>} A promise resolving to a confirmation of the deletion.
  */
 const remove = async (membership) => {
-  if (membership.role === 'owner') {
+  if (membership.role === MEMBERSHIP_ROLES.OWNER) {
     const orgId = membership.organizationId._id || membership.organizationId;
-    const ownerCount = await MembershipRepository.count({ organizationId: orgId, role: 'owner', status: 'active' });
-    if (ownerCount <= 1) throw new Error('Cannot remove the last owner of an organization');
+    await validateLastOwnerProtection(orgId);
   }
   const userId = membership.userId._id || membership.userId;
   const removedOrgId = membership.organizationId._id || membership.organizationId;
@@ -100,7 +117,7 @@ const remove = async (membership) => {
   // Clear currentOrganization if it pointed to the org the user was removed from
   const userDoc = await UserService.getBrut({ id: String(userId) });
   if (userDoc && String(userDoc.currentOrganization) === String(removedOrgId)) {
-    const remaining = await MembershipRepository.list({ userId, status: 'active' });
+    const remaining = await MembershipRepository.list({ userId, status: MEMBERSHIP_STATUSES.ACTIVE });
     const nextOrg = remaining.length > 0 ? (remaining[0].organizationId._id || remaining[0].organizationId) : null;
     await UserService.updateById(userDoc._id, { currentOrganization: nextOrg });
   }
@@ -113,7 +130,7 @@ const remove = async (membership) => {
  * @param {String} organizationId - The ID of the organization.
  * @returns {Promise<Array>} A promise that resolves to the list of pending memberships.
  */
-const listPending = (organizationId) => MembershipRepository.list({ organizationId, status: 'pending' });
+const listPending = (organizationId) => MembershipRepository.list({ organizationId, status: MEMBERSHIP_STATUSES.PENDING });
 
 /**
  * @function listPendingByUser
@@ -121,7 +138,7 @@ const listPending = (organizationId) => MembershipRepository.list({ organization
  * @param {String} userId - The ID of the user.
  * @returns {Promise<Array>} A promise that resolves to the list of pending memberships.
  */
-const listPendingByUser = (userId) => MembershipRepository.list({ userId, status: 'pending' });
+const listPendingByUser = (userId) => MembershipRepository.list({ userId, status: MEMBERSHIP_STATUSES.PENDING });
 
 /**
  * @function createJoinRequest
@@ -138,20 +155,20 @@ const createJoinRequest = async (userId, organizationId) => {
   if (!user) throw new Error('User not found');
   assertEmailVerified(user);
 
-  const existing = await MembershipRepository.findOne({ userId, organizationId, status: { $in: ['active', 'pending'] } });
+  const existing = await MembershipRepository.findOne({ userId, organizationId, status: { $in: [MEMBERSHIP_STATUSES.ACTIVE, MEMBERSHIP_STATUSES.PENDING] } });
   if (existing) {
-    if (existing.status === 'active') throw new Error('Already a member of this organization');
+    if (existing.status === MEMBERSHIP_STATUSES.ACTIVE) throw new Error('Already a member of this organization');
     throw new Error('A pending request already exists');
   }
   // Limit to 1 pending request at a time across all organizations
-  const pendingAnywhere = await MembershipRepository.findOne({ userId, status: 'pending' });
+  const pendingAnywhere = await MembershipRepository.findOne({ userId, status: MEMBERSHIP_STATUSES.PENDING });
   if (pendingAnywhere) throw new Error('You already have a pending request. Please wait for it to be reviewed before requesting to join another organization.');
-  const membership = await MembershipRepository.create({ userId, organizationId, role: 'member', status: 'pending' });
+  const membership = await MembershipRepository.create({ userId, organizationId, role: MEMBERSHIP_ROLES.MEMBER, status: MEMBERSHIP_STATUSES.PENDING });
 
   if (mailer.isConfigured()) {
     const org = await OrganizationRepository.get(organizationId);
     if (user?.email && org?.name) {
-      const admins = await MembershipRepository.list({ organizationId, role: { $in: ['owner', 'admin'] }, status: 'active' });
+      const admins = await MembershipRepository.list({ organizationId, role: { $in: [MEMBERSHIP_ROLES.OWNER, MEMBERSHIP_ROLES.ADMIN] }, status: MEMBERSHIP_STATUSES.ACTIVE });
       for (const admin of admins) {
         if (admin.userId?.email) {
           mailer.sendMail({
@@ -181,7 +198,7 @@ const createJoinRequest = async (userId, organizationId) => {
  * @returns {Promise<Object>} The updated membership.
  */
 const approveRequest = async (membership) => {
-  membership.status = 'active';
+  membership.status = MEMBERSHIP_STATUSES.ACTIVE;
   const result = await MembershipRepository.update(membership);
 
   // Set currentOrganization if user doesn't have one
@@ -250,17 +267,16 @@ const rejectRequest = async (membership) => {
  * @returns {Promise<Object>} A success confirmation.
  */
 const leave = async (userId, organizationId) => {
-  const membership = await MembershipRepository.findOne({ userId, organizationId, status: 'active' });
+  const membership = await MembershipRepository.findOne({ userId, organizationId, status: MEMBERSHIP_STATUSES.ACTIVE });
   if (!membership) throw new Error('You are not a member of this organization');
-  if (membership.role === 'owner') {
-    const ownerCount = await MembershipRepository.count({ organizationId, role: 'owner', status: 'active' });
-    if (ownerCount <= 1) throw new Error('You are the last owner. Promote another member before leaving.');
+  if (membership.role === MEMBERSHIP_ROLES.OWNER) {
+    await validateLastOwnerProtection(organizationId);
   }
   await MembershipRepository.remove(membership);
 
   const userDoc = await UserService.getBrut({ id: String(userId) });
   if (userDoc && String(userDoc.currentOrganization) === String(organizationId)) {
-    const remaining = await MembershipRepository.list({ userId, status: 'active' });
+    const remaining = await MembershipRepository.list({ userId, status: MEMBERSHIP_STATUSES.ACTIVE });
     const nextOrg = remaining.length > 0 ? (remaining[0].organizationId._id || remaining[0].organizationId) : null;
     await UserService.updateById(userDoc._id, { currentOrganization: nextOrg });
   }
@@ -280,7 +296,7 @@ const invite = async (organizationId, email, invitedBy) => {
   const existingInvite = await MembershipRepository.findOne({
     invitedEmail: email.toLowerCase(),
     organizationId,
-    status: 'invited',
+    status: MEMBERSHIP_STATUSES.INVITED,
   });
   if (existingInvite) throw new Error('An invite has already been sent to this email');
 
@@ -289,7 +305,7 @@ const invite = async (organizationId, email, invitedBy) => {
     const existingMembership = await MembershipRepository.findOne({
       userId: existingUser._id,
       organizationId,
-      status: { $in: ['active', 'pending', 'invited'] },
+      status: { $in: [MEMBERSHIP_STATUSES.ACTIVE, MEMBERSHIP_STATUSES.PENDING, MEMBERSHIP_STATUSES.INVITED] },
     });
     if (existingMembership) throw new Error('User is already a member or has a pending request');
   }
@@ -298,8 +314,8 @@ const invite = async (organizationId, email, invitedBy) => {
   const membership = await MembershipRepository.create({
     userId: existingUser ? existingUser._id : null,
     organizationId,
-    role: 'member',
-    status: 'invited',
+    role: MEMBERSHIP_ROLES.MEMBER,
+    status: MEMBERSHIP_STATUSES.INVITED,
     inviteToken,
     invitedEmail: email.toLowerCase(),
     inviteExpiresAt: new Date(Date.now() + 7 * 24 * 3600000),
@@ -340,7 +356,7 @@ const invite = async (organizationId, email, invitedBy) => {
  * @returns {Promise<Object>} The updated membership.
  */
 const acceptInvite = async (token, userId) => {
-  const membership = await MembershipRepository.findOne({ inviteToken: token, status: 'invited' });
+  const membership = await MembershipRepository.findOne({ inviteToken: token, status: MEMBERSHIP_STATUSES.INVITED });
   if (!membership) throw new Error('Invalid or expired invite');
 
   if (membership.inviteExpiresAt && membership.inviteExpiresAt < Date.now()) {
@@ -360,7 +376,7 @@ const acceptInvite = async (token, userId) => {
   }
 
   membership.userId = userId;
-  membership.status = 'active';
+  membership.status = MEMBERSHIP_STATUSES.ACTIVE;
   membership.inviteToken = null;
   const result = await MembershipRepository.update(membership);
 
@@ -379,7 +395,7 @@ const acceptInvite = async (token, userId) => {
  * @param {String} token - The invite token.
  * @returns {Promise<Object|null>} The invited membership or null.
  */
-const getInvite = (token) => MembershipRepository.findOne({ inviteToken: token, status: 'invited' });
+const getInvite = (token) => MembershipRepository.findOne({ inviteToken: token, status: MEMBERSHIP_STATUSES.INVITED });
 
 /**
  * @function count

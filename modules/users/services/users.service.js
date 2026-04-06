@@ -8,23 +8,25 @@ import AuthService from '../../auth/services/auth.service.js';
 import UserRepository from '../repositories/users.repository.js';
 import MembershipService from '../../organizations/services/organizations.membership.service.js';
 import OrganizationsCrudService from '../../organizations/services/organizations.crud.service.js';
+import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../../organizations/lib/constants.js';
+import { removeSensitive } from '../utils/sanitizeUser.js';
 
 /**
  * @desc Function to get all users in db
  * @param {String} search
  * @param {Int} page
  * @param {Int} perPage
- * @return {Promise} users selected
+ * @returns {Promise<Array>} users selected
  */
 const list = async (search, page, perPage) => {
   const result = await UserRepository.list(search, page || 0, perPage || 20);
-  return result.map((user) => AuthService.removeSensitive(user));
+  return result.map((user) => removeSensitive(user));
 };
 
 /**
- * @desc Function to ask repository to create a  user (define provider, check & haspassword, save)
+ * @desc Function to ask repository to create a user (define provider, check & hashpassword, save)
  * @param {Object} user
- * @return {Promise} user
+ * @returns {Promise<Object>} created user (sanitized)
  */
 const create = async (user) => {
   // Set provider to local
@@ -41,33 +43,33 @@ const create = async (user) => {
   }
   const result = await UserRepository.create(user);
   // Remove sensitive data before return
-  return AuthService.removeSensitive(result);
+  return removeSensitive(result);
 };
 
 /**
  * @desc Function to ask repository to search users by request
- * @param {Object} mongoose input request
- * @return {Array} users
+ * @param {Object} input - mongoose query input
+ * @returns {Promise<Array>} matching users (sanitized)
  */
 const search = async (input) => {
   const result = await UserRepository.search(input);
-  return result.map((user) => AuthService.removeSensitive(user));
+  return result.map((user) => removeSensitive(user));
 };
 
 /**
  * @desc Function to ask repository to get a user by id or email
- * @param {Object} user.id / user.email
- * @return {Object} user
+ * @param {Object} user - object with id or email field
+ * @returns {Promise<Object|null>} sanitized user or null
  */
 const get = async (user) => {
   const result = await UserRepository.get(user);
-  return AuthService.removeSensitive(result);
+  return removeSensitive(result);
 };
 
 /**
  * @desc Function to ask repository to get a user by id or email without filter data return (test & intern usage)
- * @param {Object} user.id / user.email
- * @return {Object} user
+ * @param {Object} user - object with id or email field
+ * @returns {Promise<Object|null>} full user document or null
  */
 const getBrut = async (user) => {
   const result = await UserRepository.get(user);
@@ -75,36 +77,36 @@ const getBrut = async (user) => {
 };
 
 /**
- * @desc Functio to ask repository to update a user
- * @param {Object} user - original user
- * @param {Object} body - user edited
- * @param {boolean} admin - true if admin update
- * @return {Promise} user -
+ * @desc Function to ask repository to update a user
+ * @param {Object} user - original user document
+ * @param {Object} body - fields to update
+ * @param {string} [option] - update mode: 'admin', 'recover', or undefined for user self-update
+ * @returns {Promise<Object>} updated user (sanitized)
  */
 const update = async (user, body, option) => {
-  if (!option) user = _.assignIn(user, AuthService.removeSensitive(body, config.whitelists.users.update));
-  else if (option === 'admin') user = _.assignIn(user, AuthService.removeSensitive(body, config.whitelists.users.updateAdmin));
-  else if (option === 'recover') user = _.assignIn(user, AuthService.removeSensitive(body, config.whitelists.users.recover));
+  if (!option) user = _.assignIn(user, removeSensitive(body, config.whitelists.users.update));
+  else if (option === 'admin') user = _.assignIn(user, removeSensitive(body, config.whitelists.users.updateAdmin));
+  else if (option === 'recover') user = _.assignIn(user, removeSensitive(body, config.whitelists.users.recover));
 
   const result = await UserRepository.update(user);
-  return AuthService.removeSensitive(result);
+  return removeSensitive(result);
 };
 
 /**
- * @desc Functio to ask repository to sign terms for current user
- * @param {Object} user - original user
- * @return {Promise} user -
+ * @desc Function to ask repository to sign terms for current user
+ * @param {Object} user - original user document
+ * @returns {Promise<Object>} updated user (sanitized)
  */
 const terms = async (user) => {
   user = _.assignIn(user, { terms: new Date() });
   const result = await UserRepository.update(user);
-  return AuthService.removeSensitive(result);
+  return removeSensitive(result);
 };
 
 /**
- * @desc Function to ask repository to a user from db by id or email
- * @param {Object} user
- * @return {Promise} result & id
+ * @desc Function to remove a user from db and clean up associated memberships/orgs
+ * @param {Object} user - user document with _id or id field
+ * @returns {Promise<Object>} deletion result
  */
 const remove = async (user) => {
   const userId = user._id || user.id;
@@ -113,9 +115,9 @@ const remove = async (user) => {
   const memberships = await MembershipService.listByUser(userId);
   for (const membership of memberships) {
     const orgId = membership.organizationId._id || membership.organizationId;
-    if (membership.role === 'owner') {
+    if (membership.role === MEMBERSHIP_ROLES.OWNER) {
       // Check if this user is the only owner of the org
-      const ownerCount = await MembershipService.count({ organizationId: orgId, role: 'owner' });
+      const ownerCount = await MembershipService.count({ organizationId: orgId, role: MEMBERSHIP_ROLES.OWNER, status: MEMBERSHIP_STATUSES.ACTIVE });
       if (ownerCount <= 1) {
         // Sole owner — delete the entire org and its memberships
         // Clear currentOrganization for affected users
@@ -135,7 +137,7 @@ const remove = async (user) => {
 
 /**
  * @desc Function to get all stats of db
- * @return {Promise} All stats
+ * @returns {Promise<Object>} user statistics
  */
 const stats = async () => {
   const result = await UserRepository.stats();
@@ -196,4 +198,5 @@ export default {
   findByIdAndUpdatePopulated,
   searchByNameOrEmail,
   findByEmail,
+  removeSensitive,
 };

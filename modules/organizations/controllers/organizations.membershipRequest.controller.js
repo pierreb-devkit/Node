@@ -4,6 +4,7 @@
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
 import MembershipService from '../services/organizations.membership.service.js';
+import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../lib/constants.js';
 
 /**
  * @function create
@@ -33,7 +34,7 @@ const create = async (req, res) => {
  */
 const listPending = async (req, res) => {
   try {
-    if (!req.membership || req.membership.role === 'member') {
+    if (!req.membership || req.membership.role === MEMBERSHIP_ROLES.MEMBER) {
       return responses.success(res, 'membership request list')([]);
     }
     const requests = await MembershipService.listPending(req.organization._id || req.organization.id);
@@ -165,7 +166,7 @@ const requestByID = async (req, res, next, id) => {
     const membership = await MembershipService.get(id);
     const organizationId = String(req.organization._id || req.organization.id);
     const membershipOrgId = String(membership?.organizationId?._id || membership?.organizationId);
-    if (!membership || membership.status !== 'pending' || membershipOrgId !== organizationId) {
+    if (!membership || membership.status !== MEMBERSHIP_STATUSES.PENDING || membershipOrgId !== organizationId) {
       return responses.error(res, 404, 'Not Found', 'No pending request with that identifier has been found')();
     }
     req.membershipRequest = membership;

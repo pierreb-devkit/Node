@@ -3,6 +3,7 @@
  */
 import AuditService from '../services/audit.service.js';
 import logger from '../../../lib/services/logger.js';
+import config from '../../../config/index.js';
 
 /**
  * Default route prefixes to skip when auto-capturing audit events.
@@ -124,7 +125,10 @@ const createAuditMiddleware = (options = {}) => {
 
       AuditService.log({
         action,
-        req,
+        userId: req.user?._id || req.user?.id,
+        organizationId: req.organization?._id || req.organization?.id,
+        ip: config.audit?.captureIp !== false ? (req.ip || req.connection?.remoteAddress || '') : undefined,
+        userAgent: config.audit?.captureUserAgent !== false ? (req.headers?.['user-agent'] || '') : undefined,
         targetType,
         targetId,
       }).catch((err) => logger.error('audit.middleware: audit log write failed', { message: err?.message, stack: err?.stack }));

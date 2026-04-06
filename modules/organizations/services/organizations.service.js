@@ -11,6 +11,7 @@ import MembershipRepository from '../repositories/organizations.membership.repos
 import MembershipService from './organizations.membership.service.js';
 import UserService from '../../users/services/users.service.js';
 import { slugify, generateOrganizationSlug } from '../helpers/organizations.slug.js';
+import { MEMBERSHIP_ROLES } from '../lib/constants.js';
 
 /**
  * @desc Strip sensitive fields from an organization document before returning to public flows.
@@ -90,7 +91,7 @@ const createOrganizationForUser = async ({ name, slug, domain, user, slugGenerat
       membership = await MembershipRepository.create({
         userId,
         organizationId: organization._id,
-        role: 'owner',
+        role: MEMBERSHIP_ROLES.OWNER,
       });
 
       await UserService.updateById(userId, { currentOrganization: organization._id });

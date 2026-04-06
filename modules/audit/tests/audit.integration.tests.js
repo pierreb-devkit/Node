@@ -68,13 +68,15 @@ describe('Audit integration tests:', () => {
       // Create some audit entries
       await AuditService.log({
         action: 'auth.login',
-        req: { user: { _id: adminUser.id }, headers: { 'user-agent': 'test' } },
+        userId: adminUser.id,
+        userAgent: 'test',
         targetType: 'User',
         targetId: adminUser.id,
       });
       await AuditService.log({
         action: 'auth.signup',
-        req: { user: { _id: adminUser.id }, headers: { 'user-agent': 'test' } },
+        userId: adminUser.id,
+        userAgent: 'test',
         targetType: 'User',
         targetId: adminUser.id,
       });

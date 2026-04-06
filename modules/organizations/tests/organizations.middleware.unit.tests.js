@@ -15,7 +15,7 @@ jest.unstable_mockModule('../services/organizations.membership.service.js', () =
   default: { findByUserAndOrganization: mockFindByUserAndOrganization },
 }));
 
-const { default: organizationsMiddleware } = await import('../middleware/organizations.middleware.js');
+const { default: organizationsMiddleware } = await import('../middlewares/organizations.middleware.js');
 const { resolveOrganization } = organizationsMiddleware;
 
 /**

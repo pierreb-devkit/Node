@@ -148,7 +148,11 @@ describe('Audit middleware unit tests:', () => {
     const call = mockLog.mock.calls[0][0];
     expect(call.action).toBe('auth.signin');
     expect(call.targetType).toBe('User');
-    expect(call.req).toBe(req);
+    expect(call.req).toBeUndefined();
+    expect(call.userId).toBe('507f1f77bcf86cd799439011');
+    expect(call.organizationId).toBe('507f1f77bcf86cd799439012');
+    expect(call.ip).toBe('127.0.0.1');
+    expect(call.userAgent).toBe('TestAgent/1.0');
   });
 
   test('should log PUT mutations', () => {
