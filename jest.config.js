@@ -57,6 +57,8 @@ export default {
     '!<rootDir>/modules/**/migrations/**',
     // Exclude static upload config — just object literals, like config/defaults
     '!<rootDir>/modules/uploads/config/config.uploads.js',
+    // Exclude test fixtures — helper stubs used by tests, not production code
+    '!<rootDir>/**/tests/fixtures/**',
   ],
   // The directory where Jest should output its coverage files
   coverageDirectory: 'coverage',
