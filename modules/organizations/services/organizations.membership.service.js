@@ -27,7 +27,7 @@ const validateLastOwnerProtection = async (organizationId) => {
     status: MEMBERSHIP_STATUSES.ACTIVE,
   });
   if (ownerCount <= 1) {
-    throw new Error('Cannot remove the last owner of an organization');
+    throw new Error('Organization must have at least one active owner');
   }
 };
 

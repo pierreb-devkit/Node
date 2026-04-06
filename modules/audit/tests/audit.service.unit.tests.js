@@ -120,11 +120,11 @@ describe('AuditService unit tests:', () => {
     expect(arg.ip).toBe('10.0.0.1');
   });
 
-  test('should store empty string ip when undefined is passed', async () => {
+  test('should omit ip when undefined is passed', async () => {
     await AuditService.log({ action: 'test.ip', ip: undefined, userAgent: 'Bot/1.0' });
     expect(mockCreate).toHaveBeenCalledTimes(1);
     const arg = mockCreate.mock.calls[0][0];
-    expect(arg.ip).toBeFalsy();
+    expect(arg.ip).toBeUndefined();
   });
 
   test('should store userAgent when provided', async () => {
@@ -134,11 +134,11 @@ describe('AuditService unit tests:', () => {
     expect(arg.userAgent).toBe('Bot/1.0');
   });
 
-  test('should set User-Agent to empty string when undefined is passed', async () => {
+  test('should omit userAgent when undefined is passed', async () => {
     await AuditService.log({ action: 'test.ua', ip: '10.0.0.1', userAgent: undefined });
     expect(mockCreate).toHaveBeenCalledTimes(1);
     const arg = mockCreate.mock.calls[0][0];
-    expect(arg.userAgent).toBeFalsy();
+    expect(arg.userAgent).toBeUndefined();
   });
 
   test('should store ip and userAgent when provided', async () => {
