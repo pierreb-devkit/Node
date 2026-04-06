@@ -2,6 +2,7 @@
  * Module dependencies.
  */
 import { jest, describe, test, expect, beforeEach } from '@jest/globals';
+import { MEMBERSHIP_ROLES } from '../lib/constants.js';
 
 const mockList = jest.fn();
 const mockUpdateRole = jest.fn();
@@ -33,8 +34,8 @@ describe('Membership controller unit tests:', () => {
       query: {},
       body: {},
       organization: { _id: 'org1' },
-      membership: { role: 'owner' },
-      membershipDoc: { id: 'mem1', role: 'member', organizationId: 'org1' },
+      membership: { role: MEMBERSHIP_ROLES.OWNER },
+      membershipDoc: { id: 'mem1', role: MEMBERSHIP_ROLES.MEMBER, organizationId: 'org1' },
       ...overrides,
     };
   }
@@ -66,7 +67,7 @@ describe('Membership controller unit tests:', () => {
     });
 
     test('should reject when actor is not an owner', async () => {
-      const req = mockReq({ membership: { role: 'admin' } });
+      const req = mockReq({ membership: { role: MEMBERSHIP_ROLES.ADMIN } });
       const res = mockRes();
 
       await membershipController.updateRole(req, res);
@@ -76,10 +77,10 @@ describe('Membership controller unit tests:', () => {
     });
 
     test('should allow owner to update role', async () => {
-      const updatedMembership = { id: 'mem1', role: 'admin' };
+      const updatedMembership = { id: 'mem1', role: MEMBERSHIP_ROLES.ADMIN };
       mockUpdateRole.mockResolvedValue(updatedMembership);
 
-      const req = mockReq({ membership: { role: 'owner' }, body: { role: 'admin' } });
+      const req = mockReq({ membership: { role: MEMBERSHIP_ROLES.OWNER }, body: { role: MEMBERSHIP_ROLES.ADMIN } });
       const res = mockRes();
 
       await membershipController.updateRole(req, res);
@@ -91,7 +92,7 @@ describe('Membership controller unit tests:', () => {
 
   describe('remove', () => {
     test('should reject when actor is a member (cannot remove anyone)', async () => {
-      const req = mockReq({ membership: { role: 'member' }, membershipDoc: { id: 'mem2', role: 'member' } });
+      const req = mockReq({ membership: { role: MEMBERSHIP_ROLES.MEMBER }, membershipDoc: { id: 'mem2', role: MEMBERSHIP_ROLES.MEMBER } });
       const res = mockRes();
 
       await membershipController.remove(req, res);
@@ -101,7 +102,7 @@ describe('Membership controller unit tests:', () => {
     });
 
     test('should reject when req.membership is missing', async () => {
-      const req = mockReq({ membership: undefined, membershipDoc: { id: 'mem2', role: 'member' } });
+      const req = mockReq({ membership: undefined, membershipDoc: { id: 'mem2', role: MEMBERSHIP_ROLES.MEMBER } });
       const res = mockRes();
 
       await membershipController.remove(req, res);
@@ -111,7 +112,7 @@ describe('Membership controller unit tests:', () => {
     });
 
     test('should reject when admin tries to remove an owner', async () => {
-      const req = mockReq({ membership: { role: 'admin' }, membershipDoc: { id: 'mem2', role: 'owner' } });
+      const req = mockReq({ membership: { role: MEMBERSHIP_ROLES.ADMIN }, membershipDoc: { id: 'mem2', role: MEMBERSHIP_ROLES.OWNER } });
       const res = mockRes();
 
       await membershipController.remove(req, res);
@@ -121,7 +122,7 @@ describe('Membership controller unit tests:', () => {
     });
 
     test('should reject when admin tries to remove an admin', async () => {
-      const req = mockReq({ membership: { role: 'admin' }, membershipDoc: { id: 'mem2', role: 'admin' } });
+      const req = mockReq({ membership: { role: MEMBERSHIP_ROLES.ADMIN }, membershipDoc: { id: 'mem2', role: MEMBERSHIP_ROLES.ADMIN } });
       const res = mockRes();
 
       await membershipController.remove(req, res);
@@ -133,7 +134,7 @@ describe('Membership controller unit tests:', () => {
     test('should allow admin to remove a member', async () => {
       mockRemove.mockResolvedValue({ success: true });
 
-      const req = mockReq({ membership: { role: 'admin' }, membershipDoc: { id: 'mem2', role: 'member' } });
+      const req = mockReq({ membership: { role: MEMBERSHIP_ROLES.ADMIN }, membershipDoc: { id: 'mem2', role: MEMBERSHIP_ROLES.MEMBER } });
       const res = mockRes();
 
       await membershipController.remove(req, res);
@@ -145,7 +146,7 @@ describe('Membership controller unit tests:', () => {
     test('should allow owner to remove any member', async () => {
       mockRemove.mockResolvedValue({ success: true });
 
-      const req = mockReq({ membership: { role: 'owner' }, membershipDoc: { id: 'mem2', role: 'admin' } });
+      const req = mockReq({ membership: { role: MEMBERSHIP_ROLES.OWNER }, membershipDoc: { id: 'mem2', role: MEMBERSHIP_ROLES.ADMIN } });
       const res = mockRes();
 
       await membershipController.remove(req, res);

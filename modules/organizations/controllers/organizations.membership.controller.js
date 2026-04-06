@@ -60,7 +60,7 @@ const remove = async (req, res) => {
     const canRemove = actorRole === MEMBERSHIP_ROLES.OWNER
       || (actorRole === MEMBERSHIP_ROLES.ADMIN && targetRole === MEMBERSHIP_ROLES.MEMBER);
     if (!canRemove) {
-      return responses.error(res, 403, 'Forbidden', 'Only owners can remove admins or other owners')();
+      return responses.error(res, 403, 'Forbidden', 'Insufficient permissions to remove this member')();
     }
     const result = await MembershipService.remove(req.membershipDoc);
     responses.success(res, 'membership deleted')({ id: req.membershipDoc.id, ...result });
