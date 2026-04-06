@@ -24,6 +24,7 @@ import OrganizationsRepository from '../repositories/organizations.repository.js
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
 import UserService from '../../users/services/users.service.js';
 import { slugify } from '../helpers/organizations.slug.js';
+import { MEMBERSHIP_STATUSES, MEMBERSHIP_ROLES } from '../lib/constants.js';
 
 /**
  * @function list
@@ -48,7 +49,7 @@ const list = async (search, page, perPage) => {
  * @returns {Promise<Array>} A promise that resolves to the list of organizations.
  */
 const listByUser = async (user) => {
-  const memberships = await MembershipRepository.list({ userId: user._id || user.id, status: 'active' });
+  const memberships = await MembershipRepository.list({ userId: user._id || user.id, status: MEMBERSHIP_STATUSES.ACTIVE });
   const organizationIds = memberships.map((m) => m.organizationId._id || m.organizationId);
   const orgs = await OrganizationsRepository.list({ _id: { $in: organizationIds } });
   return orgs.map((org) => {
@@ -107,7 +108,7 @@ const create = async (body, user) => {
     membership = await MembershipRepository.create({
       userId: user.id || user._id,
       organizationId: result._id,
-      role: 'owner',
+      role: MEMBERSHIP_ROLES.OWNER,
     });
 
     await UserService.updateById(user.id || user._id, { currentOrganization: result._id });
@@ -175,7 +176,7 @@ const remove = async (organization) => {
 
   // For each affected user, switch to their next available org or set null
   await Promise.all(affectedUsers.map(async (u) => {
-    const remaining = await MembershipRepository.list({ userId: u._id, status: 'active' });
+    const remaining = await MembershipRepository.list({ userId: u._id, status: MEMBERSHIP_STATUSES.ACTIVE });
     const nextOrg = remaining.length > 0
       ? (remaining[0].organizationId._id || remaining[0].organizationId)
       : null;
@@ -212,7 +213,7 @@ const switchOrganization = async (user, organizationId) => {
   const membership = await MembershipRepository.findOne({
     userId: user._id || user.id,
     organizationId,
-    status: 'active',
+    status: MEMBERSHIP_STATUSES.ACTIVE,
   });
 
   if (!membership) {
@@ -241,13 +242,13 @@ const autoSetCurrentOrganization = async (user) => {
     const stillActive = await MembershipRepository.findOne({
       userId: user._id || user.id,
       organizationId: user.currentOrganization._id || user.currentOrganization,
-      status: 'active',
+      status: MEMBERSHIP_STATUSES.ACTIVE,
     });
     if (stillActive) return user;
     // Membership gone — clear stale reference and fall through to find another
     user.currentOrganization = null;
   }
-  const memberships = await MembershipRepository.list({ userId: user._id || user.id, status: 'active' });
+  const memberships = await MembershipRepository.list({ userId: user._id || user.id, status: MEMBERSHIP_STATUSES.ACTIVE });
   if (memberships.length > 0) {
     const orgId = memberships[0].organizationId._id || memberships[0].organizationId;
     await UserService.updateById(user._id || user.id, { currentOrganization: orgId });

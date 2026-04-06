@@ -1,6 +1,7 @@
 /**
  * Organization ability definitions for CASL document-level authorization.
  */
+import { MEMBERSHIP_ROLES } from '../lib/constants.js';
 
 /**
  * Register organization-related subjects for document-level and path-level resolution.
@@ -50,11 +51,11 @@ export function organizationAbilities(user, membership, { can, cannot }) {
   if (!membership) return;
 
   switch (membership.role) {
-    case 'owner':
+    case MEMBERSHIP_ROLES.OWNER:
       can('manage', 'Organization', { _id: String(membership.organizationId._id || membership.organizationId) });
       can('manage', 'Membership', { organizationId: String(membership.organizationId._id || membership.organizationId) });
       break;
-    case 'admin':
+    case MEMBERSHIP_ROLES.ADMIN:
       can('read', 'Organization', { _id: String(membership.organizationId._id || membership.organizationId) });
       can('update', 'Organization', { _id: String(membership.organizationId._id || membership.organizationId) });
       cannot('delete', 'Organization');
@@ -62,7 +63,7 @@ export function organizationAbilities(user, membership, { can, cannot }) {
       can('create', 'Membership', { organizationId: String(membership.organizationId._id || membership.organizationId) });
       can('delete', 'Membership', { organizationId: String(membership.organizationId._id || membership.organizationId) });
       break;
-    case 'member':
+    case MEMBERSHIP_ROLES.MEMBER:
       can('read', 'Organization', { _id: String(membership.organizationId._id || membership.organizationId) });
       can('read', 'Membership', { organizationId: String(membership.organizationId._id || membership.organizationId) });
       break;
