@@ -5,7 +5,7 @@ import passport from 'passport';
 
 import model from '../../../lib/middlewares/model.js';
 import policy from '../../../lib/middlewares/policy.js';
-import organization from '../../organizations/middleware/organizations.middleware.js';
+import organization from '../../organizations/middlewares/organizations.middleware.js';
 import billingSchema from '../models/billing.subscription.schema.js';
 import billingPlans from '../controllers/billing.plans.controller.js';
 import billing from '../controllers/billing.controller.js';
