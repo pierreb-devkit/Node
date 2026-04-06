@@ -57,6 +57,8 @@ export default {
     '!<rootDir>/modules/**/migrations/**',
     // Exclude static upload config — just object literals, like config/defaults
     '!<rootDir>/modules/uploads/config/config.uploads.js',
+    // Exclude test fixtures — helper stubs used by tests, not production code
+    '!<rootDir>/**/tests/fixtures/**',
   ],
   // The directory where Jest should output its coverage files
   coverageDirectory: 'coverage',
@@ -180,7 +182,7 @@ export default {
   testMatch: ['<rootDir>/modules/*/tests/**/*.js', '<rootDir>/lib/**/tests/**/*.js'],
 
   // An array of regexp pattern strings that are matched against all test paths, matched tests are skipped
-  testPathIgnorePatterns: ['/node_modules/'],
+  testPathIgnorePatterns: ['/node_modules/', '/tests/fixtures/'],
 
   // The regexp pattern Jest uses to detect test files
   // testRegex: "",
