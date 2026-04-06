@@ -35,7 +35,7 @@ const list = async (req, res) => {
 const updateRole = async (req, res) => {
   try {
     // Belt-and-suspenders: only owners can change roles (CASL blocks admins via no 'update Membership')
-    if (req.membership && req.membership.role !== MEMBERSHIP_ROLES.OWNER) {
+    if (!req.membership || req.membership.role !== MEMBERSHIP_ROLES.OWNER) {
       return responses.error(res, 403, 'Forbidden', 'Only owners can change member roles')();
     }
     const membership = await MembershipService.updateRole(req.membershipDoc, req.body.role);
@@ -54,8 +54,12 @@ const updateRole = async (req, res) => {
  */
 const remove = async (req, res) => {
   try {
-    // Admins can only remove members, not other admins or owners
-    if (req.membership && req.membership.role !== MEMBERSHIP_ROLES.OWNER && req.membershipDoc.role !== MEMBERSHIP_ROLES.MEMBER) {
+    // Only owners can remove anyone; admins can only remove members
+    const actorRole = req.membership?.role;
+    const targetRole = req.membershipDoc.role;
+    const canRemove = actorRole === MEMBERSHIP_ROLES.OWNER
+      || (actorRole === MEMBERSHIP_ROLES.ADMIN && targetRole === MEMBERSHIP_ROLES.MEMBER);
+    if (!canRemove) {
       return responses.error(res, 403, 'Forbidden', 'Only owners can remove admins or other owners')();
     }
     const result = await MembershipService.remove(req.membershipDoc);

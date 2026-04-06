@@ -8,7 +8,7 @@ import AuthService from '../../auth/services/auth.service.js';
 import UserRepository from '../repositories/users.repository.js';
 import MembershipService from '../../organizations/services/organizations.membership.service.js';
 import OrganizationsCrudService from '../../organizations/services/organizations.crud.service.js';
-import { MEMBERSHIP_ROLES } from '../../organizations/lib/constants.js';
+import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../../organizations/lib/constants.js';
 import { removeSensitive } from '../utils/sanitizeUser.js';
 
 /**
@@ -117,7 +117,7 @@ const remove = async (user) => {
     const orgId = membership.organizationId._id || membership.organizationId;
     if (membership.role === MEMBERSHIP_ROLES.OWNER) {
       // Check if this user is the only owner of the org
-      const ownerCount = await MembershipService.count({ organizationId: orgId, role: MEMBERSHIP_ROLES.OWNER });
+      const ownerCount = await MembershipService.count({ organizationId: orgId, role: MEMBERSHIP_ROLES.OWNER, status: MEMBERSHIP_STATUSES.ACTIVE });
       if (ownerCount <= 1) {
         // Sole owner — delete the entire org and its memberships
         // Clear currentOrganization for affected users
