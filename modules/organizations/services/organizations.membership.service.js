@@ -14,6 +14,24 @@ import UserService from '../../users/services/users.service.js';
 import { MEMBERSHIP_STATUSES, MEMBERSHIP_ROLES } from '../lib/constants.js';
 
 /**
+ * @function validateLastOwnerProtection
+ * @description Throws if there is only one active owner left in the organization.
+ * @param {String} organizationId - The ID of the organization to check.
+ * @returns {Promise<void>}
+ * @throws {Error} If the organization has only one active owner.
+ */
+const validateLastOwnerProtection = async (organizationId) => {
+  const ownerCount = await MembershipRepository.count({
+    organizationId,
+    role: MEMBERSHIP_ROLES.OWNER,
+    status: MEMBERSHIP_STATUSES.ACTIVE,
+  });
+  if (ownerCount <= 1) {
+    throw new Error('Cannot remove the last owner of an organization');
+  }
+};
+
+/**
  * @function list
  * @description Service to retrieve active memberships for an organization.
  * @param {String} organizationId - The ID of the organization.
@@ -75,8 +93,7 @@ const create = (data) => MembershipRepository.create(data);
 const updateRole = async (membership, role) => {
   if (membership.role === MEMBERSHIP_ROLES.OWNER && role !== MEMBERSHIP_ROLES.OWNER) {
     const orgId = membership.organizationId._id || membership.organizationId;
-    const ownerCount = await MembershipRepository.count({ organizationId: orgId, role: MEMBERSHIP_ROLES.OWNER, status: MEMBERSHIP_STATUSES.ACTIVE });
-    if (ownerCount <= 1) throw new Error('Cannot change role of the last owner');
+    await validateLastOwnerProtection(orgId);
   }
   membership.role = role;
   return MembershipRepository.update(membership);
@@ -91,8 +108,7 @@ const updateRole = async (membership, role) => {
 const remove = async (membership) => {
   if (membership.role === MEMBERSHIP_ROLES.OWNER) {
     const orgId = membership.organizationId._id || membership.organizationId;
-    const ownerCount = await MembershipRepository.count({ organizationId: orgId, role: MEMBERSHIP_ROLES.OWNER, status: MEMBERSHIP_STATUSES.ACTIVE });
-    if (ownerCount <= 1) throw new Error('Cannot remove the last owner of an organization');
+    await validateLastOwnerProtection(orgId);
   }
   const userId = membership.userId._id || membership.userId;
   const removedOrgId = membership.organizationId._id || membership.organizationId;
@@ -254,8 +270,7 @@ const leave = async (userId, organizationId) => {
   const membership = await MembershipRepository.findOne({ userId, organizationId, status: MEMBERSHIP_STATUSES.ACTIVE });
   if (!membership) throw new Error('You are not a member of this organization');
   if (membership.role === MEMBERSHIP_ROLES.OWNER) {
-    const ownerCount = await MembershipRepository.count({ organizationId, role: MEMBERSHIP_ROLES.OWNER, status: MEMBERSHIP_STATUSES.ACTIVE });
-    if (ownerCount <= 1) throw new Error('You are the last owner. Promote another member before leaving.');
+    await validateLastOwnerProtection(organizationId);
   }
   await MembershipRepository.remove(membership);
 
