@@ -44,7 +44,8 @@ const deriveAction = (routePath, baseUrl) => {
 
 /**
  * Derive the target type from the route path (first meaningful segment).
- * Maps common path segments to model names.
+ * Reads the route→type map from config (audit.routeTypeMap) so that each
+ * module declares its own mapping without touching audit middleware code.
  * @param {string} routePath - The Express matched route path
  * @param {string} baseUrl - The Express baseUrl
  * @returns {string} The target type (capitalized) or empty string
@@ -56,13 +57,7 @@ const deriveTargetType = (routePath, baseUrl) => {
   if (segments.length === 0) return '';
 
   const segment = segments[0];
-  const map = {
-    auth: 'User',
-    users: 'User',
-    billing: 'Organization',
-    organizations: 'Organization',
-    tasks: 'Task',
-  };
+  const map = config.audit?.routeTypeMap || {};
   return map[segment] || segment.charAt(0).toUpperCase() + segment.slice(1);
 };
 

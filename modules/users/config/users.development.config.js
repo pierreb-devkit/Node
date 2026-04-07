@@ -1,4 +1,9 @@
 const config = {
+  audit: {
+    routeTypeMap: {
+      users: 'User',
+    },
+  },
   // Data filter whitelist & Blacklist
   blacklists: {},
   whitelists: {
