@@ -8,6 +8,10 @@ Breaking changes and upgrade notes for downstream projects.
 
 The hardcoded `route→type` map in `audit.middleware.js` has been removed. Each module now declares its own mapping via `audit.routeTypeMap` in its module config.
 
+### Rationale
+
+The previous hardcoded map forced optional modules (tasks, billing) to appear in core audit middleware — a violation of module isolation. Moving the map to config means each module owns its audit-type mapping, reducing coupling and keeping cross-module dependencies explicit. New modules can add their own mapping without modifying core code.
+
 ### What changed
 
 - `modules/audit/middlewares/audit.middleware.js` — `deriveTargetType` reads `config.audit.routeTypeMap` instead of a hardcoded object
@@ -21,7 +25,21 @@ The hardcoded `route→type` map in `audit.middleware.js` has been removed. Each
 ### Action for downstream
 
 1. Run `/update-stack` to pull the change
-2. If your project has custom modules that need audit type labelling, add `audit.routeTypeMap: { yourRoute: 'YourType' }` to the module's development config
+2. If your project has custom modules that need audit-type labelling, add `audit.routeTypeMap` to the module's development config:
+
+```js
+// modules/payments/config/payments.development.config.js
+const config = {
+  audit: {
+    routeTypeMap: {
+      payments: 'Payment',
+    },
+  },
+  // ... rest of module config
+};
+export default config;
+```
+
 3. If no `routeTypeMap` entry exists for a route segment, the segment is capitalised as a fallback (same behaviour as before for unknown segments)
 
 ---
