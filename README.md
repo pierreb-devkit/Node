@@ -141,9 +141,10 @@ modules/<name>/config/
 | 1 | Module defaults | `modules/*/config/*.development.config.js` |
 | 2 | Global development defaults | `config/defaults/development.config.js` |
 | 3 | Global env overrides | `config/defaults/<env>.config.js` |
+| 3.5 | Per-module project overrides | `modules/*/config/*.<project>.config.js` |
 | 4 | `DEVKIT_NODE_*` env vars | `DEVKIT_NODE_app_title='my app'` |
 
-Layer 3 is only applied when `NODE_ENV` is not `development`.
+Layers 3 and 3.5 are only applied when `NODE_ENV` is not `development`. Layer 3.5 is only applied for non-standard environments (i.e. downstream project names).
 
 ### Merge semantics
 
@@ -164,10 +165,13 @@ When running a downstream project that clones this stack, set `NODE_ENV` to the 
 
 ```text
 config/defaults/
-  myproject.config.js            ← global project overrides
+  myproject.config.js            ← global project overrides (all modules)
+
+modules/<name>/config/
+  <name>.myproject.config.js     ← per-module project overrides (e.g. users.trawl.config.js)
 ```
 
-The loader discovers files named `${NODE_ENV}.config.js` in `config/defaults/` — module config files are always loaded regardless of environment.
+Both file types are optional and can be used independently or together. Per-module files take priority over the global project config, allowing fine-grained overrides per module without polluting the global file.
 
 ## :building_construction: Organizations API
 

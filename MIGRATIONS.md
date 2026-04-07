@@ -4,6 +4,33 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Per-module project config overrides (2026-04-07)
+
+The config loader now supports per-module project config files in addition to the existing global `config/defaults/{project}.config.js`.
+
+### What changed
+
+- `config/index.js` — Layer 3.5 added: auto-discovers and merges `modules/*/config/*.{project}.config.js` for non-standard `NODE_ENV` values (i.e. downstream project names)
+- `modules/users/config/users.myproject.config.js` — template for per-module project overrides
+
+### Load order (updated)
+
+| Layer | Source |
+|-------|--------|
+| 1 | `modules/*/config/*.development.config.js` |
+| 2 | `config/defaults/development.config.js` |
+| 3 | `config/defaults/{project}.config.js` |
+| 3.5 | `modules/*/config/*.{project}.config.js` ← new |
+| 4 | `DEVKIT_NODE_*` env vars |
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the change
+2. No breaking change — existing configs are unaffected
+3. To add per-module project overrides, create `modules/{name}/config/{name}.{yourproject}.config.js`
+
+---
+
 ## OpenAPI Module Documentation (2026-04-04)
 
 Modules can now ship their own OpenAPI YAML in `modules/{name}/doc/{name}.yml`. These files are auto-discovered via the `modules/*/doc/*.yml` glob, merged into the base spec from `modules/core/doc/index.yml`, and served at `/api/spec.json` (+ Scalar UI at `/api/docs`).

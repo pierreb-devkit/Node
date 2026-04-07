@@ -72,6 +72,27 @@ describe('Core unit tests:', () => {
         expect(err).toBeFalsy();
       }
     });
+
+    it('per-module project config template should be a valid ES module with a default export', async () => {
+      const templatePath = path.join(process.cwd(), 'modules', 'users', 'config', 'users.myproject.config.js');
+      const mod = await import(templatePath);
+      expect(mod.default).toBeDefined();
+      expect(typeof mod.default).toBe('object');
+    });
+
+    it('deepMerge should give per-module project config higher priority than global project config', () => {
+      const globalProject = { users: { whitelists: { roles: ['user'] } } };
+      const moduleProject = { users: { whitelists: { roles: ['user', 'admin', 'custom'] } } };
+      const merged = deepMerge(globalProject, moduleProject);
+      expect(merged.users.whitelists.roles).toEqual(['user', 'admin', 'custom']);
+    });
+
+    it('configHelper.getGlobbedPaths should discover per-module project config files', async () => {
+      const files = await configHelper.getGlobbedPaths(['modules/*/config/*.myproject.config.js']);
+      expect(Array.isArray(files)).toBe(true);
+      expect(files.length).toBeGreaterThan(0);
+      expect(files.some((f) => f.includes('users.myproject.config.js'))).toBe(true);
+    });
   });
 
   describe('SeedDB', () => {
