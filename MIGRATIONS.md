@@ -15,7 +15,7 @@ Dead scripts and dev-local data removed from the stack. Downstream projects may 
 - `scripts/db/mongodump.sh` — dev-local only, not used in CI
 - `scripts/db/mongorestore.sh` — dev-local only, not used in CI
 - `scripts/db/dump/` — MongoDB fixture data (WaosNodeDev)
-- npm scripts removed: `seed:mongodump`, `seed:mongorestore`, `generate:sllCerts`
+- npm scripts removed: `seed:mongodump`, `seed:mongorestore`, `generate:sllCerts` (note: this was a typo of `sslCerts` — remove whichever key your project has)
 
 ### Action for downstream
 
