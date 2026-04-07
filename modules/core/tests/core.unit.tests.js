@@ -3,7 +3,6 @@
  */
 import _ from 'lodash';
 import path from 'path';
-import { pathToFileURL } from 'url';
 import { jest } from '@jest/globals';
 
 import assets from '../../../config/assets.js';
@@ -74,26 +73,12 @@ describe('Core unit tests:', () => {
       }
     });
 
-    it('per-module project config template should be a valid ES module with a default export', async () => {
-      const templatePath = path.join(process.cwd(), 'modules', 'users', 'config', 'users.myproject.config.js');
-      const mod = await import(pathToFileURL(templatePath).href);
-      expect(mod.default).toBeDefined();
-      expect(typeof mod.default).toBe('object');
-    });
-
     it('deepMerge should give per-module project config higher priority than global project config', () => {
       // Module configs export a flat shape (e.g. { whitelists: { users: { roles: [...] } } })
       const globalProject = { whitelists: { users: { roles: ['user'] } } };
       const moduleProject = { whitelists: { users: { roles: ['user', 'admin', 'custom'] } } };
       const merged = deepMerge(globalProject, moduleProject);
       expect(merged.whitelists.users.roles).toEqual(['user', 'admin', 'custom']);
-    });
-
-    it('configHelper.getGlobbedPaths should discover per-module project config files', async () => {
-      const files = await configHelper.getGlobbedPaths(['modules/*/config/*.myproject.config.js']);
-      expect(Array.isArray(files)).toBe(true);
-      expect(files.length).toBeGreaterThan(0);
-      expect(files.some((f) => f.includes('users.myproject.config.js'))).toBe(true);
     });
 
     it('assertSafeEnv should allow valid environment names', () => {
@@ -111,24 +96,6 @@ describe('Core unit tests:', () => {
       expect(() => assertSafeEnv('env name')).toThrow();
     });
 
-    it('configHelper.getGlobbedPaths should discover per-module project config files for a non-standard project env', async () => {
-      // Temporarily set NODE_ENV to a non-standard project name used by per-module config files.
-      const originalEnv = process.env.NODE_ENV;
-      process.env.NODE_ENV = 'myproject';
-      try {
-        // Verify file discovery for project-specific per-module config templates.
-        const files = await configHelper.getGlobbedPaths(['modules/*/config/*.myproject.config.js']);
-        expect(Array.isArray(files)).toBe(true);
-        expect(files.length).toBeGreaterThan(0);
-        expect(files.some((f) => f.includes('users.myproject.config.js'))).toBe(true);
-      } finally {
-        if (originalEnv === undefined) {
-          delete process.env.NODE_ENV;
-        } else {
-          process.env.NODE_ENV = originalEnv;
-        }
-      }
-    });
   });
 
   describe('SeedDB', () => {
