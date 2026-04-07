@@ -66,6 +66,7 @@ Node / Express / Mongoose / JWT stack from Devkit. Standalone backend or fullsta
 - Every function: JSDoc header (`@param`, `@returns`)
 - PRs: always use `/pull-request` — never open manually
 - After user correction, evaluate if the pattern belongs in `ERRORS.md`
+- **No optional module names in core module code.** Core modules (`core`, `auth`, `users`, `home`) must not reference optional module names anywhere in their code — not in imports, not in string maps, not in config keys, not in comments used as logic. Optional modules self-register their own behaviour (config, mappings, handlers) and core modules read from config or a registry.
 
 ## Workflow rules
 
