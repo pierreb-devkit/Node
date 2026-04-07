@@ -1,4 +1,9 @@
 const config = {
+  audit: {
+    routeTypeMap: {
+      organizations: 'Organization',
+    },
+  },
   organizations: {
     activated: true,
     enabled: true, // false → B2C mode, organizations invisible

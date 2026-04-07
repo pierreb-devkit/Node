@@ -1,4 +1,9 @@
 const config = {
+  audit: {
+    routeTypeMap: {
+      tasks: 'Task',
+    },
+  },
   tasks: {
     activated: true,
   },

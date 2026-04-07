@@ -5,6 +5,8 @@ const config = {
     ttlDays: 90,
     captureIp: true,
     captureUserAgent: true,
+    // Route segment → entity type map (merged from all module configs)
+    routeTypeMap: {},
   },
 };
 

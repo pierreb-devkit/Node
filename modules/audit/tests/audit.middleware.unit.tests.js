@@ -18,6 +18,24 @@ jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
   default: { error: mockLoggerError, warn: jest.fn(), info: jest.fn() },
 }));
 
+// Mock config with a routeTypeMap that mirrors module configs
+jest.unstable_mockModule('../../../config/index.js', () => ({
+  default: {
+    audit: {
+      enabled: true,
+      captureIp: true,
+      captureUserAgent: true,
+      routeTypeMap: {
+        auth: 'User',
+        users: 'User',
+        billing: 'Organization',
+        organizations: 'Organization',
+        tasks: 'Task',
+      },
+    },
+  },
+}));
+
 /**
  * Unit tests for audit middleware
  */
@@ -208,11 +226,17 @@ describe('Audit middleware unit tests:', () => {
     expect(deriveAction('/:token', '/api/auth/password/reset')).toBe('auth.reset');
   });
 
-  test('should derive targetType from route', () => {
+  test('should derive targetType from config routeTypeMap', () => {
     expect(deriveTargetType('/signin', '/api/auth')).toBe('User');
     expect(deriveTargetType('/checkout', '/api/billing')).toBe('Organization');
     expect(deriveTargetType('/:orgId', '/api/organizations')).toBe('Organization');
     expect(deriveTargetType('/', '/api/tasks')).toBe('Task');
+    expect(deriveTargetType('/', '/api/users')).toBe('User');
+  });
+
+  test('should capitalise unknown segments not in routeTypeMap', () => {
+    expect(deriveTargetType('/list', '/api/uploads')).toBe('Uploads');
+    expect(deriveTargetType('/', '/api/custom')).toBe('Custom');
   });
 
   test('should derive targetId from params', () => {

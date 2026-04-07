@@ -4,6 +4,46 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Audit route→type map is now config-driven (2026-04-07)
+
+The hardcoded `route→type` map in `audit.middleware.js` has been removed. Each module now declares its own mapping via `audit.routeTypeMap` in its module config.
+
+### Rationale
+
+The previous hardcoded map forced optional modules (tasks, billing) to appear in core audit middleware — a violation of module isolation. Moving the map to config means each module owns its audit-type mapping, reducing coupling and keeping cross-module dependencies explicit. New modules can add their own mapping without modifying core code.
+
+### What changed
+
+- `modules/audit/middlewares/audit.middleware.js` — `deriveTargetType` reads `config.audit.routeTypeMap` instead of a hardcoded object
+- `modules/audit/config/audit.development.config.js` — added empty `routeTypeMap: {}` base
+- `modules/auth/config/auth.development.config.js` — added `audit.routeTypeMap: { auth: 'User' }`
+- `modules/users/config/users.development.config.js` — added `audit.routeTypeMap: { users: 'User' }`
+- `modules/billing/config/billing.development.config.js` — added `audit.routeTypeMap: { billing: 'Organization' }`
+- `modules/organizations/config/organizations.development.config.js` — added `audit.routeTypeMap: { organizations: 'Organization' }`
+- `modules/tasks/config/tasks.development.config.js` — added `audit.routeTypeMap: { tasks: 'Task' }`
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the change
+2. If your project has custom modules that need audit-type labelling, add `audit.routeTypeMap` to the module's development config:
+
+```js
+// modules/payments/config/payments.development.config.js
+const config = {
+  audit: {
+    routeTypeMap: {
+      payments: 'Payment',
+    },
+  },
+  // ... rest of module config
+};
+export default config;
+```
+
+3. If no `routeTypeMap` entry exists for a route segment, the segment is capitalised as a fallback (same behaviour as before for unknown segments)
+
+---
+
 ## Per-module project config overrides (2026-04-07)
 
 The config loader now supports per-module project config files in addition to the existing global `config/defaults/{project}.config.js`.

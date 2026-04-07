@@ -1,4 +1,9 @@
 const config = {
+  audit: {
+    routeTypeMap: {
+      billing: 'Organization',
+    },
+  },
   billing: {
     activated: true,
     // Plans available for subscriptions — extend as needed

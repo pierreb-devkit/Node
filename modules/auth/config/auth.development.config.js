@@ -1,4 +1,9 @@
 const config = {
+  audit: {
+    routeTypeMap: {
+      auth: 'User',
+    },
+  },
   auth: {
     lockout: {
       maxAttempts: 5, // lock account after N consecutive failed login attempts
