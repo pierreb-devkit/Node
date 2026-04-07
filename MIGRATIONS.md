@@ -73,7 +73,7 @@ The config loader now supports per-module project config files in addition to th
 ### What changed
 
 - `config/index.js` — Layer 3.5 added: auto-discovers and merges `modules/*/config/*.{project}.config.js` for non-standard `NODE_ENV` values (i.e. downstream project names)
-- `modules/users/config/users.myproject.config.js` — template for per-module project overrides
+- Per-module project overrides: create `modules/{name}/config/{name}.{project}.config.js` in your downstream project (see README for pattern and examples)
 
 ### Load order (updated)
 
