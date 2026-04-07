@@ -178,5 +178,5 @@ const initGlobalConfig = async () => {
 };
 
 const config = await initGlobalConfig();
-export { deepMerge };
+export { deepMerge, assertSafeEnv };
 export default config;

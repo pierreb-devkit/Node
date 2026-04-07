@@ -7,7 +7,7 @@ import { pathToFileURL } from 'url';
 import { jest } from '@jest/globals';
 
 import assets from '../../../config/assets.js';
-import config, { deepMerge } from '../../../config/index.js';
+import config, { deepMerge, assertSafeEnv } from '../../../config/index.js';
 import configHelper from '../../../lib/helpers/config.js';
 import logger from '../../../lib/services/logger.js';
 import mongooseService from '../../../lib/services/mongoose.js';
@@ -96,18 +96,37 @@ describe('Core unit tests:', () => {
       expect(files.some((f) => f.includes('users.myproject.config.js'))).toBe(true);
     });
 
-    it('initGlobalConfig should apply per-module project config when NODE_ENV is a non-standard project name', async () => {
-      // Temporarily set NODE_ENV to a non-standard value to trigger Layer 3.5
+    it('assertSafeEnv should allow valid environment names', () => {
+      expect(() => assertSafeEnv('development')).not.toThrow();
+      expect(() => assertSafeEnv('production')).not.toThrow();
+      expect(() => assertSafeEnv('trawl')).not.toThrow();
+      expect(() => assertSafeEnv('my-project_v2')).not.toThrow();
+    });
+
+    it('assertSafeEnv should reject env names with glob metacharacters or path separators', () => {
+      expect(() => assertSafeEnv('bad*env')).toThrow();
+      expect(() => assertSafeEnv('../etc/passwd')).toThrow();
+      expect(() => assertSafeEnv('env/name')).toThrow();
+      expect(() => assertSafeEnv('env\\name')).toThrow();
+      expect(() => assertSafeEnv('env name')).toThrow();
+    });
+
+    it('configHelper.getGlobbedPaths should discover per-module project config files for a non-standard project env', async () => {
+      // Temporarily set NODE_ENV to a non-standard project name used by per-module config files.
       const originalEnv = process.env.NODE_ENV;
       process.env.NODE_ENV = 'myproject';
       try {
-        // Dynamic import of config/index.js is already cached; test the loader function directly
-        // by verifying getGlobbedPaths discovers the template file for env=myproject
+        // Verify file discovery for project-specific per-module config templates.
         const files = await configHelper.getGlobbedPaths(['modules/*/config/*.myproject.config.js']);
+        expect(Array.isArray(files)).toBe(true);
         expect(files.length).toBeGreaterThan(0);
         expect(files.some((f) => f.includes('users.myproject.config.js'))).toBe(true);
       } finally {
-        process.env.NODE_ENV = originalEnv;
+        if (originalEnv === undefined) {
+          delete process.env.NODE_ENV;
+        } else {
+          process.env.NODE_ENV = originalEnv;
+        }
       }
     });
   });
