@@ -197,7 +197,7 @@ We recommend this method, however we will not explain it. Many [tutorials](https
 
 ### Express TLS - SSL
 
-To run your application in a secure manner with express, generate self-signed certificates using openssl directly:
+To run your application securely with express, generate self-signed certificates using openssl directly:
 
 ```bash
 mkdir -p config/sslcerts
