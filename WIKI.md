@@ -197,26 +197,19 @@ We recommend this method, however we will not explain it. Many [tutorials](https
 
 ### Express TLS - SSL
 
-To run your application in a secure manner with express you'll need to use OpenSSL and generate a set of self-signed certificates.
+To run your application securely with express, generate self-signed certificates using openssl directly:
 
-* Unix-based users can use the following command:
-
- ```bash
- npm run generate-ssl-certs
- ```
-
-this will create cert and key files and place them in *config/sslcerts* folder.
-
-* Windows users can follow instructions found [here](http://www.websense.com/support/article/kbarticle/How-to-use-OpenSSL-and-Microsoft-Certification-Authority).
-After you've generated the key and certificate, place them in the *config/sslcerts* folder.
-
-Finally, uncomment and activate ssl in configuration (*config/defaults/development.js*) :
-
+```bash
+mkdir -p config/sslcerts
+openssl req -newkey rsa:4096 -nodes -keyout config/sslcerts/key.pem -x509 -days 365 -out config/sslcerts/cert.pem -subj "/CN=localhost"
 ```
-// SSL on express server (FYI : Wiki)
+
+Then activate SSL in your project config (`config/defaults/{project}.config.js`):
+
+```js
 secure: {
-   ssl: true,
-   key: './config/sslcerts/key.pem',
-   cert: './config/sslcerts/cert.pem',
+  ssl: true,
+  key: './config/sslcerts/key.pem',
+  cert: './config/sslcerts/cert.pem',
 },
 ```
