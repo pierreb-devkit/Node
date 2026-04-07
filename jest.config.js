@@ -43,8 +43,6 @@ export default {
     '!<rootDir>/modules/auth/auth.init.js',
     // Exclude audit init glue — just logs activation status
     '!<rootDir>/modules/audit/audit.init.js',
-    // Exclude dead code — never imported anywhere in the codebase
-    '!<rootDir>/modules/users/services/users.data.service.js',
     // Exclude server bootstrap — startup orchestration, tested indirectly via integration tests
     '!<rootDir>/lib/app.js',
     // Exclude thin fs wrapper — trivial I/O helper
