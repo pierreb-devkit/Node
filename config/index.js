@@ -13,6 +13,18 @@ import configHelper from '../lib/helpers/config.js';
 const STANDARD_ENVS = new Set(['development', 'production', 'test']);
 
 /**
+ * Validates that a NODE_ENV value is safe for use in glob patterns and file paths.
+ * Rejects values containing glob metacharacters or path separators.
+ * @param {string} env
+ * @throws {Error} if env is not a safe identifier
+ */
+const assertSafeEnv = (env) => {
+  if (!/^[a-zA-Z0-9_-]+$/.test(env)) {
+    throw new Error(`NODE_ENV "${env}" contains unsafe characters. Only alphanumerics, underscores, and hyphens are allowed.`);
+  }
+};
+
+/**
  * Deep merge two objects, replacing arrays instead of merging by index.
  * @param {Object} target - Base object
  * @param {Object} source - Override object
@@ -79,6 +91,7 @@ const loadModuleConfigs = async (pattern) => {
  */
 const initGlobalConfig = async () => {
   const env = process.env.NODE_ENV || 'development';
+  assertSafeEnv(env);
 
   // Layer 1: module defaults (base layer)
   let config = await loadModuleConfigs('modules/*/config/*.development.config.js');
@@ -105,14 +118,17 @@ const initGlobalConfig = async () => {
     // Layer 3.5: per-module project overrides (modules/*/config/*.{project}.config.js)
     // Only applies for non-standard envs (i.e. downstream project names like "trawl", "comes")
     if (!STANDARD_ENVS.has(env)) {
-      const moduleProjectConfig = await loadModuleConfigs(`modules/*/config/*.${env}.config.js`);
-      config = deepMerge(config, moduleProjectConfig);
-    }
-
-    // Warn when a non-standard NODE_ENV has no matching config files at all
-    if (!STANDARD_ENVS.has(env) && !hasGlobalEnvConfig) {
-      const hasModuleProjectConfig = (await configHelper.getGlobbedPaths(`modules/*/config/*.${env}.config.js`)).length > 0;
-      if (!hasModuleProjectConfig) {
+      const moduleProjectPattern = `modules/*/config/*.${env}.config.js`;
+      const moduleProjectFiles = await configHelper.getGlobbedPaths(moduleProjectPattern);
+      if (moduleProjectFiles.length > 0) {
+        let moduleProjectConfig = {};
+        for (const file of moduleProjectFiles) {
+          const mod = await loadConfigFile(path.resolve(file));
+          moduleProjectConfig = deepMerge(moduleProjectConfig, mod);
+        }
+        config = deepMerge(config, moduleProjectConfig);
+      } else if (!hasGlobalEnvConfig) {
+        // Warn only when no config exists at all (neither global nor per-module)
         console.warn(
           chalk.yellow(`+ Warning: NODE_ENV="${env}" but no ${env}.config.js found in config/defaults/ and no *.${env}.config.js in modules/ — using development defaults. Downstream projects should create config files (see README).`),
         );
