@@ -102,11 +102,21 @@ const initGlobalConfig = async () => {
       config = deepMerge(config, globalEnv);
     }
 
-    // Warn when a non-standard NODE_ENV has no matching config files
+    // Layer 3.5: per-module project overrides (modules/*/config/*.{project}.config.js)
+    // Only applies for non-standard envs (i.e. downstream project names like "trawl", "comes")
+    if (!STANDARD_ENVS.has(env)) {
+      const moduleProjectConfig = await loadModuleConfigs(`modules/*/config/*.${env}.config.js`);
+      config = deepMerge(config, moduleProjectConfig);
+    }
+
+    // Warn when a non-standard NODE_ENV has no matching config files at all
     if (!STANDARD_ENVS.has(env) && !hasGlobalEnvConfig) {
-      console.warn(
-        chalk.yellow(`+ Warning: NODE_ENV="${env}" but no ${env}.config.js found in config/defaults/ — using development defaults. Downstream projects should create config files (see README).`),
-      );
+      const hasModuleProjectConfig = (await configHelper.getGlobbedPaths(`modules/*/config/*.${env}.config.js`)).length > 0;
+      if (!hasModuleProjectConfig) {
+        console.warn(
+          chalk.yellow(`+ Warning: NODE_ENV="${env}" but no ${env}.config.js found in config/defaults/ and no *.${env}.config.js in modules/ — using development defaults. Downstream projects should create config files (see README).`),
+        );
+      }
     }
   }
 
