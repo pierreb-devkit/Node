@@ -159,6 +159,22 @@ describe('Uploads createFromBuffer unit tests:', () => {
     expect(mockGridfs.createFromBuffer).toHaveBeenCalledTimes(1);
   });
 
+  test('should use custom mimeType extension from config.uploads.mimeTypes', async () => {
+    mockConfig.uploads.mimeTypes = { 'text/html': 'html' };
+    mockConfig.uploads.report = {
+      kind: 'report',
+      formats: ['text/html'],
+      limits: { fileSize: 1 * 1024 * 1024 },
+    };
+    mockGridfs.createFromBuffer.mockResolvedValue({ ...fakeFile, contentType: 'text/html' });
+
+    const buffer = Buffer.alloc(512);
+    await UploadsService.createFromBuffer(buffer, 'text/html', 'report', { user: '507f1f77bcf86cd799439011' });
+
+    const [, filename] = mockGridfs.createFromBuffer.mock.calls[0];
+    expect(filename).toMatch(/^[a-f0-9]{64}\.html$/);
+  });
+
   test('should throw error when kind has no formats configured', async () => {
     // Adding 'broken' kind at runtime — service reads config dynamically via module reference
     mockConfig.uploads.broken = { kind: 'broken', limits: { fileSize: 1024 } };

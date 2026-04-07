@@ -94,7 +94,7 @@ const createFromBuffer = async (buffer, contentType, kind, metadata = {}) => {
     throw new AppError(`Upload: buffer size ${buffer.length} exceeds limit ${kindConfig.limits.fileSize}`, { code: 'SERVICE_ERROR', status: 422 });
   }
 
-  const ext = MIME_TO_EXT[contentType] || 'bin';
+  const ext = { ...MIME_TO_EXT, ...(config.uploads?.mimeTypes ?? {}) }[contentType] || 'bin';
   const filename = `${crypto.randomBytes(32).toString('hex')}.${ext}`;
 
   const result = await gridfs.createFromBuffer(buffer, filename, contentType, { ...metadata, kind, contentType });
