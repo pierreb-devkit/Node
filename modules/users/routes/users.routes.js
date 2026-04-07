@@ -10,7 +10,6 @@ import policy from '../../../lib/middlewares/policy.js';
 import usersSchema from '../models/users.schema.js';
 import users from '../controllers/users.account.controller.js';
 import usersImage from '../controllers/users.images.controller.js';
-import usersData from '../controllers/users.data.controller.js';
 import authPassword from '../../auth/controllers/auth.password.controller.js';
 
 export default (app) => {
@@ -33,15 +32,4 @@ export default (app) => {
     .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
     .post(multer.create(config.uploads.avatar), usersImage.updateAvatar)
     .delete(usersImage.removeAvatar);
-
-  app
-    .route('/api/users/data')
-    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
-    .get(usersData.get)
-    .delete(usersData.remove);
-
-  app
-    .route('/api/users/data/mail')
-    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
-    .get(usersData.getMail);
 };

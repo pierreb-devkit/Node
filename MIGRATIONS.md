@@ -44,6 +44,28 @@ export default config;
 
 ---
 
+## Remove GDPR data export/deletion routes (2026-04-07)
+
+The stack no longer provides generic GDPR data export and bulk deletion endpoints.
+These are downstream product concerns and should be implemented per-project.
+
+### What was removed
+
+- `GET /api/users/data` — export all user data
+- `DELETE /api/users/data` — delete user and all associated data
+- `GET /api/users/data/mail` — email user data export
+- `modules/users/controllers/users.data.controller.js`
+- `modules/users/services/users.data.service.js`
+- `config/templates/data-privacy-email.html`
+
+### Action for downstream
+
+1. If your project exposes these endpoints, move the logic into a project-level module
+2. Remove any frontend calls to `/api/users/data`, `/api/users/data/mail`
+3. Run `/update-stack` to pull the change
+
+---
+
 ## Per-module project config overrides (2026-04-07)
 
 The config loader now supports per-module project config files in addition to the existing global `config/defaults/{project}.config.js`.

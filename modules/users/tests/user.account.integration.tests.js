@@ -195,19 +195,6 @@ describe('User integration tests:', () => {
       }
     });
 
-    test('should be able to get all user data successfully', async () => {
-      try {
-        const result = await agent.get('/api/users/data').expect(200);
-        expect(result.body.type).toBe('success');
-        expect(result.body.message).toBe('user data');
-        expect(result.body.data.user.id).toBe(user.id);
-        expect(result.body.data.tasks).toBeInstanceOf(Array);
-      } catch (err) {
-        console.log(err);
-        expect(err).toBeFalsy();
-      }
-    });
-
     test('should be able to update own user details', async () => {
       const userUpdate = {
         firstName: 'userUpdateFirst',
@@ -335,42 +322,6 @@ describe('User integration tests:', () => {
       }
     });
 
-    test('should be able to remove current user and all his data', async () => {
-      // Init user edited
-      _userEdited.email = 'register_new_user_@test.com';
-
-      try {
-        const result = await agent.post('/api/auth/signup').send(_userEdited).expect(200);
-
-        userEdited = result.body.user;
-
-        expect(result.body.user._id).toBe(result.body.user.id);
-        expect(result.body.user.email).toBe(_userEdited.email);
-        expect(result.body.user.provider).toBe('local');
-        expect(result.body.user.roles).toBeInstanceOf(Array);
-        expect(result.body.user.roles).toHaveLength(1);
-        expect(result.body.user.roles).toEqual(expect.arrayContaining(['user']));
-      } catch (err) {
-        console.log(err);
-        expect(err).toBeFalsy();
-      }
-
-      // delete user
-      try {
-        const result = await agent.delete('/api/users/data').expect(200);
-
-        expect(result.body.type).toBe('success');
-        expect(result.body.message).toBe('user and his data were deleted');
-        expect(result.body.data.id).toBe(userEdited.id);
-        expect(result.body.data.user.deletedCount).toBe(1);
-        expect(result.body.data.tasks.deletedCount).toBe(0);
-        expect(result.body.data.uploads.deletedCount).toBe(0);
-      } catch (err) {
-        console.log(err);
-        expect(err).toBeFalsy();
-      }
-    });
-
     test('should be able to change profile avatar if signed in', async () => {
       try {
         const result = await agent.post('/api/users/avatar').attach('avatar', './modules/users/tests/img/default.jpeg').expect(200);
@@ -436,18 +387,6 @@ describe('User integration tests:', () => {
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('profile avatar updated');
         expect(result.body.data.avatar).toBeFalsy();
-      } catch (err) {
-        console.log(err);
-        expect(err).toBeFalsy();
-      }
-    });
-
-    test('should be able to request user data by mail', async () => {
-      try {
-        // In test env, mail sending is not configured so it returns 400
-        const result = await agent.get('/api/users/data/mail').expect(400);
-        expect(result.body.message).toBe('Bad Request');
-        expect(result.body.description).toBe('Failure sending email');
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -631,32 +570,6 @@ describe('User integration tests:', () => {
       const result = await agent.get('/api/users/me').expect(200);
       expect(result.body.data.bio).toBe('Test bio');
       expect(result.body.data.position).toBe('developer');
-    });
-
-    test('should return 422 when get user data fails', async () => {
-      jest.spyOn(UserService, 'get').mockRejectedValueOnce(new Error('DB error'));
-      const result = await agent.get('/api/users/data').expect(422);
-      expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
-      expect(result.body.description).toBe('DB error.');
-    });
-
-    test('should return 422 when remove user data fails', async () => {
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
-      jest.spyOn(UserService, 'remove').mockRejectedValueOnce(new Error('DB error'));
-      const result = await agent.delete('/api/users/data').expect(422);
-      expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
-      expect(result.body.description).toBe('DB error.');
-      consoleSpy.mockRestore();
-    });
-
-    test('should return 422 when getMail data service fails', async () => {
-      jest.spyOn(UserService, 'get').mockRejectedValueOnce(new Error('DB error'));
-      const result = await agent.get('/api/users/data/mail').expect(422);
-      expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
-      expect(result.body.description).toBe('DB error.');
     });
 
     test('should return 422 when removeAvatar update fails', async () => {
