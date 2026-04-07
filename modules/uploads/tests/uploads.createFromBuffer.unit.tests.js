@@ -185,4 +185,35 @@ describe('Uploads createFromBuffer unit tests:', () => {
 
     expect(mockGridfs.createFromBuffer).not.toHaveBeenCalled();
   });
+
+  test('should fallback to bin extension for unmapped MIME types', async () => {
+    mockConfig.uploads.generic = {
+      kind: 'generic',
+      formats: ['application/octet-stream'],
+      limits: { fileSize: 1 * 1024 * 1024 },
+    };
+    mockGridfs.createFromBuffer.mockResolvedValue({ ...fakeFile, contentType: 'application/octet-stream' });
+
+    const buffer = Buffer.alloc(512);
+    await UploadsService.createFromBuffer(buffer, 'application/octet-stream', 'generic');
+
+    const [, filename] = mockGridfs.createFromBuffer.mock.calls[0];
+    expect(filename).toMatch(/^[a-f0-9]{64}\.bin$/);
+  });
+
+  test('should fallback to bin extension when config extension contains invalid characters', async () => {
+    mockConfig.uploads.mimeTypes = { 'application/x-tar': 'tar.gz' };
+    mockConfig.uploads.archive = {
+      kind: 'archive',
+      formats: ['application/x-tar'],
+      limits: { fileSize: 10 * 1024 * 1024 },
+    };
+    mockGridfs.createFromBuffer.mockResolvedValue({ ...fakeFile, contentType: 'application/x-tar' });
+
+    const buffer = Buffer.alloc(512);
+    await UploadsService.createFromBuffer(buffer, 'application/x-tar', 'archive');
+
+    const [, filename] = mockGridfs.createFromBuffer.mock.calls[0];
+    expect(filename).toMatch(/^[a-f0-9]{64}\.bin$/);
+  });
 });
