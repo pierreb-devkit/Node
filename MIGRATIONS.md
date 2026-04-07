@@ -4,6 +4,28 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Remove dead scripts — ci/ssl, crons, db/dump (2026-04-07)
+
+Dead scripts and dev-local data removed from the stack. Downstream projects may have local copies or npm scripts referencing these.
+
+### What was removed
+
+- `scripts/ci/generate-ssl-certs.sh` — HTTPS never active in default configs
+- `scripts/crons/purgeUploads.js` — not wired to any cron or npm script
+- `scripts/db/mongodump.sh` — dev-local only, not used in CI
+- `scripts/db/mongorestore.sh` — dev-local only, not used in CI
+- `scripts/db/dump/` — MongoDB fixture data (WaosNodeDev)
+- npm scripts removed: `seed:mongodump`, `seed:mongorestore`, `generate:sllCerts`
+
+### Action for downstream
+
+1. Delete any local override of the removed scripts if you copied them
+2. Remove from your `package.json` any scripts referencing `seed:mongodump`, `seed:mongorestore`, `generate:sllCerts`
+3. If you used `scripts/db/dump/` as dev fixtures, move them outside the repo and add to `.gitignore`
+4. Run `/update-stack` to pull the change
+
+---
+
 ## Audit route→type map is now config-driven (2026-04-07)
 
 The hardcoded `route→type` map in `audit.middleware.js` has been removed. Each module now declares its own mapping via `audit.routeTypeMap` in its module config.
