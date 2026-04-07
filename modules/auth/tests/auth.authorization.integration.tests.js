@@ -135,18 +135,6 @@ describe('Authorization integration tests:', () => {
     test('DELETE /api/users/avatar should return 401 for guests', async () => {
       await publicAgent.delete('/api/users/avatar').expect(401);
     });
-
-    test('GET /api/users/data should return 401 for guests', async () => {
-      await publicAgent.get('/api/users/data').expect(401);
-    });
-
-    test('DELETE /api/users/data should return 401 for guests', async () => {
-      await publicAgent.delete('/api/users/data').expect(401);
-    });
-
-    test('GET /api/users/data/mail should return 401 for guests', async () => {
-      await publicAgent.get('/api/users/data/mail').expect(401);
-    });
   });
 
   // -------------------------------------------------------

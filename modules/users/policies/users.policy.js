@@ -1,6 +1,6 @@
 /**
  * Account ability definitions for CASL document-level authorization.
- * Uses 'UserAccount' for self-service routes (me, terms, password, avatar, data, stats).
+ * Uses 'UserAccount' for self-service routes (me, terms, password, avatar, stats).
  * Uses 'UserSelf' for the base /api/users path (update/delete own account).
  */
 
@@ -17,8 +17,6 @@ export function usersSubjectRegistration({ registerPathSubject }) {
   registerPathSubject('/api/users/terms', 'UserAccount');
   registerPathSubject('/api/users/password', 'UserAccount');
   registerPathSubject('/api/users/avatar', 'UserAccount');
-  registerPathSubject('/api/users/data', 'UserAccount');
-  registerPathSubject('/api/users/data/mail', 'UserAccount');
   registerPathSubject('/api/users/stats', 'UserStats');
   registerPathSubject('/api/users', 'UserSelf');
   // Prefix fallback for any other /api/users/* routes
@@ -40,7 +38,7 @@ export function usersAbilities(user, membership, { can }) {
     can('manage', 'all');
     return;
   }
-  // Self-service routes (me, terms, password, avatar, data)
+  // Self-service routes (me, terms, password, avatar)
   can('read', 'UserAccount');
   can('create', 'UserAccount');
   can('update', 'UserAccount');
