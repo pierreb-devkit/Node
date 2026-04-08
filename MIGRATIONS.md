@@ -4,22 +4,19 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
-## Tasks stats endpoint requires JWT + org scope (2026-04-08)
+## Rate limiter keys by userId + trust proxy (2026-04-08)
 
-`GET /api/tasks/stats` now requires authentication and organization context, consistent with all other task endpoints.
+Rate-limit middleware now keys authenticated requests by `user._id` (with `req.ip` fallback) instead of always using IP. Production config enables `trust.proxy: 1` so `req.ip` reflects the real client IP behind a single reverse proxy (Traefik, Nginx).
 
 ### What changed
 
-- `modules/tasks/routes/tasks.routes.js` — added JWT + `resolveOrganization` + `isAllowed` middleware
-- `modules/tasks/controllers/tasks.controller.js` — passes `req.organization` to service, uses try/catch
-- `modules/tasks/services/tasks.service.js` — `stats()` accepts organization and filters by `organizationId`
-- `modules/tasks/repositories/tasks.repository.js` — `stats()` uses `countDocuments(filter)` instead of `estimatedDocumentCount()`
+- `lib/middlewares/rateLimiter.js` — default `keyGenerator` uses `req.user._id.toString() || req.ip`; custom profile `keyGenerator` is respected via `??`
+- `config/defaults/production.config.js` — adds `trust.proxy: 1` (single hop)
 
 ### Action for downstream
 
-1. Any unauthenticated call to `/api/tasks/stats` will now return `401`
-2. Authenticated calls return the count scoped to the user's current organization
-3. Run `/update-stack` to pull the change
+1. Run `/update-stack` to pull the change
+2. If your production setup has multiple proxy layers, override `trust.proxy` with the correct hop count or subnet in your project config
 
 ---
 

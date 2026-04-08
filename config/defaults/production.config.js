@@ -11,7 +11,7 @@ const config = {
     debug: false,
   },
   trust: {
-    proxy: true, // behind reverse proxy (Traefik, Nginx) — ensures req.ip uses X-Forwarded-For
+    proxy: 1, // single reverse proxy hop (Traefik, Nginx) — ensures req.ip uses X-Forwarded-For
   },
   secure: {
     ssl: false,
