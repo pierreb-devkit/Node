@@ -10,6 +10,9 @@ const config = {
     uri: 'mongodb://127.0.0.1:27017/WaosNode',
     debug: false,
   },
+  trust: {
+    proxy: true, // behind reverse proxy (Traefik, Nginx) — ensures req.ip uses X-Forwarded-For
+  },
   secure: {
     ssl: false,
     privateKey: './config/sslcerts/key.pem',
