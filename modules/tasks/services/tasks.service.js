@@ -81,10 +81,14 @@ const remove = async (task) => {
 /**
  * @function stats
  * @description Service to fetch statistical data about tasks in the database.
+ * When an organization context is provided, only tasks belonging to that
+ * organization are counted.
+ * @param {Object} [organization] - Optional organization document whose _id is used to filter.
  * @returns {Promise} A promise resolving to the statistical data.
  */
-const stats = async () => {
-  const result = await TasksRepository.stats();
+const stats = async (organization) => {
+  const filter = organization ? { organizationId: organization._id } : {};
+  const result = await TasksRepository.stats(filter);
   return result;
 };
 

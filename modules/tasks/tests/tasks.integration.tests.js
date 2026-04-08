@@ -253,6 +253,18 @@ describe('Tasks integration tests:', () => {
       }
     });
 
+    test('should be able to get tasks stats when authenticated', async () => {
+      try {
+        const result = await agent.get('/api/tasks/stats').expect(200);
+        expect(result.body.type).toBe('success');
+        expect(result.body.message).toBe('tasks stats');
+        expect(typeof result.body.data).toBe('number');
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
     afterEach(async () => {
       // del task
       try {
@@ -291,11 +303,9 @@ describe('Tasks integration tests:', () => {
       }
     });
 
-    test('should be able to get a tasks stats', async () => {
+    test('should not be able to get tasks stats without auth', async () => {
       try {
-        const result = await agent.get('/api/tasks/stats').expect(200);
-        expect(result.body.type).toBe('success');
-        expect(result.body.message).toBe('tasks stats');
+        await agent.get('/api/tasks/stats').expect(401);
       } catch (err) {
         expect(err).toBeFalsy();
         console.log(err);
@@ -442,8 +452,8 @@ describe('Tasks integration tests:', () => {
       expect(result.body.description).toBe('DB error.');
     });
 
-    test('should return 422 when stats returns an error', async () => {
-      jest.spyOn(TasksService, 'stats').mockResolvedValueOnce({ err: new Error('DB error') });
+    test('should return 422 when stats fails', async () => {
+      jest.spyOn(TasksService, 'stats').mockRejectedValueOnce(new Error('DB error'));
       const result = await agent.get('/api/tasks/stats').expect(422);
       expect(result.body.type).toBe('error');
       expect(result.body.message).toBe('Unprocessable Entity');

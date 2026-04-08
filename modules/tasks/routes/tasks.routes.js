@@ -13,8 +13,11 @@ import tasksSchema from '../models/tasks.schema.js';
  * Routes
  */
 export default (app) => {
-  // stats — public aggregate endpoint, no auth required
-  app.route('/api/tasks/stats').get(tasks.stats);
+  // stats — org-scoped aggregate endpoint
+  app
+    .route('/api/tasks/stats')
+    .all(passport.authenticate('jwt', { session: false }), organization.resolveOrganization, policy.isAllowed)
+    .get(tasks.stats);
 
   // list & post
   app
