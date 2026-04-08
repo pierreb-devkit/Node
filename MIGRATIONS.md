@@ -32,7 +32,6 @@ Rate-limit middleware now keys authenticated requests by `user._id` (with `req.i
 - `modules/tasks/repositories/tasks.repository.js` — `stats()` uses `countDocuments(filter)` instead of `estimatedDocumentCount()`
 
 ### Action for downstream
-
 1. Any unauthenticated call to `/api/tasks/stats` will now return `401`
 2. Authenticated calls return the count scoped to the user's current organization
 3. Run `/update-stack` to pull the change

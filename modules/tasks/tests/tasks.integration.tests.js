@@ -17,6 +17,7 @@ describe('Tasks integration tests:', () => {
   const originalOrgEnabled = config.organizations.enabled;
   let TasksService;
   let TasksDataService;
+  let app; // Express app instance for fresh (unauthenticated) requests
   let agent;
   let user;
   let _user;
@@ -33,7 +34,8 @@ describe('Tasks integration tests:', () => {
       UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
       TasksService = (await import(path.resolve('./modules/tasks/services/tasks.service.js'))).default;
       TasksDataService = (await import(path.resolve('./modules/tasks/services/tasks.data.service.js'))).default;
-      agent = request.agent(init.app);
+      app = init.app;
+      agent = request.agent(app);
     } catch (err) {
       console.log(err);
       expect(err).toBeFalsy();
@@ -253,12 +255,18 @@ describe('Tasks integration tests:', () => {
       }
     });
 
-    test('should be able to get tasks stats when authenticated', async () => {
+    test('should be able to get tasks stats when authenticated (org-scoped)', async () => {
       try {
+        const tasksResult = await agent.get('/api/tasks').expect(200);
+        expect(tasksResult.body.type).toBe('success');
+        expect(tasksResult.body.message).toBe('task list');
+        expect(tasksResult.body.data).toBeInstanceOf(Array);
+
         const result = await agent.get('/api/tasks/stats').expect(200);
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('tasks stats');
         expect(typeof result.body.data).toBe('number');
+        expect(result.body.data).toBe(tasksResult.body.data.length);
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -285,7 +293,7 @@ describe('Tasks integration tests:', () => {
   describe('Logout', () => {
     test('should not be able to save a task', async () => {
       try {
-        const result = await agent.post('/api/tasks').send(_tasks[0]).expect(401);
+        const result = await request(app).post('/api/tasks').send(_tasks[0]).expect(401);
         expect(result.error.text).toBe('Unauthorized');
       } catch (err) {
         expect(err).toBeFalsy();
@@ -294,9 +302,8 @@ describe('Tasks integration tests:', () => {
     });
 
     test('should not be able to get list of tasks without auth', async () => {
-      // task list now requires authentication
       try {
-        await agent.get('/api/tasks').expect(401);
+        await request(app).get('/api/tasks').expect(401);
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -305,7 +312,7 @@ describe('Tasks integration tests:', () => {
 
     test('should not be able to get tasks stats without auth', async () => {
       try {
-        await agent.get('/api/tasks/stats').expect(401);
+        await request(app).get('/api/tasks/stats').expect(401);
       } catch (err) {
         expect(err).toBeFalsy();
         console.log(err);
