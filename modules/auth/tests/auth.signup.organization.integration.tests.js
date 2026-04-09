@@ -44,6 +44,18 @@ describe('Auth signup organization integration tests:', () => {
     } catch (_) { /* cleanup — ignore errors */ }
   };
 
+  /**
+   * Remove a user by email if they exist (cleanup stale data from previous runs).
+   * @param {string} email - email address of the user to purge
+   * @returns {Promise<void>}
+   */
+  const purgeUser = async (email) => {
+    try {
+      const existing = await UserService.getBrut({ email });
+      if (existing) await cleanupUser(existing);
+    } catch (_) { /* cleanup – ignore errors */ }
+  };
+
   beforeAll(async () => {
     try {
       const init = await bootstrap();
@@ -66,6 +78,8 @@ describe('Auth signup organization integration tests:', () => {
       config.organizations = { enabled: false, autoCreate: true, domainMatching: true };
 
       let user;
+      // clean up stale users from previous runs on shared databases
+      await purgeUser('silent-org@test.com');
       try {
         const result = await agent
           .post('/api/auth/signup')
@@ -108,6 +122,9 @@ describe('Auth signup organization integration tests:', () => {
       // First, create an existing organization with a specific domain
       let firstUser;
       let secondUser;
+      // clean up stale users from previous runs on shared databases
+      await purgeUser('first@matchdomain.com');
+      await purgeUser('second@matchdomain.com');
       try {
         // Sign up first user to create the org with domain
         const result1 = await agent
@@ -162,6 +179,8 @@ describe('Auth signup organization integration tests:', () => {
       config.organizations = { enabled: true, autoCreate: true, domainMatching: true };
 
       let user;
+      // clean up stale users from previous runs on shared databases
+      await purgeUser('solo@uniquedomain123.com');
       try {
         const result = await agent
           .post('/api/auth/signup')
@@ -200,6 +219,8 @@ describe('Auth signup organization integration tests:', () => {
       config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
 
       let user;
+      // clean up stale users from previous runs on shared databases
+      await purgeUser('personal@somecompany.com');
       try {
         const result = await agent
           .post('/api/auth/signup')
@@ -238,6 +259,8 @@ describe('Auth signup organization integration tests:', () => {
       config.organizations = { enabled: true, autoCreate: false, domainMatching: true };
 
       let user;
+      // clean up stale users from previous runs on shared databases
+      await purgeUser('manual@setup.com');
       try {
         const result = await agent
           .post('/api/auth/signup')
@@ -273,6 +296,8 @@ describe('Auth signup organization integration tests:', () => {
       config.organizations = { enabled: false, autoCreate: true, domainMatching: true };
 
       let user;
+      // clean up stale users from previous runs on shared databases
+      await purgeUser('response-check@test.com');
       try {
         const result = await agent
           .post('/api/auth/signup')

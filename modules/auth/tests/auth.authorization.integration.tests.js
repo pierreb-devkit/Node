@@ -40,6 +40,14 @@ describe('Authorization integration tests:', () => {
     adminAgent = request.agent(init.app);
     otherAgent = request.agent(init.app);
 
+    // clean up stale users from previous runs on shared databases
+    for (const email of ['auth-test-user@test.com', 'auth-test-admin@test.com', 'auth-test-other@test.com']) {
+      try {
+        const existing = await UserService.getBrut({ email });
+        if (existing) await UserService.remove(existing);
+      } catch (_) { /* cleanup – ignore errors */ }
+    }
+
     // Create a normal user via agent
     const userRes = await agent
       .post('/api/auth/signup')

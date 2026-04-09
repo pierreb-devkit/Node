@@ -66,6 +66,14 @@ describe('Auth integration tests:', () => {
       _userEdited.email = credentials[1].email;
       _userEdited.password = credentials[1].password;
 
+      // clean up stale users from previous runs on shared databases
+      for (const email of [credentials[0].email, credentials[1].email, 'register_new_user_@test.com']) {
+        try {
+          const existing = await UserService.getBrut({ email });
+          if (existing) await UserService.remove(existing);
+        } catch (_) { /* cleanup – ignore errors */ }
+      }
+
       // add user
       try {
         const result = await agent.post('/api/auth/signup').send(_user).expect(200);
@@ -645,6 +653,11 @@ describe('Auth integration tests:', () => {
         password: credentials[0].password,
         provider: 'local',
       };
+      // clean up stale users from previous runs on shared databases
+      try {
+        const existing = await UserService.getBrut({ email: credentials[0].email });
+        if (existing) await UserService.remove(existing);
+      } catch (_) { /* cleanup – ignore errors */ }
       try {
         const result = await agent.post('/api/auth/signup').send(_user).expect(200);
         user = result.body.user;
@@ -722,6 +735,13 @@ describe('Auth integration tests:', () => {
     let secUser;
 
     beforeEach(async () => {
+      // clean up stale users from previous runs on shared databases
+      for (const email of [secEmail, 'cookieflag@test.com']) {
+        try {
+          const existing = await UserService.getBrut({ email });
+          if (existing) await UserService.remove(existing);
+        } catch (_) { /* cleanup – ignore errors */ }
+      }
       try {
         const result = await agent.post('/api/auth/signup').send({
           firstName: 'Sec',
@@ -873,6 +893,11 @@ describe('Auth integration tests:', () => {
     let verifyUser;
 
     beforeEach(async () => {
+      // clean up stale users from previous runs on shared databases
+      try {
+        const existing = await UserService.getBrut({ email: verifyEmail });
+        if (existing) await UserService.remove(existing);
+      } catch (_) { /* cleanup – ignore errors */ }
       try {
         const result = await agent.post('/api/auth/signup').send({
           firstName: 'Verify',
@@ -998,6 +1023,11 @@ describe('Auth integration tests:', () => {
     let lockUser;
 
     beforeEach(async () => {
+      // clean up stale users from previous runs on shared databases
+      try {
+        const existing = await UserService.getBrut({ email: lockEmail });
+        if (existing) await UserService.remove(existing);
+      } catch (_) { /* cleanup – ignore errors */ }
       try {
         const result = await agent.post('/api/auth/signup').send({
           firstName: 'Lock',
