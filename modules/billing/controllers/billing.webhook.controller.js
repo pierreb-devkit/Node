@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import config from '../../../config/index.js';
+import logger from '../../../lib/services/logger.js';
 import getStripe from '../lib/stripe.js';
 import BillingWebhookService from '../services/billing.webhook.service.js';
 
@@ -44,7 +45,7 @@ const handleWebhook = async (req, res) => {
     }
     return res.status(200).json({ received: true });
   } catch (err) {
-    console.error('Stripe webhook handler error:', err);
+    logger.error('Stripe webhook handler error:', err);
     return res.status(500).json({ error: 'Webhook handler failed' });
   }
 };

@@ -36,6 +36,15 @@ describe('Billing webhook controller unit tests:', () => {
       default: jest.fn(() => mockStripeInstance),
     }));
 
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: {
+        error: jest.fn(),
+        warn: jest.fn(),
+        info: jest.fn(),
+        debug: jest.fn(),
+      },
+    }));
+
     res = {
       status: jest.fn().mockReturnThis(),
       json: jest.fn().mockReturnThis(),
@@ -183,13 +192,12 @@ describe('Billing webhook controller unit tests:', () => {
     const mod = await import('../controllers/billing.webhook.controller.js');
     BillingWebhookController = mod.default;
 
-    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const loggerMod = await import('../../../lib/services/logger.js');
     const req = { headers: { 'stripe-signature': 'sig_ok' }, body: 'raw' };
     await BillingWebhookController.handleWebhook(req, res);
 
-    expect(consoleSpy).toHaveBeenCalledWith('Stripe webhook handler error:', expect.any(Error));
+    expect(loggerMod.default.error).toHaveBeenCalledWith('Stripe webhook handler error:', expect.any(Error));
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: 'Webhook handler failed' });
-    consoleSpy.mockRestore();
   });
 });

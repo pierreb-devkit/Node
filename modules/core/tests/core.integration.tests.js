@@ -5,6 +5,7 @@ import path from 'path';
 
 import { jest } from '@jest/globals';
 import config from '../../../config/index.js';
+import logger from '../../../lib/services/logger.js';
 import mongooseService from '../../../lib/services/mongoose.js';
 import seed from '../../../lib/services/seed.js';
 
@@ -260,13 +261,13 @@ describe('Core integration tests:', () => {
 
   describe('Seed service', () => {
     it('should log results when logResults option is enabled', async () => {
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      const loggerSpy = jest.spyOn(logger, 'info').mockImplementation(() => {});
 
       const result = await seed.start({ logResults: true }, UserService, AuthService, TaskService);
 
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Database Seeding'));
+      expect(loggerSpy).toHaveBeenCalledWith(expect.stringContaining('Database Seeding'));
       expect(result).toBeInstanceOf(Array);
-      consoleSpy.mockRestore();
+      loggerSpy.mockRestore();
     });
 
     it('should seed a single user via seed.user()', async () => {
