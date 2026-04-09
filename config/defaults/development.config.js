@@ -1,8 +1,8 @@
 const config = {
   app: {
     title: 'Devkit Node - Development Environment',
-    description: 'Node - Boilerplate Back : Express, Jwt, Mongo, Sequelize (Beta) ',
-    keywords: 'node, express, mongo, jwt, sequelize, stack, boilerplate',
+    description: 'Node - Boilerplate Back : Express, Jwt, Mongo',
+    keywords: 'node, express, mongo, jwt, stack, boilerplate',
     googleAnalyticsTrackingID: 'DEVKIT_NODE_app_googleAnalyticsTrackingID',
     contact: 'contact@example.com',
   },
@@ -59,17 +59,6 @@ const config = {
       json: false,
     },
   },
-  // orm: {
-  //    dbname: 'WaosNodeDev',
-  //    user: '',
-  //    pass: '',
-  //    options: {
-  //      // sequelize supports one of: mysql, postgres, sqlite, mariadb and mssql.
-  //      dialect: 'postgres',
-  //      host: '',
-  //      port: ''
-  //    }
-  //  },
   csrf: {
     csrf: false,
     csp: false,

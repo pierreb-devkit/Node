@@ -1,6 +1,6 @@
 {
   "name": "@pierreb-devkit/node",
-  "description": "Node - Boilerplate Back : Express, Jwt, Mongo, Sequelize (Beta)  (Based on meanjs and riess.js)",
+  "description": "Node - Boilerplate Back : Express, Jwt, Mongo (Based on meanjs and riess.js)",
   "version": "0.4.0",
   "type": "module",
   "keywords": [
@@ -8,7 +8,6 @@
     "express",
     "mongo",
     "jwt",
-    "sequelize",
     "stack",
     "boilerplate"
   ],
@@ -88,7 +87,6 @@
     "passport-local": "^1.0.0",
     "posthog-node": "^5.29.1",
     "resend": "^6.10.0",
-    "sequelize": "^6.37.8",
     "sharp": "^0.34.5",
     "snyk": "^1.1303.2",
     "stripe": "^22.0.1",

@@ -26,13 +26,10 @@ export default {
     '<rootDir>/modules/**/*.js',
     // Exclude schema/model definitions — no business logic, just DB structure
     '!<rootDir>/modules/**/*.model.mongoose.js',
-    '!<rootDir>/modules/**/*.model.sequelize.js',
     // Exclude static config files — just object exports, nothing to test
     '!<rootDir>/config/defaults/**/*.js',
     // Exclude entry point
     '!<rootDir>/server.js',
-    // Exclude Sequelize service — MySQL support is disabled/commented out in app.js
-    '!<rootDir>/lib/services/sequelize.js',
     // Exclude OAuth strategy configs — no business logic, just passport.use() calls;
     // real OAuth credentials required to test, which are not available in CI
     '!<rootDir>/modules/auth/strategies/local/apple.js',
@@ -47,8 +44,6 @@ export default {
     '!<rootDir>/lib/app.js',
     // Exclude thin fs wrapper — trivial I/O helper
     '!<rootDir>/lib/helpers/files.js',
-    // Exclude deprecated Joi extension — superseded by Zod validation
-    '!<rootDir>/lib/helpers/joi.js',
     // Exclude mailer internals — require real SMTP credentials not available in CI
     '!<rootDir>/lib/helpers/mailer/**',
     // Exclude DB migrations — one-time data scripts, not business logic
