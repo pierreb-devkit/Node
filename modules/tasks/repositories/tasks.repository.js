@@ -42,7 +42,7 @@ const get = (id) => {
 /**
  * @function update
  * @description Data access operation to update an existing task in the database.
- * @param {Object} task - The task object containing the updated details.
+ * @param {import('mongoose').Document} task - The hydrated Mongoose Task document to update. Must support `.save()`.
  * @returns {Object} The updated task.
  */
 const update = (task) => task.save().then((doc) => doc.populate(defaultPopulate));
