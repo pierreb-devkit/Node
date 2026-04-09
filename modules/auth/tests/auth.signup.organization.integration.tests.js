@@ -46,7 +46,8 @@ describe('Auth signup organization integration tests:', () => {
 
   /**
    * Remove a user by email if they exist (cleanup stale data from previous runs).
-   * @param {string} email
+   * @param {string} email - email address of the user to purge
+   * @returns {Promise<void>}
    */
   const purgeUser = async (email) => {
     try {
