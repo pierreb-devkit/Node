@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import config from '../../config/index.js';
+import logger from '../../lib/services/logger.js';
 import auditMiddleware from './middlewares/audit.middleware.js';
 
 /**
@@ -22,6 +23,6 @@ export default async (app) => {
 
   if (process.env.NODE_ENV !== 'test') {
     const enabled = config.audit?.enabled ?? false;
-    console.log(`Audit module: ${enabled ? 'enabled' : 'disabled'}`);
+    logger.info(`Audit module: ${enabled ? 'enabled' : 'disabled'}`);
   }
 };
