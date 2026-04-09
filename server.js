@@ -10,7 +10,7 @@ const { default: logger } = await import(path.resolve('./lib/services/logger.js'
 
 const server = app.start().catch((e) => {
   logger.error(chalk.red(`Server failed`));
-  logger.error(JSON.stringify(e.message));
+  logger.error(e.message, e);
   throw e;
 });
 
