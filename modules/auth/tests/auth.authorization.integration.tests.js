@@ -153,8 +153,8 @@ describe('Authorization integration tests:', () => {
       await publicAgent.get('/api/tasks').expect(401);
     });
 
-    test('GET /api/tasks/stats should return 200 for guests', async () => {
-      await publicAgent.get('/api/tasks/stats').expect(200);
+    test('GET /api/tasks/stats should return 401 for guests (auth required)', async () => {
+      await publicAgent.get('/api/tasks/stats').expect(401);
     });
 
     test('GET /api/users/stats should return 200 for guests', async () => {

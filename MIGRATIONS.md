@@ -20,6 +20,24 @@ Rate-limit middleware now keys authenticated requests by `user._id` (with `req.i
 
 ---
 
+## Tasks stats endpoint requires JWT + org scope (2026-04-08)
+
+`GET /api/tasks/stats` now requires authentication and organization context, consistent with all other task endpoints.
+
+### What changed
+
+- `modules/tasks/routes/tasks.routes.js` — added JWT + `resolveOrganization` + `isAllowed` middleware
+- `modules/tasks/controllers/tasks.controller.js` — passes `req.organization` to service, uses try/catch
+- `modules/tasks/services/tasks.service.js` — `stats()` accepts organization and filters by `organizationId`
+- `modules/tasks/repositories/tasks.repository.js` — `stats()` uses `countDocuments(filter)` instead of `estimatedDocumentCount()`
+
+### Action for downstream
+1. Any unauthenticated call to `/api/tasks/stats` will now return `401`
+2. Authenticated calls return the count scoped to the user's current organization
+3. Run `/update-stack` to pull the change
+
+---
+
 ## Remove dead scripts — ci/ssl, crons, db/dump (2026-04-07)
 
 Dead scripts and dev-local data removed from the stack. Downstream projects may have local copies or npm scripts referencing these.

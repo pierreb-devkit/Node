@@ -90,11 +90,11 @@ const remove = async (req, res) => {
  * @throws Will throw an error if the task service fails to fetch the statistics
  */
 const stats = async (req, res) => {
-  const data = await TasksService.stats();
-  if (!data.err) {
+  try {
+    const data = await TasksService.stats(req.organization);
     responses.success(res, 'tasks stats')(data);
-  } else {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(data.err))(data.err);
+  } catch (err) {
+    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
   }
 };
 
