@@ -45,7 +45,7 @@ const get = (id) => {
  * @param {Object} task - The task object containing the updated details.
  * @returns {Object} The updated task.
  */
-const update = (task) => new Task(task).save().then((doc) => doc.populate(defaultPopulate));
+const update = (task) => task.save().then((doc) => doc.populate(defaultPopulate));
 
 /**
  * @function remove
