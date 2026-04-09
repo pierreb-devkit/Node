@@ -4,6 +4,22 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Rate limiter keys by userId + trust proxy (2026-04-08)
+
+Rate-limit middleware now keys authenticated requests by `user._id` (with `req.ip` fallback) instead of always using IP. Production config enables `trust.proxy: 1` so `req.ip` reflects the real client IP behind a single reverse proxy (Traefik, Nginx).
+
+### What changed
+
+- `lib/middlewares/rateLimiter.js` — default `keyGenerator` uses `req.user._id.toString() || req.ip`; custom profile `keyGenerator` is respected via `??`
+- `config/defaults/production.config.js` — adds `trust.proxy: 1` (single hop)
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the change
+2. If your production setup has multiple proxy layers, override `trust.proxy` with the correct hop count or subnet in your project config
+
+---
+
 ## Remove dead scripts — ci/ssl, crons, db/dump (2026-04-07)
 
 Dead scripts and dev-local data removed from the stack. Downstream projects may have local copies or npm scripts referencing these.
