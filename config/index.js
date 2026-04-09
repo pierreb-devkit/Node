@@ -158,7 +158,7 @@ const initGlobalConfig = async () => {
   // Initialize global globbed files
   config = deepMerge(config, { files: await configHelper.initGlobalConfigFiles(assets) });
   // Filter files by module activation (deactivated modules are excluded)
-  const fileKeys = ['swagger', 'mongooseModels', 'sequelizeModels', 'preRoutes', 'routes', 'configs', 'policies'];
+  const fileKeys = ['swagger', 'mongooseModels', 'preRoutes', 'routes', 'configs', 'policies'];
   for (const key of fileKeys) {
     if (config.files[key]) {
       config.files[key] = configHelper.filterByActivation(config.files[key], config);
