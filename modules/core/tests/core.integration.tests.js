@@ -3,6 +3,7 @@
  */
 import path from 'path';
 
+import request from 'supertest';
 import { jest } from '@jest/globals';
 import config from '../../../config/index.js';
 import logger from '../../../lib/services/logger.js';
@@ -18,10 +19,12 @@ describe('Core integration tests:', () => {
   let AuthService;
   let UserService;
   let TaskService;
+  let app;
 
   beforeAll(async () => {
     try {
-      await bootstrap();
+      const init = await bootstrap();
+      app = init.app;
       AuthService = (await import(path.resolve('./modules/auth/services/auth.service.js'))).default;
       UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
       TaskService = (await import(path.resolve('./modules/tasks/services/tasks.service.js'))).default;
@@ -287,6 +290,26 @@ describe('Core integration tests:', () => {
       try {
         await UserService.remove(result[0]);
       } catch (_) { /* cleanup – ignore errors */ }
+    });
+  });
+
+  describe('Scalar API reference — markdown guides', () => {
+    it('should expose /api/spec.json with markdown guides merged into info.description', async () => {
+      const res = await request(app).get('/api/spec.json').expect(200);
+      expect(res.body).toBeDefined();
+      expect(res.body.info).toBeDefined();
+      expect(typeof res.body.info.description).toBe('string');
+      // Guides are rendered as H1 sections, one per file in modules/*/doc/guides/*.md
+      expect(res.body.info.description).toContain('# Getting Started');
+      expect(res.body.info.description).toContain('Your first API call');
+      expect(res.body.info.description).toContain('# Authentication');
+      expect(res.body.info.description).toContain('# Organizations');
+    });
+
+    it('should serve the Scalar API reference page on /api/docs', async () => {
+      const res = await request(app).get('/api/docs').expect(200);
+      // Scalar returns HTML referencing the spec URL
+      expect(res.headers['content-type']).toMatch(/html/);
     });
   });
 
