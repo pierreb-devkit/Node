@@ -8,6 +8,7 @@ import { jest } from '@jest/globals';
 import assets from '../../../config/assets.js';
 import config, { deepMerge, assertSafeEnv } from '../../../config/index.js';
 import configHelper from '../../../lib/helpers/config.js';
+import guidesHelper from '../../../lib/helpers/guides.js';
 import logger from '../../../lib/services/logger.js';
 import mongooseService from '../../../lib/services/mongoose.js';
 import expressService from '../../../lib/services/express.js';
@@ -56,7 +57,7 @@ describe('Core unit tests:', () => {
     });
 
     it('assets should contain the correct keys', () => {
-      const expectedKeys = ['allJS', 'allYaml', 'mongooseModels', 'preRoutes', 'routes', 'config', 'policies'];
+      const expectedKeys = ['allJS', 'allYaml', 'allGuides', 'mongooseModels', 'preRoutes', 'routes', 'config', 'policies'];
 
       expectedKeys.forEach((key) => {
         expect(assets).toHaveProperty(key);
@@ -609,6 +610,27 @@ describe('Core unit tests:', () => {
         }
       });
 
+      it('should merge markdown guides into spec info.description when guides are configured', () => {
+        config.swagger = { enable: true };
+        config.files = {
+          ...config.files,
+          swagger: [path.join(process.cwd(), 'modules/core/doc/index.yml')],
+          guides: [path.join(process.cwd(), 'modules/core/doc/guides/getting-started.md')],
+        };
+        const mockGet = jest.fn();
+        const mockUse = jest.fn();
+        const mockApp = { get: mockGet, use: mockUse };
+        expressService.initSwagger(mockApp);
+        const handler = mockGet.mock.calls.find((c) => c[0] === '/api/spec.json')[1];
+        const mockRes = { json: jest.fn() };
+        handler({}, mockRes);
+        const served = mockRes.json.mock.calls[0][0];
+        expect(served.info).toBeDefined();
+        expect(typeof served.info.description).toBe('string');
+        expect(served.info.description).toContain('# Getting Started');
+        expect(served.info.description).toContain('Your first API call');
+      });
+
       it('should warn and skip registration when all YAML files produce an empty spec', async () => {
         // Write a temp YAML file that parses to a scalar — after filter(Boolean), contents is empty → spec is {}
         const { default: fsMod } = await import('fs');
@@ -718,6 +740,88 @@ describe('Core unit tests:', () => {
       middleware(err, {}, mockRes, jest.fn());
       expect(mockStatus).toHaveBeenCalledWith(404);
       consoleSpy.mockRestore();
+    });
+  });
+
+  describe('Guides helper', () => {
+    it('should derive a title-cased title from a guide file path', () => {
+      expect(guidesHelper.titleFromPath('modules/core/doc/guides/getting-started.md')).toBe('Getting Started');
+      expect(guidesHelper.titleFromPath('/abs/path/authentication.md')).toBe('Authentication');
+      expect(guidesHelper.titleFromPath('multi_word_file.md')).toBe('Multi Word File');
+    });
+
+    it('should strip the leading H1 from markdown content', () => {
+      const input = '# Title\n\nBody paragraph';
+      expect(guidesHelper.stripLeadingH1(input)).toBe('Body paragraph');
+    });
+
+    it('should preserve markdown when no leading H1 is present', () => {
+      const input = 'Body paragraph\n\n## Subsection';
+      expect(guidesHelper.stripLeadingH1(input)).toBe('Body paragraph\n\n## Subsection');
+    });
+
+    it('should load guides from real files and sort them alphabetically', () => {
+      const files = [
+        path.join(process.cwd(), 'modules/core/doc/guides/organizations.md'),
+        path.join(process.cwd(), 'modules/core/doc/guides/authentication.md'),
+        path.join(process.cwd(), 'modules/core/doc/guides/getting-started.md'),
+      ];
+      const guides = guidesHelper.loadGuides(files);
+      expect(guides.map((g) => g.title)).toEqual(['Authentication', 'Getting Started', 'Organizations']);
+      guides.forEach((g) => expect(typeof g.body).toBe('string'));
+    });
+
+    it('should return an empty array when filePaths is empty or invalid', () => {
+      expect(guidesHelper.loadGuides([])).toEqual([]);
+      expect(guidesHelper.loadGuides(null)).toEqual([]);
+      expect(guidesHelper.loadGuides(undefined)).toEqual([]);
+    });
+
+    it('should skip unreadable guide files without throwing', () => {
+      const guides = guidesHelper.loadGuides(['/nonexistent/path/missing.md']);
+      expect(guides).toEqual([]);
+    });
+
+    it('should skip guides whose body is empty after stripping the H1', async () => {
+      const { default: fsMod } = await import('fs');
+      const tmpFile = path.join('/tmp', `test-empty-guide-${Date.now()}.md`);
+      fsMod.writeFileSync(tmpFile, '# Only a title\n');
+      try {
+        expect(guidesHelper.loadGuides([tmpFile])).toEqual([]);
+      } finally {
+        fsMod.unlinkSync(tmpFile);
+      }
+    });
+
+    it('should merge guides into spec info.description with H1 section headers', () => {
+      const spec = { openapi: '3.0.0', info: { title: 'API' } };
+      const guides = [
+        { title: 'Getting Started', body: 'Intro body' },
+        { title: 'Authentication', body: 'Auth body' },
+      ];
+      guidesHelper.mergeGuidesIntoSpec(spec, guides);
+      expect(spec.info.description).toContain('# Getting Started');
+      expect(spec.info.description).toContain('Intro body');
+      expect(spec.info.description).toContain('# Authentication');
+      expect(spec.info.description).toContain('Auth body');
+    });
+
+    it('should preserve an existing info.description when merging guides', () => {
+      const spec = { info: { description: 'Original intro.' } };
+      guidesHelper.mergeGuidesIntoSpec(spec, [{ title: 'Guide', body: 'Body' }]);
+      expect(spec.info.description.startsWith('Original intro.')).toBe(true);
+      expect(spec.info.description).toContain('# Guide');
+    });
+
+    it('should be a no-op when no guides are provided', () => {
+      const spec = { info: { title: 'API' } };
+      const result = guidesHelper.mergeGuidesIntoSpec(spec, []);
+      expect(result).toBe(spec);
+      expect(spec.info.description).toBeUndefined();
+    });
+
+    it('should return the spec unchanged when spec is not an object', () => {
+      expect(guidesHelper.mergeGuidesIntoSpec(null, [{ title: 't', body: 'b' }])).toBeNull();
     });
   });
 
