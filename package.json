@@ -50,7 +50,7 @@
     "@casl/ability": "^6.8.0",
     "@jest/globals": "^30.3.0",
     "@scalar/express-api-reference": "^0.9.6",
-    "@sentry/node": "^10.47.0",
+    "@sentry/node": "^10.48.0",
     "axios": "^1.15.0",
     "bcrypt": "^6.0.0",
     "bson": "^7.2.0",
