@@ -5,7 +5,7 @@ backend locally and making your first API call.
 
 ## Prerequisites
 
-- **Node.js** 20+ and npm
+- **Node.js** 22+ and npm
 - **MongoDB** running locally or accessible via a connection string
 - **Git** for cloning the repository
 
