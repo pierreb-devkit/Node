@@ -71,5 +71,13 @@ describe('Migrations unit tests:', () => {
       const json = doc.toJSON();
       expect(json.id).toBeDefined();
     });
+
+    it('should declare a unique index on the name field', () => {
+      const Migration = mongoose.model('Migration');
+      // schema.indexes() returns [[fields, options], ...] for compound/explicit indexes.
+      // For `unique: true` declared on the path, the index is carried on the schema path itself.
+      const namePath = Migration.schema.path('name');
+      expect(namePath.options.unique).toBe(true);
+    });
   });
 });
