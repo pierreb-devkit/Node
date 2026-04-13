@@ -642,6 +642,78 @@ describe('Core unit tests:', () => {
         }
       });
 
+      it('should inject info.title, info.description and servers from config', () => {
+        config.swagger = { enable: true };
+        config.files = { ...config.files, swagger: [path.join(process.cwd(), 'modules/core/doc/index.yml')] };
+        const originalDomain = config.domain;
+        config.domain = 'https://api.example.test';
+        try {
+          const mockGet = jest.fn();
+          const mockUse = jest.fn();
+          const mockApp = { get: mockGet, use: mockUse };
+          expressService.initSwagger(mockApp);
+          const handler = mockGet.mock.calls.find((c) => c[0] === '/api/spec.json')[1];
+          const mockRes = { json: jest.fn() };
+          handler({}, mockRes);
+          const served = mockRes.json.mock.calls[0][0];
+          expect(served.info.title).toBe(config.app.title);
+          expect(served.info.description).toBe(config.app.description);
+          expect(served.servers).toEqual([{ url: 'https://api.example.test' }]);
+        } finally {
+          config.domain = originalDomain;
+        }
+      });
+
+      it('should fall back to localhost in servers when config.domain is empty', () => {
+        config.swagger = { enable: true };
+        config.files = { ...config.files, swagger: [path.join(process.cwd(), 'modules/core/doc/index.yml')] };
+        const originalDomain = config.domain;
+        config.domain = '';
+        try {
+          const mockGet = jest.fn();
+          const mockUse = jest.fn();
+          const mockApp = { get: mockGet, use: mockUse };
+          expressService.initSwagger(mockApp);
+          const handler = mockGet.mock.calls.find((c) => c[0] === '/api/spec.json')[1];
+          const mockRes = { json: jest.fn() };
+          handler({}, mockRes);
+          const served = mockRes.json.mock.calls[0][0];
+          expect(served.servers).toEqual([{ url: 'http://localhost:3000' }]);
+        } finally {
+          config.domain = originalDomain;
+        }
+      });
+
+      it('should preserve config description then append guides on top', async () => {
+        const { default: fsMod } = await import('fs');
+        const tmpDir = path.join('/tmp', `guides-inject-${Date.now()}`);
+        fsMod.mkdirSync(tmpDir, { recursive: true });
+        const tmpGuide = path.join(tmpDir, 'welcome.md');
+        fsMod.writeFileSync(tmpGuide, 'Welcome guide content for description merge.\n');
+        try {
+          config.swagger = { enable: true };
+          config.files = {
+            ...config.files,
+            swagger: [path.join(process.cwd(), 'modules/core/doc/index.yml')],
+            guides: [tmpGuide],
+          };
+          const mockGet = jest.fn();
+          const mockUse = jest.fn();
+          const mockApp = { get: mockGet, use: mockUse };
+          expressService.initSwagger(mockApp);
+          const handler = mockGet.mock.calls.find((c) => c[0] === '/api/spec.json')[1];
+          const mockRes = { json: jest.fn() };
+          handler({}, mockRes);
+          const served = mockRes.json.mock.calls[0][0];
+          // Config description must be first, guide content appended after
+          expect(served.info.description.startsWith(config.app.description)).toBe(true);
+          expect(served.info.description).toContain('Welcome guide content for description merge.');
+        } finally {
+          fsMod.unlinkSync(tmpGuide);
+          fsMod.rmdirSync(tmpDir);
+        }
+      });
+
       it('should warn and skip registration when all YAML files produce an empty spec', async () => {
         // Write a temp YAML file that parses to a scalar — after filter(Boolean), contents is empty → spec is {}
         const { default: fsMod } = await import('fs');

@@ -300,13 +300,16 @@ describe('Core integration tests:', () => {
       expect(res.body.openapi).toBe('3.0.0');
       expect(res.body.info).toBeDefined();
       expect(typeof res.body.info.version).toBe('string');
-      // The stack ships zero public API guides — downstream projects own the
-      // content rendered in their /api/docs via their own modules' doc/guides/*.md.
-      // `info.description` is therefore optional (string when any module provides
-      // a guide, undefined/empty otherwise).
-      if (res.body.info.description !== undefined) {
-        expect(typeof res.body.info.description).toBe('string');
-      }
+      // title and description are injected from config at runtime so every
+      // downstream project advertises its own identity instead of empty/hardcoded values.
+      expect(typeof res.body.info.title).toBe('string');
+      expect(res.body.info.title.length).toBeGreaterThan(0);
+      expect(typeof res.body.info.description).toBe('string');
+      // servers[0].url is sourced from config.domain (fallback http://localhost:3000).
+      expect(Array.isArray(res.body.servers)).toBe(true);
+      expect(res.body.servers).toHaveLength(1);
+      expect(typeof res.body.servers[0].url).toBe('string');
+      expect(res.body.servers[0].url.length).toBeGreaterThan(0);
     });
 
     it('should serve the Scalar API reference page on /api/docs', async () => {
