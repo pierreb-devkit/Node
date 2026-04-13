@@ -305,6 +305,7 @@ describe('Core integration tests:', () => {
       expect(typeof res.body.info.title).toBe('string');
       expect(res.body.info.title.length).toBeGreaterThan(0);
       expect(typeof res.body.info.description).toBe('string');
+      expect(res.body.info.description.trim().length).toBeGreaterThan(0);
       // servers[0].url is sourced from config.domain (fallback http://localhost:3000).
       expect(Array.isArray(res.body.servers)).toBe(true);
       expect(res.body.servers).toHaveLength(1);

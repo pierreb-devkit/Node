@@ -644,7 +644,7 @@ describe('Core unit tests:', () => {
 
       it('should inject info.title, info.description and servers from config', () => {
         config.swagger = { enable: true };
-        config.files = { ...config.files, swagger: [path.join(process.cwd(), 'modules/core/doc/index.yml')] };
+        config.files = { ...config.files, swagger: [path.join(process.cwd(), 'modules/core/doc/index.yml')], guides: [] };
         const originalDomain = config.domain;
         config.domain = 'https://api.example.test';
         try {
@@ -666,7 +666,7 @@ describe('Core unit tests:', () => {
 
       it('should fall back to localhost in servers when config.domain is empty', () => {
         config.swagger = { enable: true };
-        config.files = { ...config.files, swagger: [path.join(process.cwd(), 'modules/core/doc/index.yml')] };
+        config.files = { ...config.files, swagger: [path.join(process.cwd(), 'modules/core/doc/index.yml')], guides: [] };
         const originalDomain = config.domain;
         config.domain = '';
         try {
