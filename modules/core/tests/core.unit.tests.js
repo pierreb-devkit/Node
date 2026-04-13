@@ -610,25 +610,36 @@ describe('Core unit tests:', () => {
         }
       });
 
-      it('should merge markdown guides into spec info.description when guides are configured', () => {
-        config.swagger = { enable: true };
-        config.files = {
-          ...config.files,
-          swagger: [path.join(process.cwd(), 'modules/core/doc/index.yml')],
-          guides: [path.join(process.cwd(), 'modules/core/doc/guides/getting-started.md')],
-        };
-        const mockGet = jest.fn();
-        const mockUse = jest.fn();
-        const mockApp = { get: mockGet, use: mockUse };
-        expressService.initSwagger(mockApp);
-        const handler = mockGet.mock.calls.find((c) => c[0] === '/api/spec.json')[1];
-        const mockRes = { json: jest.fn() };
-        handler({}, mockRes);
-        const served = mockRes.json.mock.calls[0][0];
-        expect(served.info).toBeDefined();
-        expect(typeof served.info.description).toBe('string');
-        expect(served.info.description).toContain('# Getting Started');
-        expect(served.info.description).toContain('Your first API call');
+      it('should merge markdown guides into spec info.description when guides are configured', async () => {
+        const { default: fsMod } = await import('fs');
+        const tmpDir = path.join('/tmp', `guides-${Date.now()}`);
+        fsMod.mkdirSync(tmpDir, { recursive: true });
+        const tmpGuide = path.join(tmpDir, 'sample.md');
+        fsMod.writeFileSync(tmpGuide, '# Ignored Heading\n\nSample guide body for unit test.\n');
+        try {
+          config.swagger = { enable: true };
+          config.files = {
+            ...config.files,
+            swagger: [path.join(process.cwd(), 'modules/core/doc/index.yml')],
+            guides: [tmpGuide],
+          };
+          const mockGet = jest.fn();
+          const mockUse = jest.fn();
+          const mockApp = { get: mockGet, use: mockUse };
+          expressService.initSwagger(mockApp);
+          const handler = mockGet.mock.calls.find((c) => c[0] === '/api/spec.json')[1];
+          const mockRes = { json: jest.fn() };
+          handler({}, mockRes);
+          const served = mockRes.json.mock.calls[0][0];
+          expect(served.info).toBeDefined();
+          expect(typeof served.info.description).toBe('string');
+          // Guide loader derives the H1 from the file basename, not the markdown H1.
+          expect(served.info.description).toContain('# Sample');
+          expect(served.info.description).toContain('Sample guide body for unit test.');
+        } finally {
+          fsMod.unlinkSync(tmpGuide);
+          fsMod.rmdirSync(tmpDir);
+        }
       });
 
       it('should warn and skip registration when all YAML files produce an empty spec', async () => {
@@ -745,8 +756,8 @@ describe('Core unit tests:', () => {
 
   describe('Guides helper', () => {
     it('should derive a title-cased title from a guide file path', () => {
-      expect(guidesHelper.titleFromPath('modules/core/doc/guides/getting-started.md')).toBe('Getting Started');
-      expect(guidesHelper.titleFromPath('/abs/path/authentication.md')).toBe('Authentication');
+      expect(guidesHelper.titleFromPath('modules/example/doc/guides/getting-started.md')).toBe('Getting Started');
+      expect(guidesHelper.titleFromPath('/abs/path/api-reference.md')).toBe('Api Reference');
       expect(guidesHelper.titleFromPath('multi_word_file.md')).toBe('Multi Word File');
     });
 
@@ -760,15 +771,27 @@ describe('Core unit tests:', () => {
       expect(guidesHelper.stripLeadingH1(input)).toBe('Body paragraph\n\n## Subsection');
     });
 
-    it('should load guides from real files and sort them alphabetically', () => {
+    it('should load guides from real files and sort them alphabetically', async () => {
+      const { default: fsMod } = await import('fs');
+      const tmpDir = path.join('/tmp', `guides-fixture-${Date.now()}`);
+      fsMod.mkdirSync(tmpDir, { recursive: true });
       const files = [
-        path.join(process.cwd(), 'modules/core/doc/guides/organizations.md'),
-        path.join(process.cwd(), 'modules/core/doc/guides/authentication.md'),
-        path.join(process.cwd(), 'modules/core/doc/guides/getting-started.md'),
-      ];
-      const guides = guidesHelper.loadGuides(files);
-      expect(guides.map((g) => g.title)).toEqual(['Authentication', 'Getting Started', 'Organizations']);
-      guides.forEach((g) => expect(typeof g.body).toBe('string'));
+        { name: 'organizations.md', body: '# Organizations\n\nOrg body.\n' },
+        { name: 'authentication.md', body: '# Authentication\n\nAuth body.\n' },
+        { name: 'getting-started.md', body: '# Getting Started\n\nIntro body.\n' },
+      ].map(({ name, body }) => {
+        const full = path.join(tmpDir, name);
+        fsMod.writeFileSync(full, body);
+        return full;
+      });
+      try {
+        const guides = guidesHelper.loadGuides(files);
+        expect(guides.map((g) => g.title)).toEqual(['Authentication', 'Getting Started', 'Organizations']);
+        guides.forEach((g) => expect(typeof g.body).toBe('string'));
+      } finally {
+        files.forEach((f) => fsMod.unlinkSync(f));
+        fsMod.rmdirSync(tmpDir);
+      }
     });
 
     it('should return an empty array when filePaths is empty or invalid', () => {
