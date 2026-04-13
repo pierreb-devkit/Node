@@ -833,6 +833,45 @@ describe('Core unit tests:', () => {
       expect(guidesHelper.titleFromPath('multi_word_file.md')).toBe('Multi Word File');
     });
 
+    it('should strip a leading numeric ordering prefix before title-casing', () => {
+      expect(guidesHelper.titleFromPath('00-welcome.md')).toBe('Welcome');
+      expect(guidesHelper.titleFromPath('01-api-access.md')).toBe('Api Access');
+      expect(guidesHelper.titleFromPath('/abs/path/10-getting-started.md')).toBe('Getting Started');
+      expect(guidesHelper.titleFromPath('007_secret_agent.md')).toBe('Secret Agent');
+    });
+
+    it('should keep titles without a numeric prefix unchanged', () => {
+      expect(guidesHelper.titleFromPath('welcome.md')).toBe('Welcome');
+      expect(guidesHelper.titleFromPath('getting-started.md')).toBe('Getting Started');
+    });
+
+    it('should fall back to the raw basename for digits-only filenames', () => {
+      expect(guidesHelper.titleFromPath('42.md')).toBe('42');
+      expect(guidesHelper.titleFromPath('/abs/path/007.md')).toBe('007');
+    });
+
+    it('should load guides and sort by filename so numeric prefixes control order', async () => {
+      const { default: fsMod } = await import('fs');
+      const tmpDir = path.join('/tmp', `guides-order-${Date.now()}`);
+      fsMod.mkdirSync(tmpDir, { recursive: true });
+      const files = [
+        { name: '02-scraping.md', body: '# Scraping\n\nScraping body.\n' },
+        { name: '00-welcome.md', body: '# Welcome\n\nWelcome body.\n' },
+        { name: '01-api-access.md', body: '# Api Access\n\nAccess body.\n' },
+      ].map(({ name, body }) => {
+        const full = path.join(tmpDir, name);
+        fsMod.writeFileSync(full, body);
+        return full;
+      });
+      try {
+        const guides = guidesHelper.loadGuides(files);
+        expect(guides.map((g) => g.title)).toEqual(['Welcome', 'Api Access', 'Scraping']);
+      } finally {
+        files.forEach((f) => fsMod.unlinkSync(f));
+        fsMod.rmdirSync(tmpDir);
+      }
+    });
+
     it('should strip the leading H1 from markdown content', () => {
       const input = '# Title\n\nBody paragraph';
       expect(guidesHelper.stripLeadingH1(input)).toBe('Body paragraph');
