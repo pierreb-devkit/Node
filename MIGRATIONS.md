@@ -4,6 +4,24 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Redoc replaces Scalar for /api/docs (2026-04-13)
+
+The `/api/docs` UI is now served by [redoc-express](https://www.npmjs.com/package/redoc-express) instead of `@scalar/express-api-reference`. Redoc renders the same OpenAPI spec (`/api/spec.json`) with a cleaner three-panel layout better suited to a consumer-facing API reference (no try-it-out panel — the API is API-key-gated and meant for programmatic use).
+
+### What changed
+
+- `package.json` — `@scalar/express-api-reference` removed, `redoc-express` added
+- `lib/services/express.js` — `initSwagger` mounts `redoc({ title, specUrl: '/api/spec.json', redocOptions: { hideDownloadButton, hideSchemaTitles, expandResponses } })` instead of the Scalar middleware. Spec assembly, guides loader, YAML merge, and `/api/spec.json` handler are unchanged.
+- `lib/helpers/guides.js` — comments updated (Scalar → Redoc); behavior unchanged.
+- `modules/core/tests/core.integration.tests.js` — `describe('Redoc API reference', …)` rename; assertions (HTML content-type, valid OpenAPI spec) unchanged.
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the change — no project-side YAML, config, or CSP tweaks required.
+2. Visual check: hit `/api/docs` and confirm the new Redoc UI renders the merged spec (guides sidebar + endpoint reference).
+
+---
+
 ## Rate limiter keys by userId + trust proxy (2026-04-08)
 
 Rate-limit middleware now keys authenticated requests by `user._id` (with `req.ip` fallback) instead of always using IP. Production config enables `trust.proxy: 1` so `req.ip` reflects the real client IP behind a single reverse proxy (Traefik, Nginx).

@@ -293,7 +293,7 @@ describe('Core integration tests:', () => {
     });
   });
 
-  describe('Scalar API reference', () => {
+  describe('Redoc API reference', () => {
     it('should expose /api/spec.json with a valid OpenAPI info block', async () => {
       const res = await request(app).get('/api/spec.json').expect(200);
       expect(res.body).toBeDefined();
@@ -313,9 +313,9 @@ describe('Core integration tests:', () => {
       expect(res.body.servers[0].url.length).toBeGreaterThan(0);
     });
 
-    it('should serve the Scalar API reference page on /api/docs', async () => {
+    it('should serve the Redoc API reference page on /api/docs', async () => {
       const res = await request(app).get('/api/docs').expect(200);
-      // Scalar returns HTML referencing the spec URL
+      // Redoc returns HTML referencing the spec URL
       expect(res.headers['content-type']).toMatch(/html/);
     });
   });
