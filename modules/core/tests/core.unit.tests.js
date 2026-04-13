@@ -513,7 +513,8 @@ describe('Core unit tests:', () => {
         const mockApp = { get: mockGet, use: mockUse };
         expressService.initSwagger(mockApp);
         expect(mockGet).toHaveBeenCalledWith('/api/spec.json', expect.any(Function));
-        expect(mockUse).toHaveBeenCalledWith('/api/docs', expect.any(Function));
+        // Redoc middleware is a plain request handler mounted via app.get
+        expect(mockGet).toHaveBeenCalledWith('/api/docs', expect.any(Function));
       });
 
       it('should serve merged spec as JSON from /api/spec.json handler', () => {
