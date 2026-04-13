@@ -293,17 +293,20 @@ describe('Core integration tests:', () => {
     });
   });
 
-  describe('Scalar API reference — markdown guides', () => {
-    it('should expose /api/spec.json with markdown guides merged into info.description', async () => {
+  describe('Scalar API reference', () => {
+    it('should expose /api/spec.json with a valid OpenAPI info block', async () => {
       const res = await request(app).get('/api/spec.json').expect(200);
       expect(res.body).toBeDefined();
+      expect(res.body.openapi).toBe('3.0.0');
       expect(res.body.info).toBeDefined();
-      expect(typeof res.body.info.description).toBe('string');
-      // Guides are rendered as H1 sections, one per file in modules/*/doc/guides/*.md
-      expect(res.body.info.description).toContain('# Getting Started');
-      expect(res.body.info.description).toContain('Your first API call');
-      expect(res.body.info.description).toContain('# Authentication');
-      expect(res.body.info.description).toContain('# Organizations');
+      expect(typeof res.body.info.version).toBe('string');
+      // The stack ships zero public API guides — downstream projects own the
+      // content rendered in their /api/docs via their own modules' doc/guides/*.md.
+      // `info.description` is therefore optional (string when any module provides
+      // a guide, undefined/empty otherwise).
+      if (res.body.info.description !== undefined) {
+        expect(typeof res.body.info.description).toBe('string');
+      }
     });
 
     it('should serve the Scalar API reference page on /api/docs', async () => {
