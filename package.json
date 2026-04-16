@@ -86,7 +86,7 @@
     "passport-local": "^1.0.0",
     "posthog-node": "^5.29.2",
     "redoc-express": "^2.1.3",
-    "resend": "^6.11.0",
+    "resend": "^6.12.0",
     "sharp": "^0.34.5",
     "snyk": "^1.1304.0",
     "stripe": "^22.0.1",
