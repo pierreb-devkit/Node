@@ -1,6 +1,12 @@
 ---
 name: verify
-description: Run quality loop (audit + lint + tests) to verify code quality, correctness, and security. Use after making changes and before committing.
+description: >
+  Run this after every code change in this Node project, before committing,
+  before opening a PR, or whenever the user says "verify", "check", "lint",
+  "run tests", "audit". Diff audit (architecture, security, naming, error
+  handling) → lint → tests + coverage gate. Coverage drops → add tests, never
+  lower thresholds. Triggers on "is this ready to commit?", "any issues?",
+  "tests passing?".
 ---
 
 # Verify Skill

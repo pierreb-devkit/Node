@@ -1,6 +1,12 @@
 ---
 name: create-module
-description: Create a new feature module by duplicating the canonical `tasks` module template. Use when adding a new module to the application, scaffolding a new domain area from scratch, or generating the boilerplate for a new feature.
+description: >
+  Use this whenever the user asks to "create a module", "scaffold a feature",
+  "add a domain", "new module called X", or starts work on a brand-new
+  vertical (controller + service + repo + model + routes + tests). Duplicates
+  the canonical `modules/tasks` template, applies kebab/Pascal/camel renames,
+  and registers config-driven enums. Module stays self-contained — never
+  modify shared `lib/` or `config/` to bolt on module logic.
 ---
 
 # Create Module Skill

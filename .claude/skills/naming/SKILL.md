@@ -1,6 +1,12 @@
 ---
 name: naming
-description: Check or apply file and folder naming conventions for this Node project. Use when creating new files or folders, renaming existing ones, auditing a module for naming consistency, or any time the correct name/path for a file is unclear.
+description: >
+  Use this whenever a new file/folder is created or renamed in this Node
+  project, when reviewing a module for consistency, or when the right path
+  for a file is unclear. Also triggers on "what should I name this?", "is
+  this file named correctly?", "audit module naming". Enforces kebab-case
+  folders, `{module}[.{entity}].{type}.js` files, multi-entity rules, and
+  the layer order Routes → Controllers → Services → Repositories → Models.
 ---
 
 # Naming Skill
