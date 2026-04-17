@@ -1,6 +1,13 @@
 ---
 name: feature
-description: Implement a new feature or modify existing functionality. Use when asked to implement, add, build, create, or modify a feature, endpoint, API, or module. Includes scope analysis, edge case detection, module scaffolding, implementation, and quality verification.
+description: >
+  Use this whenever the user asks to "implement", "add", "build", "create",
+  or "modify" a feature, endpoint, API, route, or module in this Node
+  project. Three phases: Phase 0 scope analysis (flows + edge cases + plan
+  validation, STOP for user), Phase 1 implementation (layered Routes →
+  Controllers → Services → Repositories → Models, module-isolated), Phase 2
+  Definition-of-Done checklist + /verify + /pull-request. Auto-runs
+  /create-module if the target module doesn't exist.
 ---
 
 # Feature Skill
