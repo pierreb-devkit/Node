@@ -134,6 +134,31 @@ describe('Auth integration tests:', () => {
       }
     });
 
+    test('should register a new user when firstName is omitted (digit-only email local-part)', async () => {
+      const digitOnlyPayload = {
+        email: 'register_digits_123@test.com',
+        password: credentials[1].password,
+        provider: 'local',
+      };
+      try {
+        const existing = await UserService.getBrut({ email: digitOnlyPayload.email });
+        if (existing) await UserService.remove(existing);
+      } catch (_) { /* cleanup */ }
+
+      let created;
+      try {
+        const result = await agent.post('/api/auth/signup').send(digitOnlyPayload).expect(200);
+        created = result.body.user;
+        expect(result.body.user.email).toBe(digitOnlyPayload.email);
+        expect(result.body.user.firstName).toBe('');
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      } finally {
+        try { if (created) await UserService.remove(created); } catch (_) { /* cleanup */ }
+      }
+    });
+
     test('should register a new user successfully', async () => {
       // Init user edited
       _userEdited.email = 'register_new_user_@test.com';
@@ -505,7 +530,7 @@ describe('Auth integration tests:', () => {
 
     test('should throw validation AppError when checkOAuthUserProfile receives an invalid profile', async () => {
       const invalidProfil = {
-        firstName: '', // invalid — fails min(1)
+        firstName: 'Invalid1', // invalid — digits fail the names refinement
         lastName: 'Test',
         email: 'invalid-oauth@test.com',
         avatar: '',
@@ -567,7 +592,7 @@ describe('Auth integration tests:', () => {
           strategy: false,
           key: 'id',
           value: 'cb-app-auth-id-invalid-999',
-          firstName: '',
+          firstName: 'Invalid1',
           lastName: 'Callback',
           email: 'oauthcb-invalid@test.com',
         })

@@ -27,8 +27,28 @@ describe('User unit tests:', () => {
       done();
     });
 
-    test('should be able to show an error when trying a schema without first name', (done) => {
+    test('should accept an empty firstName (optional, signup with digit-only email local-part)', (done) => {
       user.firstName = '';
+
+      const result = schema.User.safeParse(user);
+      expect(typeof result).toBe('object');
+      expect(result.error).toBeFalsy();
+      expect(result.data.firstName).toBe('');
+      done();
+    });
+
+    test('should accept an undefined firstName and default it to an empty string', (done) => {
+      delete user.firstName;
+
+      const result = schema.User.safeParse(user);
+      expect(typeof result).toBe('object');
+      expect(result.error).toBeFalsy();
+      expect(result.data.firstName).toBe('');
+      done();
+    });
+
+    test('should reject a firstName containing digits via the names refinement', (done) => {
+      user.firstName = 'Invalid1';
 
       const result = schema.User.safeParse(user);
       expect(typeof result).toBe('object');
