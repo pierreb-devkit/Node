@@ -27,7 +27,7 @@ describe('User unit tests:', () => {
       done();
     });
 
-    test('should accept an empty firstName (optional, signup with digit-only email local-part)', (done) => {
+    test('should accept an empty optional firstName', (done) => {
       user.firstName = '';
 
       const result = schema.User.safeParse(user);

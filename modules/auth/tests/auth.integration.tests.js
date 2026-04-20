@@ -136,7 +136,7 @@ describe('Auth integration tests:', () => {
 
     test('should register a new user when firstName is omitted (digit-only email local-part)', async () => {
       const digitOnlyPayload = {
-        email: 'register_digits_123@test.com',
+        email: '123@test.com',
         password: credentials[1].password,
         provider: 'local',
       };
