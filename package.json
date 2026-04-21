@@ -47,7 +47,7 @@
     "release:auto": "npx semantic-release"
   },
   "dependencies": {
-    "@casl/ability": "^6.8.0",
+    "@casl/ability": "^6.8.1",
     "@jest/globals": "^30.3.0",
     "@sentry/node": "^10.49.0",
     "axios": "^1.15.1",
