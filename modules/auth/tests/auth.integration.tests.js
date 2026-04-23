@@ -791,6 +791,65 @@ describe('Auth integration tests:', () => {
       try { await UserService.remove(created); } catch (_) { /* cleanup */ }
     });
 
+    test('should throw VALIDATION_ERROR for unsupported OAuth provider', async () => {
+      const profil = {
+        firstName: 'Test',
+        lastName: 'User',
+        email: 'test@test.com',
+        avatar: '',
+        providerData: { sub: 'bad-sub' },
+        emailVerifiedByProvider: false,
+      };
+      await expect(
+        AuthController.checkOAuthUserProfile(profil, 'sub', 'badprovider'),
+      ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+    });
+
+    test('should throw VALIDATION_ERROR for unsupported provider key', async () => {
+      const profil = {
+        firstName: 'Test',
+        lastName: 'User',
+        email: 'test@test.com',
+        avatar: '',
+        providerData: { badkey: 'value' },
+        emailVerifiedByProvider: false,
+      };
+      await expect(
+        AuthController.checkOAuthUserProfile(profil, 'badkey', 'google'),
+      ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+    });
+
+    test('token endpoint should strip accessToken/refreshToken from additionalProvidersData', async () => {
+      // Create a local user then sign in to get an auth cookie
+      const localEmail = 'token-sanitize@test.com';
+      const localPassword = 'W@os.jsI$Aw3$0m3';
+      const localUser = await UserService.create({
+        firstName: 'Token',
+        lastName: 'Sanitize',
+        email: localEmail,
+        password: localPassword,
+        provider: 'local',
+        roles: ['user'],
+      });
+      // Manually inject additionalProvidersData with tokens (simulating a linked OAuth account)
+      const brutUser = await UserService.getBrut({ email: localEmail });
+      await UserService.update(brutUser, {
+        additionalProvidersData: {
+          google: { sub: 'google-sub-sanitize', accessToken: 'secret-token', refreshToken: 'secret-refresh', email_verified: true },
+        },
+      }, 'recover');
+
+      // Sign in as this user and call the token endpoint (agent persists the session cookie)
+      await agent.post('/api/auth/signin').send({ email: localEmail, password: localPassword }).expect(200);
+      const tokenResult = await agent.get('/api/auth/token').expect(200);
+
+      expect(tokenResult.body.user.additionalProvidersData?.google?.sub).toBe('google-sub-sanitize');
+      expect(tokenResult.body.user.additionalProvidersData?.google?.accessToken).toBeUndefined();
+      expect(tokenResult.body.user.additionalProvidersData?.google?.refreshToken).toBeUndefined();
+
+      try { await UserService.remove(localUser); } catch (_) { /* cleanup */ }
+    });
+
     afterAll(async () => {
       for (const u of oauthUsers) {
         try {
