@@ -4,6 +4,31 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Analytics: request-aware feature-flag helpers (2026-04-23)
+
+`analytics` service gains two sugar helpers that extract the PostHog `distinctId` from an Express request, so routes no longer need to repeat `req.user?.id ?? req.sessionID ?? 'anonymous'` (and can never forget the anonymous fallback):
+
+```js
+import analytics from '../../../lib/services/analytics.js';
+
+// Route handler / middleware
+const flag = await analytics.getFeatureFlagForRequest('checkout-v2', req);
+if (await analytics.isFeatureEnabledForRequest('billing-portal', req)) { ... }
+```
+
+Resolution chain: `req.user?.id` → `req.sessionID` → `'anonymous'`. Defensive fallback: `req == null` also resolves to `'anonymous'`.
+
+### Non-breaking
+
+- The existing `getFeatureFlag(flag, distinctId, options)` / `isFeatureEnabled(flag, distinctId, options)` remain public for cron, worker, and scheduled-job callers that have no `req`.
+- Higher-level `FeatureFlagsService` (`analytics.featureFlags.js`) is unchanged.
+
+### Action for downstream
+
+Optional — pull via `/update-stack`. Existing route code keeps working. New routes should prefer the `*ForRequest` variants to avoid the repeated distinctId boilerplate.
+
+---
+
 ## Redoc replaces Scalar for /api/docs (2026-04-13)
 
 The `/api/docs` UI is now served by [redoc-express](https://www.npmjs.com/package/redoc-express) instead of `@scalar/express-api-reference`. Redoc renders the same OpenAPI spec (`/api/spec.json`) with a cleaner three-panel layout better suited to a consumer-facing API reference (no try-it-out panel — the API is API-key-gated and meant for programmatic use).
