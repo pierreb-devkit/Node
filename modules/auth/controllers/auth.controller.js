@@ -6,7 +6,6 @@ import passport from 'passport';
 import jwt from 'jsonwebtoken';
 
 import UserService from '../../users/services/users.service.js';
-import UserRepository from '../../users/repositories/users.repository.js';
 import config from '../../../config/index.js';
 import model from '../../../lib/middlewares/model.js';
 import mails from '../../../lib/helpers/mailer/index.js';
@@ -235,6 +234,25 @@ const signin = async (req, res) => {
  * @param {Object} res - Express response object
  * TODO: escape deprecated
  */
+/**
+ * @desc Strip OAuth tokens from an additionalProvidersData map before serializing to client.
+ * Only the provider identity fields are safe to expose; access/refresh tokens must stay server-side.
+ * @param {Object|undefined} apd - raw additionalProvidersData
+ * @returns {Object|undefined} sanitized map with accessToken/refreshToken removed per provider
+ */
+const sanitizeAdditionalProvidersData = (apd) => {
+  if (!apd || typeof apd !== 'object') return undefined;
+  const sanitized = {};
+  for (const [prov, data] of Object.entries(apd)) {
+    if (data && typeof data === 'object') {
+      // eslint-disable-next-line no-unused-vars
+      const { accessToken, refreshToken, ...safe } = data;
+      sanitized[prov] = safe;
+    }
+  }
+  return Object.keys(sanitized).length > 0 ? sanitized : undefined;
+};
+
 const token = async (req, res) => {
   let user = null;
   if (req.user) {
@@ -249,7 +267,7 @@ const token = async (req, res) => {
       email: req.user.email,
       lastName: req.user.lastName,
       firstName: req.user.firstName,
-      additionalProvidersData: req.user.additionalProvidersData,
+      additionalProvidersData: sanitizeAdditionalProvidersData(req.user.additionalProvidersData),
       emailVerified: req.user.emailVerified,
       currentOrganization: req.user.currentOrganization,
       lastLoginAt: req.user.lastLoginAt,
@@ -296,12 +314,26 @@ const oauthCall = (req, res, next) => {
 };
 
 /**
+ * Known OAuth providers — used to validate the `provider` argument and `key` argument
+ * before constructing dynamic query paths, preventing prototype-pollution-style injections.
+ */
+const ALLOWED_PROVIDERS = new Set(['google', 'apple']);
+const ALLOWED_PROVIDER_KEYS = new Set(['sub', 'id', 'email']);
+
+/**
  * @desc Endpoint to save oAuthProfile
  * @param {Object} profil - OAuth user profile object
  * @param {string} key - Provider key to lookup providerData
  * @param {string} provider - OAuth provider name
  */
 const checkOAuthUserProfile = async (profil, key, provider) => {
+  // Guard: validate provider and key against allowlists before using as dynamic object keys
+  if (!ALLOWED_PROVIDERS.has(provider)) {
+    throw new AppError('oAuth, unsupported provider', { code: 'VALIDATION_ERROR', details: { provider } });
+  }
+  if (!ALLOWED_PROVIDER_KEYS.has(key)) {
+    throw new AppError('oAuth, unsupported provider key', { code: 'VALIDATION_ERROR', details: { key } });
+  }
   // 1. Primary identity: match on (provider, providerData[key]) — OAuth-first users
   try {
     const query = {};
@@ -324,15 +356,13 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
   // 3. Link on verified email: if a local user exists with the same email and the OAuth
   //    provider vouches for it, attach providerData under additionalProvidersData.{provider}
   //    without overwriting user.provider (keeps password reset + local login intact).
+  //    Uses UserService.update('recover') to go through the service layer and Zod validation.
   if (profil.email && profil.emailVerifiedByProvider) {
     try {
-      const existing = await UserService.search({ email: profil.email });
-      if (existing.length === 1) {
-        const user = existing[0];
-        user.additionalProvidersData = user.additionalProvidersData || {};
-        user.additionalProvidersData[provider] = profil.providerData;
-        user.emailVerified = true;
-        return await UserRepository.update(user);
+      const brutUser = await UserService.getBrut({ email: profil.email });
+      if (brutUser) {
+        const additionalProvidersData = { ...(brutUser.additionalProvidersData || {}), [provider]: profil.providerData };
+        return await UserService.update(brutUser, { additionalProvidersData, emailVerified: true }, 'recover');
       }
     } catch (err) {
       throw new AppError('oAuth, link to existing user failed', { code: 'SERVICE_ERROR', details: err });

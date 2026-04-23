@@ -680,7 +680,7 @@ describe('Auth integration tests:', () => {
         firstName: 'Local',
         lastName: 'Link',
         email: localEmail,
-        password: credentials.password,
+        password: credentials[0].password,
         provider: 'local',
         roles: ['user'],
       });
@@ -699,43 +699,48 @@ describe('Auth integration tests:', () => {
       expect(linked).toBeDefined();
       expect(linked.id).toBe(localUser.id);
       expect(linked.provider).toBe('local'); // provider kept so password reset still works
-      expect(linked.additionalProvidersData.google.sub).toBe('google-link-sub-12345');
       expect(linked.emailVerified).toBe(true);
+      // Verify additionalProvidersData was persisted (getBrut bypasses the sanitize whitelist)
+      const brutLinked = await UserService.getBrut({ id: linked.id });
+      expect(brutLinked.additionalProvidersData?.google?.sub).toBe('google-link-sub-12345');
 
-      // Subsequent signin with the same Google sub should find the linked user
+      // Subsequent signin with the same Google sub should find the linked user via step 2
       const second = await AuthController.checkOAuthUserProfile(profil, 'sub', 'google');
       expect(second.id).toBe(localUser.id);
 
       try { await UserService.remove(linked); } catch (_) { /* cleanup */ }
     });
 
-    test('should NOT link when OAuth provider did not verify the email (create new user instead)', async () => {
+    test('should NOT link when OAuth provider did not verify the email', async () => {
       const sharedEmail = 'oauthlink-unverified@test.com';
       const localUser = await UserService.create({
         firstName: 'Unverified',
         lastName: 'Link',
         email: sharedEmail,
-        password: credentials.password,
+        password: credentials[0].password,
         provider: 'local',
         roles: ['user'],
       });
 
+      // OAuth arrives for the SAME email but email_verified=false — must not link
       const profil = {
-        // Different email to avoid Mongo unique collision on the fallback create branch
-        firstName: 'Other',
-        lastName: 'User',
-        email: 'oauthlink-different@test.com',
+        firstName: 'Unverified',
+        lastName: 'Link',
+        email: sharedEmail,
         avatar: '',
         providerData: { sub: 'google-unverified-sub-999', email_verified: false },
         emailVerifiedByProvider: false,
       };
-      const user = await AuthController.checkOAuthUserProfile(profil, 'sub', 'google');
-      expect(user.email).toBe('oauthlink-different@test.com');
-      expect(user.provider).toBe('google');
-      expect(user.additionalProvidersData).toBeUndefined();
+      // Falls through to create branch → duplicate email → unique-index error
+      await expect(
+        AuthController.checkOAuthUserProfile(profil, 'sub', 'google'),
+      ).rejects.toThrow();
+      // Local account must remain untouched — no OAuth data attached
+      const untouched = await UserService.getBrut({ email: sharedEmail });
+      expect(untouched).toBeDefined();
+      expect(untouched.additionalProvidersData?.google).toBeUndefined();
 
       try { await UserService.remove(localUser); } catch (_) { /* cleanup */ }
-      try { await UserService.remove(user); } catch (_) { /* cleanup */ }
     });
 
     test('should reject link when local email matches but OAuth provider did not verify (no takeover)', async () => {
@@ -744,7 +749,7 @@ describe('Auth integration tests:', () => {
         firstName: 'Victim',
         lastName: 'User',
         email: sharedEmail,
-        password: credentials.password,
+        password: credentials[0].password,
         provider: 'local',
         roles: ['user'],
       });
@@ -758,9 +763,14 @@ describe('Auth integration tests:', () => {
         providerData: { sub: 'google-attacker-sub-42', email_verified: false },
         emailVerifiedByProvider: false,
       };
+      // Must error — unverified email falls to create branch → duplicate email → SERVICE_ERROR
       await expect(
         AuthController.checkOAuthUserProfile(profil, 'sub', 'google'),
-      ).rejects.toThrow(); // falls to create branch → duplicate email → error
+      ).rejects.toMatchObject({ code: 'SERVICE_ERROR' });
+      // Verify the local account was NOT modified — exactly one user with this email, no OAuth data
+      const users = await UserService.search({ email: sharedEmail });
+      expect(users.length).toBe(1);
+      expect(users[0].additionalProvidersData).toBeUndefined();
 
       try { await UserService.remove(localUser); } catch (_) { /* cleanup */ }
     });

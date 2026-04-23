@@ -37,9 +37,6 @@ describe('auth.controller silent-catch error logging:', () => {
           remove: jest.fn(),
         },
       }));
-      jest.unstable_mockModule('../../../modules/users/repositories/users.repository.js', () => ({
-        default: { update: jest.fn().mockResolvedValue({}) },
-      }));
 
       jest.unstable_mockModule('../../../modules/organizations/services/organizations.service.js', () => ({
         default: {
