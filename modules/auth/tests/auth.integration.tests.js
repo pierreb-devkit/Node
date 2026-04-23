@@ -763,10 +763,10 @@ describe('Auth integration tests:', () => {
         providerData: { sub: 'google-attacker-sub-42', email_verified: false },
         emailVerifiedByProvider: false,
       };
-      // Must error — unverified email falls to create branch → duplicate email → SERVICE_ERROR
+      // Must error — unverified email falls to create branch → duplicate email → AppError
       await expect(
         AuthController.checkOAuthUserProfile(profil, 'sub', 'google'),
-      ).rejects.toMatchObject({ code: 'SERVICE_ERROR' });
+      ).rejects.toMatchObject({ code: 'CONTROLLER_ERROR' });
       // Verify the local account was NOT modified — exactly one user with this email, no OAuth data
       const users = await UserService.search({ email: sharedEmail });
       expect(users.length).toBe(1);
