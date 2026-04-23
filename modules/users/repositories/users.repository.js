@@ -191,6 +191,21 @@ const findWithFilter = (filter, select) => User.find(filter).select(select || ''
  */
 const updateMany = (filter, data) => User.updateMany(filter, data, { runValidators: true }).exec();
 
+/**
+ * @desc Atomically attach an OAuth provider to an existing user matched by email.
+ * Uses findOneAndUpdate to avoid TOCTOU races between concurrent OAuth callbacks.
+ * @param {string} email - The email to match
+ * @param {string} provider - The OAuth provider key (e.g. 'google', 'apple')
+ * @param {Object} providerData - The provider's identity data to store
+ * @returns {Promise<Object|null>} Updated user document or null if no match
+ */
+const linkProviderByEmail = (email, provider, providerData) =>
+  User.findOneAndUpdate(
+    { email },
+    { $set: { [`additionalProvidersData.${provider}`]: providerData, emailVerified: true } },
+    { returnDocument: 'after', runValidators: true },
+  ).exec();
+
 export default {
   list,
   create,
@@ -206,4 +221,5 @@ export default {
   findByIdAndUpdatePopulated,
   findWithFilter,
   updateMany,
+  linkProviderByEmail,
 };

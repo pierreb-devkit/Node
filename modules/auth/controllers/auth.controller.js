@@ -321,10 +321,15 @@ const ALLOWED_PROVIDERS = new Set(['google', 'apple']);
 const ALLOWED_PROVIDER_KEYS = new Set(['sub', 'id', 'email']);
 
 /**
- * @desc Endpoint to save oAuthProfile
+ * @desc Resolve or create a user from an OAuth profile. Lookup order:
+ *   1. Primary identity (provider + providerData[key])
+ *   2. Linked identity (additionalProvidersData[provider][key])
+ *   3. Link-on-verified-email (provider-verified email matches an existing local user)
+ *   4. Create new user
  * @param {Object} profil - OAuth user profile object
- * @param {string} key - Provider key to lookup providerData
- * @param {string} provider - OAuth provider name
+ * @param {string} key - Provider key to lookup providerData (must be in ALLOWED_PROVIDER_KEYS)
+ * @param {string} provider - OAuth provider name (must be in ALLOWED_PROVIDERS)
+ * @returns {Promise<Object>} sanitized user document (existing, linked, or newly created)
  */
 const checkOAuthUserProfile = async (profil, key, provider) => {
   // Guard: validate provider and key against allowlists before using as dynamic object keys
@@ -356,14 +361,11 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
   // 3. Link on verified email: if a local user exists with the same email and the OAuth
   //    provider vouches for it, attach providerData under additionalProvidersData.{provider}
   //    without overwriting user.provider (keeps password reset + local login intact).
-  //    Uses UserService.update('recover') to go through the service layer and Zod validation.
+  //    Atomic findOneAndUpdate avoids TOCTOU races between concurrent OAuth callbacks.
   if (profil.email && profil.emailVerifiedByProvider) {
     try {
-      const brutUser = await UserService.getBrut({ email: profil.email });
-      if (brutUser) {
-        const additionalProvidersData = { ...(brutUser.additionalProvidersData || {}), [provider]: profil.providerData };
-        return await UserService.update(brutUser, { additionalProvidersData, emailVerified: true }, 'recover');
-      }
+      const linked = await UserService.linkProviderByEmail(profil.email, provider, profil.providerData);
+      if (linked) return linked;
     } catch (err) {
       throw new AppError('oAuth, link to existing user failed', { code: 'SERVICE_ERROR', details: err });
     }

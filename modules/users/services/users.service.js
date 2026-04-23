@@ -183,6 +183,19 @@ const searchByNameOrEmail = (search) => UserRepository.searchByNameOrEmail(searc
  */
 const findByEmail = (email) => UserRepository.findByEmail(email);
 
+/**
+ * @desc Atomically attach an OAuth provider to an existing user matched by email.
+ * Uses a single findOneAndUpdate to avoid TOCTOU races between concurrent OAuth callbacks.
+ * @param {string} email - The email to match
+ * @param {string} provider - The OAuth provider key (e.g. 'google', 'apple')
+ * @param {Object} providerData - The provider's identity data to store
+ * @returns {Promise<Object|null>} sanitized updated user or null if no match
+ */
+const linkProviderByEmail = async (email, provider, providerData) => {
+  const result = await UserRepository.linkProviderByEmail(email, provider, providerData);
+  return result ? removeSensitive(result) : null;
+};
+
 export default {
   list,
   create,
@@ -198,5 +211,6 @@ export default {
   findByIdAndUpdatePopulated,
   searchByNameOrEmail,
   findByEmail,
+  linkProviderByEmail,
   removeSensitive,
 };
