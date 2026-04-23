@@ -342,7 +342,7 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
 const oauthCallback = async (req, res, next) => {
   const strategy = req.params.strategy;
   // app Auth with Strategy managed on client side
-  if (req.body.strategy === false && req.body.key) {
+  if (req.body?.strategy === false && req.body?.key) {
     const allowedKeys = ['id', 'sub', 'email'];
     if (!allowedKeys.includes(req.body.key)) {
       return responses.error(res, 422, 'Unprocessable Entity', 'Invalid provider key')();
