@@ -12,12 +12,14 @@ const callbackURL = `${config.api.protocol}://${config.api.host}${config.api.por
 }/auth/apple/callback`;
 
 /**
- * @desc function to prepare map callback to user profile
- * @param {req}
- * @param {accessToken}
- * @param {refreshToken}
- * @param {profile}
- * @param {cb} callback
+ * @desc Map Apple OAuth callback to user profile and delegate to checkOAuthUserProfile
+ * @param {Object} req - Express request (passReqToCallback)
+ * @param {string} accessToken - Apple access token
+ * @param {string} refreshToken - Apple refresh token
+ * @param {Object} decodedIdToken - Decoded Apple ID token
+ * @param {Object} profile - Apple profile (may be empty on repeat sign-ins)
+ * @param {Function} cb - Passport callback (err, user)
+ * @returns {Promise<void>}
  */
 const prepare = async (req, accessToken, refreshToken, decodedIdToken, profile, cb) => {
   // Set the provider data and include tokens
@@ -35,6 +37,7 @@ const prepare = async (req, accessToken, refreshToken, decodedIdToken, profile, 
     avatar: null,
     provider: 'apple',
     providerData,
+    emailVerifiedByProvider: decodedIdToken.email_verified === true || decodedIdToken.email_verified === 'true',
   };
   // Save the user OAuth profile
   try {

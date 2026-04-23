@@ -12,11 +12,12 @@ const callbackURL = `${config.api.protocol}://${config.api.host}${config.api.por
 }/auth/google/callback`;
 
 /**
- * @desc function to prepare map callback to user profile
- * @param {accessToken}
- * @param {refreshToken}
- * @param {profile}
- * @param {cb} callback
+ * @desc Map Google OAuth callback to user profile and delegate to checkOAuthUserProfile
+ * @param {string} accessToken - Google access token
+ * @param {string} refreshToken - Google refresh token
+ * @param {Object} profile - Google profile object
+ * @param {Function} cb - Passport callback (err, user)
+ * @returns {Promise<void>}
  */
 const prepare = async (accessToken, refreshToken, profile, cb) => {
   // Set the provider data and include tokens
@@ -31,6 +32,7 @@ const prepare = async (accessToken, refreshToken, profile, cb) => {
     avatar: providerData.picture ? providerData.picture : undefined,
     provider: 'google',
     providerData,
+    emailVerifiedByProvider: providerData.email_verified === true,
   };
   // Save the user OAuth profile
   try {

@@ -24,6 +24,7 @@ const User = z.object({
   /* Provider */
   provider: z.string().optional(),
   providerData: z.record(z.string(), z.unknown()).optional(),
+  additionalProvidersData: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
   /* Password */
   password: z.string()
     .max(config.zxcvbn.maxSize)

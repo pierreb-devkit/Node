@@ -4,6 +4,52 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## OAuth account linking + Express 5 callback fix (2026-04-23)
+
+Two related auth fixes that ship together.
+
+### 1. Express 5 GET callback no longer crashes
+
+Enabling Google OAuth on a downstream project used to crash on first signin with `Cannot read properties of undefined (reading 'strategy')`. Root cause: Express 5 leaves `req.body` as `undefined` on GET requests (Express 4 initialized it to `{}`).
+
+- `modules/auth/controllers/auth.controller.js` — `oauthCallback` optional-chains `req.body` access
+- Apple OAuth (POST `form_post`) was never affected — no change to behavior
+
+### 2. Account linking by verified email
+
+Before: a local signup at `user@x.com` followed by a Google signin with the same email crashed on Mongo's unique-email index (E11000) — user locked out.
+
+Now: `checkOAuthUserProfile` follows a 4-step lookup:
+
+1. `(provider, providerData[key])` — primary identity (OAuth-first users)
+2. `additionalProvidersData[provider][key]` — linked users on subsequent signins
+3. `email` match **with provider-verified email** → atomic link (`UserService.linkProviderByEmail`)
+4. No match → create new user with `emailVerified` reflecting provider verification
+
+Linking attaches the OAuth `providerData` under `user.additionalProvidersData[provider]` and **does not overwrite `user.provider`** — so password reset (gated on `provider === 'local'`) and local login keep working for linked users.
+
+### Security gates
+
+- Provider + key allowlists (`ALLOWED_PROVIDERS = {google, apple}`, `ALLOWED_PROVIDER_KEYS = {id, sub, email}`) validate the dynamic query path before Mongo.
+- `emailVerifiedByProvider: true` required before linking — prevents takeover via a future OIDC provider that returns `email_verified: false` for someone else's address.
+- `/token` response sanitizes `accessToken` / `refreshToken` out of `additionalProvidersData` before serialization.
+
+### Action for downstream
+
+1. Run `/update-stack` to pull both fixes in one go.
+2. Env vars to set in prod K8s for Google (per project that wants OAuth enabled):
+   - `DEVKIT_NODE_oAuth_google_clientID`
+   - `DEVKIT_NODE_oAuth_google_clientSecret`
+   - `DEVKIT_NODE_oAuth_google_callbackURL` — e.g. `https://api.{project}.{tld}/api/auth/google/callback`
+3. Register the callback URL in Google Cloud Console (OAuth 2.0 client, Web type). For Apple: same pattern on `decodedIdToken.email_verified`.
+4. `/api/auth/config` returns `oAuth.google: true` once the clientID is set — the Vue signin/signup buttons activate automatically via `serverConfig.oAuth.google`.
+
+### Schema note
+
+`additionalProvidersData` already existed in the Mongoose user schema and is now exposed in the Zod user schema too. No Mongo migration needed — existing users have an empty field.
+
+---
+
 ## Analytics: request-aware feature-flag helpers (2026-04-23)
 
 `analytics` service gains two sugar helpers that extract the PostHog `distinctId` from an Express request, so routes no longer need to repeat `req.user?.id ?? req.sessionID ?? 'anonymous'` (and can never forget the anonymous fallback):

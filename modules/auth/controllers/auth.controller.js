@@ -234,6 +234,25 @@ const signin = async (req, res) => {
  * @param {Object} res - Express response object
  * TODO: escape deprecated
  */
+/**
+ * @desc Strip OAuth tokens from an additionalProvidersData map before serializing to client.
+ * Only the provider identity fields are safe to expose; access/refresh tokens must stay server-side.
+ * @param {Object|undefined} apd - raw additionalProvidersData
+ * @returns {Object|undefined} sanitized map with accessToken/refreshToken removed per provider
+ */
+const sanitizeAdditionalProvidersData = (apd) => {
+  if (!apd || typeof apd !== 'object') return undefined;
+  const sanitized = {};
+  for (const [prov, data] of Object.entries(apd)) {
+    if (data && typeof data === 'object') {
+      // eslint-disable-next-line no-unused-vars
+      const { accessToken, refreshToken, ...safe } = data;
+      sanitized[prov] = safe;
+    }
+  }
+  return Object.keys(sanitized).length > 0 ? sanitized : undefined;
+};
+
 const token = async (req, res) => {
   let user = null;
   if (req.user) {
@@ -248,7 +267,7 @@ const token = async (req, res) => {
       email: req.user.email,
       lastName: req.user.lastName,
       firstName: req.user.firstName,
-      additionalProvidersData: req.user.additionalProvidersData,
+      additionalProvidersData: sanitizeAdditionalProvidersData(req.user.additionalProvidersData),
       emailVerified: req.user.emailVerified,
       currentOrganization: req.user.currentOrganization,
       lastLoginAt: req.user.lastLoginAt,
@@ -295,13 +314,32 @@ const oauthCall = (req, res, next) => {
 };
 
 /**
- * @desc Endpoint to save oAuthProfile
+ * Known OAuth providers — used to validate the `provider` argument and `key` argument
+ * before constructing dynamic query paths, preventing prototype-pollution-style injections.
+ */
+const ALLOWED_PROVIDERS = new Set(['google', 'apple']);
+const ALLOWED_PROVIDER_KEYS = new Set(['sub', 'id', 'email']);
+
+/**
+ * @desc Resolve or create a user from an OAuth profile. Lookup order:
+ *   1. Primary identity (provider + providerData[key])
+ *   2. Linked identity (additionalProvidersData[provider][key])
+ *   3. Link-on-verified-email (provider-verified email matches an existing local user)
+ *   4. Create new user
  * @param {Object} profil - OAuth user profile object
- * @param {string} key - Provider key to lookup providerData
- * @param {string} provider - OAuth provider name
+ * @param {string} key - Provider key to lookup providerData (must be in ALLOWED_PROVIDER_KEYS)
+ * @param {string} provider - OAuth provider name (must be in ALLOWED_PROVIDERS)
+ * @returns {Promise<Object>} sanitized user document (existing, linked, or newly created)
  */
 const checkOAuthUserProfile = async (profil, key, provider) => {
-  // check if user exist
+  // Guard: validate provider and key against allowlists before using as dynamic object keys
+  if (!ALLOWED_PROVIDERS.has(provider)) {
+    throw new AppError('oAuth, unsupported provider', { code: 'VALIDATION_ERROR', details: { provider } });
+  }
+  if (!ALLOWED_PROVIDER_KEYS.has(key)) {
+    throw new AppError('oAuth, unsupported provider key', { code: 'VALIDATION_ERROR', details: { key } });
+  }
+  // 1. Primary identity: match on (provider, providerData[key]) — OAuth-first users
   try {
     const query = {};
     query[`providerData.${key}`] = profil.providerData[key];
@@ -311,7 +349,28 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
   } catch (err) {
     throw new AppError('oAuth, find user failed', { code: 'SERVICE_ERROR', details: err });
   }
-  // if no, generate
+  // 2. Linked identity: match on additionalProvidersData[provider][key] — locals already linked
+  try {
+    const query = {};
+    query[`additionalProvidersData.${provider}.${key}`] = profil.providerData[key];
+    const search = await UserService.search(query);
+    if (search.length === 1) return search[0];
+  } catch (err) {
+    throw new AppError('oAuth, find linked user failed', { code: 'SERVICE_ERROR', details: err });
+  }
+  // 3. Link on verified email: if a local user exists with the same email and the OAuth
+  //    provider vouches for it, attach providerData under additionalProvidersData.{provider}
+  //    without overwriting user.provider (keeps password reset + local login intact).
+  //    Atomic findOneAndUpdate avoids TOCTOU races between concurrent OAuth callbacks.
+  if (profil.email && profil.emailVerifiedByProvider) {
+    try {
+      const linked = await UserService.linkProviderByEmail(profil.email, provider, profil.providerData);
+      if (linked) return linked;
+    } catch (err) {
+      throw new AppError('oAuth, link to existing user failed', { code: 'SERVICE_ERROR', details: err });
+    }
+  }
+  // 4. No match → create new user
   try {
     const user = {
       firstName: profil.firstName,
@@ -320,6 +379,7 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
       avatar: profil.avatar || '',
       provider,
       providerData: profil.providerData || null,
+      emailVerified: !!profil.emailVerifiedByProvider,
     };
     const result = model.getResultFromZod(user, UsersSchema.User);
     // check error

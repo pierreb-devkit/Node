@@ -673,6 +673,183 @@ describe('Auth integration tests:', () => {
       } catch (_) { /* cleanup – ignore errors */ }
     });
 
+    test('should link OAuth signin to existing local user when provider verifies email', async () => {
+      // Seed a local user with a password (provider=local), email not yet linked via OAuth
+      const localEmail = 'oauthlink-local@test.com';
+      const localUser = await UserService.create({
+        firstName: 'Local',
+        lastName: 'Link',
+        email: localEmail,
+        password: credentials[0].password,
+        provider: 'local',
+        roles: ['user'],
+      });
+
+      // OAuth signin arrives with matching email + provider-verified flag
+      const profil = {
+        firstName: 'Local',
+        lastName: 'Link',
+        email: localEmail,
+        avatar: '',
+        providerData: { sub: 'google-link-sub-12345', email_verified: true },
+        emailVerifiedByProvider: true,
+      };
+      const linked = await AuthController.checkOAuthUserProfile(profil, 'sub', 'google');
+
+      expect(linked).toBeDefined();
+      expect(linked.id).toBe(localUser.id);
+      expect(linked.provider).toBe('local'); // provider kept so password reset still works
+      expect(linked.emailVerified).toBe(true);
+      // Verify additionalProvidersData was persisted (getBrut bypasses the sanitize whitelist)
+      const brutLinked = await UserService.getBrut({ id: linked.id });
+      expect(brutLinked.additionalProvidersData?.google?.sub).toBe('google-link-sub-12345');
+
+      // Subsequent signin with the same Google sub should find the linked user via step 2
+      const second = await AuthController.checkOAuthUserProfile(profil, 'sub', 'google');
+      expect(second.id).toBe(localUser.id);
+
+      try { await UserService.remove(linked); } catch (_) { /* cleanup */ }
+    });
+
+    test('should NOT link when OAuth provider did not verify the email', async () => {
+      const sharedEmail = 'oauthlink-unverified@test.com';
+      const localUser = await UserService.create({
+        firstName: 'Unverified',
+        lastName: 'Link',
+        email: sharedEmail,
+        password: credentials[0].password,
+        provider: 'local',
+        roles: ['user'],
+      });
+
+      // OAuth arrives for the SAME email but email_verified=false — must not link
+      const profil = {
+        firstName: 'Unverified',
+        lastName: 'Link',
+        email: sharedEmail,
+        avatar: '',
+        providerData: { sub: 'google-unverified-sub-999', email_verified: false },
+        emailVerifiedByProvider: false,
+      };
+      // Falls through to create branch → duplicate email → unique-index error
+      await expect(
+        AuthController.checkOAuthUserProfile(profil, 'sub', 'google'),
+      ).rejects.toThrow();
+      // Local account must remain untouched — no OAuth data attached
+      const untouched = await UserService.getBrut({ email: sharedEmail });
+      expect(untouched).toBeDefined();
+      expect(untouched.additionalProvidersData?.google).toBeUndefined();
+
+      try { await UserService.remove(localUser); } catch (_) { /* cleanup */ }
+    });
+
+    test('should reject link when local email matches but OAuth provider did not verify (no takeover)', async () => {
+      const sharedEmail = 'oauthlink-takeover@test.com';
+      const localUser = await UserService.create({
+        firstName: 'Victim',
+        lastName: 'User',
+        email: sharedEmail,
+        password: credentials[0].password,
+        provider: 'local',
+        roles: ['user'],
+      });
+
+      // Attacker tries OAuth with same email but provider says email_verified=false
+      const profil = {
+        firstName: 'Attacker',
+        lastName: 'User',
+        email: sharedEmail,
+        avatar: '',
+        providerData: { sub: 'google-attacker-sub-42', email_verified: false },
+        emailVerifiedByProvider: false,
+      };
+      // Must error — unverified email falls to create branch → duplicate email → AppError
+      await expect(
+        AuthController.checkOAuthUserProfile(profil, 'sub', 'google'),
+      ).rejects.toMatchObject({ code: 'CONTROLLER_ERROR' });
+      // Verify the local account was NOT modified — exactly one user with this email, no OAuth data
+      const users = await UserService.search({ email: sharedEmail });
+      expect(users.length).toBe(1);
+      expect(users[0].additionalProvidersData).toBeUndefined();
+
+      try { await UserService.remove(localUser); } catch (_) { /* cleanup */ }
+    });
+
+    test('should set emailVerified=true when creating a fresh OAuth user with verified email', async () => {
+      const profil = {
+        firstName: 'Fresh',
+        lastName: 'OAuth',
+        email: 'oauth-fresh@test.com',
+        avatar: '',
+        providerData: { sub: 'google-fresh-sub-55', email_verified: true },
+        emailVerifiedByProvider: true,
+      };
+      const created = await AuthController.checkOAuthUserProfile(profil, 'sub', 'google');
+      expect(created.emailVerified).toBe(true);
+      expect(created.provider).toBe('google');
+
+      try { await UserService.remove(created); } catch (_) { /* cleanup */ }
+    });
+
+    test('should throw VALIDATION_ERROR for unsupported OAuth provider', async () => {
+      const profil = {
+        firstName: 'Test',
+        lastName: 'User',
+        email: 'test@test.com',
+        avatar: '',
+        providerData: { sub: 'bad-sub' },
+        emailVerifiedByProvider: false,
+      };
+      await expect(
+        AuthController.checkOAuthUserProfile(profil, 'sub', 'badprovider'),
+      ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+    });
+
+    test('should throw VALIDATION_ERROR for unsupported provider key', async () => {
+      const profil = {
+        firstName: 'Test',
+        lastName: 'User',
+        email: 'test@test.com',
+        avatar: '',
+        providerData: { badkey: 'value' },
+        emailVerifiedByProvider: false,
+      };
+      await expect(
+        AuthController.checkOAuthUserProfile(profil, 'badkey', 'google'),
+      ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+    });
+
+    test('token endpoint should strip accessToken/refreshToken from additionalProvidersData', async () => {
+      // Create a local user then sign in to get an auth cookie
+      const localEmail = 'token-sanitize@test.com';
+      const localPassword = 'W@os.jsI$Aw3$0m3';
+      const localUser = await UserService.create({
+        firstName: 'Token',
+        lastName: 'Sanitize',
+        email: localEmail,
+        password: localPassword,
+        provider: 'local',
+        roles: ['user'],
+      });
+      // Manually inject additionalProvidersData with tokens (simulating a linked OAuth account)
+      const brutUser = await UserService.getBrut({ email: localEmail });
+      await UserService.update(brutUser, {
+        additionalProvidersData: {
+          google: { sub: 'google-sub-sanitize', accessToken: 'secret-token', refreshToken: 'secret-refresh', email_verified: true },
+        },
+      }, 'recover');
+
+      // Sign in as this user and call the token endpoint (agent persists the session cookie)
+      await agent.post('/api/auth/signin').send({ email: localEmail, password: localPassword }).expect(200);
+      const tokenResult = await agent.get('/api/auth/token').expect(200);
+
+      expect(tokenResult.body.user.additionalProvidersData?.google?.sub).toBe('google-sub-sanitize');
+      expect(tokenResult.body.user.additionalProvidersData?.google?.accessToken).toBeUndefined();
+      expect(tokenResult.body.user.additionalProvidersData?.google?.refreshToken).toBeUndefined();
+
+      try { await UserService.remove(localUser); } catch (_) { /* cleanup */ }
+    });
+
     afterAll(async () => {
       for (const u of oauthUsers) {
         try {
