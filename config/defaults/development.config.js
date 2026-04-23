@@ -87,6 +87,8 @@ const config = {
   posthog: {
     // apiKey: process.env.DEVKIT_NODE_posthog_apiKey ?? '',
     // host: process.env.DEVKIT_NODE_posthog_host ?? 'https://us.i.posthog.com',
+    errorTracking: false, // opt-in: capture exceptions to PostHog (default: off)
+    autoCapture: false, // opt-in: auto-capture api_request events (default: off)
   },
   domain: '',
   cookie: {
