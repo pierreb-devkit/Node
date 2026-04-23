@@ -15,6 +15,7 @@ import config from '../../../config/index.js';
  * Unit tests
  */
 describe('Home integration tests:', () => {
+  let app; // Express app instance for fresh (unauthenticated) requests (#3472)
   let agent;
   let HomeService;
   let adminToken;
@@ -40,7 +41,8 @@ describe('Home integration tests:', () => {
       config.organizations.enabled = false;
       const init = await bootstrap();
       HomeService = (await import(path.resolve('./modules/home/services/home.service.js'))).default;
-      agent = request.agent(init.app);
+      app = init.app;
+      agent = request.agent(app);
 
       // Create admin user and sign JWT for health endpoint test
       const User = mongoose.model('User');
@@ -72,16 +74,20 @@ describe('Home integration tests:', () => {
     }
   });
 
+  // Public ("logged out") route tests. Use a fresh `request(app)` per test
+  // instead of the shared `agent` so no cookie state from this block leaks
+  // into later describes (#3472). Auth-required cases still use explicit
+  // `set('Cookie', 'TOKEN=...')` headers derived from JWTs.
   describe('Logout', () => {
     test('should be able to get releases', async () => {
-      const result = await agent.get('/api/home/releases').expect(200);
+      const result = await request(app).get('/api/home/releases').expect(200);
       expect(result.body.type).toBe('success');
       expect(result.body.message).toBe('releases');
       expect(result.body.data).toBeInstanceOf(Array);
     });
 
     test('should be able to get changelogs', async () => {
-      const result = await agent.get('/api/home/changelogs').expect(200);
+      const result = await request(app).get('/api/home/changelogs').expect(200);
       expect(result.body.type).toBe('success');
       expect(result.body.message).toBe('changelogs');
       expect(result.body.data).toBeInstanceOf(Array);
@@ -89,7 +95,7 @@ describe('Home integration tests:', () => {
 
     test('should be able to get team members', async () => {
       try {
-        const result = await agent.get('/api/home/team').expect(200);
+        const result = await request(app).get('/api/home/team').expect(200);
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('team list');
         expect(result.body.data).toBeInstanceOf(Array);
@@ -101,7 +107,7 @@ describe('Home integration tests:', () => {
 
     test('should be able to get an existing page', async () => {
       try {
-        const result = await agent.get('/api/home/pages/terms').expect(200);
+        const result = await request(app).get('/api/home/pages/terms').expect(200);
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('page');
         expect(result.body.data[0].title).toBe('Terms');
@@ -115,7 +121,7 @@ describe('Home integration tests:', () => {
 
     test('should be able to catch error of unknown page', async () => {
       try {
-        const result = await agent.get('/api/home/pages/test').expect(404);
+        const result = await request(app).get('/api/home/pages/test').expect(404);
         expect(result.body.type).toBe('error');
         expect(result.body.message).toBe('Not Found');
         expect(result.body.description).toBe('No page with that name has been found');
@@ -127,7 +133,7 @@ describe('Home integration tests:', () => {
 
     test('should return empty releases gracefully when GitHub API fails', async () => {
       axios.get.mockRejectedValueOnce(new Error('GitHub API unavailable'));
-      const result = await agent.get('/api/home/releases').expect(200);
+      const result = await request(app).get('/api/home/releases').expect(200);
       expect(result.body.type).toBe('success');
       expect(result.body.message).toBe('releases');
       expect(result.body.data).toEqual([]);
@@ -135,7 +141,7 @@ describe('Home integration tests:', () => {
 
     test('should return empty changelogs gracefully when GitHub API fails', async () => {
       axios.get.mockRejectedValueOnce(new Error('GitHub API unavailable'));
-      const result = await agent.get('/api/home/changelogs').expect(200);
+      const result = await request(app).get('/api/home/changelogs').expect(200);
       expect(result.body.type).toBe('success');
       expect(result.body.message).toBe('changelogs');
       expect(result.body.data).toEqual([]);
@@ -146,7 +152,7 @@ describe('Home integration tests:', () => {
       axios.get.mockClear();
       // Temporarily set a fake token to cover the token-truthy branch in home.service releases()
       config.repos = originalRepos.map((repo) => ({ ...repo, token: 'fake-test-token' }));
-      const result = await agent.get('/api/home/releases').expect(200);
+      const result = await request(app).get('/api/home/releases').expect(200);
       expect(result.body.type).toBe('success');
       const releaseCalls = axios.get.mock.calls.filter(([url]) => url.includes('/releases'));
       expect(releaseCalls.length).toBeGreaterThan(0);
@@ -160,7 +166,7 @@ describe('Home integration tests:', () => {
       const originalRepos = config.repos;
       axios.get.mockClear();
       config.repos = originalRepos.map((repo) => ({ ...repo, token: 'fake-test-token' }));
-      const result = await agent.get('/api/home/changelogs').expect(200);
+      const result = await request(app).get('/api/home/changelogs').expect(200);
       expect(result.body.type).toBe('success');
       const changelogCalls = axios.get.mock.calls.filter(([url]) => url.includes('/contents/'));
       expect(changelogCalls.length).toBeGreaterThan(0);
@@ -171,7 +177,7 @@ describe('Home integration tests:', () => {
     });
 
     test('should return minimal health status without auth', async () => {
-      const result = await agent.get('/api/health').expect(200);
+      const result = await request(app).get('/api/health').expect(200);
       expect(result.body.type).toBe('success');
       expect(result.body.data.status).toBe('ok');
       expect(result.body.data.db).toBeUndefined();
@@ -179,7 +185,7 @@ describe('Home integration tests:', () => {
     });
 
     test('should return detailed health status for admin', async () => {
-      const result = await agent.get('/api/health').set('Cookie', `TOKEN=${adminToken}`).expect(200);
+      const result = await request(app).get('/api/health').set('Cookie', `TOKEN=${adminToken}`).expect(200);
       expect(result.body.type).toBe('success');
       expect(result.body.data.status).toBe('ok');
       expect(result.body.data.db).toBe('connected');
@@ -196,7 +202,7 @@ describe('Home integration tests:', () => {
         version: '0.0.0',
         memory: process.memoryUsage(),
       });
-      const result = await agent.get('/api/health').expect(503);
+      const result = await request(app).get('/api/health').expect(503);
       expect(result.body.type).toBe('error');
       expect(result.body.message).toBe('Service Unavailable');
     });

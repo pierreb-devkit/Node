@@ -14,6 +14,7 @@ import mongooseService from '../../../lib/services/mongoose.js';
  */
 describe('User integration tests:', () => {
   let UserService = null;
+  let app; // Express app instance for fresh (unauthenticated) requests (#3472)
   let agent;
   let credentials;
   let user;
@@ -27,7 +28,8 @@ describe('User integration tests:', () => {
     try {
       const init = await bootstrap();
       UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
-      agent = request.agent(init.app);
+      app = init.app;
+      agent = request.agent(app);
     } catch (err) {
       console.log(err);
       expect(err).toBeFalsy();
@@ -415,10 +417,14 @@ describe('User integration tests:', () => {
     });
   });
 
+  // Unauthenticated ("logged out") route tests. Use a fresh `request(app)` per
+  // test instead of the shared `agent` so a stale cookie from a previous
+  // describe block (user deleted in afterEach) can never invalidate subsequent
+  // authenticated tests in later describes. See #3472.
   describe('Logout', () => {
     test('should not be able to update Terms sign date if not logged in', async () => {
       try {
-        await agent.get('/api/users/terms').expect(401);
+        await request(app).get('/api/users/terms').expect(401);
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -427,7 +433,7 @@ describe('User integration tests:', () => {
 
     test('should not be able to change user own password if not signed in', async () => {
       try {
-        await agent
+        await request(app)
           .post('/api/users/password')
           .send({
             newPassword: '1234567890Aa$',
@@ -445,7 +451,7 @@ describe('User integration tests:', () => {
 
     test('should not be able to get any user details if not logged in', async () => {
       try {
-        await agent.get('/api/users/me').expect(401);
+        await request(app).get('/api/users/me').expect(401);
         // TODO error message
         // result.body.message.should.equal('User is not signed in');
       } catch (err) {
@@ -461,7 +467,7 @@ describe('User integration tests:', () => {
           lastName: 'user_update_last',
         };
 
-        await agent.put('/api/users').send(userUpdate).expect(401);
+        await request(app).put('/api/users').send(userUpdate).expect(401);
         // TODO error message
         // result.body.message.should.equal('User is not signed in');
       } catch (err) {
@@ -472,7 +478,7 @@ describe('User integration tests:', () => {
 
     test('should not be able to update own user profile avatar without being logged-in', async () => {
       try {
-        await agent.post('/api/users/avatar').send({}).expect(401);
+        await request(app).post('/api/users/avatar').send({}).expect(401);
         // TODO error message
         // result.body.message.should.equal('User is not signed in');
       } catch (err) {
@@ -483,7 +489,7 @@ describe('User integration tests:', () => {
 
     test('should be able to get a users stats', async () => {
       try {
-        const result = await agent.get('/api/users/stats').expect(200);
+        const result = await request(app).get('/api/users/stats').expect(200);
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('users stats');
       } catch (err) {
