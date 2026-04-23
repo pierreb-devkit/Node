@@ -626,6 +626,25 @@ describe('Auth integration tests:', () => {
       authenticateSpy.mockRestore();
     });
 
+    test('should handle GET callback when req.body is undefined (Express 5)', async () => {
+      const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
+        (strategy, callback) => () => callback(null, { id: 'mock-get-cb-user' }),
+      );
+      const cookies = {};
+      const redirectCalls = [];
+      const mockReq = { params: { strategy: 'google' } };
+      const mockRes = {
+        cookie(name, val, opts) { cookies[name] = { val, opts }; return this; },
+        redirect(code, url) { redirectCalls.push({ code, url }); },
+      };
+
+      await AuthController.oauthCallback(mockReq, mockRes, () => {});
+
+      expect(cookies.TOKEN).toBeDefined();
+      expect(redirectCalls[0]).toMatchObject({ code: 302 });
+      authenticateSpy.mockRestore();
+    });
+
     test('should find an existing OAuth user via checkOAuthUserProfile', async () => {
       // Create an OAuth user directly first
       const createdUser = await UserService.create({
