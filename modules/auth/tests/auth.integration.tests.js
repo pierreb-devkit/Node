@@ -673,6 +673,114 @@ describe('Auth integration tests:', () => {
       } catch (_) { /* cleanup – ignore errors */ }
     });
 
+    test('should link OAuth signin to existing local user when provider verifies email', async () => {
+      // Seed a local user with a password (provider=local), email not yet linked via OAuth
+      const localEmail = 'oauthlink-local@test.com';
+      const localUser = await UserService.create({
+        firstName: 'Local',
+        lastName: 'Link',
+        email: localEmail,
+        password: credentials.password,
+        provider: 'local',
+        roles: ['user'],
+      });
+
+      // OAuth signin arrives with matching email + provider-verified flag
+      const profil = {
+        firstName: 'Local',
+        lastName: 'Link',
+        email: localEmail,
+        avatar: '',
+        providerData: { sub: 'google-link-sub-12345', email_verified: true },
+        emailVerifiedByProvider: true,
+      };
+      const linked = await AuthController.checkOAuthUserProfile(profil, 'sub', 'google');
+
+      expect(linked).toBeDefined();
+      expect(linked.id).toBe(localUser.id);
+      expect(linked.provider).toBe('local'); // provider kept so password reset still works
+      expect(linked.additionalProvidersData.google.sub).toBe('google-link-sub-12345');
+      expect(linked.emailVerified).toBe(true);
+
+      // Subsequent signin with the same Google sub should find the linked user
+      const second = await AuthController.checkOAuthUserProfile(profil, 'sub', 'google');
+      expect(second.id).toBe(localUser.id);
+
+      try { await UserService.remove(linked); } catch (_) { /* cleanup */ }
+    });
+
+    test('should NOT link when OAuth provider did not verify the email (create new user instead)', async () => {
+      const sharedEmail = 'oauthlink-unverified@test.com';
+      const localUser = await UserService.create({
+        firstName: 'Unverified',
+        lastName: 'Link',
+        email: sharedEmail,
+        password: credentials.password,
+        provider: 'local',
+        roles: ['user'],
+      });
+
+      const profil = {
+        // Different email to avoid Mongo unique collision on the fallback create branch
+        firstName: 'Other',
+        lastName: 'User',
+        email: 'oauthlink-different@test.com',
+        avatar: '',
+        providerData: { sub: 'google-unverified-sub-999', email_verified: false },
+        emailVerifiedByProvider: false,
+      };
+      const user = await AuthController.checkOAuthUserProfile(profil, 'sub', 'google');
+      expect(user.email).toBe('oauthlink-different@test.com');
+      expect(user.provider).toBe('google');
+      expect(user.additionalProvidersData).toBeUndefined();
+
+      try { await UserService.remove(localUser); } catch (_) { /* cleanup */ }
+      try { await UserService.remove(user); } catch (_) { /* cleanup */ }
+    });
+
+    test('should reject link when local email matches but OAuth provider did not verify (no takeover)', async () => {
+      const sharedEmail = 'oauthlink-takeover@test.com';
+      const localUser = await UserService.create({
+        firstName: 'Victim',
+        lastName: 'User',
+        email: sharedEmail,
+        password: credentials.password,
+        provider: 'local',
+        roles: ['user'],
+      });
+
+      // Attacker tries OAuth with same email but provider says email_verified=false
+      const profil = {
+        firstName: 'Attacker',
+        lastName: 'User',
+        email: sharedEmail,
+        avatar: '',
+        providerData: { sub: 'google-attacker-sub-42', email_verified: false },
+        emailVerifiedByProvider: false,
+      };
+      await expect(
+        AuthController.checkOAuthUserProfile(profil, 'sub', 'google'),
+      ).rejects.toThrow(); // falls to create branch → duplicate email → error
+
+      try { await UserService.remove(localUser); } catch (_) { /* cleanup */ }
+    });
+
+    test('should set emailVerified=true when creating a fresh OAuth user with verified email', async () => {
+      const profil = {
+        firstName: 'Fresh',
+        lastName: 'OAuth',
+        email: 'oauth-fresh@test.com',
+        avatar: '',
+        providerData: { sub: 'google-fresh-sub-55', email_verified: true },
+        emailVerifiedByProvider: true,
+      };
+      const created = await AuthController.checkOAuthUserProfile(profil, 'sub', 'google');
+      expect(created.emailVerified).toBe(true);
+      expect(created.provider).toBe('google');
+
+      try { await UserService.remove(created); } catch (_) { /* cleanup */ }
+    });
+
     afterAll(async () => {
       for (const u of oauthUsers) {
         try {

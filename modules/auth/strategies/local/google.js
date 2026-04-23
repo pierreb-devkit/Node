@@ -31,6 +31,7 @@ const prepare = async (accessToken, refreshToken, profile, cb) => {
     avatar: providerData.picture ? providerData.picture : undefined,
     provider: 'google',
     providerData,
+    emailVerifiedByProvider: providerData.email_verified === true,
   };
   // Save the user OAuth profile
   try {

@@ -6,6 +6,7 @@ import passport from 'passport';
 import jwt from 'jsonwebtoken';
 
 import UserService from '../../users/services/users.service.js';
+import UserRepository from '../../users/repositories/users.repository.js';
 import config from '../../../config/index.js';
 import model from '../../../lib/middlewares/model.js';
 import mails from '../../../lib/helpers/mailer/index.js';
@@ -301,7 +302,7 @@ const oauthCall = (req, res, next) => {
  * @param {string} provider - OAuth provider name
  */
 const checkOAuthUserProfile = async (profil, key, provider) => {
-  // check if user exist
+  // 1. Primary identity: match on (provider, providerData[key]) — OAuth-first users
   try {
     const query = {};
     query[`providerData.${key}`] = profil.providerData[key];
@@ -311,7 +312,33 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
   } catch (err) {
     throw new AppError('oAuth, find user failed', { code: 'SERVICE_ERROR', details: err });
   }
-  // if no, generate
+  // 2. Linked identity: match on additionalProvidersData[provider][key] — locals already linked
+  try {
+    const query = {};
+    query[`additionalProvidersData.${provider}.${key}`] = profil.providerData[key];
+    const search = await UserService.search(query);
+    if (search.length === 1) return search[0];
+  } catch (err) {
+    throw new AppError('oAuth, find linked user failed', { code: 'SERVICE_ERROR', details: err });
+  }
+  // 3. Link on verified email: if a local user exists with the same email and the OAuth
+  //    provider vouches for it, attach providerData under additionalProvidersData.{provider}
+  //    without overwriting user.provider (keeps password reset + local login intact).
+  if (profil.email && profil.emailVerifiedByProvider) {
+    try {
+      const existing = await UserService.search({ email: profil.email });
+      if (existing.length === 1) {
+        const user = existing[0];
+        user.additionalProvidersData = user.additionalProvidersData || {};
+        user.additionalProvidersData[provider] = profil.providerData;
+        user.emailVerified = true;
+        return await UserRepository.update(user);
+      }
+    } catch (err) {
+      throw new AppError('oAuth, link to existing user failed', { code: 'SERVICE_ERROR', details: err });
+    }
+  }
+  // 4. No match → create new user
   try {
     const user = {
       firstName: profil.firstName,
@@ -320,6 +347,7 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
       avatar: profil.avatar || '',
       provider,
       providerData: profil.providerData || null,
+      emailVerified: !!profil.emailVerifiedByProvider,
     };
     const result = model.getResultFromZod(user, UsersSchema.User);
     // check error

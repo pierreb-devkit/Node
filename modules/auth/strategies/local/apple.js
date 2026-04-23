@@ -35,6 +35,7 @@ const prepare = async (req, accessToken, refreshToken, decodedIdToken, profile, 
     avatar: null,
     provider: 'apple',
     providerData,
+    emailVerifiedByProvider: decodedIdToken.email_verified === true || decodedIdToken.email_verified === 'true',
   };
   // Save the user OAuth profile
   try {
