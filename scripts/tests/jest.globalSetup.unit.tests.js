@@ -33,7 +33,11 @@ describe('scripts/jest.globalSetup safety guards', () => {
 
   afterEach(() => {
     warnSpy.mockRestore();
-    process.env.NODE_ENV = originalNodeEnv;
+    // Restore the original NODE_ENV — `process.env` coerces values to strings,
+    // so assigning `undefined` would leave the literal string "undefined". Use
+    // `delete` when the variable was originally absent.
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
     jest.resetModules();
   });
 
@@ -97,5 +101,19 @@ describe('scripts/jest.globalSetup safety guards', () => {
 
     await expect(globalSetup()).resolves.toBeUndefined();
     expect(dropDatabase).not.toHaveBeenCalled();
+  });
+
+  test('disconnects even when dropDatabase() fails (no dangling connection)', async () => {
+    process.env.NODE_ENV = 'test';
+    dropDatabase.mockRejectedValueOnce(new Error('drop failed'));
+    jest.unstable_mockModule('../../config/index.js', () => ({
+      default: { db: { uri: 'mongodb://localhost:27017/NodeTest' } },
+    }));
+    const { default: globalSetup } = await import('../jest.globalSetup.js');
+
+    await expect(globalSetup()).resolves.toBeUndefined();
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(dropDatabase).toHaveBeenCalledTimes(1);
+    expect(disconnect).toHaveBeenCalledTimes(1);
   });
 });

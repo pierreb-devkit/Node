@@ -16,6 +16,14 @@
  */
 import mongoose from 'mongoose';
 
+/**
+ * Jest global setup entry point — drops the test database before the suite runs.
+ * Enforces the NODE_ENV + DB-name guards described at the top of this file.
+ * @returns {Promise<void>} Resolves once the guard check completes and, when
+ * guards pass and Mongo is reachable, once the database has been dropped and
+ * the connection closed. Never rejects — a Mongo failure is swallowed so tests
+ * can still run against existing state (e.g. fresh CI without mongo).
+ */
 export default async () => {
   if (process.env.NODE_ENV !== 'test') {
     console.warn(
@@ -33,8 +41,11 @@ export default async () => {
       return;
     }
     await mongoose.connect(config.db.uri);
-    await mongoose.connection.dropDatabase();
-    await mongoose.disconnect();
+    try {
+      await mongoose.connection.dropDatabase();
+    } finally {
+      await mongoose.disconnect();
+    }
   } catch {
     // MongoDB unreachable or drop failed — tests will run against existing state
   }
