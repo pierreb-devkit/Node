@@ -820,8 +820,14 @@ describe('Auth integration tests:', () => {
     });
 
     describe('signup gate (config.sign.up = false)', () => {
+      let originalSignUpConfig;
+
+      beforeEach(() => {
+        originalSignUpConfig = config.sign.up;
+      });
+
       afterEach(() => {
-        config.sign.up = true;
+        config.sign.up = originalSignUpConfig;
       });
 
       test('should reject new OAuth user creation when signup is disabled (branch 4)', async () => {
