@@ -1043,6 +1043,10 @@ describe('Auth integration tests:', () => {
           provider: 'local',
           roles: ['user'],
         });
+        // Mark the local account as email-verified — branch 3 link-gate now
+        // requires both OAuth provider AND local emailVerified (issue #3504).
+        const brutSeed = await UserService.getBrut({ email });
+        await UserService.update(brutSeed, { emailVerified: true }, 'recover');
 
         config.sign.up = false;
         const profil = {
