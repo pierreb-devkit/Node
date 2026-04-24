@@ -372,6 +372,12 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
   }
   // 4. No match → create new user
   try {
+    if (!config.sign.up) {
+      throw new AppError('oAuth signup disabled', {
+        code: 'VALIDATION_ERROR',
+        details: { message: 'Registration is currently deactivated' },
+      });
+    }
     const user = {
       firstName: profil.firstName,
       lastName: profil.lastName,

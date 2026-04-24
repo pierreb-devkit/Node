@@ -819,6 +819,121 @@ describe('Auth integration tests:', () => {
       ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
     });
 
+    describe('signup gate (config.sign.up = false)', () => {
+      afterEach(() => {
+        config.sign.up = true;
+      });
+
+      test('should reject new OAuth user creation when signup is disabled (branch 4)', async () => {
+        config.sign.up = false;
+        const email = 'oauth-signup-gate-new@test.com';
+        const profil = {
+          firstName: 'Gated',
+          lastName: 'Signup',
+          email,
+          avatar: '',
+          providerData: { sub: 'google-gated-sub-3503' },
+          emailVerifiedByProvider: false,
+        };
+        await expect(
+          AuthController.checkOAuthUserProfile(profil, 'sub', 'google'),
+        ).rejects.toMatchObject({
+          code: 'VALIDATION_ERROR',
+          details: { message: 'Registration is currently deactivated' },
+        });
+        // Ensure no user was persisted
+        const users = await UserService.search({ email });
+        expect(users.length).toBe(0);
+      });
+
+      test('should allow existing OAuth-first user to sign in when signup disabled (branch 1)', async () => {
+        const email = 'oauth-signup-gate-b1@test.com';
+        const existing = await UserService.create({
+          firstName: 'Branch',
+          lastName: 'One',
+          email,
+          provider: 'google',
+          providerData: { sub: 'google-gated-b1-sub' },
+          roles: ['user'],
+        });
+        config.sign.up = false;
+        const profil = {
+          firstName: 'Branch',
+          lastName: 'One',
+          email,
+          avatar: '',
+          providerData: { sub: 'google-gated-b1-sub' },
+        };
+        const found = await AuthController.checkOAuthUserProfile(profil, 'sub', 'google');
+        expect(found).toBeDefined();
+        expect(found.id).toBe(existing.id);
+
+        try { await UserService.remove(existing); } catch (_) { /* cleanup */ }
+      });
+
+      test('should allow linked OAuth user to sign in when signup disabled (branch 2)', async () => {
+        const email = 'oauth-signup-gate-b2@test.com';
+        const localUser = await UserService.create({
+          firstName: 'Branch',
+          lastName: 'Two',
+          email,
+          password: 'W@os.jsI$Aw3$0m3',
+          provider: 'local',
+          roles: ['user'],
+        });
+        // Inject additionalProvidersData to simulate a pre-linked account
+        const brutLocal = await UserService.getBrut({ email });
+        await UserService.update(brutLocal, {
+          additionalProvidersData: {
+            google: { sub: 'google-gated-b2-sub', email_verified: true },
+          },
+        }, 'recover');
+
+        config.sign.up = false;
+        const profil = {
+          firstName: 'Branch',
+          lastName: 'Two',
+          email,
+          avatar: '',
+          providerData: { sub: 'google-gated-b2-sub' },
+        };
+        const found = await AuthController.checkOAuthUserProfile(profil, 'sub', 'google');
+        expect(found).toBeDefined();
+        expect(found.id).toBe(localUser.id);
+
+        try { await UserService.remove(localUser); } catch (_) { /* cleanup */ }
+      });
+
+      test('should link local user via verified email when signup disabled (branch 3)', async () => {
+        const email = 'oauth-signup-gate-b3@test.com';
+        const localUser = await UserService.create({
+          firstName: 'Branch',
+          lastName: 'Three',
+          email,
+          password: 'W@os.jsI$Aw3$0m3',
+          provider: 'local',
+          roles: ['user'],
+        });
+
+        config.sign.up = false;
+        const profil = {
+          firstName: 'Branch',
+          lastName: 'Three',
+          email,
+          avatar: '',
+          providerData: { sub: 'google-gated-b3-sub', email_verified: true },
+          emailVerifiedByProvider: true,
+        };
+        const linked = await AuthController.checkOAuthUserProfile(profil, 'sub', 'google');
+        expect(linked).toBeDefined();
+        expect(linked.id).toBe(localUser.id);
+        const brutLinked = await UserService.getBrut({ id: linked.id });
+        expect(brutLinked.additionalProvidersData?.google?.sub).toBe('google-gated-b3-sub');
+
+        try { await UserService.remove(linked); } catch (_) { /* cleanup */ }
+      });
+    });
+
     test('token endpoint should strip accessToken/refreshToken from additionalProvidersData', async () => {
       // Create a local user then sign in to get an auth cookie
       const localEmail = 'token-sanitize@test.com';
