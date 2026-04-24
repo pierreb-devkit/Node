@@ -4,6 +4,7 @@
 import jwt from 'jsonwebtoken';
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
+import isGlobalAdmin from '../../../lib/helpers/isGlobalAdmin.js';
 import config from '../../../config/index.js';
 import mailer from '../../../lib/helpers/mailer/index.js';
 import policy from '../../../lib/middlewares/policy.js';
@@ -107,9 +108,9 @@ const remove = async (req, res) => {
     // UX protection: prevent a regular user from deleting their own last organization.
     // Global platform admins bypass this entirely (moderation); a member of multiple orgs
     // is also safe to delete the current one since they keep at least one membership.
-    const isGlobalAdmin = Array.isArray(req.user?.roles) && req.user.roles.includes('admin');
+    const admin = isGlobalAdmin(req.user);
     const isMemberOfTarget = !!req.membership;
-    if (!isGlobalAdmin && isMemberOfTarget) {
+    if (!admin && isMemberOfTarget) {
       const userMemberships = await MembershipService.listByUser(req.user._id || req.user.id);
       if (userMemberships.length <= 1) {
         return responses.error(res, 422, 'Unprocessable Entity', 'You cannot delete your last organization')();

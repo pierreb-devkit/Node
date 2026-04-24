@@ -4,6 +4,36 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Organizations: global admin bypass extended to updateRole + `isGlobalAdmin` helper (2026-04-24)
+
+Completes the platform-admin bypass started in #3509, and centralizes the repeated `Array.isArray(req.user?.roles) && req.user.roles.includes('admin')` check into a shared helper.
+
+### What changed
+
+- New helper `lib/helpers/isGlobalAdmin.js` — single source of truth for the global admin check used by moderation guards.
+- `modules/organizations/controllers/organizations.membership.controller.js` — `updateRole` now admits global admins who are not members of the target org (required to transfer ownership during moderation). `remove` now uses the shared helper.
+- `modules/organizations/controllers/organizations.controller.js` — `remove` now uses the shared helper (no behavior change).
+
+### Why
+
+`updateRole` had exactly the same buggy pattern that `remove` used to have before #3509: `if (!req.membership || req.membership.role !== OWNER)` rejected global admins with `req.membership === undefined` when they were not a member of the target org. The inline comment even said "Belt-and-suspenders: only owners (CASL blocks admins via no 'update Membership')" — the intent never anticipated platform admins. Same class of bug, same fix shape.
+
+While at it, the duplicated `isGlobalAdmin` expression across three call-sites was extracted into a helper. Policies (`organizations.policy.js`, `users.policy.js`, etc.) still inline the check for now — migrating them is out of scope here (wider refactor, different test surface).
+
+### Non-breaking
+
+- No contract changes for regular users / owners / non-global admins.
+- New capability: a user with `roles: ['admin']` can `PUT /api/organizations/:orgId/memberships/:memberId` without needing a membership on the target org.
+- Belt-and-suspenders guard is preserved: the handler still blocks non-owner, non-admin org roles regardless of CASL.
+
+### Action for downstream
+
+1. `/update-stack` pulls the change.
+2. No env var changes.
+3. No Mongo migration.
+
+---
+
 ## Auth signout endpoint (2026-04-23)
 
 New `POST /api/auth/signout` endpoint that clears the httpOnly `TOKEN` cookie on the client.
