@@ -372,6 +372,14 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
   }
   // 4. No match → create new user
   try {
+    if (!config.sign.up) {
+      // Mirror the local signup endpoint's error shape so clients see the same
+      // `message`/`description` regardless of signup method (see `signup` above).
+      throw new AppError('Signup error', {
+        code: 'VALIDATION_ERROR',
+        details: { message: 'Registration is currently deactivated' },
+      });
+    }
     const user = {
       firstName: profil.firstName,
       lastName: profil.lastName,
