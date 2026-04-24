@@ -441,11 +441,19 @@ const oauthCallback = async (req, res, next) => {
   passport.authenticate(strategy, (err, user) => {
     const url = getBaseUrl();
     if (err) {
-      const _err = JSON.stringify(err);
+      logger.error(
+        { err: { message: err?.message, code: err?.code, stack: err?.stack }, strategy },
+        'OAuth callback failed',
+      );
+      const _err = encodeURIComponent(err?.message || err?.code || 'oauth_error');
       const path = 'token?message=Unprocessable%20Entity';
       res.redirect(302, `${url}/${path}&error=${_err}`);
     } else if (!user) {
-      const _err = JSON.stringify(err);
+      logger.error(
+        { err: { message: err?.message, code: err?.code, stack: err?.stack }, strategy },
+        'OAuth callback failed',
+      );
+      const _err = encodeURIComponent(err?.message || err?.code || 'oauth_no_user');
       const path = 'token?message=Could%20not%20define%20user%20in%20oAuth';
       res.redirect(302, `${url}/${path}&error=${_err}`);
     } else {
