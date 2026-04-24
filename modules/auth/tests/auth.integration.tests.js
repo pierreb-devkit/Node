@@ -684,6 +684,8 @@ describe('Auth integration tests:', () => {
       expect(parsed.searchParams.get('message')).toBe('token exchange failed');
       const payload = JSON.parse(parsed.searchParams.get('error'));
       expect(payload).toEqual({
+        code: 422,
+        status: 422,
         type: 'error',
         message: 'token exchange failed',
         errorCode: 'OAUTH_TOKEN_EXCHANGE',
@@ -720,6 +722,8 @@ describe('Auth integration tests:', () => {
       expect(parsed.searchParams.get('message')).toBe('Signup error');
       const payload = JSON.parse(parsed.searchParams.get('error'));
       expect(payload).toEqual({
+        code: 422,
+        status: 422,
         type: 'error',
         message: 'Signup error',
         errorCode: 'VALIDATION_ERROR',
@@ -788,6 +792,8 @@ describe('Auth integration tests:', () => {
       expect(parsed.searchParams.get('message')).toBe('Could not define user in oAuth');
       const payload = JSON.parse(parsed.searchParams.get('error'));
       expect(payload).toEqual({
+        code: 422,
+        status: 422,
         type: 'error',
         message: 'Could not define user in oAuth',
         errorCode: 'OAUTH_ERROR',

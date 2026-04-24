@@ -439,9 +439,14 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
 const oauthErrorRedirect = (res, err, fallbackTitle) => {
   const title = err?.message || fallbackTitle;
   const descriptionFromDetails = typeof err?.details?.message === 'string' ? err.details.message : '';
+  // OAuth callback failures are surfaced as a 302 redirect (not a JSON 422), so
+  // there is no live HTTP status — we embed 422 to match the canonical shape of
+  // a Zod / AppError validation failure elsewhere in the API.
   const payload = {
     type: 'error',
     message: title,
+    code: 422,
+    status: 422,
     errorCode: err?.code || 'OAUTH_ERROR',
     description: descriptionFromDetails,
     // Legacy shape — the current Vue `token.view.vue` parser reads `details.message`.

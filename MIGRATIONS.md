@@ -23,11 +23,15 @@ Redirect URL is `${getBaseUrl()}/token?message=<title>&error=<json>` where `<jso
 {
   "type": "error",
   "message": "<err.message || fallbackTitle>",
+  "code": 422,
+  "status": 422,
   "errorCode": "<err.code || 'OAUTH_ERROR'>",
   "description": "<err.details.message || ''>",
   "details": { "message": "<err.details.message || title>" }
 }
 ```
+
+`code` and `status` are fixed at `422` (Unprocessable Entity) — OAuth callback failures surface via 302 redirect (not a JSON 4xx) so there is no live HTTP status; `422` matches the canonical shape of Zod / AppError validation failures elsewhere in the API.
 
 ### Why `details.message` is still shipped
 
