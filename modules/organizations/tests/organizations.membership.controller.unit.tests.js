@@ -33,6 +33,7 @@ describe('Membership controller unit tests:', () => {
     return {
       query: {},
       body: {},
+      user: { _id: 'u1', roles: ['user'] },
       organization: { _id: 'org1' },
       membership: { role: MEMBERSHIP_ROLES.OWNER },
       membershipDoc: { id: 'mem1', role: MEMBERSHIP_ROLES.MEMBER, organizationId: 'org1' },
@@ -147,6 +148,38 @@ describe('Membership controller unit tests:', () => {
       mockRemove.mockResolvedValue({ success: true });
 
       const req = mockReq({ membership: { role: MEMBERSHIP_ROLES.OWNER }, membershipDoc: { id: 'mem2', role: MEMBERSHIP_ROLES.ADMIN } });
+      const res = mockRes();
+
+      await membershipController.remove(req, res);
+
+      expect(mockRemove).toHaveBeenCalledTimes(1);
+      expect(res.status).not.toHaveBeenCalledWith(403);
+    });
+
+    test('should allow global admin with no org membership to remove any member', async () => {
+      mockRemove.mockResolvedValue({ success: true });
+
+      const req = mockReq({
+        user: { _id: 'adm', roles: ['user', 'admin'] },
+        membership: undefined,
+        membershipDoc: { id: 'mem2', role: MEMBERSHIP_ROLES.OWNER },
+      });
+      const res = mockRes();
+
+      await membershipController.remove(req, res);
+
+      expect(mockRemove).toHaveBeenCalledTimes(1);
+      expect(res.status).not.toHaveBeenCalledWith(403);
+    });
+
+    test('should allow global admin to remove an owner even without being in the org', async () => {
+      mockRemove.mockResolvedValue({ success: true });
+
+      const req = mockReq({
+        user: { _id: 'adm', roles: ['admin'] },
+        membership: undefined,
+        membershipDoc: { id: 'mem2', role: MEMBERSHIP_ROLES.OWNER },
+      });
       const res = mockRes();
 
       await membershipController.remove(req, res);
