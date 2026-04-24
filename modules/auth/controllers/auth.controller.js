@@ -371,8 +371,10 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
     try {
       const linked = await UserService.linkProviderByEmail(profil.email, provider, profil.providerData);
       if (linked) return linked;
-      // No verified local match. Check whether an unverified local user exists
-      // for this email — if so, reject explicitly (do not silently annex).
+      // Link returned null → either no local user with this email, or the local
+      // user exists but is not emailVerified. Disambiguate so we can reject the
+      // squatter case explicitly instead of falling through to branch 4 (which
+      // would later fail on the unique-email index with a less actionable error).
       const existing = await UserService.findByEmail(profil.email);
       if (existing && !existing.emailVerified) {
         throw new AppError('oAuth, cannot link to unverified local account', {
@@ -382,6 +384,11 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
           },
         });
       }
+      // If `existing` is emailVerified here, a rare race between the atomic
+      // findOneAndUpdate and this findByEmail let verification complete in
+      // between. Falling through is safe: branch 4 will fail on the unique
+      // email index, the OAuth client will see the error, and a retry will
+      // hit the now-linkable state via branch 3.
     } catch (err) {
       if (err instanceof AppError) throw err;
       throw new AppError('oAuth, link to existing user failed', { code: 'SERVICE_ERROR', details: err });
