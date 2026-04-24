@@ -89,6 +89,41 @@ describe('Membership controller unit tests:', () => {
       expect(mockUpdateRole).toHaveBeenCalledTimes(1);
       expect(res.status).not.toHaveBeenCalledWith(403);
     });
+
+    test('should allow global admin with no org membership to change a role', async () => {
+      const updatedMembership = { id: 'mem1', role: MEMBERSHIP_ROLES.OWNER };
+      mockUpdateRole.mockResolvedValue(updatedMembership);
+
+      const req = mockReq({
+        user: { _id: 'adm', roles: ['user', 'admin'] },
+        membership: undefined,
+        body: { role: MEMBERSHIP_ROLES.OWNER },
+      });
+      const res = mockRes();
+
+      await membershipController.updateRole(req, res);
+
+      expect(mockUpdateRole).toHaveBeenCalledTimes(1);
+      expect(mockUpdateRole).toHaveBeenCalledWith(req.membershipDoc, MEMBERSHIP_ROLES.OWNER);
+      expect(res.status).not.toHaveBeenCalledWith(403);
+    });
+
+    test.each([
+      ['non-admin non-owner (member)', { role: MEMBERSHIP_ROLES.MEMBER }, MEMBERSHIP_ROLES.ADMIN],
+      ['org-level admin (not global)', { role: MEMBERSHIP_ROLES.ADMIN }, MEMBERSHIP_ROLES.OWNER],
+    ])('should still reject a %s trying to change a role', async (_label, membership, targetRole) => {
+      const req = mockReq({
+        user: { _id: 'u1', roles: ['user'] },
+        membership,
+        body: { role: targetRole },
+      });
+      const res = mockRes();
+
+      await membershipController.updateRole(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(mockUpdateRole).not.toHaveBeenCalled();
+    });
   });
 
   describe('remove', () => {

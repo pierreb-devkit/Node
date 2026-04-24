@@ -3,6 +3,7 @@
  */
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
+import isGlobalAdmin from '../../../lib/helpers/isGlobalAdmin.js';
 import MembershipService from '../services/organizations.membership.service.js';
 import { MEMBERSHIP_ROLES } from '../lib/constants.js';
 
@@ -34,9 +35,14 @@ const list = async (req, res) => {
  */
 const updateRole = async (req, res) => {
   try {
-    // Belt-and-suspenders: only owners can change roles (CASL blocks admins via no 'update Membership')
-    if (!req.membership || req.membership.role !== MEMBERSHIP_ROLES.OWNER) {
-      return responses.error(res, 403, 'Forbidden', 'Only owners can change member roles')();
+    // Belt-and-suspenders: only org owners can change roles (CASL blocks non-owner org
+    // roles via no 'update Membership'). Global platform admins bypass the membership
+    // requirement for moderation — notably to transfer ownership on a third-party org.
+    // Note: `isPlatformAdmin` is the global/platform role (`user.roles.includes('admin')`),
+    // distinct from the org-level `MEMBERSHIP_ROLES.ADMIN`.
+    const isPlatformAdmin = isGlobalAdmin(req.user);
+    if (!isPlatformAdmin && (!req.membership || req.membership.role !== MEMBERSHIP_ROLES.OWNER)) {
+      return responses.error(res, 403, 'Forbidden', 'Only owners or global admins can change member roles')();
     }
     const membership = await MembershipService.updateRole(req.membershipDoc, req.body.role);
     responses.success(res, 'membership updated')(membership);
@@ -56,10 +62,12 @@ const remove = async (req, res) => {
   try {
     // Only owners can remove anyone; admins can only remove members.
     // Global platform admins bypass org-level RBAC for moderation needs.
-    const isGlobalAdmin = Array.isArray(req.user?.roles) && req.user.roles.includes('admin');
+    // Note: `isPlatformAdmin` is the global/platform role, distinct from the
+    // org-level `MEMBERSHIP_ROLES.ADMIN` referenced below.
+    const isPlatformAdmin = isGlobalAdmin(req.user);
     const actorRole = req.membership?.role;
     const targetRole = req.membershipDoc.role;
-    const canRemove = isGlobalAdmin
+    const canRemove = isPlatformAdmin
       || actorRole === MEMBERSHIP_ROLES.OWNER
       || (actorRole === MEMBERSHIP_ROLES.ADMIN && targetRole === MEMBERSHIP_ROLES.MEMBER);
     if (!canRemove) {
