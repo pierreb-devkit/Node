@@ -475,6 +475,21 @@ const oauthCallback = async (req, res, next) => {
 };
 
 /**
+ * @desc Endpoint to clear the JWT TOKEN cookie on the client.
+ * No JWT middleware is required — signout must work even when the token is
+ * expired, invalid, or missing. clearCookie options mirror tokenCookieOptions
+ * because browsers only delete cookies whose secure/sameSite/path attributes
+ * match the Set-Cookie used at login.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {void} Sends a 200 JSON response and clears the TOKEN cookie
+ */
+const signout = (req, res) => {
+  res.clearCookie('TOKEN', tokenCookieOptions);
+  return res.status(200).json({ type: 'success', message: 'Signed out' });
+};
+
+/**
  * @desc Endpoint to expose public auth configuration (sign flags and organizations settings)
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
@@ -567,6 +582,7 @@ export default {
   signup,
   signinAuthenticate,
   signin,
+  signout,
   token,
   oauthCall,
   oauthCallback,
