@@ -108,9 +108,10 @@ const remove = async (req, res) => {
     // UX protection: prevent a regular user from deleting their own last organization.
     // Global platform admins bypass this entirely (moderation); a member of multiple orgs
     // is also safe to delete the current one since they keep at least one membership.
-    const admin = isGlobalAdmin(req.user);
+    // Note: `isPlatformAdmin` is the global/platform role, distinct from org-level admin.
+    const isPlatformAdmin = isGlobalAdmin(req.user);
     const isMemberOfTarget = !!req.membership;
-    if (!admin && isMemberOfTarget) {
+    if (!isPlatformAdmin && isMemberOfTarget) {
       const userMemberships = await MembershipService.listByUser(req.user._id || req.user.id);
       if (userMemberships.length <= 1) {
         return responses.error(res, 422, 'Unprocessable Entity', 'You cannot delete your last organization')();

@@ -108,25 +108,14 @@ describe('Membership controller unit tests:', () => {
       expect(res.status).not.toHaveBeenCalledWith(403);
     });
 
-    test('should still reject non-admin non-owner even with explicit role member', async () => {
+    test.each([
+      ['non-admin non-owner (member)', { role: MEMBERSHIP_ROLES.MEMBER }, MEMBERSHIP_ROLES.ADMIN],
+      ['org-level admin (not global)', { role: MEMBERSHIP_ROLES.ADMIN }, MEMBERSHIP_ROLES.OWNER],
+    ])('should still reject a %s trying to change a role', async (_label, membership, targetRole) => {
       const req = mockReq({
         user: { _id: 'u1', roles: ['user'] },
-        membership: { role: MEMBERSHIP_ROLES.MEMBER },
-        body: { role: MEMBERSHIP_ROLES.ADMIN },
-      });
-      const res = mockRes();
-
-      await membershipController.updateRole(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(403);
-      expect(mockUpdateRole).not.toHaveBeenCalled();
-    });
-
-    test('should still reject org-level admin (not global) trying to change a role', async () => {
-      const req = mockReq({
-        user: { _id: 'u1', roles: ['user'] },
-        membership: { role: MEMBERSHIP_ROLES.ADMIN },
-        body: { role: MEMBERSHIP_ROLES.OWNER },
+        membership,
+        body: { role: targetRole },
       });
       const res = mockRes();
 

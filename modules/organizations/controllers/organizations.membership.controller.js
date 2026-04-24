@@ -38,9 +38,11 @@ const updateRole = async (req, res) => {
     // Belt-and-suspenders: only org owners can change roles (CASL blocks non-owner org
     // roles via no 'update Membership'). Global platform admins bypass the membership
     // requirement for moderation — notably to transfer ownership on a third-party org.
-    const admin = isGlobalAdmin(req.user);
-    if (!admin && (!req.membership || req.membership.role !== MEMBERSHIP_ROLES.OWNER)) {
-      return responses.error(res, 403, 'Forbidden', 'Only owners can change member roles')();
+    // Note: `isPlatformAdmin` is the global/platform role (`user.roles.includes('admin')`),
+    // distinct from the org-level `MEMBERSHIP_ROLES.ADMIN`.
+    const isPlatformAdmin = isGlobalAdmin(req.user);
+    if (!isPlatformAdmin && (!req.membership || req.membership.role !== MEMBERSHIP_ROLES.OWNER)) {
+      return responses.error(res, 403, 'Forbidden', 'Only owners or global admins can change member roles')();
     }
     const membership = await MembershipService.updateRole(req.membershipDoc, req.body.role);
     responses.success(res, 'membership updated')(membership);
@@ -60,10 +62,12 @@ const remove = async (req, res) => {
   try {
     // Only owners can remove anyone; admins can only remove members.
     // Global platform admins bypass org-level RBAC for moderation needs.
-    const admin = isGlobalAdmin(req.user);
+    // Note: `isPlatformAdmin` is the global/platform role, distinct from the
+    // org-level `MEMBERSHIP_ROLES.ADMIN` referenced below.
+    const isPlatformAdmin = isGlobalAdmin(req.user);
     const actorRole = req.membership?.role;
     const targetRole = req.membershipDoc.role;
-    const canRemove = admin
+    const canRemove = isPlatformAdmin
       || actorRole === MEMBERSHIP_ROLES.OWNER
       || (actorRole === MEMBERSHIP_ROLES.ADMIN && targetRole === MEMBERSHIP_ROLES.MEMBER);
     if (!canRemove) {
