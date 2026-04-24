@@ -426,6 +426,37 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
 };
 
 /**
+ * @desc Build a redirect URL carrying the canonical `responses.error` error envelope
+ * and push the browser to `/token?...`. The payload mirrors the shape returned by
+ * `lib/helpers/responses.js` so the Vue client can parse OAuth failures the same
+ * way as any other API error.
+ *
+ * @param {Object} res - Express response object
+ * @param {Object|null} err - AppError (or plain Error) raised by passport / strategy; may be null
+ * @param {string} fallbackTitle - Human-readable title used when `err?.message` is missing
+ * @returns {void} triggers a 302 redirect to `${baseUrl}/token?...`
+ */
+const oauthErrorRedirect = (res, err, fallbackTitle) => {
+  const title = err?.message || fallbackTitle;
+  const descriptionFromDetails = typeof err?.details?.message === 'string' ? err.details.message : '';
+  const payload = {
+    type: 'error',
+    message: title,
+    errorCode: err?.code || 'OAUTH_ERROR',
+    description: descriptionFromDetails,
+    // Legacy shape — the current Vue `token.view.vue` parser reads `details.message`.
+    // Remove this field once all downstream Vue deploys have adopted the canonical
+    // `responses.error` parser (tracked in Vue issue #4021).
+    details: { message: descriptionFromDetails || title },
+  };
+  const qs = new URLSearchParams({
+    message: title,
+    error: JSON.stringify(payload),
+  });
+  res.redirect(302, `${getBaseUrl()}/token?${qs.toString()}`);
+};
+
+/**
  * @desc Endpoint for oautCallCallBack
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
@@ -471,30 +502,25 @@ const oauthCallback = async (req, res, next) => {
   }
   // classic web oAuth
   passport.authenticate(strategy, (err, user) => {
-    const url = getBaseUrl();
     if (err) {
       logger.error(
         { err: { message: err?.message, code: err?.code, stack: err?.stack }, strategy },
         'OAuth callback failed',
       );
-      const _err = encodeURIComponent(err?.message || err?.code || 'oauth_error');
-      const path = 'token?message=Unprocessable%20Entity';
-      res.redirect(302, `${url}/${path}&error=${_err}`);
-    } else if (!user) {
+      return oauthErrorRedirect(res, err, 'oAuth error');
+    }
+    if (!user) {
       logger.error(
         { err: { message: err?.message, code: err?.code, stack: err?.stack }, strategy },
         'OAuth callback failed',
       );
-      const _err = encodeURIComponent(err?.message || err?.code || 'oauth_no_user');
-      const path = 'token?message=Could%20not%20define%20user%20in%20oAuth';
-      res.redirect(302, `${url}/${path}&error=${_err}`);
-    } else {
-      const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
-        expiresIn: config.jwt.expiresIn,
-      });
-      res.cookie('TOKEN', token, tokenCookieOptions);
-      res.redirect(302, `${getBaseUrl()}/token`);
+      return oauthErrorRedirect(res, null, 'Could not define user in oAuth');
     }
+    const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
+      expiresIn: config.jwt.expiresIn,
+    });
+    res.cookie('TOKEN', token, tokenCookieOptions);
+    return res.redirect(302, `${getBaseUrl()}/token`);
   })(req, res, next);
 };
 
