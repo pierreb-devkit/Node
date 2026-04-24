@@ -648,7 +648,7 @@ describe('Auth integration tests:', () => {
       authenticateSpy.mockRestore();
     });
 
-    test('should log and redirect with message when classic web oAuth errors out', async () => {
+    test('should log and redirect with canonical error envelope when classic web oAuth errors out', async () => {
       const oauthErr = new Error('token exchange failed');
       oauthErr.code = 'OAUTH_TOKEN_EXCHANGE';
       const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
@@ -676,16 +676,90 @@ describe('Auth integration tests:', () => {
         'OAuth callback failed',
       );
       expect(redirectCalls[0].code).toBe(302);
-      // Redirect must carry the actual error message, not an empty object
-      expect(redirectCalls[0].url).toContain('error=');
       expect(redirectCalls[0].url).not.toContain('error={}');
-      expect(redirectCalls[0].url).toContain(encodeURIComponent('token exchange failed'));
+
+      // Parse the redirect URL and assert the canonical `responses.error` envelope
+      const parsed = new URL(redirectCalls[0].url);
+      expect(parsed.pathname).toBe('/token');
+      expect(parsed.searchParams.get('message')).toBe('token exchange failed');
+      const payload = JSON.parse(parsed.searchParams.get('error'));
+      expect(payload).toEqual({
+        code: 422,
+        status: 422,
+        type: 'error',
+        message: 'token exchange failed',
+        errorCode: 'OAUTH_TOKEN_EXCHANGE',
+        description: '',
+        details: { message: 'token exchange failed' },
+      });
 
       loggerSpy.mockRestore();
       authenticateSpy.mockRestore();
     });
 
-    test('should log and redirect with sensible message when no user is returned by passport', async () => {
+    test('should redirect with canonical envelope preserving AppError details.message', async () => {
+      const AppError = (await import(path.resolve('./lib/helpers/AppError.js'))).default;
+      const oauthErr = new AppError('Signup error', {
+        code: 'VALIDATION_ERROR',
+        details: { message: 'Registration is currently deactivated' },
+      });
+      const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
+        (strategy, callback) => () => callback(oauthErr, null),
+      );
+      const loggerSpy = jest.spyOn(logger, 'error').mockImplementation(() => {});
+      const redirectCalls = [];
+      const mockReq = { params: { strategy: 'google' }, body: {} };
+      const mockRes = {
+        cookie() { return this; },
+        redirect(code, url) { redirectCalls.push({ code, url }); },
+      };
+
+      await AuthController.oauthCallback(mockReq, mockRes, () => {});
+
+      expect(redirectCalls[0].code).toBe(302);
+      const parsed = new URL(redirectCalls[0].url);
+      expect(parsed.pathname).toBe('/token');
+      expect(parsed.searchParams.get('message')).toBe('Signup error');
+      const payload = JSON.parse(parsed.searchParams.get('error'));
+      expect(payload).toEqual({
+        code: 422,
+        status: 422,
+        type: 'error',
+        message: 'Signup error',
+        errorCode: 'VALIDATION_ERROR',
+        description: 'Registration is currently deactivated',
+        details: { message: 'Registration is currently deactivated' },
+      });
+
+      loggerSpy.mockRestore();
+      authenticateSpy.mockRestore();
+    });
+
+    test('should fall back to OAUTH_ERROR code for plain Error without code', async () => {
+      const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
+        (strategy, callback) => () => callback(new Error('boom'), null),
+      );
+      const loggerSpy = jest.spyOn(logger, 'error').mockImplementation(() => {});
+      const redirectCalls = [];
+      const mockReq = { params: { strategy: 'google' }, body: {} };
+      const mockRes = {
+        cookie() { return this; },
+        redirect(code, url) { redirectCalls.push({ code, url }); },
+      };
+
+      await AuthController.oauthCallback(mockReq, mockRes, () => {});
+
+      const parsed = new URL(redirectCalls[0].url);
+      const payload = JSON.parse(parsed.searchParams.get('error'));
+      expect(payload.errorCode).toBe('OAUTH_ERROR');
+      expect(payload.message).toBe('boom');
+      expect(payload.type).toBe('error');
+
+      loggerSpy.mockRestore();
+      authenticateSpy.mockRestore();
+    });
+
+    test('should log and redirect with canonical envelope when no user is returned by passport', async () => {
       const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
         (strategy, callback) => () => callback(null, null),
       );
@@ -711,10 +785,21 @@ describe('Auth integration tests:', () => {
         'OAuth callback failed',
       );
       expect(redirectCalls[0].code).toBe(302);
-      expect(redirectCalls[0].url).toContain('error=');
       expect(redirectCalls[0].url).not.toContain('error={}');
-      expect(redirectCalls[0].url).toContain('oauth_no_user');
-      expect(redirectCalls[0].url).toContain('Could%20not%20define%20user%20in%20oAuth');
+
+      const parsed = new URL(redirectCalls[0].url);
+      expect(parsed.pathname).toBe('/token');
+      expect(parsed.searchParams.get('message')).toBe('Could not define user in oAuth');
+      const payload = JSON.parse(parsed.searchParams.get('error'));
+      expect(payload).toEqual({
+        code: 422,
+        status: 422,
+        type: 'error',
+        message: 'Could not define user in oAuth',
+        errorCode: 'OAUTH_ERROR',
+        description: '',
+        details: { message: 'Could not define user in oAuth' },
+      });
 
       loggerSpy.mockRestore();
       authenticateSpy.mockRestore();

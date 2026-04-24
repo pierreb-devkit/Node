@@ -4,6 +4,56 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Auth OAuth redirect: canonical `responses.error` envelope on failure (2026-04-24)
+
+The `GET /api/auth/oauth/:strategy/callback` redirect now carries a JSON-encoded error payload mirroring the canonical `lib/helpers/responses.js` shape, so the Vue client can surface OAuth failures with the same parser it uses for every other API error.
+
+### What changed
+
+- New private helper `oauthErrorRedirect(res, err, fallbackTitle)` in `modules/auth/controllers/auth.controller.js` — builds the redirect URL and stamps a canonical error envelope into the `error` query param (`URLSearchParams` ensures proper encoding).
+- Both failure branches of `oauthCallback` (passport error, `!user`) now delegate to the helper instead of hand-rolling query strings with hardcoded titles.
+- The `message` query now reflects the real `AppError.message` (e.g. `Signup error`) instead of the hardcoded `Unprocessable Entity` / `Could not define user in oAuth`.
+- `logger.error(...)` calls are preserved — observability unchanged.
+
+### Contract
+
+Redirect URL is `${getBaseUrl()}/token?message=<title>&error=<json>` where `<json>` is a stringified envelope:
+
+```json
+{
+  "type": "error",
+  "message": "<err.message || fallbackTitle>",
+  "code": 422,
+  "status": 422,
+  "errorCode": "<err.code || 'OAUTH_ERROR'>",
+  "description": "<err.details.message || ''>",
+  "details": { "message": "<err.details.message || title>" }
+}
+```
+
+`code` and `status` are fixed at `422` (Unprocessable Entity) — OAuth callback failures surface via 302 redirect (not a JSON 4xx) so there is no live HTTP status; `422` matches the canonical shape of Zod / AppError validation failures elsewhere in the API.
+
+### Why `details.message` is still shipped
+
+Current downstream `token.view.vue` parsers read `error.details.message` rather than the canonical `error.description` / `error.message`. Shipping the canonical envelope AND the legacy `details.message` field lets Node deploy ahead of Vue without regressing the user-visible error toast during rollout.
+
+Once every downstream Vue deploy has adopted the canonical parser (tracked in Vue issue #4021), the `details` field will be removed from the payload. A follow-up Node PR will ship that cleanup.
+
+### Non-breaking
+
+- Successful OAuth redirect (`${baseUrl}/token` + `TOKEN` cookie) is unchanged.
+- The `message` query still exists — only its value changed (from hardcoded constants to the actual error title).
+- The `error` query used to be a URL-encoded plain string; it is now URL-encoded JSON. Downstream clients that tried `JSON.parse` on the old payload were already throwing — the fix aligns them with the canonical parser path.
+
+### Action for downstream
+
+1. `/update-stack` pulls the change.
+2. No env var changes.
+3. No Mongo migration.
+4. Vue consumers that currently read `error.details.message` keep working; new consumers should read `error.message` / `error.description` / `error.errorCode` per the canonical envelope.
+
+---
+
 ## Organizations: global admin bypass extended to updateRole + `isGlobalAdmin` helper (2026-04-24)
 
 Completes the platform-admin bypass started in #3509, and centralizes the repeated `Array.isArray(req.user?.roles) && req.user.roles.includes('admin')` check into a shared helper.
