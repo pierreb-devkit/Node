@@ -194,15 +194,20 @@ const updateMany = (filter, data) => User.updateMany(filter, data, { runValidato
 /**
  * @desc Atomically attach an OAuth provider to an existing user matched by email.
  * Uses findOneAndUpdate to avoid TOCTOU races between concurrent OAuth callbacks.
+ * Filter requires `emailVerified: true` so an unverified-squatter local signup
+ * cannot be silently annexed by a later OAuth signin (issue #3504).
  * @param {string} email - The email to match
  * @param {string} provider - The OAuth provider key (e.g. 'google', 'apple')
  * @param {Object} providerData - The provider's identity data to store
- * @returns {Promise<Object|null>} Updated user document or null if no match
+ * @returns {Promise<Object|null>} Updated user document, or null when no match
+ *   OR when a match exists but is not email-verified — the caller is expected
+ *   to follow up with findByEmail to distinguish the two cases if it needs to
+ *   return a specific error.
  */
 const linkProviderByEmail = (email, provider, providerData) =>
   User.findOneAndUpdate(
-    { email },
-    { $set: { [`additionalProvidersData.${provider}`]: providerData, emailVerified: true } },
+    { email, emailVerified: true },
+    { $set: { [`additionalProvidersData.${provider}`]: providerData } },
     { returnDocument: 'after', runValidators: true },
   ).exec();
 

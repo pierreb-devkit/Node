@@ -746,8 +746,9 @@ describe('Auth integration tests:', () => {
       } catch (_) { /* cleanup – ignore errors */ }
     });
 
-    test('should link OAuth signin to existing local user when provider verifies email', async () => {
-      // Seed a local user with a password (provider=local), email not yet linked via OAuth
+    test('should link OAuth signin to existing local user when both local emailVerified and provider verify', async () => {
+      // Seed a local user with a password (provider=local) that has ALREADY verified its email
+      // — the branch-3 link-on-verified-email gate requires both sides to vouch (issue #3504).
       const localEmail = 'oauthlink-local@test.com';
       const localUser = await UserService.create({
         firstName: 'Local',
@@ -757,6 +758,9 @@ describe('Auth integration tests:', () => {
         provider: 'local',
         roles: ['user'],
       });
+      // Mark the local account as email-verified (done normally by the verification flow).
+      const brutLocal = await UserService.getBrut({ email: localEmail });
+      await UserService.update(brutLocal, { emailVerified: true }, 'recover');
 
       // OAuth signin arrives with matching email + provider-verified flag
       const profil = {
@@ -782,6 +786,52 @@ describe('Auth integration tests:', () => {
       expect(second.id).toBe(localUser.id);
 
       try { await UserService.remove(linked); } catch (_) { /* cleanup */ }
+    });
+
+    test('should reject link when local account is NOT emailVerified even if OAuth provider verified (#3504)', async () => {
+      // Squatter scenario (issue #3504): someone signed up locally with victim's email
+      // but never verified it. A later OAuth signin by the real owner must NOT silently
+      // annex the unverified local account.
+      const squatterEmail = 'oauthlink-squatter@test.com';
+      const localUser = await UserService.create({
+        firstName: 'Squatter',
+        lastName: 'Pending',
+        email: squatterEmail,
+        password: credentials[0].password,
+        provider: 'local',
+        roles: ['user'],
+      });
+      // Sanity: freshly created local user is not emailVerified by default.
+      const brutBefore = await UserService.getBrut({ email: squatterEmail });
+      expect(brutBefore.emailVerified).toBe(false);
+      expect(brutBefore.additionalProvidersData?.google).toBeUndefined();
+      expect(brutBefore.providerData == null).toBe(true);
+
+      const profil = {
+        firstName: 'Real',
+        lastName: 'Owner',
+        email: squatterEmail,
+        avatar: '',
+        providerData: { sub: 'google-owner-sub-3504', email_verified: true },
+        emailVerifiedByProvider: true,
+      };
+
+      await expect(
+        AuthController.checkOAuthUserProfile(profil, 'sub', 'google'),
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_ERROR',
+        message: 'oAuth, cannot link to unverified local account',
+      });
+
+      // The unverified local account must be untouched — no silent annexation.
+      const users = await UserService.search({ email: squatterEmail });
+      expect(users.length).toBe(1);
+      const brutAfter = await UserService.getBrut({ email: squatterEmail });
+      expect(brutAfter.emailVerified).toBe(false);
+      expect(brutAfter.additionalProvidersData?.google).toBeUndefined();
+      expect(brutAfter.providerData == null).toBe(true);
+
+      try { await UserService.remove(localUser); } catch (_) { /* cleanup */ }
     });
 
     test('should NOT link when OAuth provider did not verify the email', async () => {

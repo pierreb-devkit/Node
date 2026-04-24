@@ -358,15 +358,32 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
   } catch (err) {
     throw new AppError('oAuth, find linked user failed', { code: 'SERVICE_ERROR', details: err });
   }
-  // 3. Link on verified email: if a local user exists with the same email and the OAuth
-  //    provider vouches for it, attach providerData under additionalProvidersData.{provider}
-  //    without overwriting user.provider (keeps password reset + local login intact).
-  //    Atomic findOneAndUpdate avoids TOCTOU races between concurrent OAuth callbacks.
+  // 3. Link on verified email: if a local user exists with the same email AND is
+  //    already emailVerified locally AND the OAuth provider vouches for the email,
+  //    attach providerData under additionalProvidersData.{provider} without
+  //    overwriting user.provider (keeps password reset + local login intact).
+  //    Atomic findOneAndUpdate (filter includes emailVerified: true) avoids TOCTOU
+  //    races and prevents an unverified-squatter local account from being annexed
+  //    by a later OAuth signin (issue #3504). If a matching email exists but is
+  //    not locally verified, we reject with VALIDATION_ERROR rather than fall
+  //    through to branch 4 (which would later fail on the unique-email index).
   if (profil.email && profil.emailVerifiedByProvider) {
     try {
       const linked = await UserService.linkProviderByEmail(profil.email, provider, profil.providerData);
       if (linked) return linked;
+      // No verified local match. Check whether an unverified local user exists
+      // for this email — if so, reject explicitly (do not silently annex).
+      const existing = await UserService.findByEmail(profil.email);
+      if (existing && !existing.emailVerified) {
+        throw new AppError('oAuth, cannot link to unverified local account', {
+          code: 'VALIDATION_ERROR',
+          details: {
+            message: 'A pending account with this email is not verified. Verify the original signup first or contact support.',
+          },
+        });
+      }
     } catch (err) {
+      if (err instanceof AppError) throw err;
       throw new AppError('oAuth, link to existing user failed', { code: 'SERVICE_ERROR', details: err });
     }
   }
