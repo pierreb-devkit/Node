@@ -54,10 +54,13 @@ const updateRole = async (req, res) => {
  */
 const remove = async (req, res) => {
   try {
-    // Only owners can remove anyone; admins can only remove members
+    // Only owners can remove anyone; admins can only remove members.
+    // Global platform admins bypass org-level RBAC for moderation needs.
+    const isGlobalAdmin = Array.isArray(req.user?.roles) && req.user.roles.includes('admin');
     const actorRole = req.membership?.role;
     const targetRole = req.membershipDoc.role;
-    const canRemove = actorRole === MEMBERSHIP_ROLES.OWNER
+    const canRemove = isGlobalAdmin
+      || actorRole === MEMBERSHIP_ROLES.OWNER
       || (actorRole === MEMBERSHIP_ROLES.ADMIN && targetRole === MEMBERSHIP_ROLES.MEMBER);
     if (!canRemove) {
       return responses.error(res, 403, 'Forbidden', 'Insufficient permissions to remove this member')();
