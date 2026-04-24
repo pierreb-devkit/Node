@@ -358,15 +358,39 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
   } catch (err) {
     throw new AppError('oAuth, find linked user failed', { code: 'SERVICE_ERROR', details: err });
   }
-  // 3. Link on verified email: if a local user exists with the same email and the OAuth
-  //    provider vouches for it, attach providerData under additionalProvidersData.{provider}
-  //    without overwriting user.provider (keeps password reset + local login intact).
-  //    Atomic findOneAndUpdate avoids TOCTOU races between concurrent OAuth callbacks.
+  // 3. Link on verified email: if a local user exists with the same email AND is
+  //    already emailVerified locally AND the OAuth provider vouches for the email,
+  //    attach providerData under additionalProvidersData.{provider} without
+  //    overwriting user.provider (keeps password reset + local login intact).
+  //    Atomic findOneAndUpdate (filter includes emailVerified: true) avoids TOCTOU
+  //    races and prevents an unverified-squatter local account from being annexed
+  //    by a later OAuth signin (issue #3504). If a matching email exists but is
+  //    not locally verified, we reject with VALIDATION_ERROR rather than fall
+  //    through to branch 4 (which would later fail on the unique-email index).
   if (profil.email && profil.emailVerifiedByProvider) {
     try {
       const linked = await UserService.linkProviderByEmail(profil.email, provider, profil.providerData);
       if (linked) return linked;
+      // Link returned null → either no local user with this email, or the local
+      // user exists but is not emailVerified. Disambiguate so we can reject the
+      // squatter case explicitly instead of falling through to branch 4 (which
+      // would later fail on the unique-email index with a less actionable error).
+      const existing = await UserService.findByEmail(profil.email);
+      if (existing && !existing.emailVerified) {
+        throw new AppError('oAuth, cannot link to unverified local account', {
+          code: 'VALIDATION_ERROR',
+          details: {
+            message: 'A pending account with this email is not verified. Verify the original signup first or contact support.',
+          },
+        });
+      }
+      // If `existing` is emailVerified here, a rare race between the atomic
+      // findOneAndUpdate and this findByEmail let verification complete in
+      // between. Falling through is safe: branch 4 will fail on the unique
+      // email index, the OAuth client will see the error, and a retry will
+      // hit the now-linkable state via branch 3.
     } catch (err) {
+      if (err instanceof AppError) throw err;
       throw new AppError('oAuth, link to existing user failed', { code: 'SERVICE_ERROR', details: err });
     }
   }
