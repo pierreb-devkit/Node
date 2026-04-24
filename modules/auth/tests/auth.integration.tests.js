@@ -10,6 +10,7 @@ import passport from 'passport';
 import { bootstrap } from '../../../lib/app.js';
 import mongooseService from '../../../lib/services/mongoose.js';
 import config from '../../../config/index.js';
+import logger from '../../../lib/services/logger.js';
 
 /**
  * Unit tests
@@ -642,6 +643,78 @@ describe('Auth integration tests:', () => {
 
       expect(cookies.TOKEN).toBeDefined();
       expect(redirectCalls[0]).toMatchObject({ code: 302 });
+      authenticateSpy.mockRestore();
+    });
+
+    test('should log and redirect with message when classic web oAuth errors out', async () => {
+      const oauthErr = new Error('token exchange failed');
+      oauthErr.code = 'OAUTH_TOKEN_EXCHANGE';
+      const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
+        (strategy, callback) => () => callback(oauthErr, null),
+      );
+      const loggerSpy = jest.spyOn(logger, 'error').mockImplementation(() => {});
+      const redirectCalls = [];
+      const mockReq = { params: { strategy: 'google' }, body: {} };
+      const mockRes = {
+        cookie() { return this; },
+        redirect(code, url) { redirectCalls.push({ code, url }); },
+      };
+
+      await AuthController.oauthCallback(mockReq, mockRes, () => {});
+
+      expect(loggerSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          err: expect.objectContaining({
+            message: 'token exchange failed',
+            code: 'OAUTH_TOKEN_EXCHANGE',
+            stack: expect.any(String),
+          }),
+          strategy: 'google',
+        }),
+        'OAuth callback failed',
+      );
+      expect(redirectCalls[0].code).toBe(302);
+      // Redirect must carry the actual error message, not an empty object
+      expect(redirectCalls[0].url).toContain('error=');
+      expect(redirectCalls[0].url).not.toContain('error={}');
+      expect(redirectCalls[0].url).toContain(encodeURIComponent('token exchange failed'));
+
+      loggerSpy.mockRestore();
+      authenticateSpy.mockRestore();
+    });
+
+    test('should log and redirect with sensible message when no user is returned by passport', async () => {
+      const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
+        (strategy, callback) => () => callback(null, null),
+      );
+      const loggerSpy = jest.spyOn(logger, 'error').mockImplementation(() => {});
+      const redirectCalls = [];
+      const mockReq = { params: { strategy: 'google' }, body: {} };
+      const mockRes = {
+        cookie() { return this; },
+        redirect(code, url) { redirectCalls.push({ code, url }); },
+      };
+
+      await AuthController.oauthCallback(mockReq, mockRes, () => {});
+
+      expect(loggerSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          err: expect.objectContaining({
+            message: undefined,
+            code: undefined,
+            stack: undefined,
+          }),
+          strategy: 'google',
+        }),
+        'OAuth callback failed',
+      );
+      expect(redirectCalls[0].code).toBe(302);
+      expect(redirectCalls[0].url).toContain('error=');
+      expect(redirectCalls[0].url).not.toContain('error={}');
+      expect(redirectCalls[0].url).toContain('oauth_no_user');
+      expect(redirectCalls[0].url).toContain('Could%20not%20define%20user%20in%20oAuth');
+
+      loggerSpy.mockRestore();
       authenticateSpy.mockRestore();
     });
 
