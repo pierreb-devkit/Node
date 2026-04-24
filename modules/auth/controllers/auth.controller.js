@@ -468,10 +468,10 @@ const oauthCallback = async (req, res, next) => {
  * @param {Object} res - Express response object
  * @returns {void} Sends a 200 JSON response and clears the TOKEN cookie
  */
-const signout = (req, res) => res
-  .status(200)
-  .clearCookie('TOKEN', tokenCookieOptions)
-  .json({ type: 'success', message: 'Signed out' });
+const signout = (req, res) => {
+  res.clearCookie('TOKEN', tokenCookieOptions);
+  return res.status(200).json({ type: 'success', message: 'Signed out' });
+};
 
 /**
  * @desc Endpoint to expose public auth configuration (sign flags and organizations settings)
