@@ -41,6 +41,9 @@ export default (app) => {
   // Setting up the users authentication api
   app.route('/api/auth/signup').post(authLimiter, model.isValid(UsersSchema.User), auth.signup);
   app.route('/api/auth/signin').post(authLimiter, auth.signinAuthenticate, auth.signin);
+  // Signout: intentionally no JWT middleware — must clear the cookie even if the
+  // token is expired/invalid/missing so the client cannot get silently re-logged in.
+  app.route('/api/auth/signout').post(authLimiter, auth.signout);
 
   // Email verification
   app.route('/api/auth/verify-email/:token').post(authLimiter, auth.verifyEmail);

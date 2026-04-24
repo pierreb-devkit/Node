@@ -4,6 +4,38 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Auth signout endpoint (2026-04-23)
+
+New `POST /api/auth/signout` endpoint that clears the httpOnly `TOKEN` cookie on the client.
+
+### Why
+
+Before: signout was purely client-side — the Vue client dropped its in-memory user state but the httpOnly `TOKEN` cookie remained in the browser. On the next page load the cookie was replayed to `/api/auth/token`, the user was silently re-logged in, and the signout button was effectively a no-op.
+
+Now: the route calls `res.clearCookie('TOKEN', { httpOnly, secure, sameSite })` with options mirroring `tokenCookieOptions`. Browsers only delete cookies whose `secure`/`sameSite`/`path`/`domain` attributes match the original `Set-Cookie`, so the options must match exactly.
+
+### Contract
+
+- `POST /api/auth/signout` → `200 { type: 'success', message: 'Signed out' }`
+- `Set-Cookie: TOKEN=; Max-Age=0; HttpOnly; …` (expired cookie — browser discards it)
+- No JWT middleware: signout works even if the token is expired, invalid, or missing
+- Rate-limited via the standard `authLimiter`
+
+### Non-breaking
+
+Additive endpoint. No existing contract changes. Downstream projects can adopt it at their own pace:
+
+- Vue: call `POST /api/auth/signout` from the signout action, then clear the Vuex/Pinia user state
+- No env var changes
+- No Mongo migration
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the endpoint.
+2. (Vue side, separately) wire the signout action to call `POST /api/auth/signout` before resetting client state.
+
+---
+
 ## OAuth account linking + Express 5 callback fix (2026-04-23)
 
 Two related auth fixes that ship together.

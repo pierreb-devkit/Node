@@ -17,6 +17,7 @@ import config from '../../../config/index.js';
 describe('Auth integration tests:', () => {
   let UserService = null;
   let AuthService = null;
+  let app; // Express app instance for fresh agents inside Signout block (#3502)
   let agent;
   let credentials;
   let user;
@@ -30,7 +31,8 @@ describe('Auth integration tests:', () => {
       const init = await bootstrap();
       UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
       AuthService = (await import(path.resolve('./modules/auth/services/auth.service.js'))).default;
-      agent = request.agent(init.app);
+      app = init.app;
+      agent = request.agent(app);
     } catch (err) {
       console.log(err);
       expect(err).toBeFalsy();
@@ -1028,6 +1030,71 @@ describe('Auth integration tests:', () => {
         if (cookieUser) await UserService.remove(cookieUser);
       } catch (_) { /* cleanup */ }
       secUser = null;
+    });
+  });
+
+  describe('Signout', () => {
+    const outEmail = 'signout@test.com';
+    const outPassword = 'W@os.jsI$Aw3$0m3';
+    let outUser;
+
+    beforeEach(async () => {
+      // Clean up stale user from previous runs on shared databases
+      try {
+        const existing = await UserService.getBrut({ email: outEmail });
+        if (existing) await UserService.remove(existing);
+      } catch (_) { /* cleanup – ignore errors */ }
+      try {
+        const signoutAgent = request.agent(app);
+        const result = await signoutAgent.post('/api/auth/signup').send({
+          firstName: 'Signout',
+          lastName: 'Test',
+          email: outEmail,
+          password: outPassword,
+          provider: 'local',
+        }).expect(200);
+        outUser = result.body.user;
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    test('should return 200 with success message even without prior JWT cookie', async () => {
+      const result = await request(app).post('/api/auth/signout').expect(200);
+      expect(result.body.type).toBe('success');
+      expect(result.body.message).toBe('Signed out');
+    });
+
+    test('should set an expired TOKEN cookie so the browser discards it', async () => {
+      const result = await request(app).post('/api/auth/signout').expect(200);
+      const tokenCookie = result.headers['set-cookie']?.find((c) => c.startsWith('TOKEN='));
+      expect(tokenCookie).toBeDefined();
+      // Cleared cookie: value is empty and either Max-Age=0 or Expires is in the past
+      expect(tokenCookie).toMatch(/^TOKEN=;/);
+      const hasMaxAgeZero = /Max-Age=0/i.test(tokenCookie);
+      const expiresMatch = tokenCookie.match(/Expires=([^;]+)/i);
+      const expiresInPast = expiresMatch ? new Date(expiresMatch[1]).getTime() < Date.now() : false;
+      expect(hasMaxAgeZero || expiresInPast).toBe(true);
+      // Must mirror login cookie attributes (httpOnly) so the browser deletes it
+      expect(tokenCookie).toMatch(/HttpOnly/i);
+    });
+
+    test('should invalidate the session so subsequent JWT-guarded calls return 401', async () => {
+      // Use a dedicated agent with a clean cookie jar so the signin cookie is the only state
+      const signoutAgent = request.agent(app);
+      await signoutAgent.post('/api/auth/signin').send({ email: outEmail, password: outPassword }).expect(200);
+      // Cookie present → token endpoint works
+      await signoutAgent.get('/api/auth/token').expect(200);
+      // Signout clears the cookie on the agent's jar
+      await signoutAgent.post('/api/auth/signout').expect(200);
+      // Next JWT-guarded call with the same agent must be 401 (cookie gone)
+      await signoutAgent.get('/api/auth/token').expect(401);
+    });
+
+    afterEach(async () => {
+      try { if (outUser) await UserService.remove(outUser); } catch (_) { /* cleanup */ }
+      outUser = null;
     });
   });
 
