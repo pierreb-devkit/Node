@@ -449,11 +449,14 @@ const oauthErrorRedirect = (res, err, fallbackTitle) => {
     // `responses.error` parser (tracked in Vue issue #4021).
     details: { message: descriptionFromDetails || title },
   };
-  const qs = new URLSearchParams({
-    message: title,
-    error: JSON.stringify(payload),
-  });
-  res.redirect(302, `${getBaseUrl()}/token?${qs.toString()}`);
+  // Build the redirect URL via the `URL` constructor so the origin + path stay
+  // server-controlled (`getBaseUrl()` resolves from `config.cors.origin`). User
+  // input only flows into the query string, fully encoded by `URLSearchParams`,
+  // so this is not an open-redirect sink.
+  const target = new URL('/token', getBaseUrl());
+  target.searchParams.set('message', title);
+  target.searchParams.set('error', JSON.stringify(payload));
+  res.redirect(302, target.toString());
 };
 
 /**
