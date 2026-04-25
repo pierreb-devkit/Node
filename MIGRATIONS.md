@@ -36,6 +36,14 @@ CI workflows (`.github/workflows/CI.yml` and downstream copies) set `DEVKIT_NODE
 - All test scripts (`npm run test`, `test:integration`, `test:coverage`, etc.) keep working with no flag changes.
 - `docker-compose.test.yml` still ships an explicit `DEVKIT_NODE_db_uri` override (`mongodb://mongo:27017/NodeTest`) so containerised runs stay deterministic.
 
+### Downstream propagation note (#3518)
+
+When this lands in your project via `/update-stack`, the new `parallel-smoke` CI job ships a default `SMOKE_TEST_PATTERN` of `organizations.integration|tasks.integration` — which only matches in the upstream Devkit. **You MUST override `SMOKE_TEST_PATTERN`** in your CI `parallel-smoke` job to match your project's integration test paths (e.g. `scraps.integration|historys.integration` for trawl_node, `tasks.integration|notes.integration` for comes_node, etc.).
+
+Without an override, the smoke would historically have silently passed with 0 tests run, defeating the regression gate. As of #3518 the orchestrator passes `--passWithNoTests=false` to jest, so a 0-match pattern now exits non-zero and fails the smoke loudly — but the actionable fix is still to point the pattern at real integration paths in your repo.
+
+The orchestrator also enforces a global timeout (`SMOKE_GLOBAL_TIMEOUT_MS`, default `2 × SMOKE_TIMEOUT_MS + 30s`) on top of the per-child timer, so a child whose `exit` event is dropped (rare ARC edge) no longer hangs the job until the 15-min CI cap.
+
 ---
 
 ## Auth OAuth redirect: canonical `responses.error` envelope on failure (2026-04-24)
