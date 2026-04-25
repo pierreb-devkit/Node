@@ -90,6 +90,10 @@ describe('scripts/jest.globalTeardown safety guards', () => {
 
     await expect(globalTeardown()).resolves.toBeUndefined();
     expect(dropDatabase).not.toHaveBeenCalled();
+    // Connect rejected → no live connection → disconnect must NOT be called
+    // (calling it would throw on Mongoose's disconnected state and pollute
+    // the warn log with a misleading second error).
+    expect(disconnect).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Skipped drop'));
   });
 
