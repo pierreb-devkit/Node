@@ -84,7 +84,7 @@ export default {
   globalSetup: './scripts/jest.globalSetup.js',
 
   // A path to a module which exports an async function that is triggered once after all test suites
-  // globalTeardown: null,
+  globalTeardown: './scripts/jest.globalTeardown.js',
 
   // A set of global variables that need to be available in all test environments
   globals: {

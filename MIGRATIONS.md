@@ -4,6 +4,40 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Test DB isolation: per-pid Mongo database default + globalTeardown (2026-04-24)
+
+Default test database is now `mongodb://127.0.0.1:27017/NodeTest_${process.pid}` instead of the shared `NodeTest`. Concurrent jest invocations (e.g. multiple agent worktrees running `npm run test:coverage` in parallel) get isolated databases, eliminating the 401 / 404 / 422 / `MongoPoolClosedError` flake patterns documented in trawl_node#980.
+
+### What changed
+
+- `config/defaults/test.config.js` — `db.uri` is now computed at module load with `process.pid` suffix.
+- `scripts/jest.globalTeardown.js` — new file; drops the resolved per-pid DB after the suite finishes so local Mongo doesn't accumulate orphan `NodeTest_<pid>` databases. Reuses the same NODE_ENV + `/test/i` guards as `globalSetup`.
+- `jest.config.js` — registers the new `globalTeardown`.
+- New regression tests: `scripts/tests/jest.globalTeardown.unit.tests.js` and `scripts/tests/testConfig.perPid.unit.tests.js`.
+
+### Why `NodeTest_` (not just `Test_<pid>`)
+
+The `NodeTest_` prefix preserves the `/test/i` DB-name guard in `scripts/jest.globalSetup.js` (#3476) — the guard refuses to drop any DB whose name does not contain `test`. Keeping the literal substring keeps the belt-and-suspenders intact.
+
+### CI is unaffected
+
+CI workflows (`.github/workflows/CI.yml` and downstream copies) set `DEVKIT_NODE_db_uri` explicitly, which lands in Layer 4 of `config/index.js` and overrides this default. Per-pid never applies on CI runs.
+
+### Action for downstream
+
+1. `/update-stack` pulls the change.
+2. No env var changes required — your CI workflow's `DEVKIT_NODE_db_uri` keeps working.
+3. If a downstream README / docs / make target references the literal `NodeTest` DB name (e.g. a manual `mongo NodeTest --eval ...` command), update it to point at the new default or invoke `mongosh` against the resolved URI from `config.db.uri`.
+4. No Mongo data migration — test DBs are dropped on every run by design.
+
+### Non-breaking
+
+- CI is unchanged (env var override wins, see above).
+- All test scripts (`npm run test`, `test:integration`, `test:coverage`, etc.) keep working with no flag changes.
+- `docker-compose.test.yml` still ships an explicit `DEVKIT_NODE_db_uri` override (`mongodb://mongo:27017/NodeTest`) so containerised runs stay deterministic.
+
+---
+
 ## Auth OAuth redirect: canonical `responses.error` envelope on failure (2026-04-24)
 
 The `GET /api/auth/oauth/:strategy/callback` redirect now carries a JSON-encoded error payload mirroring the canonical `lib/helpers/responses.js` shape, so the Vue client can surface OAuth failures with the same parser it uses for every other API error.
