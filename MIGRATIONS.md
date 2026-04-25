@@ -38,7 +38,19 @@ CI workflows (`.github/workflows/CI.yml` and downstream copies) set `DEVKIT_NODE
 
 ### Downstream propagation note (#3518)
 
-When this lands in your project via `/update-stack`, the new `parallel-smoke` CI job ships a default `SMOKE_TEST_PATTERN` of `organizations.integration|tasks.integration` — which only matches in the upstream Devkit. **You MUST override `SMOKE_TEST_PATTERN`** in your CI `parallel-smoke` job to match your project's integration test paths (e.g. `scraps.integration|historys.integration` for trawl_node, `tasks.integration|notes.integration` for comes_node, etc.).
+When this lands in your project via `/update-stack`, the new `parallel-smoke` CI job ships a default `SMOKE_TEST_PATTERN` of `organizations.integration|tasks.integration` — which only matches in the upstream Devkit. **You MUST override `SMOKE_TEST_PATTERN`** in your CI `parallel-smoke` job (set it under the job's `env:` in `.github/workflows/CI.yml`) to match your project's integration test paths.
+
+The 5 downstream Node projects that consume this stack must each set the override:
+
+| Project | Suggested `SMOKE_TEST_PATTERN` |
+|---|---|
+| `pierreb_node` | project-specific integration globs |
+| `comes_node` | `tasks.integration\|notes.integration` |
+| `trawl_node` | `scraps.integration\|historys.integration` |
+| `montaine_node` | project-specific integration globs |
+| `ism_node` | project-specific integration globs |
+
+(The exact globs are illustrative — replace with whatever integration files actually exist in each repo. The point is: pick at least two real integration suites so the parallel-smoke job exercises the per-pid DB isolation rather than passing on zero matches.)
 
 Without an override, the smoke would historically have silently passed with 0 tests run, defeating the regression gate. As of #3518 the orchestrator passes `--passWithNoTests=false` to jest, so a 0-match pattern now exits non-zero and fails the smoke loudly — but the actionable fix is still to point the pattern at real integration paths in your repo.
 

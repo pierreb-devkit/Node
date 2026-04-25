@@ -37,6 +37,14 @@ import { setTimeout as delay } from 'timers/promises';
 
 export const WORKERS = Number.parseInt(process.env.SMOKE_WORKERS, 10) || 2;
 export const PATTERN = process.env.SMOKE_TEST_PATTERN || 'organizations\\.integration|tasks\\.integration';
+// `||` fallback: `parseInt('0', 10) || 240000` collapses `0` to the default
+// because `0` is falsy. This is intentional — disabling the per-child watchdog
+// via env is not supported (children leaked past the 15-min CI cap on ARC the
+// one time the timer was missing). `SMOKE_TIMEOUT_MS=0` silently uses 240s; to
+// truly run without a per-child timer, edit the code, do not set the env var.
+// (Negative values are truthy and would pass through, but `setTimeout` clamps
+// negative delays to 0ms, which would SIGKILL the children before they spawn —
+// also undesirable. Just don't set negative values.)
 export const TIMEOUT_MS = Number.parseInt(process.env.SMOKE_TIMEOUT_MS, 10) || 240000;
 export const GLOBAL_TIMEOUT_MS =
   Number.parseInt(process.env.SMOKE_GLOBAL_TIMEOUT_MS, 10) || 2 * TIMEOUT_MS + 30000;
@@ -46,9 +54,14 @@ export const GLOBAL_TIMEOUT_MS =
  * Each child inherits NODE_ENV=test but does NOT inherit DEVKIT_NODE_db_uri,
  * so it falls through to the per-pid default in `config/defaults/test.config.js`.
  *
+ * The returned `handle` exposes a mutable `settled` flag flipped to `true`
+ * once the child either exits or errors. Orchestration code (timeout path,
+ * spawn-error catch) inspects this flag to identify which children still
+ * need a SIGKILL — see `killStragglers` below.
+ *
  * @param {number} index - worker ordinal (used for logging only)
  * @param {{ spawnFn?: typeof spawn }} [deps] - injected for unit tests
- * @returns {{ child: import('child_process').ChildProcess, done: Promise<{ index: number, pid: number, code: number|null, signal: NodeJS.Signals|null, stderr: string, durationMs: number }> }}
+ * @returns {{ child: import('child_process').ChildProcess, done: Promise<{ index: number, pid: number, code: number|null, signal: NodeJS.Signals|null, stderr: string, durationMs: number }>, settled: boolean }}
  */
 export const spawnWorker = (index, { spawnFn = spawn } = {}) => {
   const startedAt = Date.now();
@@ -81,19 +94,61 @@ export const spawnWorker = (index, { spawnFn = spawn } = {}) => {
     child.kill('SIGKILL');
   }, TIMEOUT_MS);
 
-  const done = new Promise((resolve, reject) => {
+  // Mutated to `true` by either the `exit` or `error` handler. `killStragglers`
+  // reads this to skip already-settled children and avoid SIGKILL-ing a pid
+  // the OS may have already recycled.
+  const handle = { child, done: undefined, settled: false };
+
+  handle.done = new Promise((resolve, reject) => {
     child.on('error', (err) => {
       clearTimeout(timer);
+      handle.settled = true;
       reject(err);
     });
 
     child.on('exit', (code, signal) => {
       clearTimeout(timer);
+      handle.settled = true;
       resolve({ index, pid: child.pid, code, signal, stderr, durationMs: Date.now() - startedAt });
     });
   });
 
-  return { child, done };
+  // Attach a no-op rejection handler on the handle so that an early rejection
+  // (e.g. ENOENT fires on nextTick, before `raceAgainstGlobalTimeout` had a
+  // chance to wire its own `.then`) doesn't trip Node's unhandledRejection
+  // tracker. The original rejection still propagates through `handle.done` to
+  // any consumer that does attach later — this is purely a tracking guard.
+  handle.done.catch(() => {});
+
+  return handle;
+};
+
+/**
+ * SIGKILL any handles whose child hasn't yet emitted `exit` (or `error`).
+ * Reachable from both the global-timeout path and the spawn-error catch in
+ * `main()` — without this, a `child.on('error', ...)` rejection on one worker
+ * would short-circuit `Promise.all`, clear the global timer via `.finally`,
+ * and leave sibling jest workers running until the 15-min CI cap.
+ *
+ * Best-effort: a `kill` failure is logged but never thrown, since this runs
+ * during cleanup and the orchestrator is already on its way to a non-zero
+ * exit code.
+ *
+ * @param {Array<{ child: import('child_process').ChildProcess, settled: boolean }>} handles
+ * @param {string} reason - context for the log line
+ */
+export const killStragglers = (handles, reason) => {
+  const stragglers = handles.filter((h) => !h.settled);
+  if (stragglers.length === 0) return;
+  const pids = stragglers.map((h) => h.child.pid);
+  console.error(`[smoke] ${reason} — SIGKILL ${stragglers.length} unsettled worker(s) pids=${pids.join(',')}`);
+  stragglers.forEach((h) => {
+    try {
+      h.child.kill('SIGKILL');
+    } catch (err) {
+      console.error(`[smoke] SIGKILL of pid=${h.child.pid} failed: ${err.message}`);
+    }
+  });
 };
 
 /**
@@ -103,39 +158,23 @@ export const spawnWorker = (index, { spawnFn = spawn } = {}) => {
  * guard on top of the per-child timer — covers the rare case where a child's
  * `exit` event is dropped (observed once on ARC).
  *
- * @param {Array<{ child: import('child_process').ChildProcess, done: Promise<any> }>} handles
+ * @param {Array<{ child: import('child_process').ChildProcess, done: Promise<any>, settled: boolean }>} handles
  * @param {number} globalTimeoutMs
  * @returns {Promise<any[]>}
  */
 export const raceAgainstGlobalTimeout = (handles, globalTimeoutMs) => {
-  const live = new Set(handles.map((_, i) => i));
-  const wrapped = handles.map((h, i) =>
-    h.done.then((r) => {
-      live.delete(i);
-      return r;
-    }),
-  );
-
   let timeoutHandle;
   const timeoutPromise = new Promise((_, reject) => {
     timeoutHandle = setTimeout(() => {
-      const stuck = [...live];
-      const stuckPids = stuck.map((i) => handles[i].child.pid);
-      console.error(
-        `[smoke] GLOBAL TIMEOUT after ${globalTimeoutMs}ms — workers still live: indices=${stuck.join(',')} pids=${stuckPids.join(',')}`,
-      );
-      stuck.forEach((i) => {
-        try {
-          handles[i].child.kill('SIGKILL');
-        } catch (err) {
-          console.error(`[smoke] SIGKILL of pid=${handles[i].child.pid} failed: ${err.message}`);
-        }
-      });
+      const stuckPids = handles.filter((h) => !h.settled).map((h) => h.child.pid);
+      killStragglers(handles, `GLOBAL TIMEOUT after ${globalTimeoutMs}ms`);
       reject(new Error(`global timeout after ${globalTimeoutMs}ms (stuck workers: ${stuckPids.join(',')})`));
     }, globalTimeoutMs);
   });
 
-  return Promise.race([Promise.all(wrapped), timeoutPromise]).finally(() => clearTimeout(timeoutHandle));
+  return Promise.race([Promise.all(handles.map((h) => h.done)), timeoutPromise]).finally(() =>
+    clearTimeout(timeoutHandle),
+  );
 };
 
 /**
@@ -160,6 +199,12 @@ export const main = async ({ spawnFn = spawn } = {}) => {
     results = await raceAgainstGlobalTimeout(handles, GLOBAL_TIMEOUT_MS);
   } catch (err) {
     console.error(`[smoke] orchestration error: ${err && err.message ? err.message : err}`);
+    // Spawn-error path: a `child.on('error', ...)` rejection from one worker
+    // (binary missing, OS-level spawn failure) propagates here and short-circuits
+    // `Promise.all`, so sibling workers may still be running. Without this
+    // cleanup, they would leak as orphans until the 15-min CI cap. The global
+    // timeout path SIGKILLs internally and re-enters as a no-op here (settled).
+    killStragglers(handles, 'orchestration aborted — cleaning up siblings');
     return 2;
   }
 
