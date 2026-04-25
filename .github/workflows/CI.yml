@@ -60,3 +60,44 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: ${{ github.repository }}
+
+  parallel-smoke:
+    # Regression gate for #3515 — proves the per-pid test DB default keeps
+    # multiple jest processes isolated against a single shared mongod.
+    # Off the critical path (not a `needs:` of any merge gate), so a slow
+    # smoke never blocks PR merges.
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd="mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      NODE_ENV: test
+      # Intentionally NO DEVKIT_NODE_db_uri override here — we need the
+      # per-pid default in config/defaults/test.config.js to apply, since
+      # that's exactly what the smoke is gating.
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run test:parallel-smoke
+        env:
+          SMOKE_WORKERS: 2
+          SMOKE_TIMEOUT_MS: 300000

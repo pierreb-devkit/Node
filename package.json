@@ -35,6 +35,7 @@
     "test:e2e": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --runInBand --testPathPatterns='e2e'",
     "test:watch": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --watchAll",
     "test:coverage": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --coverage --runInBand",
+    "test:parallel-smoke": "cross-env NODE_ENV=test node scripts/parallel-integration.smoke.js",
     "lint": "eslint ./modules ./lib ./config ./scripts",
     "seed:dev": "cross-env NODE_ENV=development node scripts/seed.js seed",
     "seed:prod": "cross-env NODE_ENV=production node scripts/seed.js seed",
