@@ -58,6 +58,13 @@ Node / Express / Mongoose / JWT stack from Devkit. Standalone backend or fullsta
 - E2E only for critical product flows (auth, org onboarding, invite/join)
 - Docker: `docker compose -f docker-compose.test.yml up --build --abort-on-container-exit`
 
+## Dev tooling
+
+- **Code knowledge graph (optional):**
+  - Install Graphify via `uv tool install graphifyy==0.5.0` (Python tool, system-wide).
+  - Run `graphify update .` to generate `graph.json` and a report under `graphify-out/`.
+  - Pin v0.5.0 — Graphify ships fast (5 releases / 48h around 22-23 April 2026), so expect breaking changes on minor bumps.
+
 ## Guardrails
 
 - Never commit secrets (`.env*`, keys, tokens)
