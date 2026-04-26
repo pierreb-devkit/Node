@@ -60,7 +60,10 @@ Node / Express / Mongoose / JWT stack from Devkit. Standalone backend or fullsta
 
 ## Dev tooling
 
-- **Code knowledge graph (optional)** : install Graphify via `uv tool install graphifyy==0.5.0` (Python tool, system-wide). Run `graphify update .` to generate `graph.json` + report under `graphify-out/`. Pin v0.5.0 — Graphify ships fast (5 releases / 48h around 22-23 April 2026), expect breaking changes on minor bumps.
+- **Code knowledge graph (optional):**
+  - Install Graphify via `uv tool install graphifyy==0.5.0` (Python tool, system-wide).
+  - Run `graphify update .` to generate `graph.json` and a report under `graphify-out/`.
+  - Pin v0.5.0 — Graphify ships fast (5 releases / 48h around 22-23 April 2026), so expect breaking changes on minor bumps.
 
 ## Guardrails
 
