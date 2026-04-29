@@ -1,49 +1,22 @@
 /**
- * Migration: Add planVersion to subscriptions + TTL index on processedstripeevents
+ * Migration: Add planVersion and currentPeriodStart to subscriptions collection
  *
- * - subscriptions: sparse index on planVersion
- * - processedstripeevents: TTL index on processedAt (30d retention)
+ * Schema changes (new fields + indexes on subscriptions, billingplans,
+ * processedstripeevents) are owned by the respective Mongoose models and
+ * auto-synced at bootstrap (autoIndex: true).
  *
- * billingplans indexes are owned by Mongoose schema and synced at bootstrap.
+ * This migration is a marker: it records the point at which these fields
+ * were introduced so rollback tooling can target the correct state.
  *
  * Additive only — no data backfill.
  * Idempotent: safe to run multiple times.
  *
- * @returns {Promise<void>}
+ * @returns {void}
  */
-export async function up() {
-  const { db } = await import('mongoose').then((m) => ({ db: m.default.connection.db }));
-
-  // ── subscriptions: sparse index for planVersion ─────────────────────────
-  const subscriptions = db.collection('subscriptions');
-  await subscriptions.createIndex(
-    { planVersion: 1 },
-    { sparse: true, name: 'planVersion_sparse' },
-  );
-
-  // billingplans indexes are managed by Mongoose (auto-sync on bootstrap).
-  // Do not duplicate them here — mismatched names cause IndexOptionsConflict.
-
-  // ── processedstripeevents: TTL index ─────────────────────────────────────
-  const events = db.collection('processedstripeevents');
-  await events.createIndex(
-    { processedAt: 1 },
-    { expireAfterSeconds: 30 * 24 * 60 * 60, name: 'processedAt_ttl_30d' },
-  );
-}
+export function up() {}
 
 /**
- * Down: remove the added sparse index from subscriptions.
- * Does NOT remove fields or drop the new collections.
- * @returns {Promise<void>}
+ * Down: no-op — indexes are Mongoose-managed; fields are additive (one-way safe).
+ * @returns {void}
  */
-export async function down() {
-  const { db } = await import('mongoose').then((m) => ({ db: m.default.connection.db }));
-  const subscriptions = db.collection('subscriptions');
-
-  try {
-    await subscriptions.dropIndex('planVersion_sparse');
-  } catch (err) {
-    if (err?.codeName !== 'IndexNotFound' && err?.code !== 27) throw err;
-  }
-}
+export function down() {}
