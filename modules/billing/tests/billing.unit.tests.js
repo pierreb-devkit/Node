@@ -185,4 +185,70 @@ describe('Billing unit tests:', () => {
       done();
     });
   });
+
+  describe('Subscription schema — compute fields (backward compat)', () => {
+    let subscription;
+
+    beforeEach(() => {
+      subscription = {
+        organization: '507f1f77bcf86cd799439011',
+        plan: 'free',
+        status: 'active',
+      };
+    });
+
+    test('should be valid without compute fields (non-compute downstream)', (done) => {
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+      done();
+    });
+
+    test('should accept planVersion as optional string', (done) => {
+      subscription.planVersion = 'v2';
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+      expect(result.data.planVersion).toBe('v2');
+      done();
+    });
+
+    test('should accept currentPeriodStart as a date', (done) => {
+      subscription.currentPeriodStart = '2026-05-01T00:00:00.000Z';
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+      expect(result.data.currentPeriodStart).toBeInstanceOf(Date);
+      done();
+    });
+
+    test('should accept currentPeriodStart as null', (done) => {
+      subscription.currentPeriodStart = null;
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+      expect(result.data.currentPeriodStart).toBeNull();
+      done();
+    });
+
+    test('should accept pastDueSince as a date', (done) => {
+      subscription.pastDueSince = new Date('2026-05-10');
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+      expect(result.data.pastDueSince).toBeInstanceOf(Date);
+      done();
+    });
+
+    test('should accept pastDueSince as null (no past-due event)', (done) => {
+      subscription.pastDueSince = null;
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+      expect(result.data.pastDueSince).toBeNull();
+      done();
+    });
+
+    test('SubscriptionUpdate should allow patching planVersion alone', (done) => {
+      const update = { planVersion: 'v3' };
+      const result = schema.SubscriptionUpdate.safeParse(update);
+      expect(result.error).toBeFalsy();
+      expect(result.data.planVersion).toBe('v3');
+      done();
+    });
+  });
 });

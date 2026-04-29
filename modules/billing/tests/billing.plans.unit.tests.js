@@ -206,4 +206,36 @@ describe('Billing plans service unit tests:', () => {
 
     Date.now = originalDateNow;
   });
+
+  // ── Facade regression — billing.plans.service.js public API ────────────
+  // These tests ensure the legacy service still exports the same interface
+  // after the introduction of billing.plan.service.js (the new versioned service).
+
+  test('facade: getPlans should be a function (API contract unchanged)', async () => {
+    const mod = await import('../services/billing.plans.service.js');
+    BillingPlansService = mod.default;
+
+    expect(typeof BillingPlansService.getPlans).toBe('function');
+  });
+
+  test('facade: fetchPlansFromStripe should be a function when exported', async () => {
+    const mod = await import('../services/billing.plans.service.js');
+    // fetchPlansFromStripe is intentionally NOT re-exported (it's an internal helper)
+    // Verify that the default export only exposes the public surface: getPlans
+    expect(typeof mod.default.getPlans).toBe('function');
+    expect(mod.default.fetchPlansFromStripe).toBeUndefined();
+  });
+
+  test('facade: getPlans returns array of plan objects', async () => {
+    const mod = await import('../services/billing.plans.service.js');
+    BillingPlansService = mod.default;
+
+    const plans = await BillingPlansService.getPlans();
+    expect(Array.isArray(plans)).toBe(true);
+    expect(plans.length).toBeGreaterThan(0);
+    for (const plan of plans) {
+      expect(plan).toHaveProperty('planId');
+      expect(plan).toHaveProperty('monthlyPrice');
+    }
+  });
 });

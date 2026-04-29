@@ -44,6 +44,33 @@ const SubscriptionMongoose = new Schema(
       type: Boolean,
       default: false,
     },
+
+    // ── Compute fields (sparse — backward-compatible additions) ─────────────
+
+    /**
+     * The plan version active on this subscription (e.g. "v1", "v2").
+     * Only populated when computeMode is enabled.
+     */
+    planVersion: {
+      type: String,
+      sparse: true,
+    },
+    /**
+     * Start of the current billing period. Used to detect period changes
+     * in webhook handlers and trigger compute period resets.
+     */
+    currentPeriodStart: {
+      type: Date,
+      default: null,
+    },
+    /**
+     * Timestamp when the subscription first entered past_due status.
+     * Used to enforce the 7-day grace period before degraded mode.
+     */
+    pastDueSince: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

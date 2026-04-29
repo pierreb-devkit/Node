@@ -71,6 +71,88 @@ describe('BillingUsage unit tests:', () => {
     });
   });
 
+  describe('Schema validation — compute fields (weekKey)', () => {
+    let usage;
+
+    beforeEach(() => {
+      usage = {
+        organizationId: '507f1f77bcf86cd799439011',
+        month: '2026-03',
+      };
+    });
+
+    test('should accept a valid ISO weekKey YYYY-Www', () => {
+      const result = schema.BillingUsage.safeParse({ ...usage, weekKey: '2026-W18' });
+      expect(result.error).toBeFalsy();
+      expect(result.data.weekKey).toBe('2026-W18');
+    });
+
+    test('should reject weekKey with wrong format (missing W prefix)', () => {
+      const result = schema.BillingUsage.safeParse({ ...usage, weekKey: '2026-18' });
+      expect(result.error).toBeDefined();
+    });
+
+    test('should reject weekKey with invalid week number 00', () => {
+      const result = schema.BillingUsage.safeParse({ ...usage, weekKey: '2026-W00' });
+      expect(result.error).toBeDefined();
+    });
+
+    test('should reject weekKey with week number > 53', () => {
+      const result = schema.BillingUsage.safeParse({ ...usage, weekKey: '2026-W54' });
+      expect(result.error).toBeDefined();
+    });
+
+    test('should allow usage document without weekKey (non-compute downstream)', () => {
+      const result = schema.BillingUsage.safeParse(usage);
+      expect(result.error).toBeFalsy();
+      expect(result.data.weekKey).toBeUndefined();
+    });
+  });
+
+  describe('Schema validation — consumedHistoryIds', () => {
+    const objectIdRegex = /^[a-f\d]{24}$/i;
+
+    test('should accept an empty consumedHistoryIds array', () => {
+      const result = schema.BillingUsage.safeParse({
+        organizationId: '507f1f77bcf86cd799439011',
+        month: '2026-03',
+        consumedHistoryIds: [],
+      });
+      expect(result.error).toBeFalsy();
+      expect(result.data.consumedHistoryIds).toEqual([]);
+    });
+
+    test('should accept valid ObjectId strings in consumedHistoryIds', () => {
+      const result = schema.BillingUsage.safeParse({
+        organizationId: '507f1f77bcf86cd799439011',
+        month: '2026-03',
+        consumedHistoryIds: ['507f1f77bcf86cd799439012', '507f1f77bcf86cd799439013'],
+      });
+      expect(result.error).toBeFalsy();
+      for (const id of result.data.consumedHistoryIds) {
+        expect(objectIdRegex.test(id)).toBe(true);
+      }
+    });
+
+    test('should reject invalid ObjectId strings in consumedHistoryIds', () => {
+      const result = schema.BillingUsage.safeParse({
+        organizationId: '507f1f77bcf86cd799439011',
+        month: '2026-03',
+        consumedHistoryIds: ['not-an-objectid'],
+      });
+      expect(result.error).toBeDefined();
+    });
+
+    test('should default consumedHistoryIds to empty array when missing', () => {
+      const result = schema.BillingUsage.safeParse({
+        organizationId: '507f1f77bcf86cd799439011',
+        month: '2026-03',
+      });
+      expect(result.error).toBeFalsy();
+      expect(result.data.consumedHistoryIds).toEqual([]);
+    });
+  });
+
   describe('Service layer', () => {
     let BillingUsageService;
     let mockUsageRepository;
