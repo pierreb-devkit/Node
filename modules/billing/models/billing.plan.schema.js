@@ -26,7 +26,7 @@ const BillingPlan = z.object({
 const BillingPlanBump = z
   .object({
     meterQuota: z.number().int().min(0),
-    ratios: z.record(z.string(), z.number()).optional(),
+    ratios: z.record(z.string(), z.number().min(0, 'ratio values must be >= 0')).optional(),
     stripePriceMonthly: z.string().trim().optional().nullable(),
     stripePriceAnnual: z.string().trim().optional().nullable(),
   })

@@ -107,9 +107,14 @@ const UsageMongoose = new Schema(
 
 /**
  * Legacy unique index: (organizationId, month) — kept for non-meter downstream.
- * sparse: false is the Mongoose default; month is always present on legacy docs.
+ * Partial filter: only applies to documents without weekKey (non-meter mode).
+ * Meter-mode documents have weekKey set and can have multiple docs per month
+ * (one per ISO week), so they are excluded from this uniqueness constraint.
  */
-UsageMongoose.index({ organizationId: 1, month: 1 }, { unique: true });
+UsageMongoose.index(
+  { organizationId: 1, month: 1 },
+  { unique: true, partialFilterExpression: { weekKey: { $exists: false } } },
+);
 
 /**
  * Meter-mode unique index: (organizationId, weekKey) — sparse so it only

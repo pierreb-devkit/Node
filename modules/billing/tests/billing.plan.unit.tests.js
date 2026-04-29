@@ -145,6 +145,12 @@ describe('BillingPlan unit tests:', () => {
       expect(result.data.ratios.scrap).toBe(2);
     });
 
+    test('should reject negative ratio values in bump (matches BillingPlan contract)', () => {
+      bump.ratios = { scrap: -1 };
+      const result = schema.BillingPlanBump.safeParse(bump);
+      expect(result.error).toBeDefined();
+    });
+
     test('should reject extra unknown fields (strict)', () => {
       bump.unknownField = 'should fail';
       const result = schema.BillingPlanBump.safeParse(bump);

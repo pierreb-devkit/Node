@@ -3,6 +3,12 @@
  */
 import mongoose from 'mongoose';
 
+/**
+ * @function BillingPlan
+ * @description Lazily resolves the BillingPlan Mongoose model.
+ *              Deferred to keep unit tests importable before model registration.
+ * @returns {import('mongoose').Model} The registered BillingPlan model.
+ */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const BillingPlan = () => mongoose.model('BillingPlan');
 

@@ -84,9 +84,15 @@ const BillingPlanMongoose = new Schema(
 BillingPlanMongoose.index({ planId: 1, version: 1 }, { unique: true });
 
 /**
- * Compound index to look up the active plan for a given planId efficiently
+ * Compound index to look up the active plan for a given planId efficiently.
+ * Partial unique constraint: only one active plan per planId at a time
+ * (effectiveUntil: null means currently active). Guards against concurrent
+ * bumpVersion() races producing two simultaneously-active versions.
  */
-BillingPlanMongoose.index({ planId: 1, active: 1, effectiveUntil: 1 });
+BillingPlanMongoose.index(
+  { planId: 1, active: 1, effectiveUntil: 1 },
+  { unique: true, partialFilterExpression: { active: true, effectiveUntil: null } },
+);
 
 /**
  * Returns the hex string representation of the document ObjectId.
