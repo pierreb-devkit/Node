@@ -16,28 +16,52 @@ const LedgerKind = z.enum(['topup', 'debit', 'refund', 'expiration', 'adjustment
 
 /**
  * Single ledger entry schema.
+ * Enforces:
+ *   - amount !== 0 (zero is always a bug)
+ *   - sign by kind: topup/adjustment must be > 0; debit/expiration/refund must be < 0
  */
-const LedgerEntry = z.object({
-  _id: z.string().trim().regex(objectIdRegex, '_id must be a valid ObjectId').optional(),
-  kind: LedgerKind,
-  /**
-   * Signed amount in meter units.
-   * Positive for topup/adjustment; negative for debit/expiration/refund.
-   * 'refund' entries are clawbacks (negative) reflecting reclaimed units.
-   * Zero is rejected as an operational guard (zero-amount entries are always a bug).
-   */
-  amount: z.number().refine((n) => n !== 0, { message: 'Ledger entry amount must not be zero' }),
-  stripeSessionId: z.string().trim().optional().nullable(),
-  historyId: z
-    .string()
-    .trim()
-    .regex(objectIdRegex, 'historyId must be a valid ObjectId')
-    .optional()
-    .nullable(),
-  refId: z.string().trim().optional().nullable(),
-  at: z.coerce.date().optional(),
-  expiresAt: z.coerce.date().optional().nullable(),
-});
+const LedgerEntry = z
+  .object({
+    _id: z.string().trim().regex(objectIdRegex, '_id must be a valid ObjectId').optional(),
+    kind: LedgerKind,
+    /**
+     * Signed amount in meter units.
+     * Positive for topup/adjustment; negative for debit/expiration/refund.
+     * 'refund' entries are clawbacks (negative) reflecting reclaimed units.
+     * Zero is rejected as an operational guard (zero-amount entries are always a bug).
+     */
+    amount: z.number().refine((n) => n !== 0, { message: 'Ledger entry amount must not be zero' }),
+    stripeSessionId: z.string().trim().optional().nullable(),
+    historyId: z
+      .string()
+      .trim()
+      .regex(objectIdRegex, 'historyId must be a valid ObjectId')
+      .optional()
+      .nullable(),
+    refId: z.string().trim().optional().nullable(),
+    at: z.coerce.date().optional(),
+    expiresAt: z.coerce.date().optional().nullable(),
+  })
+  .superRefine((entry, ctx) => {
+    const { kind, amount } = entry;
+    if (kind === 'topup' || kind === 'adjustment') {
+      if (amount <= 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Ledger entry of kind '${kind}' must have a positive amount`,
+          path: ['amount'],
+        });
+      }
+    } else if (kind === 'debit' || kind === 'expiration' || kind === 'refund') {
+      if (amount >= 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Ledger entry of kind '${kind}' must have a negative amount`,
+          path: ['amount'],
+        });
+      }
+    }
+  });
 
 /**
  * Full ExtraBalance document schema.

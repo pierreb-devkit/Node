@@ -59,9 +59,17 @@ describe('BillingExtraBalance unit tests:', () => {
         expect(result.error).toBeDefined();
       });
 
-      test('should accept all valid ledger kinds', () => {
-        for (const kind of ['topup', 'debit', 'refund', 'expiration', 'adjustment']) {
-          const result = schema.LedgerEntry.safeParse({ kind, amount: 100 });
+      test('should accept all valid ledger kinds with correct sign', () => {
+        // topup/adjustment require positive amount; debit/expiration/refund require negative
+        const cases = [
+          { kind: 'topup', amount: 100 },
+          { kind: 'adjustment', amount: 100 },
+          { kind: 'debit', amount: -100 },
+          { kind: 'expiration', amount: -100 },
+          { kind: 'refund', amount: -100 },
+        ];
+        for (const entry of cases) {
+          const result = schema.LedgerEntry.safeParse(entry);
           expect(result.error).toBeFalsy();
         }
       });
@@ -132,6 +140,10 @@ describe('BillingExtraBalance unit tests:', () => {
     let mockModel;
 
     const orgId = '507f1f77bcf86cd799439011';
+    /**
+     * @param {Object} [overrides={}] - Fields to override on the stub document.
+     * @returns {Object} A stub ExtraBalance document.
+     */
     const makeDoc = (overrides = {}) => ({
       _id: '507f1f77bcf86cd799439099',
       organization: orgId,
@@ -397,6 +409,58 @@ describe('BillingExtraBalance unit tests:', () => {
         const result = await BillingExtraBalanceRepository.refundPartial(orgId, 'cs_neg', 500000, 'refund-cs_neg-4900');
         expect(result.applied).toBe(true);
         expect(result.doc.cachedBalance).toBe(-500000);
+      });
+
+      test('should throw on zero refundUnits', async () => {
+        await expect(
+          BillingExtraBalanceRepository.refundPartial(orgId, 'cs_abc', 0, 'refund-key'),
+        ).rejects.toThrow('invalid argument: refundUnits must be a positive finite number');
+      });
+
+      test('should throw on empty refId', async () => {
+        await expect(
+          BillingExtraBalanceRepository.refundPartial(orgId, 'cs_abc', 100, ''),
+        ).rejects.toThrow('invalid argument: refId must be a non-empty string');
+      });
+    });
+
+    describe('creditPack — input guards', () => {
+      test('should throw on zero amount', async () => {
+        await expect(
+          BillingExtraBalanceRepository.creditPack(orgId, 0, 'cs_test', null),
+        ).rejects.toThrow('invalid argument: amount must be a positive finite number');
+      });
+
+      test('should throw on negative amount', async () => {
+        await expect(
+          BillingExtraBalanceRepository.creditPack(orgId, -100, 'cs_test', null),
+        ).rejects.toThrow('invalid argument: amount must be a positive finite number');
+      });
+
+      test('should throw on empty stripeSessionId', async () => {
+        await expect(
+          BillingExtraBalanceRepository.creditPack(orgId, 100, '', null),
+        ).rejects.toThrow('invalid argument: stripeSessionId must be a non-empty string');
+      });
+    });
+
+    describe('debit — input guards', () => {
+      test('should throw on zero amount', async () => {
+        await expect(
+          BillingExtraBalanceRepository.debit(orgId, 0, 'ref_test'),
+        ).rejects.toThrow('invalid argument: amount must be a positive finite number');
+      });
+
+      test('should throw on negative amount', async () => {
+        await expect(
+          BillingExtraBalanceRepository.debit(orgId, -50, 'ref_test'),
+        ).rejects.toThrow('invalid argument: amount must be a positive finite number');
+      });
+
+      test('should throw on empty refId', async () => {
+        await expect(
+          BillingExtraBalanceRepository.debit(orgId, 100, ''),
+        ).rejects.toThrow('invalid argument: refId must be a non-empty string');
       });
     });
   });

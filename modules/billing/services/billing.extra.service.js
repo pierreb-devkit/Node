@@ -77,6 +77,7 @@ const expireOldEntries = (orgId) =>
 const refundPartial = async (orgId, stripeSessionId, amountRefundedCents) => {
   // Find the topup ledger entry for this session to identify the pack
   const doc = await BillingExtraBalanceRepository.getOrCreate(orgId);
+  if (!doc) return { doc: null, applied: false, reason: 'invalid_org', refundUnits: 0 };
   const topupEntry = doc.ledger?.find(
     (e) => e.kind === 'topup' && e.stripeSessionId === stripeSessionId,
   );
@@ -112,7 +113,10 @@ const refundPartial = async (orgId, stripeSessionId, amountRefundedCents) => {
 
   if (refundUnits <= 0) return { doc, applied: false, refundUnits: 0 };
 
-  const refundRefId = `refund-${stripeSessionId}-${amountRefundedCents}`;
+  // Include topup entry _id to make the key unique across distinct partial refunds
+  // for the same session+amount. Two partial refunds of identical cents on different
+  // topup entries (or a retry after a failed refund) will produce different keys.
+  const refundRefId = `refund-${stripeSessionId}-${amountRefundedCents}-${topupEntry._id ?? Date.now()}`;
 
   // Delegate atomic write to repository — no mongoose import in service layer.
   const { doc: updatedDoc, applied } = await BillingExtraBalanceRepository.refundPartial(
@@ -140,6 +144,7 @@ const refundPartial = async (orgId, stripeSessionId, amountRefundedCents) => {
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const listLedger = async (orgId, { page = 1, limit = 20 } = {}) => {
   const doc = await BillingExtraBalanceRepository.getOrCreate(orgId);
+  if (!doc) return { entries: [], total: 0, balance: 0 };
   const ledger = doc.ledger ?? [];
   const total = ledger.length;
 

@@ -10,6 +10,10 @@ describe('BillingPlanService — bumpVersionWithRetry unit tests:', () => {
   let BillingPlanService;
   let mockBillingPlanRepository;
 
+  /**
+   * @param {Object} [overrides={}] - Fields to override on the stub plan document.
+   * @returns {Object} A stub BillingPlan document.
+   */
   const makeDoc = (overrides = {}) => ({
     _id: '507f1f77bcf86cd799439011',
     planId: 'pro',
@@ -120,6 +124,24 @@ describe('BillingPlanService — bumpVersionWithRetry unit tests:', () => {
       const result = await BillingPlanService.bumpVersionWithRetry('pro', { meterQuota: 1 });
       expect(result).toBeDefined();
       expect(mockBillingPlanRepository.create).toHaveBeenCalledTimes(3);
+    });
+
+    test('should throw when maxAttempts is 0', async () => {
+      await expect(
+        BillingPlanService.bumpVersionWithRetry('pro', { meterQuota: 1 }, { maxAttempts: 0 }),
+      ).rejects.toThrow('maxAttempts must be a positive integer');
+    });
+
+    test('should throw when maxAttempts is negative', async () => {
+      await expect(
+        BillingPlanService.bumpVersionWithRetry('pro', { meterQuota: 1 }, { maxAttempts: -1 }),
+      ).rejects.toThrow('maxAttempts must be a positive integer');
+    });
+
+    test('should throw when maxAttempts is non-integer', async () => {
+      await expect(
+        BillingPlanService.bumpVersionWithRetry('pro', { meterQuota: 1 }, { maxAttempts: 1.5 }),
+      ).rejects.toThrow('maxAttempts must be a positive integer');
     });
   });
 });

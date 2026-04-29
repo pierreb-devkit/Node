@@ -14,6 +14,10 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
 
   const orgId = '507f1f77bcf86cd799439011';
 
+  /**
+   * @param {Object} [overrides={}] - Fields to override on the stub plan.
+   * @returns {Object} A stub BillingPlan document.
+   */
   const makePlan = (overrides = {}) => ({
     planId: 'pro',
     version: 'v1',
@@ -22,6 +26,10 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
     ...overrides,
   });
 
+  /**
+   * @param {Object} [overrides={}] - Fields to override on the stub usage document.
+   * @returns {Object} A stub BillingUsage document.
+   */
   const makeUsageDoc = (overrides = {}) => ({
     _id: '507f1f77bcf86cd799439099',
     organizationId: orgId,
@@ -236,6 +244,30 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       const result = await BillingUsageService.incrementMeter(orgId, 1, {}, 'hist_100pct_dedup');
 
       expect(result.alertCrossed).toBeNull();
+    });
+
+    test('should NOT set alertCrossed when markThreshold returns modifiedCount=0 (another pod won)', async () => {
+      // markThreshold returns modifiedCount=0 → we lost the race, must not emit
+      mockUsageRepository.markThreshold.mockResolvedValue({ modifiedCount: 0 });
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 500000 }));
+      const updatedDoc = makeUsageDoc({ meterUsed: 400001, meterQuota: 500000, alertedAt80: null, alertedAt100: null });
+      mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
+
+      const result = await BillingUsageService.incrementMeter(orgId, 1, {}, 'hist_race_80');
+
+      expect(result.alertCrossed).toBeNull();
+    });
+
+    test('should set alertCrossed when markThreshold returns modifiedCount=1 (we won)', async () => {
+      // markThreshold returns modifiedCount=1 → we won the race, must emit
+      mockUsageRepository.markThreshold.mockResolvedValue({ modifiedCount: 1 });
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 500000 }));
+      const updatedDoc = makeUsageDoc({ meterUsed: 400001, meterQuota: 500000, alertedAt80: null, alertedAt100: null });
+      mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
+
+      const result = await BillingUsageService.incrementMeter(orgId, 1, {}, 'hist_won_80');
+
+      expect(result.alertCrossed).toBe('80');
     });
   });
 

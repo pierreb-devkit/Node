@@ -106,8 +106,14 @@ const attribute = async (history, organizationId) => {
 
   let extrasConsumed = 0;
   if (result.extrasConsumed > 0) {
-    extrasConsumed = result.extrasConsumed;
-    await BillingExtraService.debit(organizationId, extrasConsumed, idempotencyKey);
+    const debitResult = await BillingExtraService.debit(organizationId, result.extrasConsumed, idempotencyKey);
+    if (debitResult.applied) {
+      extrasConsumed = result.extrasConsumed;
+    } else {
+      // Debit was not applied (balance exhausted or idempotency hit).
+      // Report extrasConsumed=0 so callers are not misled about charge application.
+      return { applied: true, meterUsed: result.meterUsed, extrasConsumed: 0, reason: 'extras_exhausted' };
+    }
   }
 
   return { applied: true, meterUsed: result.meterUsed, extrasConsumed };

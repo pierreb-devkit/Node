@@ -38,6 +38,10 @@ const LedgerEntrySchema = new Schema(
     amount: {
       type: Number,
       required: true,
+      validate: {
+        validator: (v) => v !== 0,
+        message: 'Ledger entry amount cannot be zero',
+      },
     },
     /**
      * Stripe checkout session ID — used for topup idempotency.

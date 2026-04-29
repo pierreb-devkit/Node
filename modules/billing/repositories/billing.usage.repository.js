@@ -99,10 +99,11 @@ const incrementMeter = async (organizationId, weekKey, units, breakdown, idempot
   if (!mongoose.Types.ObjectId.isValid(organizationId)) return null;
 
   // Build $inc for meterUsed + per-feature breakdown keys
+  // Only include entries with a finite positive value to avoid invalid $inc operations.
   const incPayload = { meterUsed: units };
   if (breakdown && typeof breakdown === 'object') {
     for (const [key, value] of Object.entries(breakdown)) {
-      if (SAFE_KEY_RE.test(key)) {
+      if (SAFE_KEY_RE.test(key) && Number.isFinite(value) && value > 0) {
         incPayload[`meterBreakdown.${key}`] = value;
       }
     }

@@ -140,6 +140,9 @@ const invalidateCache = (planId) => {
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const bumpVersionWithRetry = async (planId, fields, { maxAttempts = 3 } = {}) => {
+  if (!Number.isInteger(maxAttempts) || maxAttempts <= 0) {
+    throw new Error('maxAttempts must be a positive integer');
+  }
   const backoffMs = [100, 300, 900];
   let lastErr;
 

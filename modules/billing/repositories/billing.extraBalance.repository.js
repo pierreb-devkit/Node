@@ -55,6 +55,8 @@ const getOrCreate = (orgId) => {
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const creditPack = async (orgId, amount, stripeSessionId, expiresAt = null) => {
   if (!isValidOrgId(orgId)) return { doc: null, applied: false };
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('invalid argument: amount must be a positive finite number');
+  if (typeof stripeSessionId !== 'string' || stripeSessionId.trim() === '') throw new Error('invalid argument: stripeSessionId must be a non-empty string');
   const entry = {
     kind: 'topup',
     amount,
@@ -97,6 +99,8 @@ const creditPack = async (orgId, amount, stripeSessionId, expiresAt = null) => {
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const debit = async (orgId, amount, refId) => {
   if (!isValidOrgId(orgId)) return { doc: null, applied: false };
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('invalid argument: amount must be a positive finite number');
+  if (typeof refId !== 'string' || refId.trim() === '') throw new Error('invalid argument: refId must be a non-empty string');
   const entry = {
     kind: 'debit',
     amount: -amount,
@@ -198,6 +202,8 @@ const addExpirationEntries = async (orgId, now) => {
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const refundPartial = async (orgId, stripeSessionId, refundUnits, refId) => {
   if (!isValidOrgId(orgId)) return { doc: null, applied: false };
+  if (!Number.isFinite(refundUnits) || refundUnits <= 0) throw new Error('invalid argument: refundUnits must be a positive finite number');
+  if (typeof refId !== 'string' || refId.trim() === '') throw new Error('invalid argument: refId must be a non-empty string');
   const entry = {
     kind: 'refund',
     amount: -refundUnits,

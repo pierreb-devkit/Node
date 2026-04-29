@@ -37,7 +37,7 @@ const isoWeekKey = (date) => {
  *
  * @param {string} orgId - The organization ObjectId (string).
  * @param {Date} periodStart - The start of the new billing period (used to derive newWeekKey).
- * @returns {Promise<Object>} The upserted usage document for the new week.
+ * @returns {Promise<Object|null>} The upserted usage document for the new week, or null when meter mode is off.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const resetWeek = async (orgId, periodStart) => {

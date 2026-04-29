@@ -13,6 +13,10 @@ describe('BillingUsageRepository — meter extensions unit tests:', () => {
   const orgId = '507f1f77bcf86cd799439011';
   const weekKey = '2026-W18';
 
+  /**
+   * @param {Object} [overrides={}] - Fields to override on the stub usage document.
+   * @returns {Object} A stub BillingUsage document.
+   */
   const makeUsageDoc = (overrides = {}) => ({
     _id: '507f1f77bcf86cd799439099',
     organizationId: orgId,
@@ -140,6 +144,30 @@ describe('BillingUsageRepository — meter extensions unit tests:', () => {
 
       expect(capturedUpdate.$inc['meterBreakdown.scrap']).toBe(100);
       expect(capturedUpdate.$inc['meterBreakdown.autofix']).toBe(50);
+    });
+
+    test('should drop breakdown entries with non-positive or non-finite values', async () => {
+      let capturedUpdate;
+      mockModel.findOneAndUpdate.mockImplementation((filter, update) => {
+        capturedUpdate = update;
+        return Promise.resolve(makeUsageDoc());
+      });
+
+      await BillingUsageRepository.incrementMeter(
+        orgId,
+        weekKey,
+        10,
+        { good: 10, zero: 0, negative: -5, infinite: Infinity, nan: NaN },
+        'hist_invalid_breakdown',
+        {},
+      );
+
+      // Only 'good' should be included
+      expect(capturedUpdate.$inc['meterBreakdown.good']).toBe(10);
+      expect(capturedUpdate.$inc['meterBreakdown.zero']).toBeUndefined();
+      expect(capturedUpdate.$inc['meterBreakdown.negative']).toBeUndefined();
+      expect(capturedUpdate.$inc['meterBreakdown.infinite']).toBeUndefined();
+      expect(capturedUpdate.$inc['meterBreakdown.nan']).toBeUndefined();
     });
 
     test('should return null when idempotencyKey already present (replay)', async () => {

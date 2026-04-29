@@ -159,37 +159,46 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
     const pct = newMeterUsed / effectiveQuota;
 
     if (pct >= 1.0 && !updatedDoc.alertedAt100) {
-      alertCrossed = '100';
-      // Mark the threshold so we don't re-emit this cycle (best-effort via repository)
+      // Only emit when we win the dedup race (modifiedCount > 0).
+      // If another pod already set alertedAt100, markThreshold returns modifiedCount=0 — skip emit.
+      let marked = false;
       try {
-        await UsageRepository.markThreshold(updatedDoc._id, 'alertedAt100');
+        const markResult = await UsageRepository.markThreshold(updatedDoc._id, 'alertedAt100');
+        marked = markResult?.modifiedCount > 0;
       } catch {
-        // Best-effort
+        // Best-effort — if mark fails, skip emit to avoid double-fire
       }
-      if (billingEvents) {
-        billingEvents.emit('meter.threshold_crossed', {
-          organizationId,
-          weekKey,
-          threshold: 100,
-          meterUsed: newMeterUsed,
-          meterQuota: effectiveQuota,
-        });
+      if (marked) {
+        alertCrossed = '100';
+        if (billingEvents) {
+          billingEvents.emit('meter.threshold_crossed', {
+            organizationId,
+            weekKey,
+            threshold: 100,
+            meterUsed: newMeterUsed,
+            meterQuota: effectiveQuota,
+          });
+        }
       }
     } else if (pct >= 0.8 && !updatedDoc.alertedAt80) {
-      alertCrossed = '80';
+      let marked = false;
       try {
-        await UsageRepository.markThreshold(updatedDoc._id, 'alertedAt80');
+        const markResult = await UsageRepository.markThreshold(updatedDoc._id, 'alertedAt80');
+        marked = markResult?.modifiedCount > 0;
       } catch {
-        // Best-effort
+        // Best-effort — if mark fails, skip emit to avoid double-fire
       }
-      if (billingEvents) {
-        billingEvents.emit('meter.threshold_crossed', {
-          organizationId,
-          weekKey,
-          threshold: 80,
-          meterUsed: newMeterUsed,
-          meterQuota: effectiveQuota,
-        });
+      if (marked) {
+        alertCrossed = '80';
+        if (billingEvents) {
+          billingEvents.emit('meter.threshold_crossed', {
+            organizationId,
+            weekKey,
+            threshold: 80,
+            meterUsed: newMeterUsed,
+            meterQuota: effectiveQuota,
+          });
+        }
       }
     }
   }

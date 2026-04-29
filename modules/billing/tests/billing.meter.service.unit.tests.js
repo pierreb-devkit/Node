@@ -13,6 +13,10 @@ describe('BillingMeterService unit tests:', () => {
 
   const orgId = '507f1f77bcf86cd799439011';
 
+  /**
+   * @param {Object} [overrides={}] - Fields to override on the stub plan.
+   * @returns {Object} A stub BillingPlan document.
+   */
   const makePlan = (overrides = {}) => ({
     _id: '507f1f77bcf86cd799439022',
     planId: 'pro',

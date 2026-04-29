@@ -13,6 +13,10 @@ describe('BillingExtraService unit tests:', () => {
 
   const orgId = '507f1f77bcf86cd799439011';
 
+  /**
+   * @param {Object} [overrides={}] - Fields to override on the stub document.
+   * @returns {Object} A stub ExtraBalance document.
+   */
   const makeDoc = (overrides = {}) => ({
     _id: '507f1f77bcf86cd799439099',
     organization: orgId,
@@ -161,6 +165,13 @@ describe('BillingExtraService unit tests:', () => {
   });
 
   describe('listLedger', () => {
+    test('should return empty result when getOrCreate returns null (malformed orgId)', async () => {
+      mockRepository.getOrCreate.mockResolvedValue(null);
+
+      const result = await BillingExtraService.listLedger('bad-org-id');
+      expect(result).toEqual({ entries: [], total: 0, balance: 0 });
+    });
+
     test('should return paginated ledger entries in reverse chronological order', async () => {
       const t1 = new Date('2026-05-01T10:00:00Z');
       const t2 = new Date('2026-05-02T10:00:00Z');
@@ -228,11 +239,12 @@ describe('BillingExtraService unit tests:', () => {
       // $49 / $49 * 500000 = 500000 units
       expect(result.refundUnits).toBe(500000);
       expect(result.applied).toBe(true);
+      // Key includes topupEntry._id to prevent collision across partial refunds of same amount
       expect(mockRepository.refundPartial).toHaveBeenCalledWith(
         orgId,
         'cs_refund_test',
         500000,
-        'refund-cs_refund_test-4900',
+        'refund-cs_refund_test-4900-507f1f77bcf86cd799439aaa',
       );
     });
 
@@ -251,6 +263,15 @@ describe('BillingExtraService unit tests:', () => {
       const result = await BillingExtraService.refundPartial(orgId, 'cs_consumed', 4900);
       // Applied (even with negative resulting balance — correct economic reflection)
       expect(result.applied).toBe(true);
+    });
+
+    test('should return invalid_org when getOrCreate returns null (malformed orgId)', async () => {
+      mockRepository.getOrCreate.mockResolvedValue(null);
+
+      const result = await BillingExtraService.refundPartial('bad-org-id', 'cs_test', 4900);
+      expect(result.applied).toBe(false);
+      expect(result.reason).toBe('invalid_org');
+      expect(result.refundUnits).toBe(0);
     });
 
     test('should return applied=false with reason ambiguous_pack_match when multiple packs have same meterUnits', async () => {

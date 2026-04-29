@@ -15,6 +15,10 @@ describe('BillingResetService unit tests:', () => {
 
   const orgId = '507f1f77bcf86cd799439011';
 
+  /**
+   * @param {Object} [overrides={}] - Fields to override on the stub plan.
+   * @returns {Object} A stub BillingPlan document.
+   */
   const makePlan = (overrides = {}) => ({
     planId: 'pro',
     version: 'v1',
@@ -23,6 +27,10 @@ describe('BillingResetService unit tests:', () => {
     ...overrides,
   });
 
+  /**
+   * @param {Object} [overrides={}] - Fields to override on the stub usage document.
+   * @returns {Object} A stub BillingUsage document.
+   */
   const makeUsageDoc = (overrides = {}) => ({
     _id: '507f1f77bcf86cd799439099',
     organizationId: orgId,
@@ -198,8 +206,8 @@ describe('BillingResetService unit tests:', () => {
       const periodStart = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
 
       mockMongooseSubscription.findAllDueForReset.mockResolvedValue([
-        { organizationId: '507f1f77bcf86cd799439011', currentPeriodStart: periodStart },
-        { organizationId: '507f1f77bcf86cd799439022', currentPeriodStart: periodStart },
+        { organization: '507f1f77bcf86cd799439011', currentPeriodStart: periodStart },
+        { organization: '507f1f77bcf86cd799439022', currentPeriodStart: periodStart },
       ]);
 
       mockPlanService.getActivePlan.mockResolvedValue(makePlan());
@@ -214,7 +222,7 @@ describe('BillingResetService unit tests:', () => {
     test('should count errors when resetWeek fails for a subscription', async () => {
       const periodStart = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
       mockMongooseSubscription.findAllDueForReset.mockResolvedValue([
-        { organizationId: '507f1f77bcf86cd799439011', currentPeriodStart: periodStart },
+        { organization: '507f1f77bcf86cd799439011', currentPeriodStart: periodStart },
       ]);
       mockPlanService.getActivePlan.mockRejectedValue(new Error('DB error'));
       mockUsageRepository.findByWeek.mockResolvedValue(null);
@@ -222,6 +230,28 @@ describe('BillingResetService unit tests:', () => {
       const result = await BillingResetService.resetAllDue();
       expect(result.errors).toBe(1);
       expect(result.processed).toBe(0);
+    });
+
+    test('should pass undefined orgId when sub uses organizationId (wrong field) — regression guard', async () => {
+      // This test ensures the service reads sub.organization, not sub.organizationId.
+      // If someone reverts to sub.organizationId, String(undefined) = 'undefined' → resetWeek
+      // would receive 'undefined' as orgId, which fails ObjectId validation and skips archive+upsert.
+      // We verify that when the correct field `organization` is present, it is forwarded correctly.
+      const periodStart = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+      const capturedOrgIds = [];
+      mockMongooseSubscription.findAllDueForReset.mockResolvedValue([
+        { organization: '507f1f77bcf86cd799439011', currentPeriodStart: periodStart },
+      ]);
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan());
+      mockUsageRepository.findByWeek.mockImplementation((orgId) => {
+        capturedOrgIds.push(orgId);
+        return Promise.resolve(makeUsageDoc({ organizationId: orgId }));
+      });
+
+      await BillingResetService.resetAllDue();
+
+      // The orgId forwarded to the repo must be the real ObjectId, not 'undefined'
+      expect(capturedOrgIds[0]).toBe('507f1f77bcf86cd799439011');
     });
   });
 });
