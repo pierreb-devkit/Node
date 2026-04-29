@@ -15,6 +15,10 @@ export function billingSubjectRegistration({ registerPathSubject }) {
   registerPathSubject('/api/billing/subscription', 'BillingSubscription');
   registerPathSubject('/api/billing/usage', 'BillingUsage');
   registerPathSubject('/api/billing/plans', 'BillingPlans');
+  // Extras pack purchase + balance/ledger queries
+  registerPathSubject('/api/billing/extras/checkout', 'BillingExtrasCheckout');
+  registerPathSubject('/api/billing/extras/balance', 'BillingExtrasBalance');
+  registerPathSubject('/api/billing/extras/ledger', 'BillingExtrasLedger');
   // Webhook is mounted in billing.preroute.js before body parsing and auth middleware,
   // so it bypasses policy.isAllowed entirely. Registered here for documentation completeness.
   registerPathSubject('/api/billing/webhook', 'BillingWebhook');
@@ -43,6 +47,10 @@ export function billingAbilities(user, membership, { can, cannot }) {
   can('create', 'BillingPortal');
   can('read', 'BillingSubscription');
   can('read', 'BillingUsage');
+  // Extras: members can purchase packs and read their own balance/ledger
+  can('create', 'BillingExtrasCheckout');
+  can('read', 'BillingExtrasBalance');
+  can('read', 'BillingExtrasLedger');
 }
 
 /**

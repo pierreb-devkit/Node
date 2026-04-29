@@ -244,4 +244,80 @@ describe('Billing unit tests:', () => {
       expect(result.data.planVersion).toBe('v3');
     });
   });
+
+  describe('ExtrasCheckoutRequest schema', () => {
+    let request;
+
+    beforeEach(() => {
+      request = {
+        packId: 'pack_500k',
+        successUrl: 'https://example.com/success',
+        cancelUrl: 'https://example.com/cancel',
+      };
+    });
+
+    test('should be valid with all required fields', () => {
+      const result = schema.ExtrasCheckoutRequest.safeParse(request);
+      expect(result.error).toBeFalsy();
+      expect(result.data.packId).toBe('pack_500k');
+      expect(result.data.successUrl).toBe('https://example.com/success');
+      expect(result.data.cancelUrl).toBe('https://example.com/cancel');
+    });
+
+    test('should reject when packId is empty', () => {
+      request.packId = '';
+      const result = schema.ExtrasCheckoutRequest.safeParse(request);
+      expect(result.error).toBeDefined();
+    });
+
+    test('should reject when packId is missing', () => {
+      delete request.packId;
+      const result = schema.ExtrasCheckoutRequest.safeParse(request);
+      expect(result.error).toBeDefined();
+    });
+
+    test('should reject when successUrl is not a valid URL', () => {
+      request.successUrl = 'not-a-url';
+      const result = schema.ExtrasCheckoutRequest.safeParse(request);
+      expect(result.error).toBeDefined();
+    });
+
+    test('should reject when cancelUrl is not a valid URL', () => {
+      request.cancelUrl = 'not-a-url';
+      const result = schema.ExtrasCheckoutRequest.safeParse(request);
+      expect(result.error).toBeDefined();
+    });
+
+    test('should trim whitespace from packId', () => {
+      request.packId = '  pack_500k  ';
+      const result = schema.ExtrasCheckoutRequest.safeParse(request);
+      expect(result.error).toBeFalsy();
+      expect(result.data.packId).toBe('pack_500k');
+    });
+
+    test('should reject unknown fields (strict)', () => {
+      request.extraField = 'should not be here';
+      const result = schema.ExtrasCheckoutRequest.safeParse(request);
+      expect(result.error).toBeDefined();
+    });
+
+    test('should accept http:// URLs (for development environments)', () => {
+      request.successUrl = 'http://localhost:3000/success';
+      request.cancelUrl = 'http://localhost:3000/cancel';
+      const result = schema.ExtrasCheckoutRequest.safeParse(request);
+      expect(result.error).toBeFalsy();
+    });
+
+    test('should reject when successUrl is missing', () => {
+      delete request.successUrl;
+      const result = schema.ExtrasCheckoutRequest.safeParse(request);
+      expect(result.error).toBeDefined();
+    });
+
+    test('should reject when cancelUrl is missing', () => {
+      delete request.cancelUrl;
+      const result = schema.ExtrasCheckoutRequest.safeParse(request);
+      expect(result.error).toBeDefined();
+    });
+  });
 });

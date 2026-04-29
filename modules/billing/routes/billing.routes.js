@@ -42,4 +42,22 @@ export default (app) => {
     .route('/api/billing/usage')
     .all(passport.authenticate('jwt', { session: false }), organization.resolveOrganization, policy.isAllowed)
     .get(billing.getUsage);
+
+  // extras checkout (one-time pack purchase)
+  app
+    .route('/api/billing/extras/checkout')
+    .all(passport.authenticate('jwt', { session: false }), organization.resolveOrganization, policy.isAllowed)
+    .post(model.isValid(billingSchema.ExtrasCheckoutRequest), billing.extrasCheckout);
+
+  // extras balance
+  app
+    .route('/api/billing/extras/balance')
+    .all(passport.authenticate('jwt', { session: false }), organization.resolveOrganization, policy.isAllowed)
+    .get(billing.extrasBalance);
+
+  // extras ledger (paginated: ?page=1&limit=20)
+  app
+    .route('/api/billing/extras/ledger')
+    .all(passport.authenticate('jwt', { session: false }), organization.resolveOrganization, policy.isAllowed)
+    .get(billing.extrasLedger);
 };

@@ -65,9 +65,21 @@ const PortalRequest = z
   })
   .strict();
 
+/**
+ * Extras checkout request body schema
+ */
+const ExtrasCheckoutRequest = z
+  .object({
+    packId: z.string().trim().min(1, 'packId is required'),
+    successUrl: z.string().url('successUrl must be a valid URL'),
+    cancelUrl: z.string().url('cancelUrl must be a valid URL'),
+  })
+  .strict();
+
 export default {
   Subscription,
   SubscriptionUpdate,
   CheckoutRequest,
   PortalRequest,
+  ExtrasCheckoutRequest,
 };
