@@ -27,24 +27,34 @@ const config = {
     ],
     /**
      * Feature flag — default OFF.
-     * Set to true in downstream project config to enable compute-based pricing.
-     * When false, all compute code paths are no-ops; legacy behavior unchanged.
+     * Set to true in downstream project config to enable meter-based pricing.
+     * When false, all meter code paths are no-ops; legacy behavior unchanged.
      */
-    computeMode: false,
+    meterMode: false,
     /**
-     * Compute unit parameters — downstream projects may override.
+     * Meter unit parameters — downstream projects must override with their
+     * actual unit economics before enabling meterMode in production.
+     *
      * runBaseUnits: flat units charged per run (before per-feature ratios).
-     * dollarsToComputeRatio: how many compute units per USD of LLM cost.
-     * maxComputePerScrap: safety cap per single scrape run.
+     * maxUnitsPerOperation: safety cap per single operation run.
      */
-    compute: {
+    meter: {
       runBaseUnits: 1,
-      dollarsToComputeRatio: 1000,
-      maxComputePerScrap: 10000,
+      /**
+       * Conversion ratio: 1 unit = 1 / dollarsToUnitRatio USD of underlying cost.
+       *
+       * DOWNSTREAM-OVERRIDE-REQUIRED — the devkit default (1000) is illustrative.
+       * Each downstream project must set this based on their unit economics
+       * (cost-target × margin multiplier). Setting this wrong directly affects
+       * gross margin: a value of N means each $1 of cost consumes N units, so
+       * lowering N halves the margin coverage.
+       */
+      dollarsToUnitRatio: 1000,
+      maxUnitsPerOperation: 10000,
     },
     /**
-     * Extra compute packs — downstream projects override with actual packs.
-     * Example: [{ packId: 'pack_500k', computeUnits: 500000, stripePriceId: 'price_xxx' }]
+     * Extra meter packs — downstream projects override with actual packs.
+     * Example: [{ packId: 'pack_500k', meterUnits: 500000, stripePriceId: 'price_xxx' }]
      */
     packs: [],
   },

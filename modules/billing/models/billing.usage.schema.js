@@ -7,8 +7,8 @@ import { z } from 'zod';
  * BillingUsage Zod schema — mirrors billing.usage.model.mongoose.js
  *
  * Legacy fields (organizationId, month, counters) are always required.
- * Compute fields (weekKey, consumedHistoryIds, etc.) are optional to preserve
- * backward compatibility with non-compute downstream projects.
+ * Meter fields (weekKey, consumedHistoryIds, etc.) are optional to preserve
+ * backward compatibility with non-meter downstream projects.
  */
 const objectIdRegex = /^[a-f\d]{24}$/i;
 
@@ -17,7 +17,7 @@ const BillingUsage = z.object({
   month: z.string().trim().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'month must be in YYYY-MM format'),
   counters: z.record(z.string(), z.number()).default(() => ({})),
 
-  // ── Compute fields (optional — only populated in compute mode) ────────────
+  // ── Meter fields (optional — only populated in meter mode) ───────────────
 
   /**
    * ISO week key "YYYY-Www" (e.g. "2026-W18").
@@ -29,10 +29,10 @@ const BillingUsage = z.object({
     .regex(/^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$/, 'weekKey must be in YYYY-Www format (W01-W53)')
     .optional(),
 
-  computeUsed: z.number().min(0).default(0),
-  computeQuota: z.number().min(0).default(0),
+  meterUsed: z.number().min(0).default(0),
+  meterQuota: z.number().min(0).default(0),
   planVersion: z.string().trim().optional(),
-  computeBreakdown: z.record(z.string(), z.number()).default(() => ({})),
+  meterBreakdown: z.record(z.string(), z.number()).default(() => ({})),
   resetAt: z.coerce.date().optional().nullable(),
   alertedAt80: z.coerce.date().optional().nullable(),
   alertedAt100: z.coerce.date().optional().nullable(),

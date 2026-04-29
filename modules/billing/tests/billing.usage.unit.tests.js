@@ -71,7 +71,7 @@ describe('BillingUsage unit tests:', () => {
     });
   });
 
-  describe('Schema validation — compute fields (weekKey)', () => {
+  describe('Schema validation — meter fields (weekKey)', () => {
     let usage;
 
     beforeEach(() => {
@@ -102,7 +102,7 @@ describe('BillingUsage unit tests:', () => {
       expect(result.error).toBeDefined();
     });
 
-    test('should allow usage document without weekKey (non-compute downstream)', () => {
+    test('should allow usage document without weekKey (non-meter downstream)', () => {
       const result = schema.BillingUsage.safeParse(usage);
       expect(result.error).toBeFalsy();
       expect(result.data.weekKey).toBeUndefined();

@@ -10,7 +10,7 @@ import { z } from 'zod';
 const BillingPlan = z.object({
   planId: z.string().trim().min(1, 'planId is required'),
   version: z.string().trim().min(1, 'version is required'),
-  computeQuota: z.number().int().min(0, 'computeQuota must be >= 0'),
+  meterQuota: z.number().int().min(0, 'meterQuota must be >= 0'),
   stripePriceMonthly: z.string().trim().optional().nullable(),
   stripePriceAnnual: z.string().trim().optional().nullable(),
   ratios: z.record(z.string(), z.number().min(0, 'ratio values must be >= 0')).default(() => ({})),
@@ -21,11 +21,11 @@ const BillingPlan = z.object({
 
 /**
  * Schema for bumping to a new plan version.
- * computeQuota is required; all other fields are optional overrides.
+ * meterQuota is required; all other fields are optional overrides.
  */
 const BillingPlanBump = z
   .object({
-    computeQuota: z.number().int().min(0),
+    meterQuota: z.number().int().min(0),
     ratios: z.record(z.string(), z.number()).optional(),
     stripePriceMonthly: z.string().trim().optional().nullable(),
     stripePriceAnnual: z.string().trim().optional().nullable(),

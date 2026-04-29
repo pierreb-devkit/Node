@@ -45,11 +45,11 @@ const SubscriptionMongoose = new Schema(
       default: false,
     },
 
-    // ── Compute fields (sparse — backward-compatible additions) ─────────────
+    // ── Meter fields (sparse — backward-compatible additions) ────────────────
 
     /**
      * The plan version active on this subscription (e.g. "v1", "v2").
-     * Only populated when computeMode is enabled.
+     * Only populated when meterMode is enabled.
      */
     planVersion: {
       type: String,
@@ -57,7 +57,7 @@ const SubscriptionMongoose = new Schema(
     },
     /**
      * Start of the current billing period. Used to detect period changes
-     * in webhook handlers and trigger compute period resets.
+     * in webhook handlers and trigger meter period resets.
      */
     currentPeriodStart: {
       type: Date,

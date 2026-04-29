@@ -9,9 +9,9 @@ const Schema = mongoose.Schema;
  * Data Model Mongoose
  *
  * Legacy fields (organizationId, month, counters) are always present.
- * Compute fields (weekKey, computeUsed, etc.) are sparse/optional — only
- * populated when config.billing.computeMode is true. This ensures full
- * backward compatibility for non-compute downstream projects.
+ * Meter fields (weekKey, meterUsed, etc.) are sparse/optional — only
+ * populated when config.billing.meterMode is true. This ensures full
+ * backward compatibility for non-meter downstream projects.
  */
 const UsageMongoose = new Schema(
   {
@@ -30,28 +30,28 @@ const UsageMongoose = new Schema(
       default: () => ({}),
     },
 
-    // ── Compute fields (sparse — only populated in compute mode) ─────────────
+    // ── Meter fields (sparse — only populated in meter mode) ─────────────────
 
     /**
      * ISO week key in YYYY-Www format (e.g. "2026-W18").
-     * Used as the primary period key when computeMode is enabled.
+     * Used as the primary period key when meterMode is enabled.
      */
     weekKey: {
       type: String,
       sparse: true,
     },
     /**
-     * Total compute units consumed this week.
+     * Total meter units consumed this week.
      */
-    computeUsed: {
+    meterUsed: {
       type: Number,
       default: 0,
     },
     /**
-     * Snapshot of the plan's computeQuota at week start.
+     * Snapshot of the plan's meterQuota at week start.
      * Avoids retroactive plan change effects mid-week.
      */
-    computeQuota: {
+    meterQuota: {
       type: Number,
       default: 0,
     },
@@ -63,15 +63,15 @@ const UsageMongoose = new Schema(
       sparse: true,
     },
     /**
-     * Free-form breakdown of compute units by feature bucket.
+     * Free-form breakdown of meter units by feature bucket.
      * Example: { scrap: 100, autofix: 50, wizard: 200 }
      */
-    computeBreakdown: {
+    meterBreakdown: {
       type: Schema.Types.Mixed,
       default: () => ({}),
     },
     /**
-     * When the current compute period resets.
+     * When the current meter period resets.
      */
     resetAt: {
       type: Date,
@@ -106,14 +106,14 @@ const UsageMongoose = new Schema(
 );
 
 /**
- * Legacy unique index: (organizationId, month) — kept for non-compute downstream.
+ * Legacy unique index: (organizationId, month) — kept for non-meter downstream.
  * sparse: false is the Mongoose default; month is always present on legacy docs.
  */
 UsageMongoose.index({ organizationId: 1, month: 1 }, { unique: true });
 
 /**
- * Compute-mode unique index: (organizationId, weekKey) — sparse so it only
- * indexes documents that have weekKey populated (compute-mode docs only).
+ * Meter-mode unique index: (organizationId, weekKey) — sparse so it only
+ * indexes documents that have weekKey populated (meter-mode docs only).
  */
 UsageMongoose.index({ organizationId: 1, weekKey: 1 }, { unique: true, sparse: true });
 

@@ -186,7 +186,7 @@ describe('Billing unit tests:', () => {
     });
   });
 
-  describe('Subscription schema — compute fields (backward compat)', () => {
+  describe('Subscription schema — meter fields (backward compat)', () => {
     let subscription;
 
     beforeEach(() => {
@@ -197,7 +197,7 @@ describe('Billing unit tests:', () => {
       };
     });
 
-    test('should be valid without compute fields (non-compute downstream)', () => {
+    test('should be valid without meter fields (non-meter downstream)', () => {
       const result = schema.Subscription.safeParse(subscription);
       expect(result.error).toBeFalsy();
     });

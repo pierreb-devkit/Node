@@ -1,10 +1,17 @@
 /**
  * Module dependencies
  */
-import mongoose from 'mongoose';
+import BillingPlanRepository from '../repositories/billing.plan.repository.js';
 
 /**
  * In-memory cache: planId → { plan, fetchedAt }
+ *
+ * Multi-pod stale window: each pod has its own cache; after bumpVersion
+ * in pod A, pod B serves stale plan for up to CACHE_TTL. Acceptable in
+ * V1 (admin-rare path). Future: emit billingEvents.emit('plan.versionBumped',
+ * { planId }) and have each pod subscribe + invalidateCache locally.
+ * Tracked in pierreb-devkit/Node#3533 PR-N3 (webhook layer).
+ *
  * Short TTL to reduce stale-read window across restarts / deploys.
  * Only non-null plans are cached — null (plan not found) is never cached
  * so that a newly-created plan is visible on the next read without waiting.
@@ -13,25 +20,24 @@ const cache = new Map();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 /**
- * Resolve the BillingPlan model lazily so the service can be imported before
- * Mongoose models are registered (unit-test friendliness).
- * @returns {import('mongoose').Model} BillingPlan Mongoose model
- */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const BillingPlan = () => mongoose.model('BillingPlan');
-
-/**
  * @desc Get the currently active plan for a given planId.
  *       Results are cached in-memory for CACHE_TTL to avoid hot-path DB reads.
+ *
+ * Returns null when no active plan is seeded for the given planId.
+ * This is normal at first boot or when a new planId is added to
+ * config.billing.plans without a corresponding BillingPlan.create()
+ * (or a seeding migration). Callers should treat null as a hard error
+ * when meterMode is enabled — typically by returning 503 from middleware
+ * with a clear "plan not configured" payload.
+ *
  * @param {string} planId - The logical plan identifier (e.g. "pro").
  * @returns {Promise<Object|null>} The active BillingPlan document, or null.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const getActivePlan = async (planId) => {
   const cached = cache.get(planId);
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) return cached.plan;
 
-  const plan = await BillingPlan().findOne({ planId, active: true, effectiveUntil: null }).lean();
+  const plan = await BillingPlanRepository.findActive(planId);
   // Only cache non-null results — a null miss should not be cached so that a
   // newly-created plan is visible on the next read without waiting for TTL expiry.
   if (plan !== null) cache.set(planId, { plan, fetchedAt: Date.now() });
@@ -45,9 +51,8 @@ const getActivePlan = async (planId) => {
  * @param {string} version - The specific version string.
  * @returns {Promise<Object|null>} The BillingPlan document, or null.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const getPlanByVersion = async (planId, version) => {
-  return BillingPlan().findOne({ planId, version }).lean();
+  return BillingPlanRepository.findByVersion(planId, version);
 };
 
 /**
@@ -60,33 +65,37 @@ const getPlanByVersion = async (planId, version) => {
  * versions on concurrent bumps. If a duplicate-key error is thrown, the caller
  * should retry.
  *
+ * Concurrent calls : two simultaneous bumpVersion('pro', ...) calls can race
+ * on countDocuments → both derive version="vN+1" → unique index makes one
+ * win, the other throws `E11000 duplicate key`. Caller MUST retry on E11000
+ * with exponential backoff (e.g. 100ms / 300ms / 900ms, max 3 attempts).
+ *
+ * Activation gap : between deactivateAll() and create(), a brief window
+ * exists where no plan is active. getActivePlan() called concurrently
+ * during this window returns null. Callers must handle null gracefully.
+ *
  * @param {string} planId - The logical plan identifier.
  * @param {Object} fields - New plan fields.
- * @param {number} fields.computeQuota - New compute quota.
+ * @param {number} fields.meterQuota - New meter quota.
  * @param {Object} [fields.ratios] - New ratio map.
  * @param {string} [fields.stripePriceMonthly] - New Stripe monthly price ID.
  * @param {string} [fields.stripePriceAnnual] - New Stripe annual price ID.
  * @returns {Promise<Object>} The newly created BillingPlan document.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const bumpVersion = async (planId, fields) => {
-  const Model = BillingPlan();
   const now = new Date();
 
   // Deactivate all currently active versions for this planId
-  await Model.updateMany(
-    { planId, active: true },
-    { $set: { active: false, effectiveUntil: now } },
-  );
+  await BillingPlanRepository.deactivateAll(planId, now);
 
   // Determine next sequential version number
-  const count = await Model.countDocuments({ planId });
-  const version = `v${count + 1}`;
+  const total = await BillingPlanRepository.count(planId);
+  const version = `v${total + 1}`;
 
-  const created = await Model.create({
+  const created = await BillingPlanRepository.create({
     planId,
     version,
-    computeQuota: fields.computeQuota,
+    meterQuota: fields.meterQuota,
     ratios: fields.ratios ?? {},
     stripePriceMonthly: fields.stripePriceMonthly ?? null,
     stripePriceAnnual: fields.stripePriceAnnual ?? null,
@@ -109,7 +118,6 @@ const bumpVersion = async (planId, fields) => {
  * @param {string} planId - The logical plan identifier to evict.
  * @returns {void}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const invalidateCache = (planId) => {
   cache.delete(planId);
 };

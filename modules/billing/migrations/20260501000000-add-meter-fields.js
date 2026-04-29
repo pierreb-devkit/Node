@@ -1,7 +1,7 @@
 /**
- * Migration: Add compute fields to billing_usages collection
+ * Migration: Add meter fields to billing_usages collection
  *
- * Adds weekKey, computeUsed, computeQuota, planVersion, computeBreakdown,
+ * Adds weekKey, meterUsed, meterQuota, planVersion, meterBreakdown,
  * resetAt, alertedAt80, alertedAt100, consumedHistoryIds to existing documents.
  *
  * The (organizationId, weekKey) sparse unique index is owned by the Mongoose
@@ -17,7 +17,7 @@ export async function up() {
   // No raw index creation needed: all billingusages indexes are managed by the
   // Mongoose BillingUsage model and auto-synced on connection.
   // No document backfill: new fields have defaults in the Mongoose schema
-  // (computeUsed: 0, computeQuota: 0, computeBreakdown: {}, consumedHistoryIds: []).
+  // (meterUsed: 0, meterQuota: 0, meterBreakdown: {}, consumedHistoryIds: []).
   // Existing documents without these fields will use Mongoose defaults on read.
 }
 

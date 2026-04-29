@@ -8,7 +8,7 @@ const Schema = mongoose.Schema;
 /**
  * BillingPlan Data Model Mongoose
  *
- * Versioned plan definitions for compute-based pricing.
+ * Versioned plan definitions for meter-based pricing.
  * Each (planId, version) pair is immutable after creation.
  * Use bumpVersion to create a new version and deactivate the previous one.
  */
@@ -24,7 +24,7 @@ const BillingPlanMongoose = new Schema(
       required: true,
       trim: true,
     },
-    computeQuota: {
+    meterQuota: {
       type: Number,
       required: true,
       min: 0,
@@ -40,7 +40,7 @@ const BillingPlanMongoose = new Schema(
       sparse: true,
     },
     /**
-     * Flexible ratio map for compute unit attribution.
+     * Flexible ratio map for meter unit attribution.
      * Each key is a feature name; each value is a non-negative finite number.
      * Example: { scrap: 1, autofix: 2, wizard: 5 }
      */

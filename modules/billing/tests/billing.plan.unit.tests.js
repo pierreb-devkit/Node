@@ -15,7 +15,7 @@ describe('BillingPlan unit tests:', () => {
       plan = {
         planId: 'pro',
         version: 'v1',
-        computeQuota: 500000,
+        meterQuota: 500000,
         effectiveFrom: new Date('2026-05-01'),
       };
     });
@@ -25,7 +25,7 @@ describe('BillingPlan unit tests:', () => {
       expect(result.error).toBeFalsy();
       expect(result.data.planId).toBe('pro');
       expect(result.data.version).toBe('v1');
-      expect(result.data.computeQuota).toBe(500000);
+      expect(result.data.meterQuota).toBe(500000);
       expect(result.data.active).toBe(true);
     });
 
@@ -73,17 +73,17 @@ describe('BillingPlan unit tests:', () => {
       expect(result.error).toBeDefined();
     });
 
-    test('should reject negative computeQuota', () => {
-      plan.computeQuota = -1;
+    test('should reject negative meterQuota', () => {
+      plan.meterQuota = -1;
       const result = schema.BillingPlan.safeParse(plan);
       expect(result.error).toBeDefined();
     });
 
-    test('should accept zero computeQuota (free plan)', () => {
-      plan.computeQuota = 0;
+    test('should accept zero meterQuota (free plan)', () => {
+      plan.meterQuota = 0;
       const result = schema.BillingPlan.safeParse(plan);
       expect(result.error).toBeFalsy();
-      expect(result.data.computeQuota).toBe(0);
+      expect(result.data.meterQuota).toBe(0);
     });
 
     test('should accept optional stripe price IDs', () => {
@@ -128,14 +128,14 @@ describe('BillingPlan unit tests:', () => {
 
     beforeEach(() => {
       bump = {
-        computeQuota: 1000000,
+        meterQuota: 1000000,
       };
     });
 
-    test('should be valid with only computeQuota', () => {
+    test('should be valid with only meterQuota', () => {
       const result = schema.BillingPlanBump.safeParse(bump);
       expect(result.error).toBeFalsy();
-      expect(result.data.computeQuota).toBe(1000000);
+      expect(result.data.meterQuota).toBe(1000000);
     });
 
     test('should accept ratios override', () => {
@@ -151,14 +151,14 @@ describe('BillingPlan unit tests:', () => {
       expect(result.error).toBeDefined();
     });
 
-    test('should reject negative computeQuota', () => {
-      bump.computeQuota = -500;
+    test('should reject negative meterQuota', () => {
+      bump.meterQuota = -500;
       const result = schema.BillingPlanBump.safeParse(bump);
       expect(result.error).toBeDefined();
     });
 
-    test('should reject missing computeQuota', () => {
-      delete bump.computeQuota;
+    test('should reject missing meterQuota', () => {
+      delete bump.meterQuota;
       const result = schema.BillingPlanBump.safeParse(bump);
       expect(result.error).toBeDefined();
     });
