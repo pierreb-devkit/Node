@@ -20,6 +20,7 @@ describe('Billing webhook idempotency unit tests:', () => {
     jest.resetModules();
 
     mockProcessedStripeEventRepository = {
+      wasProcessed: jest.fn(),
       tryRecord: jest.fn(),
     };
 
@@ -72,61 +73,88 @@ describe('Billing webhook idempotency unit tests:', () => {
   });
 
   describe('withIdempotency', () => {
-    test('should call handler when event is new (recorded=true)', async () => {
+    test('should call handler when event is new (wasProcessed=false), then record', async () => {
+      mockProcessedStripeEventRepository.wasProcessed.mockResolvedValue(false);
       mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: true });
       const handler = jest.fn().mockResolvedValue({ ok: true });
       const event = makeEvent();
 
       const result = await BillingWebhookService.withIdempotency(event, handler);
 
-      expect(mockProcessedStripeEventRepository.tryRecord).toHaveBeenCalledWith('evt_test_001', 'checkout.session.completed');
+      expect(mockProcessedStripeEventRepository.wasProcessed).toHaveBeenCalledWith('evt_test_001');
       expect(handler).toHaveBeenCalledWith(event);
+      expect(mockProcessedStripeEventRepository.tryRecord).toHaveBeenCalledWith('evt_test_001', 'checkout.session.completed');
       expect(result).toEqual({ ok: true });
     });
 
-    test('should skip handler and return { skipped: true } on duplicate event (recorded=false)', async () => {
-      mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: false });
+    /**
+     * Stripe retry after success: wasProcessed returns true → handler not run.
+     * This is the primary dedup path for Stripe event retries after successful processing.
+     */
+    test('Stripe retry after success: wasProcessed=true → handler not run', async () => {
+      mockProcessedStripeEventRepository.wasProcessed.mockResolvedValue(true);
       const handler = jest.fn();
       const event = makeEvent();
 
       const result = await BillingWebhookService.withIdempotency(event, handler);
 
+      expect(mockProcessedStripeEventRepository.wasProcessed).toHaveBeenCalledWith('evt_test_001');
       expect(handler).not.toHaveBeenCalled();
+      expect(mockProcessedStripeEventRepository.tryRecord).not.toHaveBeenCalled();
       expect(result).toEqual({ skipped: true, reason: 'duplicate_event' });
     });
 
-    test('same event delivered twice — handler called exactly once', async () => {
+    /**
+     * Concurrent delivery: two simultaneous Stripe deliveries of the same event both pass
+     * wasProcessed (it's not atomic). Both handlers run (acceptable per data-layer idempotency).
+     * Only the first tryRecord succeeds; the second gets E11000 → recorded=false (best-effort).
+     */
+    test('concurrent delivery: both pass wasProcessed, both run handler, second tryRecord gets E11000', async () => {
+      mockProcessedStripeEventRepository.wasProcessed.mockResolvedValue(false);
       mockProcessedStripeEventRepository.tryRecord
         .mockResolvedValueOnce({ recorded: true })
-        .mockResolvedValueOnce({ recorded: false });
+        .mockResolvedValueOnce({ recorded: false }); // E11000 on the second concurrent delivery
 
       const handler = jest.fn().mockResolvedValue(undefined);
-      const event = makeEvent('evt_double', 'customer.subscription.updated');
+      const event = makeEvent('evt_concurrent', 'customer.subscription.updated');
 
-      await BillingWebhookService.withIdempotency(event, handler);
-      await BillingWebhookService.withIdempotency(event, handler);
+      // Both deliveries run concurrently — both pass wasProcessed
+      await Promise.all([
+        BillingWebhookService.withIdempotency(event, handler),
+        BillingWebhookService.withIdempotency(event, handler),
+      ]);
 
-      expect(handler).toHaveBeenCalledTimes(1);
+      // Both handlers ran (acceptable — data-layer mutations are idempotent)
+      expect(handler).toHaveBeenCalledTimes(2);
       expect(mockProcessedStripeEventRepository.tryRecord).toHaveBeenCalledTimes(2);
     });
 
-    test('should propagate errors thrown by handler', async () => {
-      mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: true });
+    /**
+     * Silent-loss fix proof: if handler throws, no record is persisted.
+     * Stripe will retry; the handler gets another chance → no silent event loss.
+     */
+    test('handler throws → no record persisted (silent-loss fix)', async () => {
+      mockProcessedStripeEventRepository.wasProcessed.mockResolvedValue(false);
       const handler = jest.fn().mockRejectedValue(new Error('handler blew up'));
       const event = makeEvent();
 
       await expect(
         BillingWebhookService.withIdempotency(event, handler),
       ).rejects.toThrow('handler blew up');
+
+      // tryRecord must NOT have been called — event stays unprocessed for Stripe to retry
+      expect(mockProcessedStripeEventRepository.tryRecord).not.toHaveBeenCalled();
     });
 
-    test('tryRecord called exactly once per withIdempotency invocation', async () => {
+    test('wasProcessed called exactly once per withIdempotency invocation', async () => {
+      mockProcessedStripeEventRepository.wasProcessed.mockResolvedValue(false);
       mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: true });
       const handler = jest.fn().mockResolvedValue(undefined);
       const event = makeEvent('evt_single_check');
 
       await BillingWebhookService.withIdempotency(event, handler);
 
+      expect(mockProcessedStripeEventRepository.wasProcessed).toHaveBeenCalledTimes(1);
       expect(mockProcessedStripeEventRepository.tryRecord).toHaveBeenCalledTimes(1);
     });
   });

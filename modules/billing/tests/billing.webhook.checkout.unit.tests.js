@@ -44,7 +44,10 @@ describe('Billing webhook checkout unit tests:', () => {
     }));
 
     jest.unstable_mockModule('../repositories/billing.processedStripeEvent.repository.js', () => ({
-      default: { tryRecord: jest.fn().mockResolvedValue({ recorded: true }) },
+      default: {
+        wasProcessed: jest.fn().mockResolvedValue(false),
+        tryRecord: jest.fn().mockResolvedValue({ recorded: true }),
+      },
     }));
 
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
@@ -107,12 +110,13 @@ describe('Billing webhook checkout unit tests:', () => {
       expect(mockExtraService.creditPack).not.toHaveBeenCalled();
     });
 
-    test('mode=payment + kind=extras routes to handleCheckoutPaymentCompleted (creditPack)', async () => {
+    test('mode=payment + kind=extras + payment_status=paid routes to handleCheckoutPaymentCompleted (creditPack)', async () => {
       await BillingWebhookService.handleCheckoutSessionCompleted({
         data: {
           object: {
             id: stripeSessionId,
             mode: 'payment',
+            payment_status: 'paid',
             metadata: { organizationId: orgId, packId: 'pack_500k', kind: 'extras' },
           },
         },
@@ -128,6 +132,7 @@ describe('Billing webhook checkout unit tests:', () => {
           object: {
             id: stripeSessionId,
             mode: 'payment',
+            payment_status: 'paid',
             metadata: null,
           },
         },
@@ -143,6 +148,7 @@ describe('Billing webhook checkout unit tests:', () => {
           object: {
             id: stripeSessionId,
             mode: 'payment',
+            payment_status: 'paid',
             metadata: { organizationId: orgId, packId: 'pack_500k', kind: 'donation' },
           },
         },
@@ -153,18 +159,30 @@ describe('Billing webhook checkout unit tests:', () => {
   });
 
   describe('handleCheckoutPaymentCompleted', () => {
-    test('should call creditPack with orgId, packId, sessionId', async () => {
+    test('should call creditPack with orgId, packId, sessionId when payment_status=paid', async () => {
       await BillingWebhookService.handleCheckoutPaymentCompleted({
         id: stripeSessionId,
+        payment_status: 'paid',
         metadata: { organizationId: orgId, packId: 'pack_500k', kind: 'extras' },
       });
 
       expect(mockExtraService.creditPack).toHaveBeenCalledWith(orgId, 'pack_500k', stripeSessionId);
     });
 
+    test('should skip creditPack when payment_status is not paid (e.g. unpaid)', async () => {
+      await BillingWebhookService.handleCheckoutPaymentCompleted({
+        id: stripeSessionId,
+        payment_status: 'unpaid',
+        metadata: { organizationId: orgId, packId: 'pack_500k', kind: 'extras' },
+      });
+
+      expect(mockExtraService.creditPack).not.toHaveBeenCalled();
+    });
+
     test('should skip when kind is not extras', async () => {
       await BillingWebhookService.handleCheckoutPaymentCompleted({
         id: stripeSessionId,
+        payment_status: 'paid',
         metadata: { organizationId: orgId, packId: 'pack_500k', kind: 'other' },
       });
 
@@ -174,15 +192,18 @@ describe('Billing webhook checkout unit tests:', () => {
     test('should skip when organizationId is invalid ObjectId', async () => {
       await BillingWebhookService.handleCheckoutPaymentCompleted({
         id: stripeSessionId,
+        payment_status: 'paid',
         metadata: { organizationId: 'not-valid', packId: 'pack_500k', kind: 'extras' },
       });
 
       expect(mockExtraService.creditPack).not.toHaveBeenCalled();
     });
 
-    test('should skip when packId is missing', async () => {
+    test('should skip silently when packId is missing', async () => {
+      // MEDIUM 3: explicit verification of the silent skip on missing packId
       await BillingWebhookService.handleCheckoutPaymentCompleted({
         id: stripeSessionId,
+        payment_status: 'paid',
         metadata: { organizationId: orgId, kind: 'extras' },
       });
 
@@ -192,6 +213,7 @@ describe('Billing webhook checkout unit tests:', () => {
     test('should skip when organizationId is missing', async () => {
       await BillingWebhookService.handleCheckoutPaymentCompleted({
         id: stripeSessionId,
+        payment_status: 'paid',
         metadata: { packId: 'pack_500k', kind: 'extras' },
       });
 

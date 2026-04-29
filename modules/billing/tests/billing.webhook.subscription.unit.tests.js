@@ -45,7 +45,10 @@ describe('Billing webhook subscription unit tests:', () => {
     }));
 
     jest.unstable_mockModule('../repositories/billing.processedStripeEvent.repository.js', () => ({
-      default: { tryRecord: jest.fn().mockResolvedValue({ recorded: true }) },
+      default: {
+        wasProcessed: jest.fn().mockResolvedValue(false),
+        tryRecord: jest.fn().mockResolvedValue({ recorded: true }),
+      },
     }));
 
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({

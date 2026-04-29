@@ -58,7 +58,10 @@ describe('Billing webhook refund integration tests:', () => {
     }));
 
     jest.unstable_mockModule('../repositories/billing.processedStripeEvent.repository.js', () => ({
-      default: { tryRecord: jest.fn().mockResolvedValue({ recorded: true }) },
+      default: {
+        wasProcessed: jest.fn().mockResolvedValue(false),
+        tryRecord: jest.fn().mockResolvedValue({ recorded: true }),
+      },
     }));
 
     jest.unstable_mockModule('../lib/events.js', () => ({
@@ -121,6 +124,21 @@ describe('Billing webhook refund integration tests:', () => {
       delete charge.metadata.stripeSessionId;
 
       await BillingWebhookService.handleChargeRefunded(charge);
+
+      expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
+    });
+
+    /**
+     * MEDIUM 4: explicit verification of the silent skip on missing stripeSessionId.
+     * Documents the upstream contract: charge.metadata.stripeSessionId is only present
+     * when the upstream session creation sets payment_intent_data.metadata explicitly.
+     * Without it, refunds silently skip — no service call, no error logged.
+     */
+    test('skips silently when charge.metadata lacks stripeSessionId (upstream contract)', async () => {
+      // Simulate a charge where payment_intent_data.metadata was NOT set at session creation
+      await BillingWebhookService.handleChargeRefunded(
+        makeCharge({ metadata: { organizationId: orgId } }), // stripeSessionId absent
+      );
 
       expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
     });
