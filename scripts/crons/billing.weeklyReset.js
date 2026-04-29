@@ -23,17 +23,18 @@ if (!config?.billing?.meterMode) {
   process.exit(0);
 }
 
-await mongooseService.connect();
-
 try {
+  await mongooseService.connect();
+
   const { default: BillingResetService } = await import('../../modules/billing/services/billing.reset.service.js');
 
   const result = await BillingResetService.resetAllDue();
   console.log(`[billing.weeklyReset] done — processed: ${result.processed}, errors: ${result.errors}`);
-  process.exit(result.errors > 0 ? 1 : 0);
+  process.exitCode = result.errors > 0 ? 1 : 0;
 } catch (err) {
   console.error('[billing.weeklyReset] fatal:', err);
-  process.exit(1);
+  process.exitCode = 1;
 } finally {
   await mongooseService.disconnect?.();
 }
+process.exit(process.exitCode ?? 0);

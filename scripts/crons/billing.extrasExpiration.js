@@ -24,9 +24,9 @@ if (!config?.billing?.meterMode) {
   process.exit(0);
 }
 
-await mongooseService.connect();
-
 try {
+  await mongooseService.connect();
+
   const [{ default: BillingExtraService }, { default: BillingExtraBalanceRepository }] =
     await Promise.all([
       import('../../modules/billing/services/billing.extra.service.js'),
@@ -51,10 +51,11 @@ try {
   }
 
   console.log(`[billing.extrasExpiration] done — processed: ${processed}, errors: ${errors}`);
-  process.exit(errors > 0 ? 1 : 0);
+  process.exitCode = errors > 0 ? 1 : 0;
 } catch (err) {
   console.error('[billing.extrasExpiration] fatal:', err);
-  process.exit(1);
+  process.exitCode = 1;
 } finally {
   await mongooseService.disconnect?.();
 }
+process.exit(process.exitCode ?? 0);

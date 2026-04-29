@@ -12,7 +12,7 @@ import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globa
 describe('Billing webhook checkout unit tests:', () => {
   let BillingWebhookService;
   let mockSubscriptionRepository;
-  let mockOrganizationModel;
+  let mockOrganizationRepository;
   let mockExtraService;
 
   const orgId = '507f1f77bcf86cd799439011';
@@ -30,8 +30,8 @@ describe('Billing webhook checkout unit tests:', () => {
       update: jest.fn(),
     };
 
-    mockOrganizationModel = {
-      findByIdAndUpdate: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue({}) }),
+    mockOrganizationRepository = {
+      setPlan: jest.fn().mockResolvedValue({}),
     };
 
     mockExtraService = {
@@ -48,6 +48,10 @@ describe('Billing webhook checkout unit tests:', () => {
         wasProcessed: jest.fn().mockResolvedValue(false),
         tryRecord: jest.fn().mockResolvedValue({ recorded: true }),
       },
+    }));
+
+    jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
+      default: mockOrganizationRepository,
     }));
 
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
@@ -71,10 +75,7 @@ describe('Billing webhook checkout unit tests:', () => {
     jest.unstable_mockModule('mongoose', () => ({
       default: {
         Types: { ObjectId: { isValid: (id) => /^[a-f\d]{24}$/i.test(id) } },
-        model: (name) => {
-          if (name === 'Organization') return mockOrganizationModel;
-          return {};
-        },
+        model: () => ({}),
       },
     }));
 

@@ -6,11 +6,10 @@ import mongoose from 'mongoose';
 import config from '../../../config/index.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import ProcessedStripeEventRepository from '../repositories/billing.processedStripeEvent.repository.js';
+import OrganizationRepository from '../../organizations/repositories/organizations.repository.js';
 import BillingExtraService from './billing.extra.service.js';
 import BillingResetService from './billing.reset.service.js';
 import billingEvents from '../lib/events.js';
-
-const Organization = mongoose.model('Organization');
 
 /**
  * Valid plan names from config (immutable set for O(1) lookups).
@@ -44,14 +43,15 @@ const resolvePlan = (subscription) => {
 };
 
 /**
- * @description Sync the organization plan field to match the subscription plan
+ * @description Sync the organization plan field to match the subscription plan.
+ *              Delegates to OrganizationRepository.setPlan to keep DB access in the repo layer.
  * @param {String} organizationId - Organization document ID
  * @param {String} plan - Plan name to set
  * @returns {Promise<void>}
  */
 const syncOrganizationPlan = async (organizationId, plan) => {
   if (!organizationId || !mongoose.Types.ObjectId.isValid(organizationId)) return;
-  await Organization.findByIdAndUpdate(organizationId, { plan }, { runValidators: true }).exec();
+  await OrganizationRepository.setPlan(organizationId, plan);
 };
 
 /**
@@ -211,7 +211,10 @@ const handleSubscriptionUpdated = async (subscription, event) => {
           subscription,
           isDowngrade,
         });
-      } catch { /* listener errors must not disrupt webhook processing */ }
+      } catch (evtErr) {
+        // Listener errors must not disrupt webhook processing — log for traceability
+        console.error('[billing.webhook] plan.changed listener error (non-fatal):', evtErr?.message ?? evtErr);
+      }
     }
   }
 
@@ -278,7 +281,10 @@ const handleInvoicePaymentFailed = async (invoice) => {
   const organizationId = String(existing.organization?._id || existing.organization);
   try {
     billingEvents.emit('payment.failed', { organizationId });
-  } catch { /* listener errors must not disrupt webhook processing */ }
+  } catch (evtErr) {
+    // Listener errors must not disrupt webhook processing — log for traceability
+    console.error('[billing.webhook] payment.failed listener error (non-fatal):', evtErr?.message ?? evtErr);
+  }
 };
 
 /**

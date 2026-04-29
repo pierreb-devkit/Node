@@ -9,7 +9,7 @@ import { jest, beforeEach, afterEach } from '@jest/globals';
 describe('Billing webhook integration tests:', () => {
   let WebhookService;
   let mockSubscriptionRepository;
-  let mockOrganizationModel;
+  let mockOrganizationRepository;
 
   const orgId = '507f1f77bcf86cd799439011';
   const subId = '607f1f77bcf86cd799439022';
@@ -25,30 +25,24 @@ describe('Billing webhook integration tests:', () => {
       update: jest.fn(),
     };
 
-    mockOrganizationModel = {
-      findByIdAndUpdate: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue({}) }),
+    mockOrganizationRepository = {
+      setPlan: jest.fn().mockResolvedValue({}),
     };
 
     jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
       default: mockSubscriptionRepository,
     }));
 
-    jest.unstable_mockModule('mongoose', () => {
-      const actualTypes = {
-        ObjectId: {
-          isValid: (id) => /^[a-f\d]{24}$/i.test(id),
-        },
-      };
-      return {
-        default: {
-          Types: actualTypes,
-          model: (name) => {
-            if (name === 'Organization') return mockOrganizationModel;
-            return {};
-          },
-        },
-      };
-    });
+    jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
+      default: mockOrganizationRepository,
+    }));
+
+    jest.unstable_mockModule('mongoose', () => ({
+      default: {
+        Types: { ObjectId: { isValid: (id) => /^[a-f\d]{24}$/i.test(id) } },
+        model: () => ({}),
+      },
+    }));
 
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: {
@@ -85,9 +79,7 @@ describe('Billing webhook integration tests:', () => {
       expect(mockSubscriptionRepository.update).toHaveBeenCalledWith(
         expect.objectContaining({ _id: subId, plan: 'pro', status: 'active' }),
       );
-      expect(mockOrganizationModel.findByIdAndUpdate).toHaveBeenCalledWith(
-        orgId, { plan: 'pro' }, { runValidators: true },
-      );
+      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
     });
 
     test('should create subscription when none exists', async () => {
@@ -203,9 +195,7 @@ describe('Billing webhook integration tests:', () => {
           cancelAtPeriodEnd: true,
         }),
       );
-      expect(mockOrganizationModel.findByIdAndUpdate).toHaveBeenCalledWith(
-        orgId, { plan: 'pro' }, { runValidators: true },
-      );
+      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
     });
 
     test('should return early when subscription not found', async () => {
@@ -252,9 +242,7 @@ describe('Billing webhook integration tests:', () => {
       expect(mockSubscriptionRepository.update).toHaveBeenCalledWith(
         expect.objectContaining({ _id: subId, plan: 'free', status: 'canceled' }),
       );
-      expect(mockOrganizationModel.findByIdAndUpdate).toHaveBeenCalledWith(
-        orgId, { plan: 'free' }, { runValidators: true },
-      );
+      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'free');
     });
 
     test('should return early when subscription not found', async () => {

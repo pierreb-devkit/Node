@@ -2,8 +2,11 @@
  * Cron script — dunning sweep.
  *
  * Finds subscriptions in 'past_due' status whose pastDueSince is older than 14 days
- * (i.e. the 7-day grace period has elapsed with no payment), transitions them to
+ * (7-day grace period + 7-day blocked period elapsed with no payment), transitions them to
  * 'unpaid' + plan 'free', and syncs the Organization.plan field accordingly.
+ *
+ * Timeline: payment fails → pastDueSince set → 7d grace (degraded mode) → 7d blocked (402) →
+ * this cron fires on day 14+ and downgrades to free.
  *
  * No-op when config.billing.meterMode === false (default).
  * Intended to run as a Kubernetes CronJob — see scripts/crons/README.md.
@@ -24,9 +27,9 @@ if (!config?.billing?.meterMode) {
   process.exit(0);
 }
 
-await mongooseService.connect();
-
 try {
+  await mongooseService.connect();
+
   const [{ default: BillingSubscriptionRepository }, { default: OrganizationRepository }] = await Promise.all([
     import('../../modules/billing/repositories/billing.subscription.repository.js'),
     import('../../modules/organizations/repositories/organizations.repository.js'),
@@ -65,10 +68,11 @@ try {
   }
 
   console.log(`[billing.dunningSweep] done — processed: ${processed}, errors: ${errors}, desyncErrors: ${desyncErrors}`);
-  process.exit(errors > 0 ? 1 : 0);
+  process.exitCode = errors > 0 ? 1 : 0;
 } catch (err) {
   console.error('[billing.dunningSweep] fatal:', err);
-  process.exit(1);
+  process.exitCode = 1;
 } finally {
   await mongooseService.disconnect?.();
 }
+process.exit(process.exitCode ?? 0);
