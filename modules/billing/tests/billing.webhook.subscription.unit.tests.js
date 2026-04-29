@@ -261,7 +261,7 @@ describe('Billing webhook subscription unit tests:', () => {
 
   describe('handleInvoicePaymentFailed', () => {
     test('should set status to past_due', async () => {
-      const existing = { _id: subId, organization: orgId };
+      const existing = { _id: subId, organization: orgId, pastDueSince: null };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
       mockSubscriptionRepository.update.mockResolvedValue({});
 
@@ -272,10 +272,67 @@ describe('Billing webhook subscription unit tests:', () => {
       );
     });
 
+    test('should set pastDueSince on first failure (when currently null)', async () => {
+      const existing = { _id: subId, organization: orgId, pastDueSince: null };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockSubscriptionRepository.update.mockResolvedValue({});
+
+      const before = new Date();
+      await BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_456' });
+      const after = new Date();
+
+      const callArg = mockSubscriptionRepository.update.mock.calls[0][0];
+      expect(callArg.pastDueSince).toBeInstanceOf(Date);
+      expect(callArg.pastDueSince.getTime()).toBeGreaterThanOrEqual(before.getTime());
+      expect(callArg.pastDueSince.getTime()).toBeLessThanOrEqual(after.getTime());
+    });
+
+    test('should NOT overwrite pastDueSince on subsequent failures (idempotent grace clock)', async () => {
+      const originalDate = new Date('2026-04-01T00:00:00Z');
+      const existing = { _id: subId, organization: orgId, pastDueSince: originalDate };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockSubscriptionRepository.update.mockResolvedValue({});
+
+      await BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_456' });
+
+      const callArg = mockSubscriptionRepository.update.mock.calls[0][0];
+      // pastDueSince must NOT be present in the update payload (preserves original date)
+      expect(callArg.pastDueSince).toBeUndefined();
+    });
+
+    test('should emit payment.failed event with organizationId', async () => {
+      const existing = { _id: subId, organization: orgId, pastDueSince: null };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockSubscriptionRepository.update.mockResolvedValue({});
+
+      await BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_456' });
+
+      expect(mockEvents.emit).toHaveBeenCalledWith('payment.failed', { organizationId: orgId });
+    });
+
+    test('should not throw when event listener errors', async () => {
+      const existing = { _id: subId, organization: orgId, pastDueSince: null };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockSubscriptionRepository.update.mockResolvedValue({});
+      mockEvents.emit.mockImplementation(() => { throw new Error('listener error'); });
+
+      await expect(
+        BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_456' }),
+      ).resolves.not.toThrow();
+    });
+
     test('should return early when no subscription ID in invoice', async () => {
       await BillingWebhookService.handleInvoicePaymentFailed({ subscription: null });
 
       expect(mockSubscriptionRepository.findByStripeSubscriptionId).not.toHaveBeenCalled();
+    });
+
+    test('should return early when subscription not found', async () => {
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(null);
+
+      await BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_unknown' });
+
+      expect(mockSubscriptionRepository.update).not.toHaveBeenCalled();
     });
   });
 });

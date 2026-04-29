@@ -259,8 +259,8 @@ describe('Billing webhook service unit tests:', () => {
   });
 
   describe('handleInvoicePaymentFailed', () => {
-    test('should mark subscription as past_due', async () => {
-      const existing = { _id: subId };
+    test('should mark subscription as past_due and set pastDueSince on first failure', async () => {
+      const existing = { _id: subId, organization: orgId, pastDueSince: null };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
       mockSubscriptionRepository.update.mockResolvedValue({});
 
@@ -269,10 +269,9 @@ describe('Billing webhook service unit tests:', () => {
 
       await BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_456' });
 
-      expect(mockSubscriptionRepository.update).toHaveBeenCalledWith({
-        _id: subId,
-        status: 'past_due',
-      });
+      expect(mockSubscriptionRepository.update).toHaveBeenCalledWith(
+        expect.objectContaining({ _id: subId, status: 'past_due', pastDueSince: expect.any(Date) }),
+      );
     });
 
     test('should return early when no subscription ID in invoice', async () => {

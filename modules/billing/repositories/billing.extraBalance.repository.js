@@ -243,6 +243,46 @@ const getBalance = async (orgId) => {
   return doc ? doc.cachedBalance : 0;
 };
 
+/**
+ * @function findOrgsWithExpiringTopups
+ * @description Return the distinct organizationIds that have at least one topup ledger entry
+ *              with `expiresAt < now` for which no matching expiration entry (`kind: 'expiration'`
+ *              with `refId: 'expire-<entryId>'`) has been recorded yet.
+ *              Used by the billing.extrasExpiration cron to build the sweep target list.
+ * @param {Date} now - Cutoff timestamp. Topups with expiresAt strictly before this are candidates.
+ * @returns {Promise<string[]>} Array of distinct organizationId strings.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const findOrgsWithExpiringTopups = async (now) => {
+  // Pull only the ledger field (projection) to keep the payload small.
+  const docs = await BillingExtraBalance()
+    .find(
+      {
+        'ledger.kind': 'topup',
+        'ledger.expiresAt': { $lt: now },
+      },
+      { organization: 1, ledger: 1 },
+    )
+    .lean();
+
+  const orgIds = [];
+  for (const doc of docs) {
+    const existingExpireRefs = new Set(
+      (doc.ledger ?? []).filter((e) => e.kind === 'expiration').map((e) => e.refId),
+    );
+    const hasUnhandled = (doc.ledger ?? []).some(
+      (e) =>
+        e.kind === 'topup' &&
+        e.expiresAt &&
+        new Date(e.expiresAt) < now &&
+        !existingExpireRefs.has(`expire-${e._id}`),
+    );
+    if (hasUnhandled) orgIds.push(String(doc.organization));
+  }
+
+  return orgIds;
+};
+
 export default {
   getOrCreate,
   creditPack,
@@ -250,4 +290,5 @@ export default {
   addExpirationEntries,
   refundPartial,
   getBalance,
+  findOrgsWithExpiringTopups,
 };

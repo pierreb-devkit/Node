@@ -251,7 +251,10 @@ const handleSubscriptionDeleted = async (subscription) => {
 };
 
 /**
- * @description Handle invoice.payment_failed event — mark subscription as past_due
+ * @description Handle invoice.payment_failed event — mark subscription as past_due.
+ *              Sets pastDueSince = now only when not already set (idempotent: multiple
+ *              failed invoices do not reset the grace-period clock).
+ *              Emits 'payment.failed' so downstream listeners can react (e.g. notifications).
  * @param {Object} invoice - Stripe invoice object
  * @returns {Promise<void>}
  */
@@ -263,10 +266,19 @@ const handleInvoicePaymentFailed = async (invoice) => {
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId);
   if (!existing) return;
 
-  await SubscriptionRepository.update({
-    _id: existing._id,
-    status: 'past_due',
-  });
+  const updatePayload = { _id: existing._id, status: 'past_due' };
+
+  // Only set pastDueSince on first failure — do not reset the grace-period clock on retries.
+  if (existing.pastDueSince == null) {
+    updatePayload.pastDueSince = new Date();
+  }
+
+  await SubscriptionRepository.update(updatePayload);
+
+  const organizationId = String(existing.organization?._id || existing.organization);
+  try {
+    billingEvents.emit('payment.failed', { organizationId });
+  } catch { /* listener errors must not disrupt webhook processing */ }
 };
 
 /**
