@@ -39,19 +39,17 @@ const LedgerEntrySchema = new Schema(
     },
     /**
      * Stripe checkout session ID — used for topup idempotency.
-     * Sparse: only set for kind='topup'.
+     * Only set for kind='topup'.
      */
     stripeSessionId: {
       type: String,
-      sparse: true,
     },
     /**
      * ObjectId reference to the History document that triggered a debit.
-     * Sparse: only set for kind='debit'.
+     * Only set for kind='debit'.
      */
     historyId: {
       type: Schema.ObjectId,
-      sparse: true,
     },
     /**
      * Generic external reference string.
@@ -60,7 +58,6 @@ const LedgerEntrySchema = new Schema(
      */
     refId: {
       type: String,
-      sparse: true,
     },
     at: {
       type: Date,
@@ -68,11 +65,10 @@ const LedgerEntrySchema = new Schema(
     },
     /**
      * Expiry date for topup entries.
-     * Sparse: only set on kind='topup' when the pack has a finite lifespan.
+     * Only set on kind='topup' when the pack has a finite lifespan.
      */
     expiresAt: {
       type: Date,
-      sparse: true,
     },
   },
   { _id: true },

@@ -11,7 +11,6 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
   let mockUsageRepository;
   let mockPlanService;
   let mockConfig;
-  let mockMongooseModel;
 
   const orgId = '507f1f77bcf86cd799439011';
 
@@ -57,14 +56,11 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       reset: jest.fn(),
       findByWeek: jest.fn(),
       incrementMeter: jest.fn(),
+      markThreshold: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
     };
 
     mockPlanService = {
       getActivePlan: jest.fn(),
-    };
-
-    mockMongooseModel = {
-      updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
     };
 
     jest.unstable_mockModule('../../../config/index.js', () => ({
@@ -77,12 +73,6 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
 
     jest.unstable_mockModule('../services/billing.plan.service.js', () => ({
       default: mockPlanService,
-    }));
-
-    jest.unstable_mockModule('mongoose', () => ({
-      default: {
-        model: jest.fn(() => mockMongooseModel),
-      },
     }));
 
     const mod = await import('../services/billing.usage.service.js');
@@ -199,11 +189,8 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       const result = await BillingUsageService.incrementMeter(orgId, 1, {}, 'hist_80pct');
 
       expect(result.alertCrossed).toBe('80');
-      // Should mark alertedAt80 atomically
-      expect(mockMongooseModel.updateOne).toHaveBeenCalledWith(
-        { _id: updatedDoc._id, alertedAt80: null },
-        { $set: { alertedAt80: expect.any(Date) } },
-      );
+      // Should mark alertedAt80 atomically via repository
+      expect(mockUsageRepository.markThreshold).toHaveBeenCalledWith(updatedDoc._id, 'alertedAt80');
     });
 
     test('should NOT re-emit threshold 80 when already alerted (alertedAt80 set)', async () => {

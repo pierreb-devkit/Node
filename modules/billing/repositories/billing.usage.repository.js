@@ -150,10 +150,70 @@ const incrementMeter = async (organizationId, weekKey, units, breakdown, idempot
   }
 };
 
+/**
+ * @function archiveOtherWeeks
+ * @description Atomically set archivedAt on all active usage documents for an org
+ *              whose weekKey does NOT match currentWeekKey.
+ *              Idempotent: documents already bearing archivedAt are excluded by the filter.
+ * @param {string} orgId - The organization ObjectId (string).
+ * @param {string} currentWeekKey - The week key to preserve (not archived).
+ * @param {Date} archivedAt - Timestamp to stamp on archived documents.
+ * @returns {Promise<{modifiedCount: number}>} Mongoose updateMany result.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const archiveOtherWeeks = (orgId, currentWeekKey, archivedAt) =>
+  BillingUsage.updateMany(
+    {
+      organizationId: orgId,
+      weekKey: { $ne: currentWeekKey },
+      archivedAt: { $exists: false },
+    },
+    { $set: { archivedAt } },
+  );
+
+/**
+ * @function upsertWeekSnapshot
+ * @description Upsert a new weekly usage document with snapshot fields ($setOnInsert only).
+ *              If the document already exists, the operation is a no-op (idempotent).
+ *              Throws with code 11000 on a race — callers should catch and re-fetch.
+ * @param {string} orgId - The organization ObjectId (string).
+ * @param {string} weekKey - The ISO week key for the new period.
+ * @param {Object} snapshotFields - Fields written only on document creation
+ *   (organizationId, weekKey, month, meterUsed, meterQuota, planVersion,
+ *    meterBreakdown, resetAt, alertedAt80, alertedAt100, consumedHistoryIds).
+ * @returns {Promise<Object>} The upserted document.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const upsertWeekSnapshot = (orgId, weekKey, snapshotFields) =>
+  BillingUsage.findOneAndUpdate(
+    { organizationId: orgId, weekKey },
+    { $setOnInsert: snapshotFields },
+    { upsert: true, returnDocument: 'after', runValidators: false },
+  );
+
+/**
+ * @function markThreshold
+ * @description Atomically set a threshold timestamp field on a usage document,
+ *              only when the field is currently null (deduplication guard).
+ *              Used by the service layer to record 80%/100% alert crossings.
+ * @param {string} docId - The BillingUsage document _id (string).
+ * @param {'alertedAt80'|'alertedAt100'} field - The threshold field to set.
+ * @returns {Promise<{modifiedCount: number}>} Mongoose updateOne result.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const markThreshold = (docId, field) =>
+  BillingUsage.updateOne(
+    { _id: docId, [field]: null },
+    { $set: { [field]: new Date() } },
+  );
+
 export default {
   get,
   increment,
   reset,
   findByWeek,
   incrementMeter,
+  archiveOtherWeeks,
+  upsertWeekSnapshot,
+  markThreshold,
 };

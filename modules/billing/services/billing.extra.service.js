@@ -86,49 +86,43 @@ const refundPartial = async (orgId, stripeSessionId, amountRefundedCents) => {
     return { doc, applied: false, refundUnits: 0 };
   }
 
-  // Find the pack config to compute proportion
+  // Find the pack config to compute proportion.
+  // Ambiguity guard: if 0 or >1 packs share the same meterUnits, fall back to
+  // applied=false rather than using a wrong priceUsd.
+  // TODO PR-N3: webhook handler will pass packId from session metadata, removing the need for this heuristic.
   const packs = config?.billing?.packs ?? [];
-  // Try to match by amount (meterUnits) since we don't store packId on the entry
-  const matchingPack = packs.find(
+  const matchingPacks = packs.filter(
     (p) => (p.meterUnits ?? p.computeUnits) === topupEntry.amount,
   );
 
+  if (matchingPacks.length !== 1) {
+    // Ambiguous or unknown pack — cannot compute proportional refund safely.
+    return { doc, applied: false, reason: 'ambiguous_pack_match', refundUnits: 0 };
+  }
+
+  const matchingPack = matchingPacks[0];
   let refundUnits;
-  if (matchingPack && matchingPack.priceUsd && matchingPack.priceUsd > 0) {
+  if (matchingPack.priceUsd && matchingPack.priceUsd > 0) {
     const packUnits = matchingPack.meterUnits ?? matchingPack.computeUnits;
     refundUnits = Math.round((amountRefundedCents / 100 / matchingPack.priceUsd) * packUnits);
   } else {
-    // Fallback: proportional to topup amount (assume full refund if pack not found)
+    // Fallback: proportional to topup amount (assume full refund if no priceUsd)
     refundUnits = topupEntry.amount;
   }
 
   if (refundUnits <= 0) return { doc, applied: false, refundUnits: 0 };
 
   const refundRefId = `refund-${stripeSessionId}-${amountRefundedCents}`;
-  const refundEntry = {
-    kind: 'refund',
-    amount: -refundUnits,
-    stripeSessionId,
-    refId: refundRefId,
-    at: new Date(),
-  };
 
-  // Atomic push with refId dedup — use repository via dynamic import to avoid circular
-  const { default: mongoose } = await import('mongoose');
-  const updatedDoc = await mongoose.model('BillingExtraBalance').findOneAndUpdate(
-    {
-      organization: orgId,
-      'ledger.refId': { $ne: refundRefId },
-    },
-    {
-      $push: { ledger: refundEntry },
-      $inc: { cachedBalance: -refundUnits },
-      $set: { cachedBalanceAt: new Date() },
-    },
-    { returnDocument: 'after' },
+  // Delegate atomic write to repository — no mongoose import in service layer.
+  const { doc: updatedDoc, applied } = await BillingExtraBalanceRepository.refundPartial(
+    orgId,
+    stripeSessionId,
+    refundUnits,
+    refundRefId,
   );
 
-  if (updatedDoc) return { doc: updatedDoc, applied: true, refundUnits };
+  if (applied) return { doc: updatedDoc, applied: true, refundUnits };
   return { doc, applied: false, refundUnits: 0 };
 };
 

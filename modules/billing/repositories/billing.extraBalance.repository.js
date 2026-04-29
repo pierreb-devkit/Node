@@ -169,6 +169,46 @@ const addExpirationEntries = async (orgId, now) => {
 };
 
 /**
+ * @function refundPartial
+ * @description Atomically push a negative 'refund' ledger entry and decrement cachedBalance.
+ *              Idempotent: if a ledger entry with the same refId already exists the update
+ *              is a no-op and applied=false is returned.
+ *              The balance may go negative when units were already consumed — this correctly
+ *              reflects the economic debt (replenished on next creditPack).
+ * @param {string} orgId - The organization ObjectId (string).
+ * @param {string} stripeSessionId - Stripe session ID of the original purchase.
+ * @param {number} refundUnits - Meter units to claw back (must be > 0).
+ * @param {string} refId - Unique idempotency key for this refund (e.g. `refund-<sessionId>-<cents>`).
+ * @returns {Promise<{doc: Object|null, applied: boolean}>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const refundPartial = async (orgId, stripeSessionId, refundUnits, refId) => {
+  const entry = {
+    kind: 'refund',
+    amount: -refundUnits,
+    stripeSessionId,
+    refId,
+    at: new Date(),
+  };
+
+  const doc = await BillingExtraBalance().findOneAndUpdate(
+    {
+      organization: orgId,
+      'ledger.refId': { $ne: refId },
+    },
+    {
+      $push: { ledger: entry },
+      $inc: { cachedBalance: -refundUnits },
+      $set: { cachedBalanceAt: new Date() },
+    },
+    { returnDocument: 'after' },
+  );
+
+  if (doc) return { doc, applied: true };
+  return { doc: null, applied: false };
+};
+
+/**
  * @function getBalance
  * @description Return the current cachedBalance for an organization.
  *              Cheap read — no ledger scan.
@@ -186,5 +226,6 @@ export default {
   creditPack,
   debit,
   addExpirationEntries,
+  refundPartial,
   getBalance,
 };

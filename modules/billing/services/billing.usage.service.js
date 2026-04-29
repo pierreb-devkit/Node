@@ -156,13 +156,9 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
 
     if (pct >= 1.0 && !updatedDoc.alertedAt100) {
       alertCrossed = '100';
-      // Mark the threshold so we don't re-emit this cycle
+      // Mark the threshold so we don't re-emit this cycle (best-effort via repository)
       try {
-        const { default: mongoose } = await import('mongoose');
-        await mongoose.model('BillingUsage').updateOne(
-          { _id: updatedDoc._id, alertedAt100: null },
-          { $set: { alertedAt100: new Date() } },
-        );
+        await UsageRepository.markThreshold(updatedDoc._id, 'alertedAt100');
       } catch {
         // Best-effort
       }
@@ -178,11 +174,7 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
     } else if (pct >= 0.8 && !updatedDoc.alertedAt80) {
       alertCrossed = '80';
       try {
-        const { default: mongoose } = await import('mongoose');
-        await mongoose.model('BillingUsage').updateOne(
-          { _id: updatedDoc._id, alertedAt80: null },
-          { $set: { alertedAt80: new Date() } },
-        );
+        await UsageRepository.markThreshold(updatedDoc._id, 'alertedAt80');
       } catch {
         // Best-effort
       }

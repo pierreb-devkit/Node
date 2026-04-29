@@ -109,6 +109,25 @@ const findByStripeSubscriptionId = (stripeSubscriptionId) => {
   return Subscription.findOne({ stripeSubscriptionId: normalized }).populate(defaultPopulate).exec();
 };
 
+/**
+ * @function findAllDueForReset
+ * @description Fetch active/trialing subscriptions whose currentPeriodStart falls
+ *              within the provided time window. Used by the weekly meter reset sweep.
+ *              Returns lean plain objects (no population) for performance.
+ * @param {Date} from - The start of the window (inclusive).
+ * @param {Date} to - The end of the window (inclusive).
+ * @returns {Promise<Array<{organizationId: string, currentPeriodStart: Date}>>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const findAllDueForReset = (from, to) =>
+  Subscription.find(
+    {
+      status: { $in: ['active', 'trialing'] },
+      currentPeriodStart: { $gte: from, $lte: to },
+    },
+    { organizationId: 1, currentPeriodStart: 1 },
+  ).lean();
+
 export default {
   list,
   create,
@@ -118,4 +137,5 @@ export default {
   findByOrganization,
   findByStripeCustomerId,
   findByStripeSubscriptionId,
+  findAllDueForReset,
 };

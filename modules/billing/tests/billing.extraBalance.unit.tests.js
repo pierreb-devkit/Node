@@ -342,5 +342,53 @@ describe('BillingExtraBalance unit tests:', () => {
         expect(balance).toBe(0);
       });
     });
+
+    describe('refundPartial', () => {
+      test('should apply refund atomically when refId is new', async () => {
+        const updatedDoc = makeDoc({ cachedBalance: 0 });
+        mockModel.findOneAndUpdate.mockResolvedValue(updatedDoc);
+
+        const result = await BillingExtraBalanceRepository.refundPartial(
+          orgId,
+          'cs_refund_test',
+          500000,
+          'refund-cs_refund_test-4900',
+        );
+
+        expect(result.applied).toBe(true);
+        expect(result.doc).toBe(updatedDoc);
+
+        const call = mockModel.findOneAndUpdate.mock.calls[0];
+        expect(call[0]).toEqual({ organization: orgId, 'ledger.refId': { $ne: 'refund-cs_refund_test-4900' } });
+        expect(call[1].$push.ledger.kind).toBe('refund');
+        expect(call[1].$push.ledger.amount).toBe(-500000);
+        expect(call[1].$push.ledger.stripeSessionId).toBe('cs_refund_test');
+        expect(call[1].$push.ledger.refId).toBe('refund-cs_refund_test-4900');
+        expect(call[1].$inc.cachedBalance).toBe(-500000);
+      });
+
+      test('should return applied=false when refId already used (idempotent)', async () => {
+        mockModel.findOneAndUpdate.mockResolvedValue(null);
+
+        const result = await BillingExtraBalanceRepository.refundPartial(
+          orgId,
+          'cs_refund_test',
+          500000,
+          'refund-cs_refund_test-4900',
+        );
+
+        expect(result.applied).toBe(false);
+        expect(result.doc).toBeNull();
+      });
+
+      test('should allow negative resulting balance (economic reflection)', async () => {
+        const updatedDoc = makeDoc({ cachedBalance: -500000 });
+        mockModel.findOneAndUpdate.mockResolvedValue(updatedDoc);
+
+        const result = await BillingExtraBalanceRepository.refundPartial(orgId, 'cs_neg', 500000, 'refund-cs_neg-4900');
+        expect(result.applied).toBe(true);
+        expect(result.doc.cachedBalance).toBe(-500000);
+      });
+    });
   });
 });

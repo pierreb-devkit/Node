@@ -240,4 +240,91 @@ describe('BillingUsageRepository — meter extensions unit tests:', () => {
       }
     });
   });
+
+  describe('archiveOtherWeeks', () => {
+    test('should call updateMany excluding currentWeekKey on docs without archivedAt', async () => {
+      mockModel.updateMany.mockResolvedValue({ modifiedCount: 2 });
+      const archivedAt = new Date('2026-04-28T00:00:00Z');
+
+      const result = await BillingUsageRepository.archiveOtherWeeks(orgId, weekKey, archivedAt);
+
+      expect(mockModel.updateMany).toHaveBeenCalledWith(
+        {
+          organizationId: orgId,
+          weekKey: { $ne: weekKey },
+          archivedAt: { $exists: false },
+        },
+        { $set: { archivedAt } },
+      );
+      expect(result.modifiedCount).toBe(2);
+    });
+
+    test('should return modifiedCount=0 when nothing to archive', async () => {
+      mockModel.updateMany.mockResolvedValue({ modifiedCount: 0 });
+
+      const result = await BillingUsageRepository.archiveOtherWeeks(orgId, weekKey, new Date());
+      expect(result.modifiedCount).toBe(0);
+    });
+  });
+
+  describe('upsertWeekSnapshot', () => {
+    test('should call findOneAndUpdate with upsert and $setOnInsert', async () => {
+      const snapshotFields = {
+        organizationId: orgId,
+        weekKey,
+        month: '2026-05',
+        meterUsed: 0,
+        meterQuota: 500000,
+        planVersion: 'v1',
+        meterBreakdown: {},
+        resetAt: new Date(),
+        alertedAt80: null,
+        alertedAt100: null,
+        consumedHistoryIds: [],
+      };
+      const newDoc = makeUsageDoc();
+      mockModel.findOneAndUpdate.mockResolvedValue(newDoc);
+
+      const result = await BillingUsageRepository.upsertWeekSnapshot(orgId, weekKey, snapshotFields);
+
+      expect(mockModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { organizationId: orgId, weekKey },
+        { $setOnInsert: snapshotFields },
+        expect.objectContaining({ upsert: true, returnDocument: 'after' }),
+      );
+      expect(result).toBe(newDoc);
+    });
+  });
+
+  describe('markThreshold', () => {
+    test('should call updateOne with field null filter and $set to current date', async () => {
+      mockModel.updateOne = jest.fn().mockResolvedValue({ modifiedCount: 1 });
+
+      const result = await BillingUsageRepository.markThreshold('507f1f77bcf86cd799439099', 'alertedAt80');
+
+      expect(mockModel.updateOne).toHaveBeenCalledWith(
+        { _id: '507f1f77bcf86cd799439099', alertedAt80: null },
+        { $set: { alertedAt80: expect.any(Date) } },
+      );
+      expect(result.modifiedCount).toBe(1);
+    });
+
+    test('should use the correct field name for alertedAt100', async () => {
+      mockModel.updateOne = jest.fn().mockResolvedValue({ modifiedCount: 1 });
+
+      await BillingUsageRepository.markThreshold('507f1f77bcf86cd799439099', 'alertedAt100');
+
+      expect(mockModel.updateOne).toHaveBeenCalledWith(
+        { _id: '507f1f77bcf86cd799439099', alertedAt100: null },
+        { $set: { alertedAt100: expect.any(Date) } },
+      );
+    });
+
+    test('should return modifiedCount=0 when threshold already set (idempotent)', async () => {
+      mockModel.updateOne = jest.fn().mockResolvedValue({ modifiedCount: 0 });
+
+      const result = await BillingUsageRepository.markThreshold('507f1f77bcf86cd799439099', 'alertedAt80');
+      expect(result.modifiedCount).toBe(0);
+    });
+  });
 });

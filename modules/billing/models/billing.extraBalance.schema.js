@@ -23,8 +23,9 @@ const LedgerEntry = z.object({
   /**
    * Signed amount in meter units.
    * Positive for topup/refund/adjustment; negative for debit/expiration.
+   * Zero is rejected as an operational guard (zero-amount entries are always a bug).
    */
-  amount: z.number(),
+  amount: z.number().refine((n) => n !== 0, { message: 'Ledger entry amount must not be zero' }),
   stripeSessionId: z.string().trim().optional().nullable(),
   historyId: z
     .string()

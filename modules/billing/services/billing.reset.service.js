@@ -3,6 +3,7 @@
  */
 import config from '../../../config/index.js';
 import BillingUsageRepository from '../repositories/billing.usage.repository.js';
+import BillingSubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import BillingPlanService from './billing.plan.service.js';
 
 /**
@@ -46,17 +47,8 @@ const resetWeek = async (orgId, periodStart) => {
   const newWeekKey = isoWeekKey(periodStart);
 
   // Step 1 — Archive any existing docs for this org that are NOT the new week key.
-  // This is a best-effort archive: documents without archivedAt are considered active.
-  // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — dynamic model access
-  const { default: mongoose } = await import('mongoose');
-  await mongoose.model('BillingUsage').updateMany(
-    {
-      organizationId: orgId,
-      weekKey: { $ne: newWeekKey },
-      archivedAt: { $exists: false },
-    },
-    { $set: { archivedAt: now } },
-  );
+  // Delegates to repository — no mongoose import in service layer.
+  await BillingUsageRepository.archiveOtherWeeks(orgId, newWeekKey, now);
 
   // Step 2 — Fetch the active plan to snapshot quota/planVersion.
   const planId = config?.billing?.plans?.[0] ?? 'pro';
@@ -75,25 +67,19 @@ const resetWeek = async (orgId, periodStart) => {
   if (newDoc) return newDoc; // Already exists — idempotent
 
   try {
-    return await mongoose.model('BillingUsage').findOneAndUpdate(
-      { organizationId: orgId, weekKey: newWeekKey },
-      {
-        $setOnInsert: {
-          organizationId: orgId,
-          weekKey: newWeekKey,
-          month: monthKey,
-          meterUsed: 0,
-          meterQuota,
-          planVersion,
-          meterBreakdown: {},
-          resetAt,
-          alertedAt80: null,
-          alertedAt100: null,
-          consumedHistoryIds: [],
-        },
-      },
-      { upsert: true, returnDocument: 'after', runValidators: false },
-    );
+    return await BillingUsageRepository.upsertWeekSnapshot(orgId, newWeekKey, {
+      organizationId: orgId,
+      weekKey: newWeekKey,
+      month: monthKey,
+      meterUsed: 0,
+      meterQuota,
+      planVersion,
+      meterBreakdown: {},
+      resetAt,
+      alertedAt80: null,
+      alertedAt100: null,
+      consumedHistoryIds: [],
+    });
   } catch (err) {
     if (err.code === 11000) {
       // Race: another pod already created this week's doc
@@ -115,19 +101,12 @@ const resetWeek = async (orgId, periodStart) => {
 const resetAllDue = async () => {
   if (!config?.billing?.meterMode) return { processed: 0, errors: 0 };
 
-  const { default: mongoose } = await import('mongoose');
-  const Subscription = mongoose.model('BillingSubscription');
   const now = new Date();
   const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-  // Find subscriptions whose period started within the last week
-  const subs = await Subscription.find(
-    {
-      status: { $in: ['active', 'trialing'] },
-      currentPeriodStart: { $gte: oneWeekAgo, $lte: now },
-    },
-    { organizationId: 1, currentPeriodStart: 1 },
-  ).lean();
+  // Find subscriptions whose period started within the last week.
+  // TODO PR-N5: replace window query with lastResetAt field for scheduler-delay resilience.
+  const subs = await BillingSubscriptionRepository.findAllDueForReset(oneWeekAgo, now);
 
   let processed = 0;
   let errors = 0;

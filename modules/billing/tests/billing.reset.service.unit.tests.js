@@ -11,7 +11,6 @@ describe('BillingResetService unit tests:', () => {
   let mockUsageRepository;
   let mockPlanService;
   let mockConfig;
-  let mockMongooseUsage;
   let mockMongooseSubscription;
 
   const orgId = '507f1f77bcf86cd799439011';
@@ -50,19 +49,16 @@ describe('BillingResetService unit tests:', () => {
       get: jest.fn(),
       reset: jest.fn(),
       incrementMeter: jest.fn(),
+      archiveOtherWeeks: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
+      upsertWeekSnapshot: jest.fn(),
     };
 
     mockPlanService = {
       getActivePlan: jest.fn(),
     };
 
-    mockMongooseUsage = {
-      updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
-      findOneAndUpdate: jest.fn(),
-    };
-
     mockMongooseSubscription = {
-      find: jest.fn(),
+      findAllDueForReset: jest.fn(),
     };
 
     jest.unstable_mockModule('../../../config/index.js', () => ({
@@ -73,18 +69,12 @@ describe('BillingResetService unit tests:', () => {
       default: mockUsageRepository,
     }));
 
-    jest.unstable_mockModule('../services/billing.plan.service.js', () => ({
-      default: mockPlanService,
+    jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
+      default: mockMongooseSubscription,
     }));
 
-    jest.unstable_mockModule('mongoose', () => ({
-      default: {
-        model: jest.fn((name) => {
-          if (name === 'BillingUsage') return mockMongooseUsage;
-          if (name === 'BillingSubscription') return mockMongooseSubscription;
-          return {};
-        }),
-      },
+    jest.unstable_mockModule('../services/billing.plan.service.js', () => ({
+      default: mockPlanService,
     }));
 
     const mod = await import('../services/billing.reset.service.js');
@@ -126,13 +116,14 @@ describe('BillingResetService unit tests:', () => {
       mockPlanService.getActivePlan.mockResolvedValue(makePlan());
       mockUsageRepository.findByWeek.mockResolvedValue(null);
       const newDoc = makeUsageDoc({ weekKey: '2026-W18' });
-      mockMongooseUsage.findOneAndUpdate.mockResolvedValue(newDoc);
+      mockUsageRepository.upsertWeekSnapshot.mockResolvedValue(newDoc);
 
       const result = await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
 
-      expect(mockMongooseUsage.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({ organizationId: orgId, weekKey: { $ne: '2026-W18' } }),
-        { $set: { archivedAt: expect.any(Date) } },
+      expect(mockUsageRepository.archiveOtherWeeks).toHaveBeenCalledWith(
+        orgId,
+        '2026-W18',
+        expect.any(Date),
       );
       expect(result).toBe(newDoc);
     });
@@ -144,39 +135,39 @@ describe('BillingResetService unit tests:', () => {
 
       const result = await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
 
-      // Should not call findOneAndUpdate since doc already exists
-      expect(mockMongooseUsage.findOneAndUpdate).not.toHaveBeenCalled();
+      // Should not call upsertWeekSnapshot since doc already exists
+      expect(mockUsageRepository.upsertWeekSnapshot).not.toHaveBeenCalled();
       expect(result).toBe(existingDoc);
     });
 
     test('should snapshot meterQuota and planVersion from active plan', async () => {
       mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 1000000, version: 'v3' }));
       mockUsageRepository.findByWeek.mockResolvedValue(null);
-      let capturedUpdate;
-      mockMongooseUsage.findOneAndUpdate.mockImplementation((filter, update) => {
-        capturedUpdate = update;
+      let capturedSnapshot;
+      mockUsageRepository.upsertWeekSnapshot.mockImplementation((orgId, weekKey, snapshot) => {
+        capturedSnapshot = snapshot;
         return Promise.resolve(makeUsageDoc());
       });
 
       await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
 
-      expect(capturedUpdate.$setOnInsert.meterQuota).toBe(1000000);
-      expect(capturedUpdate.$setOnInsert.planVersion).toBe('v3');
+      expect(capturedSnapshot.meterQuota).toBe(1000000);
+      expect(capturedSnapshot.planVersion).toBe('v3');
     });
 
     test('should use meterQuota=0 when no active plan exists', async () => {
       mockPlanService.getActivePlan.mockResolvedValue(null);
       mockUsageRepository.findByWeek.mockResolvedValue(null);
-      let capturedUpdate;
-      mockMongooseUsage.findOneAndUpdate.mockImplementation((filter, update) => {
-        capturedUpdate = update;
+      let capturedSnapshot;
+      mockUsageRepository.upsertWeekSnapshot.mockImplementation((orgId, weekKey, snapshot) => {
+        capturedSnapshot = snapshot;
         return Promise.resolve(makeUsageDoc({ meterQuota: 0 }));
       });
 
       await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
 
-      expect(capturedUpdate.$setOnInsert.meterQuota).toBe(0);
-      expect(capturedUpdate.$setOnInsert.planVersion).toBeNull();
+      expect(capturedSnapshot.meterQuota).toBe(0);
+      expect(capturedSnapshot.planVersion).toBeNull();
     });
 
     test('should handle E11000 race by falling back to findByWeek', async () => {
@@ -186,7 +177,7 @@ describe('BillingResetService unit tests:', () => {
         .mockResolvedValueOnce(makeUsageDoc()); // Second call after E11000: doc exists
       const e11000 = new Error('E11000 duplicate key');
       e11000.code = 11000;
-      mockMongooseUsage.findOneAndUpdate.mockRejectedValue(e11000);
+      mockUsageRepository.upsertWeekSnapshot.mockRejectedValue(e11000);
 
       const result = await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
 
@@ -206,15 +197,14 @@ describe('BillingResetService unit tests:', () => {
       const now = new Date();
       const periodStart = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
 
-      const leanMock = jest.fn().mockResolvedValue([
+      mockMongooseSubscription.findAllDueForReset.mockResolvedValue([
         { organizationId: '507f1f77bcf86cd799439011', currentPeriodStart: periodStart },
         { organizationId: '507f1f77bcf86cd799439022', currentPeriodStart: periodStart },
       ]);
-      mockMongooseSubscription.find.mockReturnValue({ lean: leanMock });
 
       mockPlanService.getActivePlan.mockResolvedValue(makePlan());
       mockUsageRepository.findByWeek.mockResolvedValue(null);
-      mockMongooseUsage.findOneAndUpdate.mockResolvedValue(makeUsageDoc());
+      mockUsageRepository.upsertWeekSnapshot.mockResolvedValue(makeUsageDoc());
 
       const result = await BillingResetService.resetAllDue();
       expect(result.processed).toBe(2);
@@ -223,10 +213,9 @@ describe('BillingResetService unit tests:', () => {
 
     test('should count errors when resetWeek fails for a subscription', async () => {
       const periodStart = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
-      const leanMock = jest.fn().mockResolvedValue([
+      mockMongooseSubscription.findAllDueForReset.mockResolvedValue([
         { organizationId: '507f1f77bcf86cd799439011', currentPeriodStart: periodStart },
       ]);
-      mockMongooseSubscription.find.mockReturnValue({ lean: leanMock });
       mockPlanService.getActivePlan.mockRejectedValue(new Error('DB error'));
       mockUsageRepository.findByWeek.mockResolvedValue(null);
 
