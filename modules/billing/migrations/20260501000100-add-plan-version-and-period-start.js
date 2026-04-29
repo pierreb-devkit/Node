@@ -1,8 +1,10 @@
 /**
- * Migration: Add planVersion and currentPeriodStart to subscriptions collection
+ * Migration: Add planVersion to subscriptions + TTL index on processedstripeevents
  *
- * Also ensures the billingplans and processedstripeevents collections have
- * their required indexes.
+ * - subscriptions: sparse index on planVersion
+ * - processedstripeevents: TTL index on processedAt (30d retention)
+ *
+ * billingplans indexes are owned by Mongoose schema and synced at bootstrap.
  *
  * Additive only — no data backfill.
  * Idempotent: safe to run multiple times.
@@ -19,16 +21,8 @@ export async function up() {
     { sparse: true, name: 'planVersion_sparse' },
   );
 
-  // ── billingplans: create indexes if collection doesn't already have them ──
-  const billingplans = db.collection('billingplans');
-  await billingplans.createIndex(
-    { planId: 1, version: 1 },
-    { unique: true, name: 'planId_version_unique' },
-  );
-  await billingplans.createIndex(
-    { planId: 1, active: 1, effectiveUntil: 1 },
-    { name: 'planId_active_effectiveUntil' },
-  );
+  // billingplans indexes are managed by Mongoose (auto-sync on bootstrap).
+  // Do not duplicate them here — mismatched names cause IndexOptionsConflict.
 
   // ── processedstripeevents: TTL index ─────────────────────────────────────
   const events = db.collection('processedstripeevents');
