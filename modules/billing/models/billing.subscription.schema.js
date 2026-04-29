@@ -20,7 +20,7 @@ const baseShape = {
   stripeCustomerId: optionalStripeId,
   stripeSubscriptionId: optionalStripeId,
   currentPeriodEnd: z.coerce.date().nullable().optional(),
-  // ── Compute fields (optional — backward-compatible) ──────────────────────
+  // ── Meter fields (optional — backward-compatible) ────────────────────────
   planVersion: z.string().trim().optional(),
   currentPeriodStart: z.coerce.date().nullable().optional(),
   pastDueSince: z.coerce.date().nullable().optional(),
