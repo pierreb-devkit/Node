@@ -41,11 +41,23 @@ const BillingPlanMongoose = new Schema(
     },
     /**
      * Flexible ratio map for compute unit attribution.
+     * Each key is a feature name; each value is a non-negative finite number.
      * Example: { scrap: 1, autofix: 2, wizard: 5 }
      */
     ratios: {
       type: Schema.Types.Mixed,
       default: () => ({}),
+      validate: {
+        validator(value) {
+          return (
+            value != null &&
+            typeof value === 'object' &&
+            !Array.isArray(value) &&
+            Object.values(value).every((n) => Number.isFinite(n) && n >= 0)
+          );
+        },
+        message: 'ratios must be an object whose values are finite numbers >= 0',
+      },
     },
     effectiveFrom: {
       type: Date,

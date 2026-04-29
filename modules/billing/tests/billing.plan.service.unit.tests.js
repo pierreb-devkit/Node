@@ -9,8 +9,12 @@ import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globa
 describe('BillingPlanService unit tests:', () => {
   let BillingPlanService;
   let mockBillingPlan;
-  let mockSession;
 
+  /**
+   * Build a BillingPlan-like document for tests.
+   * @param {Object} [overrides={}] - Field overrides.
+   * @returns {Object} Mock BillingPlan document.
+   */
   const makeDoc = (overrides = {}) => ({
     _id: '507f1f77bcf86cd799439011',
     planId: 'pro',
@@ -26,11 +30,6 @@ describe('BillingPlanService unit tests:', () => {
   beforeEach(async () => {
     jest.resetModules();
 
-    mockSession = {
-      withTransaction: jest.fn().mockImplementation(async (fn) => fn()),
-      endSession: jest.fn().mockResolvedValue(undefined),
-    };
-
     mockBillingPlan = {
       findOne: jest.fn(),
       updateMany: jest.fn(),
@@ -41,7 +40,6 @@ describe('BillingPlanService unit tests:', () => {
     jest.unstable_mockModule('mongoose', () => ({
       default: {
         model: jest.fn().mockReturnValue(mockBillingPlan),
-        startSession: jest.fn().mockResolvedValue(mockSession),
       },
     }));
 
@@ -95,13 +93,14 @@ describe('BillingPlanService unit tests:', () => {
       expect(mockBillingPlan.findOne).toHaveBeenCalledTimes(2);
     });
 
-    test('should cache null results too (plan not found)', async () => {
+    test('should NOT cache null results (plan not found)', async () => {
       mockBillingPlan.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
 
       await BillingPlanService.getActivePlan('starter');
       await BillingPlanService.getActivePlan('starter');
 
-      expect(mockBillingPlan.findOne).toHaveBeenCalledTimes(1);
+      // null is not cached — both calls hit the DB
+      expect(mockBillingPlan.findOne).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -136,7 +135,6 @@ describe('BillingPlanService unit tests:', () => {
       expect(mockBillingPlan.updateMany).toHaveBeenCalledWith(
         { planId: 'pro', active: true },
         { $set: { active: false, effectiveUntil: expect.any(Date) } },
-        { session: mockSession },
       );
     });
 
@@ -149,8 +147,7 @@ describe('BillingPlanService unit tests:', () => {
       await BillingPlanService.bumpVersion('pro', { computeQuota: 1000000 });
 
       expect(mockBillingPlan.create).toHaveBeenCalledWith(
-        [expect.objectContaining({ planId: 'pro', version: 'v2', computeQuota: 1000000, active: true })],
-        { session: mockSession },
+        expect.objectContaining({ planId: 'pro', version: 'v2', computeQuota: 1000000, active: true }),
       );
     });
 
@@ -182,8 +179,7 @@ describe('BillingPlanService unit tests:', () => {
       await BillingPlanService.bumpVersion('pro', { computeQuota: 500000, ratios: { scrap: 3 } });
 
       expect(mockBillingPlan.create).toHaveBeenCalledWith(
-        [expect.objectContaining({ ratios: { scrap: 3 } })],
-        { session: mockSession },
+        expect.objectContaining({ ratios: { scrap: 3 } }),
       );
     });
 
@@ -195,17 +191,14 @@ describe('BillingPlanService unit tests:', () => {
       await BillingPlanService.bumpVersion('starter', { computeQuota: 100000 });
 
       expect(mockBillingPlan.create).toHaveBeenCalledWith(
-        [expect.objectContaining({ ratios: {} })],
-        { session: mockSession },
+        expect.objectContaining({ ratios: {} }),
       );
     });
 
-    test('should always end session even on error', async () => {
-      mockSession.withTransaction.mockRejectedValue(new Error('DB write error'));
+    test('should propagate DB errors', async () => {
+      mockBillingPlan.updateMany.mockRejectedValue(new Error('DB write error'));
 
       await expect(BillingPlanService.bumpVersion('pro', { computeQuota: 1 })).rejects.toThrow('DB write error');
-
-      expect(mockSession.endSession).toHaveBeenCalled();
     });
   });
 

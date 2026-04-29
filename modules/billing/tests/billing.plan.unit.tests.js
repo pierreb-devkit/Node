@@ -49,6 +49,12 @@ describe('BillingPlan unit tests:', () => {
       expect(result.data.ratios.wizard).toBe(5);
     });
 
+    test('should reject negative ratio values', () => {
+      plan.ratios = { scrap: -1 };
+      const result = schema.BillingPlan.safeParse(plan);
+      expect(result.error).toBeDefined();
+    });
+
     test('should reject missing planId', () => {
       delete plan.planId;
       const result = schema.BillingPlan.safeParse(plan);

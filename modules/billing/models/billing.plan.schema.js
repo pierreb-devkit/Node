@@ -13,7 +13,7 @@ const BillingPlan = z.object({
   computeQuota: z.number().int().min(0, 'computeQuota must be >= 0'),
   stripePriceMonthly: z.string().trim().optional().nullable(),
   stripePriceAnnual: z.string().trim().optional().nullable(),
-  ratios: z.record(z.string(), z.number()).default(() => ({})),
+  ratios: z.record(z.string(), z.number().min(0, 'ratio values must be >= 0')).default(() => ({})),
   effectiveFrom: z.coerce.date(),
   effectiveUntil: z.coerce.date().nullable().optional(),
   active: z.boolean().default(true),
@@ -21,7 +21,7 @@ const BillingPlan = z.object({
 
 /**
  * Schema for bumping to a new plan version.
- * computeQuota and ratios are required; other fields are optional overrides.
+ * computeQuota is required; all other fields are optional overrides.
  */
 const BillingPlanBump = z
   .object({

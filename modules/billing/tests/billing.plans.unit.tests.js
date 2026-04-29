@@ -218,7 +218,7 @@ describe('Billing plans service unit tests:', () => {
     expect(typeof BillingPlansService.getPlans).toBe('function');
   });
 
-  test('facade: fetchPlansFromStripe should be a function when exported', async () => {
+  test('facade: fetchPlansFromStripe should NOT be exported from default facade', async () => {
     const mod = await import('../services/billing.plans.service.js');
     // fetchPlansFromStripe is intentionally NOT re-exported (it's an internal helper)
     // Verify that the default export only exposes the public surface: getPlans
