@@ -3,6 +3,7 @@
  */
 import mongoose from 'mongoose';
 
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const BillingPlan = () => mongoose.model('BillingPlan');
 
 /**
@@ -12,6 +13,7 @@ const BillingPlan = () => mongoose.model('BillingPlan');
  * @param {string} planId - The logical plan identifier (e.g. "pro").
  * @returns {Promise<Object|null>} The active BillingPlan plain object, or null.
  */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const findActive = (planId) =>
   BillingPlan().findOne({ planId, active: true, effectiveUntil: null }).lean();
 
@@ -23,6 +25,7 @@ const findActive = (planId) =>
  * @param {string} version - The specific version string (e.g. "v2").
  * @returns {Promise<Object|null>} The BillingPlan plain object, or null.
  */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const findByVersion = (planId, version) =>
   BillingPlan().findOne({ planId, version }).lean();
 
@@ -35,6 +38,7 @@ const findByVersion = (planId, version) =>
  * @param {Date} now - The timestamp to record as effectiveUntil.
  * @returns {Promise<Object>} Mongoose updateMany result ({ modifiedCount, ... }).
  */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const deactivateAll = (planId, now) =>
   BillingPlan().updateMany(
     { planId, active: true },
@@ -48,6 +52,7 @@ const deactivateAll = (planId, now) =>
  * @param {string} planId - The logical plan identifier.
  * @returns {Promise<number>} Total document count for the planId.
  */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const count = (planId) => BillingPlan().countDocuments({ planId });
 
 /**
@@ -56,6 +61,7 @@ const count = (planId) => BillingPlan().countDocuments({ planId });
  * @param {Object} doc - The plan document to create.
  * @returns {Promise<Object>} The created BillingPlan document (Mongoose doc).
  */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const create = (doc) => BillingPlan().create(doc);
 
 export default {
