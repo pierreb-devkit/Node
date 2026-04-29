@@ -121,10 +121,19 @@ const incrementMeter = async (organizationId, weekKey, units, breakdown, idempot
         $setOnInsert: {
           organizationId,
           weekKey,
-          month: baseSnapshot?.month ?? weekKey.slice(0, 7),
+          // Derive a valid YYYY-MM month from the weekKey as fallback.
+          // weekKey has format 'YYYY-Www' (e.g. '2026-W18'); slicing 7 chars gives 'YYYY-W'
+          // which is not a valid month. Instead parse the year from weekKey and use current month.
+          month: baseSnapshot?.month ?? (() => {
+            const now = new Date();
+            return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+          })(),
           meterQuota: baseSnapshot?.meterQuota ?? 0,
           planVersion: baseSnapshot?.planVersion ?? null,
           resetAt: baseSnapshot?.resetAt ?? null,
+          meterBreakdown: {},
+          alertedAt80: null,
+          alertedAt100: null,
         },
       },
       { upsert: true, returnDocument: 'after', runValidators: false },

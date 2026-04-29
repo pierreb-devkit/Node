@@ -6,8 +6,12 @@ import UsageRepository from '../repositories/billing.usage.repository.js';
 import BillingPlanService from './billing.plan.service.js';
 
 /**
- * Billing events emitter — used for threshold crossing notifications.
- * Lazy import to avoid circular dependency at module load time.
+ * @function getBillingEvents
+ * @description Lazily import the billing events emitter to avoid circular dependency
+ *              at module load time. Returns the emitter instance, or null if the
+ *              import fails (e.g. events module not available in test env).
+ * @async
+ * @returns {Promise<import('node:events').EventEmitter|null>} The billing event emitter, or null.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const getBillingEvents = async () => {

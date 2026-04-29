@@ -184,6 +184,15 @@ describe('BillingExtraBalance unit tests:', () => {
         );
         expect(result).toBe(doc);
       });
+
+      test('should return null for malformed orgId (ObjectId guard)', async () => {
+        const { default: mongoose } = await import('mongoose');
+        mongoose.Types.ObjectId.isValid = jest.fn(() => false);
+
+        const result = await BillingExtraBalanceRepository.getOrCreate('not-valid-id');
+        expect(result).toBeNull();
+        expect(mockModel.findOneAndUpdate).not.toHaveBeenCalled();
+      });
     });
 
     describe('creditPack — idempotency', () => {

@@ -60,8 +60,8 @@ const unitsFromCosts = async (costs, planId, ratioVersion) => {
  * @function attribute
  * @description Attribute meter units from a History-like input to a Usage document
  *              for the given organization. If the plan quota is exceeded, falls back
- *              to BillingExtraService.debit. If extras are also exhausted, throws
- *              MeterQuotaExhausted.
+ *              to BillingExtraService.debit (best-effort — does not throw when extras
+ *              are exhausted; extrasConsumed=0 is returned instead).
  *
  *              Idempotent on history._id — a second call with the same history object
  *              is a no-op (replay protection via consumedHistoryIds).

@@ -4,6 +4,14 @@
 import mongoose from 'mongoose';
 
 /**
+ * Validate that orgId is a syntactically valid MongoDB ObjectId.
+ * Returns false for malformed strings to avoid Mongoose CastError → 500.
+ * @param {string} orgId - The organization id to validate.
+ * @returns {boolean}
+ */
+const isValidOrgId = (orgId) => mongoose.Types.ObjectId.isValid(orgId);
+
+/**
  * @function BillingExtraBalance
  * @description Lazily resolves the BillingExtraBalance Mongoose model.
  *              Deferred to keep unit tests importable before model registration.
@@ -21,12 +29,14 @@ const BillingExtraBalance = () => mongoose.model('BillingExtraBalance');
  * @returns {Promise<Object>} The ExtraBalance document.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
-const getOrCreate = (orgId) =>
-  BillingExtraBalance().findOneAndUpdate(
+const getOrCreate = (orgId) => {
+  if (!isValidOrgId(orgId)) return Promise.resolve(null);
+  return BillingExtraBalance().findOneAndUpdate(
     { organization: orgId },
     { $setOnInsert: { organization: orgId, ledger: [], cachedBalance: 0, cachedBalanceAt: new Date() } },
     { upsert: true, returnDocument: 'after', runValidators: true },
   );
+};
 
 /**
  * @function creditPack
@@ -43,6 +53,7 @@ const getOrCreate = (orgId) =>
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const creditPack = async (orgId, amount, stripeSessionId, expiresAt = null) => {
+  if (!isValidOrgId(orgId)) return { doc: null, applied: false };
   const entry = {
     kind: 'topup',
     amount,
@@ -84,6 +95,7 @@ const creditPack = async (orgId, amount, stripeSessionId, expiresAt = null) => {
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const debit = async (orgId, amount, refId) => {
+  if (!isValidOrgId(orgId)) return { doc: null, applied: false };
   const entry = {
     kind: 'debit',
     amount: -amount,
@@ -122,6 +134,7 @@ const debit = async (orgId, amount, refId) => {
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const addExpirationEntries = async (orgId, now) => {
+  if (!isValidOrgId(orgId)) return 0;
   // Read the doc to find expired topups without a corresponding expiration entry.
   const doc = await BillingExtraBalance().findOne({ organization: orgId }).lean();
   if (!doc) return 0;
@@ -183,6 +196,7 @@ const addExpirationEntries = async (orgId, now) => {
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const refundPartial = async (orgId, stripeSessionId, refundUnits, refId) => {
+  if (!isValidOrgId(orgId)) return { doc: null, applied: false };
   const entry = {
     kind: 'refund',
     amount: -refundUnits,
@@ -217,6 +231,7 @@ const refundPartial = async (orgId, stripeSessionId, refundUnits, refId) => {
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const getBalance = async (orgId) => {
+  if (!isValidOrgId(orgId)) return 0;
   const doc = await BillingExtraBalance().findOne({ organization: orgId }, { cachedBalance: 1 }).lean();
   return doc ? doc.cachedBalance : 0;
 };

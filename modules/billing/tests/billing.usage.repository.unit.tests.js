@@ -227,6 +227,45 @@ describe('BillingUsageRepository — meter extensions unit tests:', () => {
       expect(capturedUpdate.$setOnInsert.month).toBe('2026-05');
     });
 
+    test('should initialize alertedAt80, alertedAt100, meterBreakdown in $setOnInsert', async () => {
+      let capturedUpdate;
+      mockModel.findOneAndUpdate.mockImplementation((filter, update) => {
+        capturedUpdate = update;
+        return Promise.resolve(makeUsageDoc());
+      });
+
+      await BillingUsageRepository.incrementMeter(
+        orgId,
+        weekKey,
+        100,
+        {},
+        'hist_defaults',
+        { meterQuota: 500, planVersion: 'v1', resetAt: new Date(), month: '2026-05' },
+      );
+
+      expect(capturedUpdate.$setOnInsert.alertedAt80).toBeNull();
+      expect(capturedUpdate.$setOnInsert.alertedAt100).toBeNull();
+      expect(capturedUpdate.$setOnInsert.meterBreakdown).toEqual({});
+    });
+
+    test('should produce a valid YYYY-MM month string when baseSnapshot.month is absent', async () => {
+      let capturedUpdate;
+      mockModel.findOneAndUpdate.mockImplementation((filter, update) => {
+        capturedUpdate = update;
+        return Promise.resolve(makeUsageDoc());
+      });
+
+      // Pass a baseSnapshot without a month field
+      await BillingUsageRepository.incrementMeter(orgId, weekKey, 50, {}, 'hist_nomonth', {
+        meterQuota: 100,
+        planVersion: null,
+        resetAt: null,
+      });
+
+      // month must be YYYY-MM (e.g. '2026-04'), not 'YYYY-W...'
+      expect(capturedUpdate.$setOnInsert.month).toMatch(/^\d{4}-\d{2}$/);
+    });
+
     test('should return null when organizationId fails isValid check', async () => {
       const { default: mongoose } = await import('mongoose');
       const origIsValid = mongoose.Types.ObjectId.isValid;

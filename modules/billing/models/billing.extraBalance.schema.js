@@ -22,7 +22,8 @@ const LedgerEntry = z.object({
   kind: LedgerKind,
   /**
    * Signed amount in meter units.
-   * Positive for topup/refund/adjustment; negative for debit/expiration.
+   * Positive for topup/adjustment; negative for debit/expiration/refund.
+   * 'refund' entries are clawbacks (negative) reflecting reclaimed units.
    * Zero is rejected as an operational guard (zero-amount entries are always a bug).
    */
   amount: z.number().refine((n) => n !== 0, { message: 'Ledger entry amount must not be zero' }),

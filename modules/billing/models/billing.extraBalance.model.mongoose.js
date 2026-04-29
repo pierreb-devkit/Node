@@ -30,8 +30,10 @@ const LedgerEntrySchema = new Schema(
     },
     /**
      * Signed amount in meter units.
-     * Positive for topup/refund/adjustment (add to balance).
-     * Negative for debit/expiration (subtract from balance).
+     * Positive for topup/adjustment (add to balance).
+     * Negative for debit/expiration/refund (subtract from balance).
+     * Note: 'refund' entries are clawbacks and carry a negative amount,
+     * reflecting the economic debt when credits already consumed must be reclaimed.
      */
     amount: {
       type: Number,
