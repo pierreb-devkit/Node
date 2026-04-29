@@ -85,6 +85,20 @@ const findOne = (filter) => Organization.findOne(filter).exec();
  */
 const exists = (filter) => Organization.exists(filter);
 
+/**
+ * @function setPlan
+ * @description Atomically update the plan field of a single organization.
+ *              Used by billing crons to keep Organization.plan in sync after
+ *              a subscription status change.
+ * @param {string} orgId - The organization ObjectId (string).
+ * @param {string} plan - The target plan value (e.g. 'free').
+ * @returns {Promise<Object|null>} The updated organization or null if orgId is invalid.
+ */
+const setPlan = (orgId, plan) => {
+  if (!mongoose.Types.ObjectId.isValid(orgId)) return Promise.resolve(null);
+  return Organization.findByIdAndUpdate(orgId, { plan }, { returnDocument: 'after', runValidators: true }).exec();
+};
+
 export default {
   list,
   create,
@@ -94,4 +108,5 @@ export default {
   deleteMany,
   findOne,
   exists,
+  setPlan,
 };

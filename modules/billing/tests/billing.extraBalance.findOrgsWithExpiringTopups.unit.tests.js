@@ -58,6 +58,13 @@ describe('BillingExtraBalanceRepository.findOrgsWithExpiringTopups:', () => {
     expect(result).toEqual([]);
   });
 
+  test('throws TypeError when now is not a Date', async () => {
+    await expect(BillingExtraBalanceRepository.findOrgsWithExpiringTopups('2026-01-01')).rejects.toThrow(TypeError);
+    await expect(BillingExtraBalanceRepository.findOrgsWithExpiringTopups(null)).rejects.toThrow(TypeError);
+    await expect(BillingExtraBalanceRepository.findOrgsWithExpiringTopups(undefined)).rejects.toThrow(TypeError);
+    await expect(BillingExtraBalanceRepository.findOrgsWithExpiringTopups(Date.now())).rejects.toThrow(TypeError);
+  });
+
   test('returns orgId when unhandled expired topup exists', async () => {
     const now = new Date();
     const pastDate = new Date(now.getTime() - 1000);

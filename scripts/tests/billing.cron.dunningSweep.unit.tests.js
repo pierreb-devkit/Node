@@ -9,8 +9,10 @@ import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globa
  * Tests cover:
  *  - meterMode gate (early exit when false)
  *  - findStaleDunning threshold calculation (14 days)
+ *  - findStaleDunning input guard (TypeError on non-Date)
  *  - markUnpaid called per stale subscription
- *  - Organization.plan synced to 'free'
+ *  - Organization.plan synced via OrganizationRepository.setPlan
+ *  - desyncErrors incremented when setPlan throws (compensation log)
  *  - error counting + continuation
  *  - idempotency: already-unpaid subscriptions are no-ops
  */
@@ -82,6 +84,13 @@ describe('billing.dunningSweep cron — BillingSubscriptionRepository:', () => {
       const result = await BillingSubscriptionRepository.findStaleDunning(new Date());
       expect(result).toEqual([]);
     });
+
+    test('throws TypeError when threshold is not a Date', () => {
+      expect(() => BillingSubscriptionRepository.findStaleDunning('2026-01-01')).toThrow(TypeError);
+      expect(() => BillingSubscriptionRepository.findStaleDunning(null)).toThrow(TypeError);
+      expect(() => BillingSubscriptionRepository.findStaleDunning(undefined)).toThrow(TypeError);
+      expect(() => BillingSubscriptionRepository.findStaleDunning(1234567890)).toThrow(TypeError);
+    });
   });
 
   describe('markUnpaid', () => {
@@ -111,7 +120,7 @@ describe('billing.dunningSweep cron — BillingSubscriptionRepository:', () => {
     });
   });
 
-  describe('dunning sweep logic (integration of findStaleDunning + markUnpaid)', () => {
+  describe('dunning sweep logic (integration of findStaleDunning + markUnpaid + OrganizationRepository)', () => {
     test('processes multiple stale subscriptions', async () => {
       const staleSubs = [
         { _id: subId, organization: orgId },
@@ -163,6 +172,43 @@ describe('billing.dunningSweep cron — BillingSubscriptionRepository:', () => {
 
       expect(processed).toBe(1);
       expect(errors).toBe(1);
+    });
+
+    test('desync: markUnpaid succeeds but setPlan throws — increments desyncErrors', async () => {
+      // Simulate the cron compensation path: markUnpaid OK, OrganizationRepository.setPlan fails.
+      // Cron should not rethrow — it logs and increments desyncErrors, continues processing.
+      const updatedSub = { _id: subId, organization: orgId, status: 'unpaid', plan: 'free' };
+      mockModel.findByIdAndUpdate.mockReturnValue({ exec: jest.fn().mockResolvedValue(updatedSub) });
+
+      const setPlanMock = jest.fn().mockRejectedValue(new Error('org DB error'));
+
+      // Replicate cron loop logic inline (cron imports are not re-executed in unit context)
+      let processed = 0;
+      let desyncErrors = 0;
+      const staleSubs = [{ _id: subId, organization: orgId }];
+      for (const sub of staleSubs) {
+        const subscription = await BillingSubscriptionRepository.markUnpaid(String(sub._id));
+        if (!subscription) continue;
+        try {
+          await setPlanMock(String(sub.organization), 'free');
+        } catch {
+          desyncErrors += 1;
+        }
+        processed += 1;
+      }
+
+      expect(processed).toBe(1);
+      expect(desyncErrors).toBe(1);
+      expect(setPlanMock).toHaveBeenCalledWith(orgId, 'free');
+    });
+
+    test('markUnpaid returns null for invalid sub id — cron skips (continue)', async () => {
+      // markUnpaid returns null for invalid ids; cron should continue without incrementing errors.
+      const badSubId = 'not-a-valid-objectid';
+      const result = await BillingSubscriptionRepository.markUnpaid(badSubId);
+
+      expect(result).toBeNull();
+      expect(mockModel.findByIdAndUpdate).not.toHaveBeenCalled();
     });
   });
 });

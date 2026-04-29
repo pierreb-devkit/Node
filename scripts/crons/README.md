@@ -41,7 +41,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: billing-weekly-reset
-              image: ghcr.io/your-org/your-app:main
+              image: ghcr.io/your-org/your-app:main  # replace with your project image
               command: ["node", "scripts/crons/billing.weeklyReset.js"]
               env:
                 - name: NODE_ENV

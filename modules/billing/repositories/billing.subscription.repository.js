@@ -138,14 +138,16 @@ const findAllDueForReset = (from, to) =>
  * @returns {Promise<Array<{_id: string, organization: string}>>}
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
-const findStaleDunning = (threshold) =>
-  Subscription.find(
+const findStaleDunning = (threshold) => {
+  if (!(threshold instanceof Date)) throw new TypeError('threshold must be a Date instance');
+  return Subscription.find(
     {
       status: 'past_due',
       pastDueSince: { $ne: null, $lte: threshold },
     },
     { _id: 1, organization: 1 },
   ).lean();
+};
 
 /**
  * @function markUnpaid

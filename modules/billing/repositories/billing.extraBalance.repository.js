@@ -254,7 +254,11 @@ const getBalance = async (orgId) => {
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const findOrgsWithExpiringTopups = async (now) => {
+  if (!(now instanceof Date)) throw new TypeError('now must be a Date instance');
   // Pull only the ledger field (projection) to keep the payload small.
+  // Note: the MongoDB pre-filter `ledger.expiresAt: { $lt: now }` is a coarse pre-filter —
+  // some returned docs may have no unhandled expirations (already recorded expiration entries);
+  // the in-memory loop below performs the precise check. This is intentional for simplicity.
   const docs = await BillingExtraBalance()
     .find(
       {

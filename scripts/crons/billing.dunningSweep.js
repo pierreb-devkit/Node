@@ -27,12 +27,10 @@ if (!config?.billing?.meterMode) {
 await mongooseService.connect();
 
 try {
-  const [{ default: mongoose }, { default: BillingSubscriptionRepository }] = await Promise.all([
-    import('mongoose'),
+  const [{ default: BillingSubscriptionRepository }, { default: OrganizationRepository }] = await Promise.all([
     import('../../modules/billing/repositories/billing.subscription.repository.js'),
+    import('../../modules/organizations/repositories/organizations.repository.js'),
   ]);
-
-  const Organization = mongoose.model('Organization');
 
   const now = new Date();
   const threshold = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
@@ -42,15 +40,20 @@ try {
 
   let processed = 0;
   let errors = 0;
+  let desyncErrors = 0;
 
   for (const sub of staleSubs) {
     try {
-      await BillingSubscriptionRepository.markUnpaid(String(sub._id));
+      const subscription = await BillingSubscriptionRepository.markUnpaid(String(sub._id));
+      if (!subscription) continue; // markUnpaid returns null on invalid id
 
-      // Sync Organization.plan to 'free'
-      const orgId = String(sub.organization);
-      if (mongoose.Types.ObjectId.isValid(orgId)) {
-        await Organization.findByIdAndUpdate(orgId, { plan: 'free' }, { runValidators: true }).exec();
+      try {
+        await OrganizationRepository.setPlan(String(sub.organization), 'free');
+      } catch (orgErr) {
+        // Compensation: Subscription is now unpaid but Org.plan update failed.
+        // Log for manual reconciliation — do not revert Subscription status.
+        console.error('[billing.dunningSweep] Org plan sync failed (manual reconciliation required):', orgErr);
+        desyncErrors += 1;
       }
 
       console.log(`[billing.dunningSweep] sub ${sub._id} → unpaid, org ${sub.organization} → free`);
@@ -61,7 +64,7 @@ try {
     }
   }
 
-  console.log(`[billing.dunningSweep] done — processed: ${processed}, errors: ${errors}`);
+  console.log(`[billing.dunningSweep] done — processed: ${processed}, errors: ${errors}, desyncErrors: ${desyncErrors}`);
   process.exit(errors > 0 ? 1 : 0);
 } catch (err) {
   console.error('[billing.dunningSweep] fatal:', err);
