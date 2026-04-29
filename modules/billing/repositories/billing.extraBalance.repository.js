@@ -9,6 +9,7 @@ import mongoose from 'mongoose';
  * @param {string} orgId - The organization id to validate.
  * @returns {boolean}
  */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const isValidOrgId = (orgId) => mongoose.Types.ObjectId.isValid(orgId);
 
 /**
