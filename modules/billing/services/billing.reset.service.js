@@ -113,11 +113,11 @@ const resetAllDue = async () => {
 
   for (const sub of subs) {
     try {
-      await resetWeek(String(sub.organizationId), new Date(sub.currentPeriodStart));
+      await resetWeek(String(sub.organization), new Date(sub.currentPeriodStart));
       processed += 1;
     } catch (err) {
       errors += 1;
-      console.error(`[billing.reset] resetWeek failed for org ${sub.organizationId}:`, err);
+      console.error(`[billing.reset] resetWeek failed for org ${sub.organization}:`, err);
     }
   }
 

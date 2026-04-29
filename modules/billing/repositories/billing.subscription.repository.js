@@ -116,7 +116,7 @@ const findByStripeSubscriptionId = (stripeSubscriptionId) => {
  *              Returns lean plain objects (no population) for performance.
  * @param {Date} from - The start of the window (inclusive).
  * @param {Date} to - The end of the window (inclusive).
- * @returns {Promise<Array<{organizationId: string, currentPeriodStart: Date}>>}
+ * @returns {Promise<Array<{organization: string, currentPeriodStart: Date}>>}
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const findAllDueForReset = (from, to) =>
@@ -125,7 +125,7 @@ const findAllDueForReset = (from, to) =>
       status: { $in: ['active', 'trialing'] },
       currentPeriodStart: { $gte: from, $lte: to },
     },
-    { organizationId: 1, currentPeriodStart: 1 },
+    { organization: 1, currentPeriodStart: 1 },
   ).lean();
 
 export default {
