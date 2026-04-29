@@ -9,7 +9,7 @@ import { jest, beforeEach, afterEach } from '@jest/globals';
 describe('Billing webhook service unit tests:', () => {
   let BillingWebhookService;
   let mockSubscriptionRepository;
-  let mockOrganizationModel;
+  let mockOrganizationRepository;
 
   const orgId = '507f1f77bcf86cd799439011';
   const subId = '507f1f77bcf86cd799439022';
@@ -25,17 +25,44 @@ describe('Billing webhook service unit tests:', () => {
       update: jest.fn(),
     };
 
+    mockOrganizationRepository = {
+      setPlan: jest.fn().mockResolvedValue({}),
+    };
+
     jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
       default: mockSubscriptionRepository,
     }));
 
-    mockOrganizationModel = {
-      findByIdAndUpdate: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue({}) }),
-    };
+    jest.unstable_mockModule('../repositories/billing.processedStripeEvent.repository.js', () => ({
+      default: {
+        wasProcessed: jest.fn().mockResolvedValue(false),
+        tryRecord: jest.fn().mockResolvedValue({ recorded: true }),
+      },
+    }));
+
+    jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
+      default: mockOrganizationRepository,
+    }));
+
+    jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
+      default: { creditPack: jest.fn(), refundPartial: jest.fn() },
+    }));
+
+    jest.unstable_mockModule('../services/billing.reset.service.js', () => ({
+      default: { resetWeek: jest.fn(), resetAllDue: jest.fn() },
+    }));
+
+    jest.unstable_mockModule('../lib/events.js', () => ({
+      default: { emit: jest.fn() },
+    }));
+
+    jest.unstable_mockModule('../../../config/index.js', () => ({
+      default: { billing: { plans: ['free', 'starter', 'pro', 'enterprise'] } },
+    }));
 
     jest.unstable_mockModule('mongoose', () => ({
       default: {
-        model: jest.fn().mockReturnValue(mockOrganizationModel),
+        model: jest.fn().mockReturnValue({}),
         Types: { ObjectId: { isValid: jest.fn().mockReturnValue(true) } },
       },
     }));
@@ -66,7 +93,7 @@ describe('Billing webhook service unit tests:', () => {
         plan: 'pro',
         status: 'active',
       });
-      expect(mockOrganizationModel.findByIdAndUpdate).toHaveBeenCalledWith(orgId, { plan: 'pro' }, { runValidators: true });
+      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
     });
 
     test('should update existing subscription on checkout', async () => {
@@ -170,7 +197,7 @@ describe('Billing webhook service unit tests:', () => {
         currentPeriodEnd: new Date(1700000000 * 1000),
         cancelAtPeriodEnd: false,
       });
-      expect(mockOrganizationModel.findByIdAndUpdate).toHaveBeenCalledWith(orgId, { plan: 'pro' }, { runValidators: true });
+      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
     });
 
     test('should return early when subscription not found', async () => {
@@ -243,7 +270,7 @@ describe('Billing webhook service unit tests:', () => {
         plan: 'free',
         status: 'canceled',
       });
-      expect(mockOrganizationModel.findByIdAndUpdate).toHaveBeenCalledWith(orgId, { plan: 'free' }, { runValidators: true });
+      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'free');
     });
 
     test('should return early when subscription not found', async () => {
@@ -259,8 +286,8 @@ describe('Billing webhook service unit tests:', () => {
   });
 
   describe('handleInvoicePaymentFailed', () => {
-    test('should mark subscription as past_due', async () => {
-      const existing = { _id: subId };
+    test('should mark subscription as past_due and set pastDueSince on first failure', async () => {
+      const existing = { _id: subId, organization: orgId, pastDueSince: null };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
       mockSubscriptionRepository.update.mockResolvedValue({});
 
@@ -269,10 +296,9 @@ describe('Billing webhook service unit tests:', () => {
 
       await BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_456' });
 
-      expect(mockSubscriptionRepository.update).toHaveBeenCalledWith({
-        _id: subId,
-        status: 'past_due',
-      });
+      expect(mockSubscriptionRepository.update).toHaveBeenCalledWith(
+        expect.objectContaining({ _id: subId, status: 'past_due', pastDueSince: expect.any(Date) }),
+      );
     });
 
     test('should return early when no subscription ID in invoice', async () => {

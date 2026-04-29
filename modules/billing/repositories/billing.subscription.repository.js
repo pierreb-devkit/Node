@@ -128,6 +128,44 @@ const findAllDueForReset = (from, to) =>
     { organization: 1, currentPeriodStart: 1 },
   ).lean();
 
+/**
+ * @function findStaleDunning
+ * @description Fetch subscriptions with status 'past_due' whose pastDueSince is set
+ *              and falls on or before the given threshold date.
+ *              Used by the dunning sweep cron to transition stale past_due subs to 'unpaid'.
+ *              Returns lean plain objects for performance.
+ * @param {Date} threshold - Subscriptions with pastDueSince <= threshold are returned.
+ * @returns {Promise<Array<{_id: string, organization: string}>>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const findStaleDunning = (threshold) => {
+  if (!(threshold instanceof Date)) throw new TypeError('threshold must be a Date instance');
+  return Subscription.find(
+    {
+      status: 'past_due',
+      pastDueSince: { $ne: null, $lte: threshold },
+    },
+    { _id: 1, organization: 1 },
+  ).lean();
+};
+
+/**
+ * @function markUnpaid
+ * @description Atomically transition a subscription to 'unpaid' and downgrade plan to 'free'.
+ *              Idempotent: if the subscription is already unpaid the operation is effectively a no-op.
+ * @param {string} id - The subscription ObjectId (string).
+ * @returns {Promise<Object|null>} The updated subscription document or null if id is invalid.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const markUnpaid = (id) => {
+  if (!id || !mongoose.Types.ObjectId.isValid(id)) return null;
+  return Subscription.findByIdAndUpdate(
+    id,
+    { $set: { status: 'unpaid', plan: 'free' } },
+    { returnDocument: 'after', runValidators: true },
+  ).exec();
+};
+
 export default {
   list,
   create,
@@ -138,4 +176,6 @@ export default {
   findByStripeCustomerId,
   findByStripeSubscriptionId,
   findAllDueForReset,
+  findStaleDunning,
+  markUnpaid,
 };

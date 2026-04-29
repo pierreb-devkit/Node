@@ -303,13 +303,103 @@ describe('requireQuota middleware:', () => {
       expect(res.status).toHaveBeenCalledWith(402);
     });
 
-    test('should not call SubscriptionRepository in meter mode', async () => {
+    test('should call SubscriptionRepository in meter mode (degraded-mode gate)', async () => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ status: 'active', pastDueSince: null });
       mockBillingUsageService.getMeter.mockResolvedValue({ meterUsed: 100, meterQuota: 5000 });
       mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
 
       await requireQuota('scraps', 'create')(req, res, next);
 
-      expect(mockSubscriptionRepository.findByOrganization).not.toHaveBeenCalled();
+      expect(mockSubscriptionRepository.findByOrganization).toHaveBeenCalled();
+      expect(next).toHaveBeenCalled();
+    });
+
+    test('should allow through with billingDegraded flag when past_due within 7-day grace period (J+5)', async () => {
+      const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        status: 'past_due',
+        pastDueSince: fiveDaysAgo,
+      });
+      mockBillingUsageService.getMeter.mockResolvedValue({ meterUsed: 100, meterQuota: 5000 });
+      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+
+      res.locals = {};
+      await requireQuota('scraps', 'create')(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(res.locals.billingDegraded).toBe(true);
+      expect(res.status).not.toHaveBeenCalledWith(402);
+    });
+
+    test('should return 402 PAYMENT_PAST_DUE when past_due and grace period elapsed (J+10)', async () => {
+      const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        status: 'past_due',
+        pastDueSince: tenDaysAgo,
+      });
+      mockBillingUsageService.getMeter.mockResolvedValue({ meterUsed: 100, meterQuota: 5000 });
+      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+
+      res.locals = {};
+      await requireQuota('scraps', 'create')(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(402);
+      const payload = res.json.mock.calls[0][0];
+      const errData = JSON.parse(payload.error);
+      expect(errData.type).toBe('PAYMENT_PAST_DUE');
+      expect(errData.subscriptionStatus).toBe('past_due');
+    });
+
+    test('should NOT block past_due with no pastDueSince set (legacy/missing field)', async () => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        status: 'past_due',
+        pastDueSince: null,
+      });
+      mockBillingUsageService.getMeter.mockResolvedValue({ meterUsed: 100, meterQuota: 5000 });
+      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+
+      res.locals = {};
+      await requireQuota('scraps', 'create')(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(res.locals.billingDegraded).toBeUndefined();
+    });
+
+    test('should return 402 PAYMENT_PAST_DUE at exactly the 7-day boundary', async () => {
+      // Exactly 7 days ago → elapsed >= gracePeriodMs → block
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000 - 1);
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        status: 'past_due',
+        pastDueSince: sevenDaysAgo,
+      });
+      mockBillingUsageService.getMeter.mockResolvedValue({ meterUsed: 100, meterQuota: 5000 });
+      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+
+      res.locals = {};
+      await requireQuota('scraps', 'create')(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(402);
+    });
+
+    test('degraded J+5: still blocks if meter is exhausted', async () => {
+      const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        status: 'past_due',
+        pastDueSince: fiveDaysAgo,
+      });
+      mockBillingUsageService.getMeter.mockResolvedValue({ meterUsed: 5000, meterQuota: 5000 });
+      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+
+      res.locals = {};
+      await requireQuota('scraps', 'create')(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(402);
+      const payload = res.json.mock.calls[0][0];
+      const errData = JSON.parse(payload.error);
+      expect(errData.type).toBe('METER_EXHAUSTED');
     });
   });
 });
