@@ -185,4 +185,63 @@ describe('Billing unit tests:', () => {
       done();
     });
   });
+
+  describe('Subscription schema — meter fields (backward compat)', () => {
+    let subscription;
+
+    beforeEach(() => {
+      subscription = {
+        organization: '507f1f77bcf86cd799439011',
+        plan: 'free',
+        status: 'active',
+      };
+    });
+
+    test('should be valid without meter fields (non-meter downstream)', () => {
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+    });
+
+    test('should accept planVersion as optional string', () => {
+      subscription.planVersion = 'v2';
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+      expect(result.data.planVersion).toBe('v2');
+    });
+
+    test('should accept currentPeriodStart as a date', () => {
+      subscription.currentPeriodStart = '2026-05-01T00:00:00.000Z';
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+      expect(result.data.currentPeriodStart).toBeInstanceOf(Date);
+    });
+
+    test('should accept currentPeriodStart as null', () => {
+      subscription.currentPeriodStart = null;
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+      expect(result.data.currentPeriodStart).toBeNull();
+    });
+
+    test('should accept pastDueSince as a date', () => {
+      subscription.pastDueSince = new Date('2026-05-10');
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+      expect(result.data.pastDueSince).toBeInstanceOf(Date);
+    });
+
+    test('should accept pastDueSince as null (no past-due event)', () => {
+      subscription.pastDueSince = null;
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+      expect(result.data.pastDueSince).toBeNull();
+    });
+
+    test('SubscriptionUpdate should allow patching planVersion alone', () => {
+      const update = { planVersion: 'v3' };
+      const result = schema.SubscriptionUpdate.safeParse(update);
+      expect(result.error).toBeFalsy();
+      expect(result.data.planVersion).toBe('v3');
+    });
+  });
 });
