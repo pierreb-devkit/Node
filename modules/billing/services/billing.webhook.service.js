@@ -224,7 +224,10 @@ const handleSubscriptionUpdated = async (subscription, event) => {
   ) {
     try {
       await BillingResetService.resetWeek(organizationId, newPeriodStart);
-    } catch { /* reset errors must not disrupt webhook processing */ }
+    } catch (err) {
+      // Log for monitoring — not thrown so webhook processing continues
+      console.error('[billing.webhook] resetWeek failed (non-fatal):', err?.message ?? err);
+    }
   }
 };
 
@@ -304,13 +307,15 @@ const handleInvoicePaymentSucceeded = async (invoice) => {
  *       silently skip. Downstream (trawl_node) is responsible for setting these at session creation.
  *       Calls BillingExtraService.refundPartial which computes refundUnits from
  *       the original topup entry and config.billing.packs.
- *       Skips if metadata is incomplete or amount_refunded is zero.
+ *       Uses charge.refunds.data[0].amount (this event's refund delta) rather than
+ *       charge.amount_refunded (cumulative total) to avoid over-debiting on multiple partial refunds.
+ *       Skips if metadata is incomplete or the refund amount is zero.
  * @param {Object} charge - Stripe charge object
  * @returns {Promise<void>}
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleChargeRefunded = async (charge) => {
-  const { amount_refunded: amountRefunded, metadata } = charge;
+  const { metadata } = charge;
 
   // The session ID and organizationId must have been stamped on charge metadata
   // via payment_intent_data.metadata at session creation (not automatic — caller must set both
@@ -319,10 +324,14 @@ const handleChargeRefunded = async (charge) => {
 
   if (!organizationId || !mongoose.Types.ObjectId.isValid(organizationId)) return;
   if (!stripeSessionId) return;
-  if (!amountRefunded || amountRefunded <= 0) return;
+
+  // Use this event's refund delta (charge.refunds.data[0].amount), not the cumulative
+  // charge.amount_refunded — prevents over-debiting when multiple partial refunds occur.
+  const thisRefundAmount = charge.refunds?.data?.[0]?.amount;
+  if (!thisRefundAmount || thisRefundAmount <= 0) return;
 
   // Service layer computes proportional refundUnits from config.billing.packs.
-  await BillingExtraService.refundPartial(organizationId, stripeSessionId, amountRefunded);
+  await BillingExtraService.refundPartial(organizationId, stripeSessionId, thisRefundAmount);
 };
 
 export default {

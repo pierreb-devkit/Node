@@ -10,6 +10,12 @@ describe('Billing webhook idempotency unit tests:', () => {
   let BillingWebhookService;
   let mockProcessedStripeEventRepository;
 
+  /**
+   * Build a Stripe-like webhook event payload for idempotency tests.
+   * @param {string} [id='evt_test_001'] - Stripe event ID.
+   * @param {string} [type='checkout.session.completed'] - Stripe event type.
+   * @returns {{ id: string, type: string, data: { object: { id: string } } }} Minimal event object.
+   */
   const makeEvent = (id = 'evt_test_001', type = 'checkout.session.completed') => ({
     id,
     type,

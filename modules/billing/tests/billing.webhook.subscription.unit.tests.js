@@ -128,6 +128,7 @@ describe('Billing webhook subscription unit tests:', () => {
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
       mockSubscriptionRepository.update.mockResolvedValue({});
 
+      // previous_attributes.current_period_start equals current value → no period change
       await BillingWebhookService.handleSubscriptionUpdated(
         {
           id: 'sub_456',
@@ -137,7 +138,7 @@ describe('Billing webhook subscription unit tests:', () => {
           cancel_at_period_end: false,
           items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
         },
-        { data: { previous_attributes: {} } },
+        { data: { previous_attributes: { current_period_start: periodStart } } },
       );
 
       expect(mockResetService.resetWeek).not.toHaveBeenCalled();
@@ -163,7 +164,7 @@ describe('Billing webhook subscription unit tests:', () => {
       expect(mockResetService.resetWeek).not.toHaveBeenCalled();
     });
 
-    test('resetWeek errors should not disrupt webhook processing (swallowed)', async () => {
+    test('resetWeek errors should not disrupt webhook processing (logged, not thrown)', async () => {
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
       mockSubscriptionRepository.update.mockResolvedValue({});
