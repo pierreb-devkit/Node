@@ -16,10 +16,15 @@ describe('Billing webhook controller unit tests:', () => {
     jest.resetModules();
 
     mockBillingWebhookService = {
+      withIdempotency: jest.fn().mockImplementation(async (event, handler) => handler(event)),
+      handleCheckoutSessionCompleted: jest.fn().mockResolvedValue(),
       handleCheckoutCompleted: jest.fn().mockResolvedValue(),
+      handleCheckoutPaymentCompleted: jest.fn().mockResolvedValue(),
       handleSubscriptionUpdated: jest.fn().mockResolvedValue(),
       handleSubscriptionDeleted: jest.fn().mockResolvedValue(),
       handleInvoicePaymentFailed: jest.fn().mockResolvedValue(),
+      handleInvoicePaymentSucceeded: jest.fn().mockResolvedValue(),
+      handleChargeRefunded: jest.fn().mockResolvedValue(),
     };
 
     jest.unstable_mockModule('../services/billing.webhook.service.js', () => ({
@@ -103,7 +108,7 @@ describe('Billing webhook controller unit tests:', () => {
     const req = { headers: { 'stripe-signature': 'sig_ok' }, body: 'raw' };
     await BillingWebhookController.handleWebhook(req, res);
 
-    expect(mockBillingWebhookService.handleCheckoutCompleted).toHaveBeenCalledWith({ id: 'cs_123' });
+    expect(mockBillingWebhookService.handleCheckoutSessionCompleted).toHaveBeenCalledWith(eventData);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ received: true });
   });
@@ -123,6 +128,7 @@ describe('Billing webhook controller unit tests:', () => {
     await BillingWebhookController.handleWebhook(req, res);
 
     expect(mockBillingWebhookService.handleSubscriptionUpdated).toHaveBeenCalledWith({ id: 'sub_123' }, eventData);
+    expect(mockBillingWebhookService.withIdempotency).toHaveBeenCalledWith(eventData, expect.any(Function));
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -141,6 +147,7 @@ describe('Billing webhook controller unit tests:', () => {
     await BillingWebhookController.handleWebhook(req, res);
 
     expect(mockBillingWebhookService.handleSubscriptionDeleted).toHaveBeenCalledWith({ id: 'sub_del' });
+    expect(mockBillingWebhookService.withIdempotency).toHaveBeenCalledWith(eventData, expect.any(Function));
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -159,6 +166,7 @@ describe('Billing webhook controller unit tests:', () => {
     await BillingWebhookController.handleWebhook(req, res);
 
     expect(mockBillingWebhookService.handleInvoicePaymentFailed).toHaveBeenCalledWith({ id: 'inv_fail' });
+    expect(mockBillingWebhookService.withIdempotency).toHaveBeenCalledWith(eventData, expect.any(Function));
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -187,7 +195,7 @@ describe('Billing webhook controller unit tests:', () => {
 
     const eventData = { type: 'checkout.session.completed', data: { object: { id: 'cs_err' } } };
     mockStripeInstance.webhooks.constructEvent.mockReturnValue(eventData);
-    mockBillingWebhookService.handleCheckoutCompleted.mockRejectedValue(new Error('DB error'));
+    mockBillingWebhookService.handleCheckoutSessionCompleted.mockRejectedValue(new Error('DB error'));
 
     const mod = await import('../controllers/billing.webhook.controller.js');
     BillingWebhookController = mod.default;

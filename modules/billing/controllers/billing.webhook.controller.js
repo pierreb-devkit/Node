@@ -12,6 +12,7 @@ import BillingWebhookService from '../services/billing.webhook.service.js';
  * @param {Object} res - Express response object
  * @returns {Promise<void>}
  */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const handleWebhook = async (req, res) => {
   const stripe = getStripe();
   if (!stripe) return res.status(400).json({ error: 'Stripe is not configured' });
@@ -29,16 +30,34 @@ const handleWebhook = async (req, res) => {
   try {
     switch (event.type) {
       case 'checkout.session.completed':
-        await BillingWebhookService.handleCheckoutCompleted(event.data.object);
+        await BillingWebhookService.withIdempotency(event, (e) =>
+          BillingWebhookService.handleCheckoutSessionCompleted(e),
+        );
         break;
       case 'customer.subscription.updated':
-        await BillingWebhookService.handleSubscriptionUpdated(event.data.object, event);
+        await BillingWebhookService.withIdempotency(event, (e) =>
+          BillingWebhookService.handleSubscriptionUpdated(e.data.object, e),
+        );
         break;
       case 'customer.subscription.deleted':
-        await BillingWebhookService.handleSubscriptionDeleted(event.data.object);
+        await BillingWebhookService.withIdempotency(event, (e) =>
+          BillingWebhookService.handleSubscriptionDeleted(e.data.object),
+        );
         break;
       case 'invoice.payment_failed':
-        await BillingWebhookService.handleInvoicePaymentFailed(event.data.object);
+        await BillingWebhookService.withIdempotency(event, (e) =>
+          BillingWebhookService.handleInvoicePaymentFailed(e.data.object),
+        );
+        break;
+      case 'invoice.payment_succeeded':
+        await BillingWebhookService.withIdempotency(event, (e) =>
+          BillingWebhookService.handleInvoicePaymentSucceeded(e.data.object),
+        );
+        break;
+      case 'charge.refunded':
+        await BillingWebhookService.withIdempotency(event, (e) =>
+          BillingWebhookService.handleChargeRefunded(e.data.object),
+        );
         break;
       default:
         break;

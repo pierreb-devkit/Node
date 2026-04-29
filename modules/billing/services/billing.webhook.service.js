@@ -5,6 +5,9 @@ import mongoose from 'mongoose';
 
 import config from '../../../config/index.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
+import ProcessedStripeEventRepository from '../repositories/billing.processedStripeEvent.repository.js';
+import BillingExtraService from './billing.extra.service.js';
+import BillingResetService from './billing.reset.service.js';
 import billingEvents from '../lib/events.js';
 
 const Organization = mongoose.model('Organization');
@@ -52,10 +55,43 @@ const syncOrganizationPlan = async (organizationId, plan) => {
 };
 
 /**
- * @desc Handle checkout.session.completed event — create or update subscription
+ * @desc Wrap a webhook handler with idempotency using ProcessedStripeEvent.
+ *       If the event has already been processed, returns { skipped: true, reason: 'duplicate_event' }.
+ *       Otherwise records the event and delegates to handler(event).
+ *       Handler receives the full Stripe event object.
+ * @param {Object} event - Full Stripe event object (must have event.id and event.type).
+ * @param {Function} handler - Async function (event) => result called when event is new.
+ * @returns {Promise<Object>} Handler result or skip sentinel.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const withIdempotency = async (event, handler) => {
+  const { recorded } = await ProcessedStripeEventRepository.tryRecord(event.id, event.type);
+  if (!recorded) return { skipped: true, reason: 'duplicate_event' };
+  return handler(event);
+};
+
+/**
+ * @desc Handle checkout.session.completed event — route by session.mode.
+ *       mode='subscription' → handleCheckoutCompleted (plan subscription activation).
+ *       mode='payment'      → handleCheckoutPaymentCompleted (extras pack credit).
+ * @param {Object} event - Full Stripe event (data.object is the session)
+ * @returns {Promise<void>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const handleCheckoutSessionCompleted = async (event) => {
+  const session = event.data.object;
+  if (session.mode === 'payment') {
+    return handleCheckoutPaymentCompleted(session);
+  }
+  return handleCheckoutCompleted(session);
+};
+
+/**
+ * @desc Handle checkout.session.completed for mode='subscription' — create or update subscription
  * @param {Object} session - Stripe checkout session object
  * @returns {Promise<void>}
  */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleCheckoutCompleted = async (session) => {
   const { customer: stripeCustomerId, subscription: stripeSubscriptionId, metadata } = session;
   let organizationId = metadata?.organizationId;
@@ -92,23 +128,51 @@ const handleCheckoutCompleted = async (session) => {
 };
 
 /**
- * @desc Handle customer.subscription.updated event — sync subscription state
- * @param {Object} subscription - Stripe subscription object
- * @param {Object} event - Full Stripe event (with data.previous_attributes for plan change detection)
+ * @desc Handle checkout.session.completed for mode='payment' — credit extras pack.
+ *       Extracts organizationId, packId, kind from session metadata.
+ *       Skips silently if kind !== 'extras' or metadata is incomplete.
+ * @param {Object} session - Stripe checkout session object (mode='payment')
  * @returns {Promise<void>}
  */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const handleCheckoutPaymentCompleted = async (session) => {
+  const { metadata, id: stripeSessionId } = session;
+  const { organizationId, packId, kind } = metadata ?? {};
+
+  if (kind !== 'extras') return;
+  if (!organizationId || !mongoose.Types.ObjectId.isValid(organizationId)) return;
+  if (!packId) return;
+
+  await BillingExtraService.creditPack(organizationId, packId, stripeSessionId);
+};
+
+/**
+ * @desc Handle customer.subscription.updated event — sync subscription state.
+ *       Also triggers resetWeek when current_period_start changes (billing period renewal).
+ * @param {Object} subscription - Stripe subscription object
+ * @param {Object} event - Full Stripe event (with data.previous_attributes for plan/period change detection)
+ * @returns {Promise<void>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleSubscriptionUpdated = async (subscription, event) => {
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(subscription.id);
   if (!existing) return;
 
   const newPlan = resolvePlan(subscription);
-  await SubscriptionRepository.update({
+  const newPeriodStart = subscription.current_period_start
+    ? new Date(subscription.current_period_start * 1000)
+    : undefined;
+
+  const updatePayload = {
     _id: existing._id,
     plan: newPlan,
     status: subscription.status,
     currentPeriodEnd: new Date(subscription.current_period_end * 1000),
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
-  });
+  };
+  if (newPeriodStart) updatePayload.currentPeriodStart = newPeriodStart;
+
+  await SubscriptionRepository.update(updatePayload);
 
   const organizationId = String(existing.organization?._id || existing.organization);
   await syncOrganizationPlan(organizationId, newPlan);
@@ -134,6 +198,18 @@ const handleSubscriptionUpdated = async (subscription, event) => {
       } catch { /* listener errors must not disrupt webhook processing */ }
     }
   }
+
+  // Detect period start change — trigger weekly meter reset
+  const previousPeriodStart = event?.data?.previous_attributes?.current_period_start;
+  if (
+    previousPeriodStart !== undefined &&
+    subscription.current_period_start !== previousPeriodStart &&
+    newPeriodStart
+  ) {
+    try {
+      await BillingResetService.resetWeek(organizationId, newPeriodStart);
+    } catch { /* reset errors must not disrupt webhook processing */ }
+  }
 };
 
 /**
@@ -141,6 +217,7 @@ const handleSubscriptionUpdated = async (subscription, event) => {
  * @param {Object} subscription - Stripe subscription object
  * @returns {Promise<void>}
  */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleSubscriptionDeleted = async (subscription) => {
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(subscription.id);
   if (!existing) return;
@@ -159,6 +236,7 @@ const handleSubscriptionDeleted = async (subscription) => {
  * @param {Object} invoice - Stripe invoice object
  * @returns {Promise<void>}
  */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleInvoicePaymentFailed = async (invoice) => {
   const { subscription: stripeSubscriptionId } = invoice;
   if (!stripeSubscriptionId) return;
@@ -172,9 +250,65 @@ const handleInvoicePaymentFailed = async (invoice) => {
   });
 };
 
+/**
+ * @desc Handle invoice.payment_succeeded event — clear degraded mode (pastDueSince).
+ *       When a past-due invoice is finally paid, remove the pastDueSince marker so
+ *       the subscription exits degraded mode on next request.
+ * @param {Object} invoice - Stripe invoice object
+ * @returns {Promise<void>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const handleInvoicePaymentSucceeded = async (invoice) => {
+  const { subscription: stripeSubscriptionId } = invoice;
+  if (!stripeSubscriptionId) return;
+
+  const existing = await SubscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId);
+  if (!existing) return;
+
+  // Only clear if currently past_due (avoid unnecessary writes on routine invoices)
+  if (existing.pastDueSince !== null && existing.pastDueSince !== undefined) {
+    await SubscriptionRepository.update({
+      _id: existing._id,
+      pastDueSince: null,
+      status: 'active',
+    });
+  }
+};
+
+/**
+ * @desc Handle charge.refunded event — debit ledger proportionally.
+ *       The organizationId and stripeSessionId are expected in charge.metadata
+ *       (Stripe propagates checkout session metadata to the charge automatically).
+ *       Calls BillingExtraService.refundPartial which computes refundUnits from
+ *       the original topup entry and config.billing.packs.
+ *       Skips if metadata is incomplete or amount_refunded is zero.
+ * @param {Object} charge - Stripe charge object
+ * @returns {Promise<void>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const handleChargeRefunded = async (charge) => {
+  const { amount_refunded: amountRefunded, metadata } = charge;
+
+  // The session ID and organizationId must have been stamped on charge metadata
+  // via checkout.session.completed (Stripe propagates session metadata to the charge).
+  const { organizationId, stripeSessionId } = metadata ?? {};
+
+  if (!organizationId || !mongoose.Types.ObjectId.isValid(organizationId)) return;
+  if (!stripeSessionId) return;
+  if (!amountRefunded || amountRefunded <= 0) return;
+
+  // Service layer computes proportional refundUnits from config.billing.packs.
+  await BillingExtraService.refundPartial(organizationId, stripeSessionId, amountRefunded);
+};
+
 export default {
+  withIdempotency,
+  handleCheckoutSessionCompleted,
   handleCheckoutCompleted,
+  handleCheckoutPaymentCompleted,
   handleSubscriptionUpdated,
   handleSubscriptionDeleted,
   handleInvoicePaymentFailed,
+  handleInvoicePaymentSucceeded,
+  handleChargeRefunded,
 };
