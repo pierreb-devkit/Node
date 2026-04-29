@@ -97,17 +97,21 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
     if (latest?.stripeCustomerId) subscription = latest;
   }
 
-  const session = await stripe.checkout.sessions.create({
-    customer: subscription.stripeCustomerId,
-    mode: 'subscription',
-    line_items: [{ price: priceId, quantity: 1 }],
-    success_url: successUrl,
-    cancel_url: cancelUrl,
-    metadata: {
-      organizationId: String(organization._id),
-      plan: matchedPlan.planId,
+  const session = await stripe.checkout.sessions.create(
+    {
+      customer: subscription.stripeCustomerId,
+      mode: 'subscription',
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      automatic_tax: { enabled: true },
+      metadata: {
+        organizationId: String(organization._id),
+        plan: matchedPlan.planId,
+      },
     },
-  });
+    { idempotencyKey: `sub_checkout_${String(organization._id)}_${priceId}` },
+  );
 
   return session.url;
 };
@@ -137,6 +141,108 @@ const createPortalSession = async (organization, returnUrl) => {
 };
 
 /**
+ * @desc Create a Stripe Checkout Session for an extras pack purchase.
+ *       Uses mode:'payment' (one-time) with automatic_tax and idempotency key.
+ *
+ *       Note on stripeSessionId metadata: Stripe does not allow a session to
+ *       self-reference its own id at creation time. The `stripeSessionId` field
+ *       is therefore set to the literal string `'__pending__'` during creation.
+ *       The webhook handler reads `event.data.object.id` (the actual session id)
+ *       directly from the Stripe event — no post-creation patch is needed.
+ *
+ * @param {Object} organization - The organization document
+ * @param {String} packId - Pack identifier (must exist in config.billing.packs)
+ * @param {String} successUrl - URL to redirect on payment success
+ * @param {String} cancelUrl - URL to redirect on cancel
+ * @returns {Promise<{url: String}>} Object with the Checkout session URL
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const createExtrasCheckout = async (organization, packId, successUrl, cancelUrl) => {
+  const stripe = getStripe();
+  if (!stripe) throw new Error('Stripe is not configured');
+
+  if (!isAllowedUrl(successUrl) || !isAllowedUrl(cancelUrl)) {
+    throw new Error('Invalid redirect URL: must be a valid URL (production requires HTTPS and a matching application domain)');
+  }
+
+  // Validate packId against known packs in config
+  const packs = config?.billing?.packs ?? [];
+  const pack = packs.find((p) => p.packId === packId);
+  if (!pack) throw new Error(`Invalid packId: pack not found: ${packId}`);
+
+  // Resolve Stripe price ID for the pack
+  const priceId = config?.stripe?.prices?.packs?.[packId];
+  if (!priceId) throw new Error(`Invalid packId: no Stripe price configured for pack: ${packId}`);
+
+  // Find or create subscription record with Stripe customer
+  let subscription = await SubscriptionRepository.findByOrganization(organization._id);
+
+  if (!subscription?.stripeCustomerId) {
+    const customer = await stripe.customers.create(
+      {
+        name: organization.name,
+        metadata: { organizationId: String(organization._id) },
+      },
+      { idempotencyKey: `cus_create_${String(organization._id)}` },
+    );
+
+    if (subscription) {
+      subscription = await SubscriptionRepository.update({
+        _id: subscription._id,
+        stripeCustomerId: customer.id,
+      });
+    } else {
+      try {
+        subscription = await SubscriptionRepository.create({
+          organization: organization._id,
+          stripeCustomerId: customer.id,
+        });
+      } catch (err) {
+        if (err.code === 11000) {
+          subscription = await SubscriptionRepository.findByOrganization(organization._id);
+        } else {
+          throw err;
+        }
+      }
+    }
+    // Re-read to handle race: if another request already set stripeCustomerId, use that
+    const latest = await SubscriptionRepository.findByOrganization(organization._id);
+    if (latest?.stripeCustomerId) subscription = latest;
+  }
+
+  // Use a timestamped idempotency key (debounce double-click within ~1s granularity)
+  const idempotencyKey = `extras_checkout_${String(organization._id)}_${packId}_${Date.now()}`;
+
+  const session = await stripe.checkout.sessions.create(
+    {
+      customer: subscription.stripeCustomerId,
+      mode: 'payment',
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      automatic_tax: { enabled: true },
+      metadata: {
+        organizationId: String(organization._id),
+        packId,
+        kind: 'extras',
+        stripeSessionId: '__pending__',
+      },
+      payment_intent_data: {
+        metadata: {
+          organizationId: String(organization._id),
+          packId,
+          kind: 'extras',
+          stripeSessionId: '__pending__',
+        },
+      },
+    },
+    { idempotencyKey },
+  );
+
+  return { url: session.url };
+};
+
+/**
  * @desc Get subscription for the given organization
  * @param {String} organizationId - The organization ID
  * @returns {Promise<Object|null>} The subscription document or null
@@ -145,6 +251,7 @@ const getSubscription = async (organizationId) => SubscriptionRepository.findByO
 
 export default {
   createCheckout,
+  createExtrasCheckout,
   createPortalSession,
   getSubscription,
 };

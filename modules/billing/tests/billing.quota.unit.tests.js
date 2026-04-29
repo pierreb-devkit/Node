@@ -194,4 +194,122 @@ describe('requireQuota middleware:', () => {
 
     expect(next).toHaveBeenCalled();
   });
+
+  // ── Meter mode (meterMode: true) ───────────────────────────────────────────
+
+  describe('meter mode (meterMode: true)', () => {
+    let mockBillingExtraBalanceRepository;
+
+    beforeEach(async () => {
+      jest.resetModules();
+
+      mockConfig = {
+        billing: {
+          meterMode: true,
+          quotas: {},
+          packs: [{ packId: 'pack_500k', meterUnits: 500000 }],
+          upgradeUrl: '/billing/plans',
+        },
+      };
+
+      mockBillingUsageService = {
+        get: jest.fn(),
+        getMeter: jest.fn(),
+      };
+
+      mockBillingExtraBalanceRepository = {
+        getBalance: jest.fn(),
+      };
+
+      jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
+        default: mockSubscriptionRepository,
+      }));
+
+      jest.unstable_mockModule('../services/billing.usage.service.js', () => ({
+        default: mockBillingUsageService,
+      }));
+
+      jest.unstable_mockModule('../repositories/billing.extraBalance.repository.js', () => ({
+        default: mockBillingExtraBalanceRepository,
+      }));
+
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: mockConfig,
+      }));
+
+      const mod = await import('../middlewares/billing.requireQuota.js');
+      requireQuota = mod.default;
+    });
+
+    test('should call next() when remaining quota > 0 (meter not exhausted)', async () => {
+      mockBillingUsageService.getMeter.mockResolvedValue({ meterUsed: 1000, meterQuota: 5000 });
+      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+
+      await requireQuota('scraps', 'create')(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    test('should call next() when plan quota exhausted but extras balance covers it', async () => {
+      mockBillingUsageService.getMeter.mockResolvedValue({ meterUsed: 5000, meterQuota: 5000 });
+      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(500000);
+
+      await requireQuota('scraps', 'create')(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+    });
+
+    test('should return 402 when meterUsed >= meterQuota and extras balance is 0', async () => {
+      mockBillingUsageService.getMeter.mockResolvedValue({ meterUsed: 5000, meterQuota: 5000 });
+      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+
+      await requireQuota('scraps', 'create')(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(402);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'error',
+        code: 402,
+      }));
+    });
+
+    test('should include METER_EXHAUSTED payload with pack info in 402 response', async () => {
+      mockBillingUsageService.getMeter.mockResolvedValue({ meterUsed: 6000, meterQuota: 5000 });
+      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+
+      await requireQuota('scraps', 'create')(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(402);
+      const payload = res.json.mock.calls[0][0];
+      expect(payload.description).toBe('Meter exhausted');
+      // The error object contains the metadata
+      const errData = JSON.parse(payload.error);
+      expect(errData.type).toBe('METER_EXHAUSTED');
+      expect(errData.meterUsed).toBe(6000);
+      expect(errData.meterQuota).toBe(5000);
+      expect(errData.extrasRemaining).toBe(0);
+      expect(Array.isArray(errData.packsAvailable)).toBe(true);
+    });
+
+    test('should return 402 when meter doc is null (no usage yet) and no extras', async () => {
+      mockBillingUsageService.getMeter.mockResolvedValue(null);
+      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+
+      await requireQuota('scraps', 'create')(req, res, next);
+
+      // meterUsed=0, meterQuota=0 → remaining = (0-0)+0 = 0 → 402
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(402);
+    });
+
+    test('should not call SubscriptionRepository in meter mode', async () => {
+      mockBillingUsageService.getMeter.mockResolvedValue({ meterUsed: 100, meterQuota: 5000 });
+      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+
+      await requireQuota('scraps', 'create')(req, res, next);
+
+      expect(mockSubscriptionRepository.findByOrganization).not.toHaveBeenCalled();
+    });
+  });
 });

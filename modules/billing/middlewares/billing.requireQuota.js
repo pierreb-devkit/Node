@@ -3,6 +3,7 @@
  */
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import BillingUsageService from '../services/billing.usage.service.js';
+import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
 
 import { activeStatuses } from '../lib/constants.js';
 import config from '../../../config/index.js';
@@ -10,18 +11,21 @@ import responses from '../../../lib/helpers/responses.js';
 
 /**
  * Returns Express middleware that gates access based on plan quotas.
- * Reads limits from `config.billing.quotas[plan][resource][action]` and
- * compares against the current month's usage via BillingUsageService.
  *
- * When no quota is configured for the plan/resource/action combination
- * (limit is `null` or `undefined`), the request is allowed through.
- * When the limit is `Infinity`, the request is also allowed without
- * checking usage (unlimited plan).
+ * Dual mode:
+ * - When `config.billing.meterMode === false` (default): legacy quota logic.
+ *   Reads limits from `config.billing.quotas[plan][resource][action]` and
+ *   compares against the current month's usage via BillingUsageService.
+ *   When no quota is configured or limit is Infinity, the request is allowed.
+ *
+ * - When `config.billing.meterMode === true`: meter quota gate.
+ *   Computes `(meterQuota - meterUsed) + extrasBalance`. Returns 402 when <= 0,
+ *   including pack purchase info for the client. Falls through to next() otherwise.
  *
  * Expects `req.organization` to be set by resolveOrganization upstream.
  *
- * @param {string} resource - The quota resource name (e.g. 'scraps').
- * @param {string} action - The quota action name (e.g. 'create', 'execute').
+ * @param {string} resource - The quota resource name (e.g. 'scraps'). Used in legacy mode.
+ * @param {string} action - The quota action name (e.g. 'create', 'execute'). Used in legacy mode.
  * @returns {Function} Express middleware function.
  */
 function requireQuota(resource, action) {
@@ -38,6 +42,31 @@ function requireQuota(resource, action) {
     }
 
     try {
+      // ── Meter mode (meterMode: true) ──────────────────────────────────────
+      if (config.billing?.meterMode === true) {
+        const orgId = req.organization._id.toString();
+        const usage = await BillingUsageService.getMeter(orgId);
+        const extrasBalance = await BillingExtraBalanceRepository.getBalance(orgId);
+
+        const meterUsed = usage?.meterUsed ?? 0;
+        const meterQuota = usage?.meterQuota ?? 0;
+        const remaining = (meterQuota - meterUsed) + extrasBalance;
+
+        if (remaining <= 0) {
+          return responses.error(res, 402, 'Payment Required', 'Meter exhausted')({
+            type: 'METER_EXHAUSTED',
+            meterUsed,
+            meterQuota,
+            extrasRemaining: extrasBalance,
+            packsAvailable: config.billing?.packs ?? [],
+            upgradeUrl: config.billing?.upgradeUrl ?? '/billing/plans',
+          });
+        }
+
+        return next();
+      }
+
+      // ── Legacy mode (meterMode: false, default) ───────────────────────────
       // Determine current plan — default to free when subscription is missing or inactive
       const subscription = await SubscriptionRepository.findByOrganization(req.organization._id);
       const plan = (!subscription || !activeStatuses.includes(subscription.status)) ? 'free' : (subscription.plan || 'free');

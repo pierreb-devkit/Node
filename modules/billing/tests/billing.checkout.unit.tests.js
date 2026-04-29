@@ -227,17 +227,21 @@ describe('Billing service unit tests:', () => {
 
       expect(url).toBe('https://checkout.stripe.com/session_123');
       expect(mockStripeInstance.customers.create).not.toHaveBeenCalled();
-      expect(mockStripeInstance.checkout.sessions.create).toHaveBeenCalledWith({
-        customer: 'cus_existing',
-        mode: 'subscription',
-        line_items: [{ price: 'price_starter_m', quantity: 1 }],
-        success_url: 'http://ok',
-        cancel_url: 'http://cancel',
-        metadata: {
-          organizationId: orgId,
-          plan: 'starter',
+      expect(mockStripeInstance.checkout.sessions.create).toHaveBeenCalledWith(
+        {
+          customer: 'cus_existing',
+          mode: 'subscription',
+          line_items: [{ price: 'price_starter_m', quantity: 1 }],
+          success_url: 'http://ok',
+          cancel_url: 'http://cancel',
+          automatic_tax: { enabled: true },
+          metadata: {
+            organizationId: orgId,
+            plan: 'starter',
+          },
         },
-      });
+        { idempotencyKey: `sub_checkout_${orgId}_price_starter_m` },
+      );
     });
   });
 
