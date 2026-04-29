@@ -15,6 +15,7 @@ describe('BillingPlanService unit tests:', () => {
    * @param {Object} [overrides={}] - Field overrides.
    * @returns {Object} Mock BillingPlan document.
    */
+  // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js test, not Qwik
   const makeDoc = (overrides = {}) => ({
     _id: '507f1f77bcf86cd799439011',
     planId: 'pro',

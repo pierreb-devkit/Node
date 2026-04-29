@@ -17,6 +17,7 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
  * Mongoose models are registered (unit-test friendliness).
  * @returns {import('mongoose').Model} BillingPlan Mongoose model
  */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const BillingPlan = () => mongoose.model('BillingPlan');
 
 /**
@@ -25,6 +26,7 @@ const BillingPlan = () => mongoose.model('BillingPlan');
  * @param {string} planId - The logical plan identifier (e.g. "pro").
  * @returns {Promise<Object|null>} The active BillingPlan document, or null.
  */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const getActivePlan = async (planId) => {
   const cached = cache.get(planId);
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) return cached.plan;
@@ -43,6 +45,7 @@ const getActivePlan = async (planId) => {
  * @param {string} version - The specific version string.
  * @returns {Promise<Object|null>} The BillingPlan document, or null.
  */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const getPlanByVersion = async (planId, version) => {
   return BillingPlan().findOne({ planId, version }).lean();
 };
@@ -65,6 +68,7 @@ const getPlanByVersion = async (planId, version) => {
  * @param {string} [fields.stripePriceAnnual] - New Stripe annual price ID.
  * @returns {Promise<Object>} The newly created BillingPlan document.
  */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const bumpVersion = async (planId, fields) => {
   const Model = BillingPlan();
   const now = new Date();
@@ -105,6 +109,7 @@ const bumpVersion = async (planId, fields) => {
  * @param {string} planId - The logical plan identifier to evict.
  * @returns {void}
  */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const invalidateCache = (planId) => {
   cache.delete(planId);
 };
