@@ -65,8 +65,95 @@ const reset = (organizationId, month) => {
   ).exec();
 };
 
+/**
+ * @function findByWeek
+ * @description Fetch a single usage document by organizationId and weekKey.
+ * @param {String} organizationId - The organization ID.
+ * @param {String} weekKey - The ISO week key in YYYY-Www format.
+ * @returns {Promise<Object|null>} The usage document (plain object) or null.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const findByWeek = (organizationId, weekKey) => {
+  if (!mongoose.Types.ObjectId.isValid(organizationId)) return null;
+  return BillingUsage.findOne({ organizationId, weekKey }).lean();
+};
+
+/**
+ * @function incrementMeter
+ * @description Atomically increment meter usage for the given org+weekKey, with upsert.
+ *              Replay protection: the idempotencyKey is appended to consumedHistoryIds;
+ *              if it is already present, the update is skipped (returns null).
+ *              baseSnapshot fields ($setOnInsert) are only written on document creation,
+ *              preserving the quota snapshot for the lifetime of the week.
+ *
+ * @param {String} organizationId - The organization ID.
+ * @param {String} weekKey - The ISO week key in YYYY-Www format.
+ * @param {Number} units - Meter units to add.
+ * @param {Object} breakdown - Feature-level breakdown map { featureKey: units }.
+ * @param {String} idempotencyKey - Unique key (usually history._id.toString()) for replay protection.
+ * @param {Object} baseSnapshot - Fields written only on first upsert: { meterQuota, planVersion, resetAt, month }.
+ * @returns {Promise<Object|null>} The updated usage document, or null if this was a replay (no-op).
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const incrementMeter = async (organizationId, weekKey, units, breakdown, idempotencyKey, baseSnapshot) => {
+  if (!mongoose.Types.ObjectId.isValid(organizationId)) return null;
+
+  // Build $inc for meterUsed + per-feature breakdown keys
+  const incPayload = { meterUsed: units };
+  if (breakdown && typeof breakdown === 'object') {
+    for (const [key, value] of Object.entries(breakdown)) {
+      if (SAFE_KEY_RE.test(key)) {
+        incPayload[`meterBreakdown.${key}`] = value;
+      }
+    }
+  }
+
+  try {
+    const doc = await BillingUsage.findOneAndUpdate(
+      {
+        organizationId,
+        weekKey,
+        consumedHistoryIds: { $ne: idempotencyKey },
+      },
+      {
+        $inc: incPayload,
+        $push: { consumedHistoryIds: idempotencyKey },
+        $setOnInsert: {
+          organizationId,
+          weekKey,
+          month: baseSnapshot?.month ?? weekKey.slice(0, 7),
+          meterQuota: baseSnapshot?.meterQuota ?? 0,
+          planVersion: baseSnapshot?.planVersion ?? null,
+          resetAt: baseSnapshot?.resetAt ?? null,
+        },
+      },
+      { upsert: true, returnDocument: 'after', runValidators: false },
+    );
+    return doc;
+  } catch (err) {
+    if (err.code === 11000) {
+      // Duplicate key on upsert race — retry without upsert
+      return BillingUsage.findOneAndUpdate(
+        {
+          organizationId,
+          weekKey,
+          consumedHistoryIds: { $ne: idempotencyKey },
+        },
+        {
+          $inc: incPayload,
+          $push: { consumedHistoryIds: idempotencyKey },
+        },
+        { returnDocument: 'after' },
+      );
+    }
+    throw err;
+  }
+};
+
 export default {
   get,
   increment,
   reset,
+  findByWeek,
+  incrementMeter,
 };

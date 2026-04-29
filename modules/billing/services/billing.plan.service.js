@@ -126,9 +126,42 @@ const invalidateCache = (planId) => {
   cache.delete(planId);
 };
 
+/**
+ * @desc Wrap bumpVersion with exponential backoff retry on E11000 duplicate key errors.
+ *       Two concurrent bumpVersion calls on the same planId can both derive the same
+ *       version number before either insert lands — the unique (planId, version) index
+ *       makes one winner and one loser (E11000). The loser retries with a fresh count.
+ *
+ * @param {string} planId - The logical plan identifier.
+ * @param {Object} fields - New plan fields (same as bumpVersion).
+ * @param {Object} [options={}] - Retry options.
+ * @param {number} [options.maxAttempts=3] - Maximum number of attempts (including the first).
+ * @returns {Promise<Object>} The newly created BillingPlan document.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const bumpVersionWithRetry = async (planId, fields, { maxAttempts = 3 } = {}) => {
+  const backoffMs = [100, 300, 900];
+  let lastErr;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await bumpVersion(planId, fields);
+    } catch (err) {
+      const isE11000 = err.code === 11000 || (err.message && err.message.includes('E11000'));
+      if (!isE11000 || attempt === maxAttempts - 1) throw err;
+      lastErr = err;
+      const delay = backoffMs[attempt] ?? 900;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  throw lastErr;
+};
+
 export default {
   getActivePlan,
   getPlanByVersion,
   bumpVersion,
+  bumpVersionWithRetry,
   invalidateCache,
 };
