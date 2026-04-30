@@ -195,6 +195,59 @@ describe('requireQuota middleware:', () => {
     expect(next).toHaveBeenCalled();
   });
 
+  // ── Admin bypass ──────────────────────────────────────────────────────────
+
+  test('should bypass quota for admin user (legacy mode)', async () => {
+    req.user = { roles: ['admin'] };
+    // No subscription/usage lookups needed — should short-circuit
+    mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'free', status: 'active' });
+    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps_create': 3 } });
+
+    await requireQuota('scraps', 'create')(req, res, next);
+
+    expect(next).toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalled();
+    // Short-circuit: no downstream quota lookups
+    expect(mockSubscriptionRepository.findByOrganization).not.toHaveBeenCalled();
+    expect(mockBillingUsageService.get).not.toHaveBeenCalled();
+  });
+
+  test('should NOT bypass quota for non-admin user (legacy mode)', async () => {
+    req.user = { roles: ['user'] };
+    mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'free', status: 'active' });
+    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps_create': 3 } });
+
+    await requireQuota('scraps', 'create')(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(429);
+  });
+
+  test('should bypass quota for meterExempt organization', async () => {
+    req.organization = { _id: '507f1f77bcf86cd799439011', meterExempt: true };
+    mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'free', status: 'active' });
+    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps_create': 3 } });
+
+    await requireQuota('scraps', 'create')(req, res, next);
+
+    expect(next).toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalled();
+    // Short-circuit: no downstream quota lookups
+    expect(mockSubscriptionRepository.findByOrganization).not.toHaveBeenCalled();
+    expect(mockBillingUsageService.get).not.toHaveBeenCalled();
+  });
+
+  test('should NOT bypass quota when meterExempt is false', async () => {
+    req.organization = { _id: '507f1f77bcf86cd799439011', meterExempt: false };
+    mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'free', status: 'active' });
+    mockBillingUsageService.get.mockResolvedValue({ counters: { 'scraps_create': 3 } });
+
+    await requireQuota('scraps', 'create')(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(429);
+  });
+
   // ── Meter mode (meterMode: true) ───────────────────────────────────────────
 
   describe('meter mode (meterMode: true)', () => {
@@ -381,6 +434,38 @@ describe('requireQuota middleware:', () => {
 
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(402);
+    });
+
+    test('should bypass meter quota for admin user', async () => {
+      req.user = { roles: ['admin'] };
+      // getMeter would return exhausted, but admin should bypass
+      mockBillingUsageService.getMeter.mockResolvedValue({ meterUsed: 5000, meterQuota: 5000 });
+      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+
+      await requireQuota('scraps', 'create')(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalled();
+      // Short-circuit: no downstream meter/subscription lookups
+      expect(mockSubscriptionRepository.findByOrganization).not.toHaveBeenCalled();
+      expect(mockBillingUsageService.getMeter).not.toHaveBeenCalled();
+      expect(mockBillingExtraBalanceRepository.getBalance).not.toHaveBeenCalled();
+    });
+
+    test('should bypass meter quota for meterExempt organization', async () => {
+      req.organization = { _id: '507f1f77bcf86cd799439011', meterExempt: true };
+      // getMeter would return exhausted, but exempt org should bypass
+      mockBillingUsageService.getMeter.mockResolvedValue({ meterUsed: 5000, meterQuota: 5000 });
+      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+
+      await requireQuota('scraps', 'create')(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalled();
+      // Short-circuit: no downstream meter/subscription lookups
+      expect(mockSubscriptionRepository.findByOrganization).not.toHaveBeenCalled();
+      expect(mockBillingUsageService.getMeter).not.toHaveBeenCalled();
+      expect(mockBillingExtraBalanceRepository.getBalance).not.toHaveBeenCalled();
     });
 
     test('degraded J+5: still blocks if meter is exhausted', async () => {

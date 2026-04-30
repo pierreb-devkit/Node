@@ -44,6 +44,10 @@ function requireQuota(resource, action) {
       return responses.error(res, 403, 'Forbidden', 'Organization context is required to check quota')();
     }
 
+    // Bypass for admin users or meter-exempt organizations
+    if (req.user?.roles?.includes('admin')) return next();
+    if (req.organization.meterExempt === true) return next();
+
     try {
       // ── Meter mode (meterMode: true) ──────────────────────────────────────
       if (config.billing?.meterMode === true) {

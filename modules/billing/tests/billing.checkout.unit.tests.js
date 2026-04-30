@@ -235,6 +235,7 @@ describe('Billing service unit tests:', () => {
           success_url: 'http://ok',
           cancel_url: 'http://cancel',
           automatic_tax: { enabled: true },
+          customer_update: { address: 'auto', name: 'auto' },
           metadata: {
             organizationId: orgId,
             plan: 'starter',
@@ -242,6 +243,24 @@ describe('Billing service unit tests:', () => {
         },
         { idempotencyKey: `sub_checkout_${orgId}_price_starter_m` },
       );
+    });
+
+    test('should include customer_update in checkout session params', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_cu' } },
+      }));
+
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        stripeCustomerId: 'cus_cu_test',
+      });
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      await BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel');
+
+      const callArgs = mockStripeInstance.checkout.sessions.create.mock.calls[0][0];
+      expect(callArgs.customer_update).toEqual({ address: 'auto', name: 'auto' });
     });
   });
 
