@@ -124,8 +124,10 @@ export default {
   // Run tests from one or more projects
   // projects: null,
 
-  // Use this configuration option to add custom reporters to Jest
-  // reporters: undefined,
+  // Custom reporters — default reporter kept for human-readable output; gcReporter
+  // calls global.gc() after each test suite when --expose-gc is in NODE_OPTIONS
+  // (active for test:coverage only). No-op when gc() is unavailable.
+  reporters: ['default', './scripts/jest.gcReporter.cjs'],
 
   // Automatically reset mock state between every test
   // resetMocks: false,
