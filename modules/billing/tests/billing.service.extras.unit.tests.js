@@ -235,6 +235,24 @@ describe('BillingService.createExtrasCheckout unit tests:', () => {
     expect(mockStripeInstance.checkout.sessions.create).toHaveBeenCalled();
   });
 
+  test('should include customer_update in extras checkout session params', async () => {
+    jest.unstable_mockModule('../../../config/index.js', () => ({
+      default: makeConfig(),
+    }));
+
+    const mod = await import('../services/billing.service.js');
+    BillingService = mod.default;
+
+    mockSubscriptionRepository.findByOrganization.mockResolvedValue({ stripeCustomerId: 'cus_existing' });
+
+    await BillingService.createExtrasCheckout(
+      mockOrganization, 'pack_500k', 'http://success', 'http://cancel',
+    );
+
+    const [params] = mockStripeInstance.checkout.sessions.create.mock.calls[0];
+    expect(params.customer_update).toEqual({ address: 'auto', name: 'auto' });
+  });
+
   test('should handle 11000 duplicate key on subscription create gracefully', async () => {
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: makeConfig(),

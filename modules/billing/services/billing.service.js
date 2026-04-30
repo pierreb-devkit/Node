@@ -105,6 +105,7 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
       success_url: successUrl,
       cancel_url: cancelUrl,
       automatic_tax: { enabled: true },
+      customer_update: { address: 'auto', name: 'auto' },
       metadata: {
         organizationId: String(organization._id),
         plan: matchedPlan.planId,
@@ -221,6 +222,7 @@ const createExtrasCheckout = async (organization, packId, successUrl, cancelUrl)
       success_url: successUrl,
       cancel_url: cancelUrl,
       automatic_tax: { enabled: true },
+      customer_update: { address: 'auto', name: 'auto' },
       metadata: {
         organizationId: String(organization._id),
         packId,

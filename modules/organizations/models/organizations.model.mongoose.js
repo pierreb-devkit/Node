@@ -39,6 +39,11 @@ const OrganizationMongoose = new Schema(
       enum: config.billing.plans,
       default: 'free',
     },
+    meterExempt: {
+      type: Boolean,
+      default: false,
+      sparse: true,
+    },
     createdBy: {
       type: Schema.ObjectId,
       ref: 'User',
