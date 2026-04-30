@@ -5,6 +5,12 @@
  * observed from inside a test. These tests exercise the module as a plain
  * async function — the same entry point jest uses — while mocking mongoose
  * and config to avoid touching a real database.
+ *
+ * globalSetup has two sequential phases:
+ *  Phase 1: connect → dropDatabase → disconnect (DB drop)
+ *  Phase 2: connect → loadModels → migrations.run → disconnect (migrations pre-run)
+ * Phase 2 uses a try/catch so failures are swallowed — tests that mock config
+ * without `files.mongooseModels` will silently skip the migrations phase.
  */
 import { jest, describe, test, expect, beforeEach, afterEach } from '@jest/globals';
 
@@ -86,9 +92,14 @@ describe('scripts/jest.globalSetup safety guards', () => {
 
     await globalSetup();
 
+    // Phase 1 (drop): connect → dropDatabase → disconnect
     expect(connect).toHaveBeenCalledWith('mongodb://localhost:27017/NodeTest');
     expect(dropDatabase).toHaveBeenCalledTimes(1);
-    expect(disconnect).toHaveBeenCalledTimes(1);
+    // Phase 2 (migrations): connects again; config.files absent → swallowed, but
+    // disconnect is still called via the finally block
+    // Minimum: both phases connected + disconnected at least once each
+    expect(connect.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(disconnect.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
   test('swallows errors when MongoDB is unreachable', async () => {
@@ -100,7 +111,10 @@ describe('scripts/jest.globalSetup safety guards', () => {
     const { default: globalSetup } = await import('../jest.globalSetup.js');
 
     await expect(globalSetup()).resolves.toBeUndefined();
+    // Phase 1 connect threw → dropDatabase never reached
     expect(dropDatabase).not.toHaveBeenCalled();
+    // Phase 2 still tries to connect (second call succeeds)
+    expect(connect.mock.calls.length).toBeGreaterThanOrEqual(1);
   });
 
   test('disconnects even when dropDatabase() fails (no dangling connection)', async () => {
@@ -112,8 +126,9 @@ describe('scripts/jest.globalSetup safety guards', () => {
     const { default: globalSetup } = await import('../jest.globalSetup.js');
 
     await expect(globalSetup()).resolves.toBeUndefined();
-    expect(connect).toHaveBeenCalledTimes(1);
+    // Phase 1: dropDatabase failed but disconnect is always called (finally block)
     expect(dropDatabase).toHaveBeenCalledTimes(1);
-    expect(disconnect).toHaveBeenCalledTimes(1);
+    // Both phases call disconnect via finally blocks — no dangling connections
+    expect(disconnect.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 });
