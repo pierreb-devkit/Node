@@ -14,6 +14,7 @@ describe('Billing webhook checkout unit tests:', () => {
   let mockSubscriptionRepository;
   let mockOrganizationRepository;
   let mockExtraService;
+  let mockStripeInstance;
 
   const orgId = '507f1f77bcf86cd799439011';
   const subId = '607f1f77bcf86cd799439022';
@@ -37,6 +38,12 @@ describe('Billing webhook checkout unit tests:', () => {
     mockExtraService = {
       creditPack: jest.fn().mockResolvedValue({ doc: {}, applied: true }),
       refundPartial: jest.fn(),
+    };
+
+    mockStripeInstance = {
+      paymentIntents: {
+        update: jest.fn().mockResolvedValue({}),
+      },
     };
 
     jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
@@ -64,6 +71,10 @@ describe('Billing webhook checkout unit tests:', () => {
 
     jest.unstable_mockModule('../lib/events.js', () => ({
       default: { emit: jest.fn() },
+    }));
+
+    jest.unstable_mockModule('../lib/stripe.js', () => ({
+      default: jest.fn(() => mockStripeInstance),
     }));
 
     jest.unstable_mockModule('../../../config/index.js', () => ({
@@ -219,6 +230,59 @@ describe('Billing webhook checkout unit tests:', () => {
       });
 
       expect(mockExtraService.creditPack).not.toHaveBeenCalled();
+    });
+
+    test('should call stripe.paymentIntents.update with real sessionId after creditPack succeeds (CRITICAL: refund correlation)', async () => {
+      const paymentIntentId = 'pi_test_abc123';
+
+      await BillingWebhookService.handleCheckoutPaymentCompleted({
+        id: stripeSessionId,
+        payment_status: 'paid',
+        payment_intent: paymentIntentId,
+        metadata: { organizationId: orgId, packId: 'pack_500k', kind: 'extras' },
+      });
+
+      expect(mockExtraService.creditPack).toHaveBeenCalledWith(orgId, 'pack_500k', stripeSessionId);
+      expect(mockStripeInstance.paymentIntents.update).toHaveBeenCalledWith(
+        paymentIntentId,
+        {
+          metadata: {
+            organizationId: orgId,
+            packId: 'pack_500k',
+            kind: 'extras',
+            stripeSessionId,  // real cs_* ID (not '__pending__')
+          },
+        },
+      );
+    });
+
+    test('should skip paymentIntents.update when payment_intent is absent', async () => {
+      await BillingWebhookService.handleCheckoutPaymentCompleted({
+        id: stripeSessionId,
+        payment_status: 'paid',
+        // payment_intent omitted — e.g. in test fixtures without PI
+        metadata: { organizationId: orgId, packId: 'pack_500k', kind: 'extras' },
+      });
+
+      expect(mockExtraService.creditPack).toHaveBeenCalled();
+      expect(mockStripeInstance.paymentIntents.update).not.toHaveBeenCalled();
+    });
+
+    test('should not throw when paymentIntents.update fails (non-fatal fallback)', async () => {
+      const paymentIntentId = 'pi_test_failing';
+      mockStripeInstance.paymentIntents.update.mockRejectedValue(new Error('Stripe API error'));
+
+      await expect(
+        BillingWebhookService.handleCheckoutPaymentCompleted({
+          id: stripeSessionId,
+          payment_status: 'paid',
+          payment_intent: paymentIntentId,
+          metadata: { organizationId: orgId, packId: 'pack_500k', kind: 'extras' },
+        }),
+      ).resolves.toBeUndefined();
+
+      // creditPack should still have run despite the PI update failure
+      expect(mockExtraService.creditPack).toHaveBeenCalledWith(orgId, 'pack_500k', stripeSessionId);
     });
   });
 

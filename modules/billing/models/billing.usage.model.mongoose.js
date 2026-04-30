@@ -12,6 +12,12 @@ const Schema = mongoose.Schema;
  * Meter fields (weekKey, meterUsed, etc.) are sparse/optional — only
  * populated when config.billing.meterMode is true. This ensures full
  * backward compatibility for non-meter downstream projects.
+ *
+ * NOTE — Mixed type caveats (applies to 'counters' and 'meterBreakdown' fields):
+ *   Mongoose validators are NOT executed for in-place mutations on Mixed fields
+ *   (doc.field.x = y; doc.save() silently skips validators).
+ *   Always use atomic MongoDB operators ($inc, $set via findOneAndUpdate)
+ *   or Model.create() which runs validators on the full document.
  */
 const UsageMongoose = new Schema(
   {

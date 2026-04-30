@@ -87,10 +87,12 @@ const refundPartial = async (orgId, stripeSessionId, amountRefundedCents) => {
     return { doc, applied: false, refundUnits: 0 };
   }
 
-  // Find the pack config to compute proportion.
+  // Find the pack config to compute proportion using the topup entry's meterUnits.
   // Ambiguity guard: if 0 or >1 packs share the same meterUnits, fall back to
   // applied=false rather than using a wrong priceUsd.
-  // TODO PR-N3: webhook handler will pass packId from session metadata, removing the need for this heuristic.
+  // NOTE: packId is not passed to refundPartial — charge.refunded carries it in
+  // charge.metadata but the webhook call-site only passes (orgId, stripeSessionId, amountCents).
+  // This heuristic is therefore intentionally retained; the ambiguity guard is the safety net.
   const packs = config?.billing?.packs ?? [];
   const matchingPacks = packs.filter(
     (p) => (p.meterUnits ?? p.computeUnits) === topupEntry.amount,
