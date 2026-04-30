@@ -9,8 +9,8 @@
  * globalSetup has two sequential phases:
  *  Phase 1: connect → dropDatabase → disconnect (DB drop)
  *  Phase 2: connect → loadModels → migrations.run → disconnect (migrations pre-run)
- * Phase 2 uses a try/catch so failures are swallowed — tests that mock config
- * without `files.mongooseModels` will silently skip the migrations phase.
+ * Phase 2 uses an explicit guard — tests that mock config without
+ * `files.mongooseModels` skip the migrations phase (with a console.warn).
  */
 import { jest, describe, test, expect, beforeEach, afterEach } from '@jest/globals';
 
@@ -86,17 +86,17 @@ describe('scripts/jest.globalSetup safety guards', () => {
   test('drops database when NODE_ENV=test and DB name contains "test" (case-insensitive)', async () => {
     process.env.NODE_ENV = 'test';
     jest.unstable_mockModule('../../config/index.js', () => ({
-      default: { db: { uri: 'mongodb://localhost:27017/NodeTest' } },
+      default: { db: { uri: 'mongodb://localhost:27017/NodeTest' }, files: { mongooseModels: [] } },
     }));
     const { default: globalSetup } = await import('../jest.globalSetup.js');
 
     await globalSetup();
 
     // Phase 1 (drop): connect → dropDatabase → disconnect
-    expect(connect).toHaveBeenCalledWith('mongodb://localhost:27017/NodeTest');
+    expect(connect).toHaveBeenCalledWith('mongodb://localhost:27017/NodeTest', undefined);
     expect(dropDatabase).toHaveBeenCalledTimes(1);
-    // Phase 2 (migrations): connects again; config.files absent → swallowed, but
-    // disconnect is still called via the finally block
+    // Phase 2 (migrations): connects again with mongooseModels: [] → no models to load,
+    // migrations.run skipped, disconnect called via finally block
     // Minimum: both phases connected + disconnected at least once each
     expect(connect.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(disconnect.mock.calls.length).toBeGreaterThanOrEqual(2);
@@ -106,22 +106,23 @@ describe('scripts/jest.globalSetup safety guards', () => {
     process.env.NODE_ENV = 'test';
     connect.mockRejectedValueOnce(new Error('ECONNREFUSED'));
     jest.unstable_mockModule('../../config/index.js', () => ({
-      default: { db: { uri: 'mongodb://localhost:27017/NodeTest' } },
+      default: { db: { uri: 'mongodb://localhost:27017/NodeTest' }, files: { mongooseModels: [] } },
     }));
     const { default: globalSetup } = await import('../jest.globalSetup.js');
 
     await expect(globalSetup()).resolves.toBeUndefined();
     // Phase 1 connect threw → dropDatabase never reached
     expect(dropDatabase).not.toHaveBeenCalled();
-    // Phase 2 still tries to connect (second call succeeds)
-    expect(connect.mock.calls.length).toBeGreaterThanOrEqual(1);
+    // Phase 2 still tries to connect after the Phase 1 failure (second call)
+    expect(connect.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(disconnect).toHaveBeenCalledTimes(1);
   });
 
   test('disconnects even when dropDatabase() fails (no dangling connection)', async () => {
     process.env.NODE_ENV = 'test';
     dropDatabase.mockRejectedValueOnce(new Error('drop failed'));
     jest.unstable_mockModule('../../config/index.js', () => ({
-      default: { db: { uri: 'mongodb://localhost:27017/NodeTest' } },
+      default: { db: { uri: 'mongodb://localhost:27017/NodeTest' }, files: { mongooseModels: [] } },
     }));
     const { default: globalSetup } = await import('../jest.globalSetup.js');
 

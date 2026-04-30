@@ -28,6 +28,7 @@
  */
 import mongoose from 'mongoose';
 import path from 'path';
+import { pathToFileURL } from 'url';
 
 /**
  * Jest global setup entry point.
@@ -51,7 +52,7 @@ export default async () => {
       );
       return;
     }
-    await mongoose.connect(config.db.uri);
+    await mongoose.connect(config.db.uri, config.db.options);
     try {
       await mongoose.connection.dropDatabase();
     } finally {
@@ -68,12 +69,16 @@ export default async () => {
   //    protectProperties() pass and survive per-suite GlobalProxy teardown.
   try {
     const config = (await import('../config/index.js')).default;
-    await mongoose.connect(config.db.uri);
+    if (!Array.isArray(config.files?.mongooseModels)) {
+      console.warn('[jest.globalSetup] migrations pre-run skipped: config.files.mongooseModels is absent or not an array.');
+      return;
+    }
+    await mongoose.connect(config.db.uri, config.db.options);
     try {
       // Load mongoose models (needed by migration model registry)
       await Promise.all(
         config.files.mongooseModels.map(async (modelPath) => {
-          await import(path.resolve(modelPath));
+          await import(pathToFileURL(path.resolve(modelPath)).href);
         }),
       );
 
