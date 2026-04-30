@@ -162,6 +162,10 @@ export default {
   // The test environment that will be used for testing
   testEnvironment: 'node',
 
+  // Force Jest to exit after all tests complete — prevents hanging on open MongoDB
+  // handles from integration tests whose afterAll disconnect races with Jest's exit
+  forceExit: true,
+
   // Global timeout for tests and hooks (integration tests bootstrap MongoDB + Express)
   testTimeout: 15000,
 
