@@ -9,6 +9,9 @@ import BillingUsageService from '../services/billing.usage.service.js';
 import BillingExtraService from '../services/billing.extra.service.js';
 import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
 
+// NOTE: BillingExtraBalance uses 'organization' (ObjectId ref); BillingUsage uses 'organizationId' (string field).
+// These two collections have asymmetric field names for historical reasons — keep queries consistent with each model's own convention.
+
 /**
  * @desc Endpoint to create a Stripe Checkout session
  * @param {Object} req - Express request object

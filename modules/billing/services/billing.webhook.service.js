@@ -4,6 +4,7 @@
 import mongoose from 'mongoose';
 
 import config from '../../../config/index.js';
+import getStripe from '../lib/stripe.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import ProcessedStripeEventRepository from '../repositories/billing.processedStripeEvent.repository.js';
 import OrganizationRepository from '../../organizations/repositories/organizations.repository.js';
@@ -152,7 +153,7 @@ const handleCheckoutCompleted = async (session) => {
 const handleCheckoutPaymentCompleted = async (session) => {
   if (session.payment_status !== 'paid') return;
 
-  const { metadata, id: stripeSessionId } = session;
+  const { metadata, id: stripeSessionId, payment_intent: paymentIntentId } = session;
   const { organizationId, packId, kind } = metadata ?? {};
 
   if (kind !== 'extras') return;
@@ -160,6 +161,30 @@ const handleCheckoutPaymentCompleted = async (session) => {
   if (!packId) return;
 
   await BillingExtraService.creditPack(organizationId, packId, stripeSessionId);
+
+  // Backfill PaymentIntent metadata with the real session ID so that charge.refunded
+  // events can correlate the charge back to this ledger entry.
+  // At session.create time stripeSessionId was set to '__pending__' (Stripe forbids
+  // self-reference). Propagating the real cs_* ID here ensures charge.metadata carries
+  // it when a refund is issued later.
+  if (paymentIntentId) {
+    const stripe = getStripe();
+    if (stripe) {
+      try {
+        await stripe.paymentIntents.update(paymentIntentId, {
+          metadata: {
+            organizationId,
+            packId,
+            kind: 'extras',
+            stripeSessionId,  // real cs_* ID
+          },
+        });
+      } catch (err) {
+        // Log but don't fail — refund correlation may need fallback path
+        console.warn('[billing.webhook] PaymentIntent metadata update failed:', err.message);
+      }
+    }
+  }
 };
 
 /**
