@@ -42,7 +42,6 @@ const OrganizationMongoose = new Schema(
     meterExempt: {
       type: Boolean,
       default: false,
-      sparse: true,
     },
     createdBy: {
       type: Schema.ObjectId,
