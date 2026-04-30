@@ -17,6 +17,13 @@
  */
 
 class GcReporter {
+  /**
+   * Called by Jest after each test file completes.
+   * Triggers an explicit GC cycle when --expose-gc is active (test:coverage only).
+   * @param {object} _test - Jest test descriptor (unused).
+   * @param {object} _testResult - Aggregated results for this file (unused).
+   * @returns {void}
+   */
   onTestFileResult() {
     if (typeof global.gc === 'function') {
       global.gc();
