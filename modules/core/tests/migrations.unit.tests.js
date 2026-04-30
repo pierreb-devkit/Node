@@ -1,6 +1,7 @@
 /**
  * Module dependencies.
  */
+import { jest } from '@jest/globals';
 import path from 'path';
 import mongoose from 'mongoose';
 
@@ -8,6 +9,7 @@ import mongoose from 'mongoose';
 import '../models/migration.model.mongoose.js';
 
 import migrations from '../../../lib/services/migrations.js';
+import migrationRepository from '../repositories/migration.repository.js';
 
 /**
  * Unit tests for the migration system (no DB connection required)
@@ -78,6 +80,80 @@ describe('Migrations unit tests:', () => {
       // For `unique: true` declared on the path, the index is carried on the schema path itself.
       const namePath = Migration.schema.path('name');
       expect(namePath.options.unique).toBe(true);
+    });
+  });
+
+  // The following tests stub migrationRepository directly so they exercise the
+  // claim / unclaim / error branches without needing a live MongoDB. Bootstrap
+  // no longer re-runs migrations.run() per suite (it sets DEVKIT_MIGRATIONS_RAN
+  // in globalSetup), so these branches must be covered explicitly.
+  describe('repository-mocked branches', () => {
+    let createSpy;
+    let deleteByNameSpy;
+    let listExecutedSpy;
+    let syncIndexesSpy;
+
+    beforeEach(() => {
+      createSpy = jest.spyOn(migrationRepository, 'create');
+      deleteByNameSpy = jest.spyOn(migrationRepository, 'deleteByName').mockResolvedValue({ acknowledged: true, deletedCount: 1 });
+      listExecutedSpy = jest.spyOn(migrationRepository, 'listExecuted');
+      syncIndexesSpy = jest.spyOn(migrationRepository, 'syncIndexes').mockResolvedValue([]);
+    });
+
+    afterEach(() => {
+      createSpy.mockRestore();
+      deleteByNameSpy.mockRestore();
+      listExecutedSpy.mockRestore();
+      syncIndexesSpy.mockRestore();
+    });
+
+    describe('runMigration claim path', () => {
+      it('returns false when another runner already claimed the migration (E11000)', async () => {
+        // Simulate the unique-index duplicate-key error from a concurrent runner
+        const dup = Object.assign(new Error('E11000 duplicate key'), { code: 11000 });
+        createSpy.mockRejectedValueOnce(dup);
+        const result = await migrations.runMigration('modules/core/migrations/__never-run-claim-fail.js', new Set());
+        expect(result).toBe(false);
+        expect(createSpy).toHaveBeenCalledTimes(1);
+      });
+
+      it('rethrows non-duplicate errors from the repository', async () => {
+        createSpy.mockRejectedValueOnce(new Error('boom'));
+        await expect(
+          migrations.runMigration('modules/core/migrations/__never-run-other-error.js', new Set()),
+        ).rejects.toThrow('boom');
+      });
+
+      it('unclaims when the migration file fails to import', async () => {
+        createSpy.mockResolvedValueOnce({ name: 'doesNotExist' });
+        await expect(
+          migrations.runMigration('modules/core/migrations/__file-does-not-exist.js', new Set()),
+        ).rejects.toThrow();
+        expect(deleteByNameSpy).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('run() summary branches', () => {
+      it('returns total/executed counts when all migrations are already executed', async () => {
+        // listExecuted returns every discovered file → executedCount stays 0
+        const files = await migrations.discoverMigrationFiles();
+        const executedNames = files.map((f) => path.relative(process.cwd(), f).replace(/\\/g, '/'));
+        listExecutedSpy.mockResolvedValueOnce(executedNames.map((name) => ({ name })));
+        const result = await migrations.run();
+        expect(result.total).toBe(files.length);
+        expect(result.executed).toBe(0);
+      });
+
+      it('unclaims and rethrows when the imported migration has no up() export', async () => {
+        // claim succeeds; the file we point at exists but exports no up()
+        createSpy.mockResolvedValueOnce({ name: 'no-up' });
+        // This very test file is a real ESM module that does not export up()
+        const realFileWithoutUp = path.resolve('modules/core/tests/migrations.unit.tests.js');
+        await expect(
+          migrations.runMigration(realFileWithoutUp, new Set()),
+        ).rejects.toThrow(/does not export an up\(\) function/);
+        expect(deleteByNameSpy).toHaveBeenCalled();
+      });
     });
   });
 });
