@@ -207,6 +207,9 @@ describe('requireQuota middleware:', () => {
 
     expect(next).toHaveBeenCalled();
     expect(res.status).not.toHaveBeenCalled();
+    // Short-circuit: no downstream quota lookups
+    expect(mockSubscriptionRepository.findByOrganization).not.toHaveBeenCalled();
+    expect(mockBillingUsageService.get).not.toHaveBeenCalled();
   });
 
   test('should NOT bypass quota for non-admin user (legacy mode)', async () => {
@@ -229,6 +232,9 @@ describe('requireQuota middleware:', () => {
 
     expect(next).toHaveBeenCalled();
     expect(res.status).not.toHaveBeenCalled();
+    // Short-circuit: no downstream quota lookups
+    expect(mockSubscriptionRepository.findByOrganization).not.toHaveBeenCalled();
+    expect(mockBillingUsageService.get).not.toHaveBeenCalled();
   });
 
   test('should NOT bypass quota when meterExempt is false', async () => {
@@ -440,6 +446,10 @@ describe('requireQuota middleware:', () => {
 
       expect(next).toHaveBeenCalled();
       expect(res.status).not.toHaveBeenCalled();
+      // Short-circuit: no downstream meter/subscription lookups
+      expect(mockSubscriptionRepository.findByOrganization).not.toHaveBeenCalled();
+      expect(mockBillingUsageService.getMeter).not.toHaveBeenCalled();
+      expect(mockBillingExtraBalanceRepository.getBalance).not.toHaveBeenCalled();
     });
 
     test('should bypass meter quota for meterExempt organization', async () => {
@@ -452,6 +462,10 @@ describe('requireQuota middleware:', () => {
 
       expect(next).toHaveBeenCalled();
       expect(res.status).not.toHaveBeenCalled();
+      // Short-circuit: no downstream meter/subscription lookups
+      expect(mockSubscriptionRepository.findByOrganization).not.toHaveBeenCalled();
+      expect(mockBillingUsageService.getMeter).not.toHaveBeenCalled();
+      expect(mockBillingExtraBalanceRepository.getBalance).not.toHaveBeenCalled();
     });
 
     test('degraded J+5: still blocks if meter is exhausted', async () => {

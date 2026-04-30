@@ -14,7 +14,6 @@ const Organization = z.object({
   slug: z.string().trim().min(1).toLowerCase().optional(),
   domain: z.string().trim().default(''),
   plan: z.enum(config.billing.plans).default('free'),
-  meterExempt: z.boolean().default(false).optional(),
 });
 
 const OrganizationUpdate = Organization.partial();
