@@ -218,6 +218,10 @@ const handleSubscriptionUpdated = async (subscription, event) => {
   const organizationId = String(existing.organization?._id || existing.organization);
   await syncOrganizationPlan(organizationId, newPlan);
 
+  // Hoist previousPeriodStart so it is accessible both in the plan-change block
+  // (anchor computation) and in the standalone period-start-change block below.
+  const previousPeriodStart = event?.data?.previous_attributes?.current_period_start;
+
   // Detect plan change from previous_attributes and emit event + trigger meter reset
   const previousItems = event?.data?.previous_attributes?.items?.data;
   let planChangeResetTriggered = false;
@@ -245,8 +249,15 @@ const handleSubscriptionUpdated = async (subscription, event) => {
       // Memo edge case 5: plan switch mid-cycle = immediate reset of weekly meter.
       // Stripe does NOT advance current_period_start on plan switch (proration only),
       // so we must trigger resetWeek here independently of the period-start change block.
-      // Use newPeriodStart when available (renewal happened simultaneously), fall back to now.
-      const anchor = newPeriodStart ?? new Date();
+      // Anchor = newPeriodStart only when the period ALSO changed simultaneously (e.g. annual→monthly
+      // on renewal day). Plain mid-cycle plan switch → anchor is now (current moment), because
+      // newPeriodStart is the billing-cycle start (potentially weeks in the past) and would resolve
+      // to a past ISO week bucket.
+      const periodChanged =
+        previousPeriodStart !== undefined &&
+        subscription.current_period_start !== previousPeriodStart &&
+        newPeriodStart;
+      const anchor = periodChanged ? newPeriodStart : new Date();
       try {
         await BillingResetService.resetWeek(organizationId, anchor);
         planChangeResetTriggered = true;
@@ -258,7 +269,6 @@ const handleSubscriptionUpdated = async (subscription, event) => {
   }
 
   // Detect period start change — trigger weekly meter reset (only when not already triggered by plan change)
-  const previousPeriodStart = event?.data?.previous_attributes?.current_period_start;
   if (
     !planChangeResetTriggered &&
     previousPeriodStart !== undefined &&

@@ -217,10 +217,12 @@ describe('Billing webhook subscription unit tests:', () => {
       );
 
       expect(mockResetService.resetWeek).toHaveBeenCalledTimes(1);
-      expect(mockResetService.resetWeek).toHaveBeenCalledWith(
-        orgId,
-        new Date(periodStart * 1000),
-      );
+      // Plan-only change (no period change) → anchor is new Date() (current moment), NOT the
+      // billing-cycle start. Using newPeriodStart here would resolve to a past ISO week bucket.
+      expect(mockResetService.resetWeek).toHaveBeenCalledWith(orgId, expect.any(Date));
+      const [, anchor] = mockResetService.resetWeek.mock.calls[0];
+      // Anchor must NOT be the period start (which is in the past relative to the plan switch)
+      expect(anchor.getTime()).not.toBe(periodStart * 1000);
     });
 
     test('fix #3571: plan change AND period_start change — resetWeek called exactly once (not twice)', async () => {
@@ -253,6 +255,11 @@ describe('Billing webhook subscription unit tests:', () => {
 
       // Plan-change reset triggers first; period-start reset is skipped to avoid double reset.
       expect(mockResetService.resetWeek).toHaveBeenCalledTimes(1);
+      // When period also changed, anchor must be newPeriodStart (not now)
+      expect(mockResetService.resetWeek).toHaveBeenCalledWith(
+        orgId,
+        new Date(newPeriodStart * 1000),
+      );
     });
 
     test('fix #3571: no plan change — resetWeek NOT called on same period_start', async () => {

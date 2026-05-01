@@ -387,6 +387,38 @@ describe('BillingResetService unit tests:', () => {
       expect(capturedAnchors[0]).toBe('2026-W18');
     });
 
+    test('fix #3575: anchor clamped to now when cron is delayed >1 week', async () => {
+      // Simulate a cron that ran late: lastResetAt was >2 weeks ago.
+      // Without clamping, anchor = lastResetAt+7d = still in the past → wrong bucket.
+      // With clamping, anchor = min(lastResetAt+7d, now) = now → correct current bucket.
+      const now = new Date('2026-05-01T12:00:00.000Z'); // W18
+      jest.setSystemTime(now);
+
+      // lastResetAt was 3 weeks ago — cron skipped 2 full weeks
+      const lastResetAt = new Date('2026-04-10T12:00:00.000Z');
+      const naturalAnchor = new Date(lastResetAt.getTime() + 7 * 24 * 60 * 60 * 1000); // 2026-04-17 → W16
+      expect(naturalAnchor < now).toBe(true); // sanity: natural anchor is in the past
+
+      const capturedAnchors = [];
+      mockSubscriptionRepository.findAllDueForResetByLastReset.mockResolvedValue([
+        { organization: orgId, currentPeriodStart: new Date('2026-04-01T00:00:00.000Z'), lastResetAt },
+      ]);
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockSubscriptionRepository.updateLastResetAt.mockResolvedValue({});
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan());
+      mockUsageRepository.findByWeek.mockImplementation((_orgId, weekKey) => {
+        capturedAnchors.push(weekKey);
+        return Promise.resolve(null);
+      });
+      mockUsageRepository.upsertWeekSnapshot.mockResolvedValue(makeUsageDoc({ weekKey: '2026-W18' }));
+
+      const result = await BillingResetService.resetAllDue();
+
+      expect(result.processed).toBe(1);
+      // Anchor must be clamped to now (2026-05-01 → W18), not the stale natural anchor (W16)
+      expect(capturedAnchors[0]).toBe('2026-W18');
+    });
+
     test('fix #3569: S+1/S+2/S+3 within same Stripe cycle produce distinct weekKeys', async () => {
       // Simulate 3 consecutive weekly cron runs within the same monthly billing cycle.
       // currentPeriodStart is the same for all 3; lastResetAt advances by 7d each run.

@@ -113,8 +113,11 @@ const resetAllDue = async () => {
       // Derive the week anchor from lastResetAt + 7d (or now when no prior reset exists).
       // Using currentPeriodStart would derive the same weekKey every run within the same
       // monthly/annual Stripe cycle → reset would be a no-op for weeks 2/3/4.
+      // Clamp to now: if cron is delayed >1 week the natural anchor (lastResetAt+7d) is in
+      // the past → stale ISO week bucket. max(lastResetAt+7d, now) ensures we always write
+      // the current week when the cron runs late (idempotent on duplicate late runs).
       const anchor = sub.lastResetAt
-        ? new Date(new Date(sub.lastResetAt).getTime() + 7 * 24 * 60 * 60 * 1000)
+        ? new Date(Math.max(new Date(sub.lastResetAt).getTime() + 7 * 24 * 60 * 60 * 1000, now.getTime()))
         : now;
       await resetWeek(String(sub.organization), anchor);
       await BillingSubscriptionRepository.updateLastResetAt(String(sub.organization), now);
