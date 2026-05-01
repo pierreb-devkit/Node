@@ -38,5 +38,9 @@ export default async (app) => {
     }
   } catch (err) {
     console.error('[billing] ensureSeeded failed:', err);
+    // Fail fast when meterMode is enabled: a seeding failure means quota resolution
+    // will return 0 for all plans, silently gating all metered operations.
+    // Surfacing the crash here prevents a deploy from succeeding in a broken state.
+    if (config?.billing?.meterMode) throw err;
   }
 };

@@ -70,12 +70,15 @@ describe('BillingPlanService.ensureSeeded unit tests:', () => {
       pro: { meterQuota: 500000, ratios: { default: 2 } },
     };
     mockBillingPlanRepository.findActive.mockResolvedValue(null);
+    // count=0 → version 'v1' for each plan
+    mockBillingPlanRepository.count.mockResolvedValue(0);
     mockBillingPlanRepository.create.mockResolvedValue({});
 
     const result = await BillingPlanService.ensureSeeded();
 
     expect(result).toEqual({ seeded: 3, skipped: 0 });
     expect(mockBillingPlanRepository.findActive).toHaveBeenCalledTimes(3);
+    expect(mockBillingPlanRepository.count).toHaveBeenCalledTimes(3);
     expect(mockBillingPlanRepository.create).toHaveBeenCalledTimes(3);
     expect(mockBillingPlanRepository.create).toHaveBeenNthCalledWith(
       1,
@@ -93,6 +96,7 @@ describe('BillingPlanService.ensureSeeded unit tests:', () => {
       .mockResolvedValueOnce({ planId: 'free', version: 'v1' })
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null);
+    mockBillingPlanRepository.count.mockResolvedValue(0);
     mockBillingPlanRepository.create.mockResolvedValue({});
 
     const result = await BillingPlanService.ensureSeeded();
@@ -107,5 +111,49 @@ describe('BillingPlanService.ensureSeeded unit tests:', () => {
       2,
       expect.objectContaining({ planId: 'pro', version: 'v1' }),
     );
+  });
+
+  test('count > 0 yields next version string correctly', async () => {
+    mockConfig.billing.planDefinitions = {
+      pro: { meterQuota: 500000, ratios: { default: 1 } },
+    };
+    mockBillingPlanRepository.findActive.mockResolvedValue(null);
+    // Existing inactive v1 is present (total count = 1)
+    mockBillingPlanRepository.count.mockResolvedValue(1);
+    mockBillingPlanRepository.create.mockResolvedValue({});
+
+    const result = await BillingPlanService.ensureSeeded();
+
+    expect(result).toEqual({ seeded: 1, skipped: 0 });
+    expect(mockBillingPlanRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ planId: 'pro', version: 'v2' }),
+    );
+  });
+
+  test('E11000 on create is absorbed as a skip (concurrent pod race)', async () => {
+    mockConfig.billing.planDefinitions = {
+      free: { meterQuota: 0, ratios: { default: 1 } },
+      pro: { meterQuota: 500000, ratios: { default: 1 } },
+    };
+    mockBillingPlanRepository.findActive.mockResolvedValue(null);
+    mockBillingPlanRepository.count.mockResolvedValue(0);
+    // First create throws E11000; second succeeds
+    const e11000 = Object.assign(new Error('E11000 duplicate key error'), { code: 11000 });
+    mockBillingPlanRepository.create.mockRejectedValueOnce(e11000).mockResolvedValueOnce({});
+
+    const result = await BillingPlanService.ensureSeeded();
+
+    expect(result).toEqual({ seeded: 1, skipped: 1 });
+  });
+
+  test('non-E11000 error on create propagates and aborts', async () => {
+    mockConfig.billing.planDefinitions = {
+      pro: { meterQuota: 500000, ratios: { default: 1 } },
+    };
+    mockBillingPlanRepository.findActive.mockResolvedValue(null);
+    mockBillingPlanRepository.count.mockResolvedValue(0);
+    mockBillingPlanRepository.create.mockRejectedValue(new Error('DB connection lost'));
+
+    await expect(BillingPlanService.ensureSeeded()).rejects.toThrow('DB connection lost');
   });
 });

@@ -50,8 +50,8 @@ const resetWeek = async (orgId, periodStart) => {
   // Delegates to repository — no mongoose import in service layer.
   await BillingUsageRepository.archiveOtherWeeks(orgId, newWeekKey, now);
 
-  // Step 2 — Fetch the active plan to snapshot quota/planVersion.
-  const subscription = await BillingSubscriptionRepository.findByOrganization(orgId);
+  // Step 2 — Fetch the active plan to snapshot quota/planVersion — lean projection (plan only, no populate).
+  const subscription = await BillingSubscriptionRepository.findPlan(orgId);
   const planId = subscription?.plan ?? config?.billing?.defaultPlan ?? 'free';
   const activePlan = await BillingPlanService.getActivePlan(planId);
   const meterQuota = activePlan?.meterQuota ?? 0;
