@@ -169,6 +169,22 @@ const initGlobalConfig = async () => {
   // Print a warning if config.domain is not set
   if (process.env.NODE_ENV !== 'test') configHelper.validateDomainIsSet(config);
   if (process.env.NODE_ENV !== 'test') configHelper.validateJwtSecret(config);
+
+  // Worker DB isolation: when running inside a jest worker (--maxWorkers > 1, no --runInBand),
+  // suffix db.uri with JEST_WORKER_ID so each worker hits an independent MongoDB database.
+  // Without this, the CI DEVKIT_NODE_db_uri override flattens all workers onto the same DB
+  // and causes data races. The main jest process (globalSetup) has no JEST_WORKER_ID so it
+  // operates on the unsuffixed URI, which is intentional (single drop+migrate).
+  if (process.env.NODE_ENV === 'test' && process.env.JEST_WORKER_ID) {
+    const workerId = process.env.JEST_WORKER_ID;
+    const uri = config.db?.uri ?? '';
+    const workerSuffix = `_w${workerId}`;
+    if (uri && !uri.includes(workerSuffix)) {
+      // Insert suffix between path and optional query string
+      config.db.uri = uri.replace(/(\?|$)/, `${workerSuffix}$1`);
+    }
+  }
+
   // Expose configuration utilities
   const conf = { ...config };
   conf.utils = {
