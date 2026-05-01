@@ -17,7 +17,7 @@ describe('BillingPlanService.ensureSeeded unit tests:', () => {
     mockConfig = {
       billing: {
         meterMode: true,
-        planDefinitions: {},
+        planDefinitions: [],
       },
     };
 
@@ -55,7 +55,7 @@ describe('BillingPlanService.ensureSeeded unit tests:', () => {
     expect(mockBillingPlanRepository.create).not.toHaveBeenCalled();
   });
 
-  test('meterMode=true with empty planDefinitions returns zeroes', async () => {
+  test('meterMode=true with empty planDefinitions array returns zeroes', async () => {
     const result = await BillingPlanService.ensureSeeded();
 
     expect(result).toEqual({ seeded: 0, skipped: 0 });
@@ -64,11 +64,11 @@ describe('BillingPlanService.ensureSeeded unit tests:', () => {
   });
 
   test('meterMode=true with 3 planDefinitions and none existing seeds 3 plans', async () => {
-    mockConfig.billing.planDefinitions = {
-      free: { meterQuota: 0, ratios: { default: 1 } },
-      starter: { meterQuota: 50000, ratios: { default: 1 } },
-      pro: { meterQuota: 500000, ratios: { default: 2 } },
-    };
+    mockConfig.billing.planDefinitions = [
+      { planId: 'free', meterQuota: 0, ratios: { default: 1 } },
+      { planId: 'starter', meterQuota: 50000, ratios: { default: 1 } },
+      { planId: 'pro', meterQuota: 500000, ratios: { default: 2 } },
+    ];
     mockBillingPlanRepository.findActive.mockResolvedValue(null);
     // count=0 → version 'v1' for each plan
     mockBillingPlanRepository.count.mockResolvedValue(0);
@@ -87,11 +87,11 @@ describe('BillingPlanService.ensureSeeded unit tests:', () => {
   });
 
   test('meterMode=true with 3 planDefinitions and 1 existing seeds 2 and skips 1', async () => {
-    mockConfig.billing.planDefinitions = {
-      free: { meterQuota: 0, ratios: { default: 1 } },
-      starter: { meterQuota: 50000, ratios: { default: 1 } },
-      pro: { meterQuota: 500000, ratios: { default: 1 } },
-    };
+    mockConfig.billing.planDefinitions = [
+      { planId: 'free', meterQuota: 0, ratios: { default: 1 } },
+      { planId: 'starter', meterQuota: 50000, ratios: { default: 1 } },
+      { planId: 'pro', meterQuota: 500000, ratios: { default: 1 } },
+    ];
     mockBillingPlanRepository.findActive
       .mockResolvedValueOnce({ planId: 'free', version: 'v1' })
       .mockResolvedValueOnce(null)
@@ -114,9 +114,9 @@ describe('BillingPlanService.ensureSeeded unit tests:', () => {
   });
 
   test('count > 0 yields next version string correctly', async () => {
-    mockConfig.billing.planDefinitions = {
-      pro: { meterQuota: 500000, ratios: { default: 1 } },
-    };
+    mockConfig.billing.planDefinitions = [
+      { planId: 'pro', meterQuota: 500000, ratios: { default: 1 } },
+    ];
     mockBillingPlanRepository.findActive.mockResolvedValue(null);
     // Existing inactive v1 is present (total count = 1)
     mockBillingPlanRepository.count.mockResolvedValue(1);
@@ -131,10 +131,10 @@ describe('BillingPlanService.ensureSeeded unit tests:', () => {
   });
 
   test('E11000 on create is absorbed as a skip (concurrent pod race)', async () => {
-    mockConfig.billing.planDefinitions = {
-      free: { meterQuota: 0, ratios: { default: 1 } },
-      pro: { meterQuota: 500000, ratios: { default: 1 } },
-    };
+    mockConfig.billing.planDefinitions = [
+      { planId: 'free', meterQuota: 0, ratios: { default: 1 } },
+      { planId: 'pro', meterQuota: 500000, ratios: { default: 1 } },
+    ];
     mockBillingPlanRepository.findActive.mockResolvedValue(null);
     mockBillingPlanRepository.count.mockResolvedValue(0);
     // First create throws E11000; second succeeds
@@ -147,9 +147,9 @@ describe('BillingPlanService.ensureSeeded unit tests:', () => {
   });
 
   test('non-E11000 error on create propagates and aborts', async () => {
-    mockConfig.billing.planDefinitions = {
-      pro: { meterQuota: 500000, ratios: { default: 1 } },
-    };
+    mockConfig.billing.planDefinitions = [
+      { planId: 'pro', meterQuota: 500000, ratios: { default: 1 } },
+    ];
     mockBillingPlanRepository.findActive.mockResolvedValue(null);
     mockBillingPlanRepository.count.mockResolvedValue(0);
     mockBillingPlanRepository.create.mockRejectedValue(new Error('DB connection lost'));

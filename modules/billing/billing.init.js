@@ -1,6 +1,7 @@
 /**
  * Module dependencies
  */
+import mongoose from 'mongoose';
 import config from '../../config/index.js';
 import AnalyticsService from '../../lib/services/analytics.js';
 import billingEvents from './lib/events.js';
@@ -42,5 +43,23 @@ export default async (app) => {
     // will return 0 for all plans, silently gating all metered operations.
     // Surfacing the crash here prevents a deploy from succeeding in a broken state.
     if (config?.billing?.meterMode) throw err;
+  }
+
+  // Boot validator: warn on orphaned Subscription.plan values (meterMode only).
+  // Runs after ensureSeeded so the plan catalog is up to date.
+  // Never crashes boot — wrapped in try/catch.
+  if (config?.billing?.meterMode) {
+    try {
+      const Subscription = mongoose.model('Subscription');
+      const knownPlans = new Set(config.billing.plans ?? []);
+      const distinctPlans = await Subscription.distinct('plan');
+      for (const plan of distinctPlans) {
+        if (!knownPlans.has(plan)) {
+          console.warn(`[billing] Subscription.plan value "${plan}" not in planDefinitions — orphaned plan, may resolve quota=0`);
+        }
+      }
+    } catch (_err) {
+      // Validator failure must NOT crash boot (e.g. model not yet registered at early init)
+    }
   }
 };

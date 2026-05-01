@@ -6,8 +6,6 @@ const config = {
   },
   billing: {
     activated: true,
-    // Plans available for subscriptions — extend as needed
-    plans: ['free', 'starter', 'pro', 'enterprise'],
     // Quotas — downstream projects override these per plan:
     // quotas: {
     //   free:    { documents: { create: 10, export: 50 } },
@@ -49,15 +47,16 @@ const config = {
     /**
      * Plan definitions — DOWNSTREAM-OVERRIDE-REQUIRED for meter mode.
      * Used by BillingPlanService.ensureSeeded() at boot to upsert BillingPlan docs.
-     * Each entry: { meterQuota: units/week, ratios: { featureKey: multiplier } }.
-     * Plans listed here must also exist in billing.plans enum.
+     * Array of objects: { planId, meterQuota: units/week, ratios: { featureKey: multiplier } }.
+     * billing.plans enum is derived at boot from planDefinitions.map(p => p.planId) — do NOT
+     * declare billing.plans manually. This is the single source of truth for plan identifiers.
      */
-    planDefinitions: {
-      free: { meterQuota: 0, ratios: { default: 1 } },
-      starter: { meterQuota: 50000, ratios: { default: 1 } },
-      pro: { meterQuota: 500000, ratios: { default: 1 } },
-      enterprise: { meterQuota: 2000000, ratios: { default: 1 } },
-    },
+    planDefinitions: [
+      { planId: 'free', meterQuota: 0, ratios: { default: 1 } },
+      { planId: 'starter', meterQuota: 50000, ratios: { default: 1 } },
+      { planId: 'pro', meterQuota: 500000, ratios: { default: 1 } },
+      { planId: 'enterprise', meterQuota: 2000000, ratios: { default: 1 } },
+    ],
     /**
      * Meter unit parameters — downstream projects must override with their
      * actual unit economics before enabling meterMode in production.
