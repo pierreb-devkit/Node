@@ -356,6 +356,29 @@ describe('BillingMeterService unit tests:', () => {
       );
     });
 
+    test('invalid stepKey (special chars) falls back to "initial"', async () => {
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingUsageService.incrementMeter.mockResolvedValue({
+        applied: true,
+        meterUsed: 100,
+        extrasConsumed: 0,
+      });
+
+      const history = {
+        _id: '507f1f77bcf86cd799439099',
+        costs: { scrap: 0.1 },
+        planId: 'pro',
+        planVersion: 'v1',
+      };
+
+      await BillingMeterService.attribute(history, orgId, { stepKey: 'bad key! @#$' });
+
+      // Invalid stepKey falls back to 'initial'
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
+        orgId, expect.any(Number), expect.any(Object), '507f1f77bcf86cd799439099:initial',
+      );
+    });
+
     test('replay of {stepKey:"digest"} is blocked (idempotent)', async () => {
       mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
       // First digest call: applied

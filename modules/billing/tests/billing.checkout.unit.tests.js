@@ -280,6 +280,25 @@ describe('Billing service unit tests:', () => {
       expect(callArgs.automatic_tax).toEqual({ enabled: true });
       expect(callArgs.customer_update).toEqual({ address: 'auto', name: 'auto' });
     });
+
+    test('should NOT include automatic_tax when config.stripe.automaticTax is truthy but not strict true (e.g. 1)', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_truthy_tax', automaticTax: 1 } },
+      }));
+
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        stripeCustomerId: 'cus_truthy_tax',
+      });
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      await BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel');
+
+      const callArgs = mockStripeInstance.checkout.sessions.create.mock.calls[0][0];
+      expect(callArgs.automatic_tax).toBeUndefined();
+      expect(callArgs.customer_update).toBeUndefined();
+    });
   });
 
   describe('createPortalSession', () => {

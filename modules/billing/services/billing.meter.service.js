@@ -125,10 +125,17 @@ const capBreakdown = (breakdown, cappedUnits, originalTotal) => {
  *   Use a distinct value (e.g. 'digest', 'fix:1', 'fix:2') for subsequent attributions on
  *   the same history after cost-impacting mutations (setDigest, setFixCost).
  *   Downstream callers must pass ONLY the incremental cost delta in history.costs for each step.
- * @returns {Promise<{applied: boolean, meterUsed: number, extrasConsumed: number}>}
+ * @returns {Promise<{applied: boolean, meterUsed: number, extrasConsumed: number, reason?: string}>}
+ *   `reason` is present only when `applied` is true but extras were exhausted:
+ *   `{ applied: true, meterUsed, extrasConsumed: 0, reason: 'extras_exhausted' }`.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const attribute = async (history, organizationId, { stepKey = 'initial' } = {}) => {
+  // Validate stepKey: must be a non-empty alphanumeric+colon+hyphen+underscore string
+  // to prevent arbitrary data from polluting consumedHistoryIds
+  const validatedStepKey = (typeof stepKey === 'string' && /^[a-zA-Z0-9:_-]{1,64}$/.test(stepKey))
+    ? stepKey
+    : 'initial';
   if (!config?.billing?.meterMode) {
     return { applied: false, meterUsed: 0, extrasConsumed: 0 };
   }
@@ -157,7 +164,7 @@ const attribute = async (history, organizationId, { stepKey = 'initial' } = {}) 
     );
   }
 
-  const idempotencyKey = `${history._id?.toString?.() ?? String(history._id)}:${stepKey}`;
+  const idempotencyKey = `${history._id?.toString?.() ?? String(history._id)}:${validatedStepKey}`;
 
   const result = await BillingUsageService.incrementMeter(
     organizationId,

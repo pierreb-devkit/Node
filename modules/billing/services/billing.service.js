@@ -108,7 +108,7 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
       plan: matchedPlan.planId,
     },
   };
-  if (config?.stripe?.automaticTax) {
+  if (config?.stripe?.automaticTax === true) {
     checkoutParams.automatic_tax = { enabled: true };
     checkoutParams.customer_update = { address: 'auto', name: 'auto' };
   }
@@ -238,7 +238,7 @@ const createExtrasCheckout = async (organization, packId, successUrl, cancelUrl)
       },
     },
   };
-  if (config?.stripe?.automaticTax) {
+  if (config?.stripe?.automaticTax === true) {
     extrasCheckoutParams.automatic_tax = { enabled: true };
     extrasCheckoutParams.customer_update = { address: 'auto', name: 'auto' };
   }
