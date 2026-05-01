@@ -3,7 +3,7 @@
 Standalone CLI scripts intended to be executed as Kubernetes CronJobs.
 
 Relocated here from `scripts/crons/` as of 2026-05-01 (#3546) — billing logic belongs in the billing module.
-Backward-compat shims at `scripts/crons/billing.*.js` forward to this location until ~2026-07-01.
+The old paths at `scripts/crons/billing.*.js` no longer exist. See `docs/migrations/2026-05-01-billing-crons-module-relocation.md` for the cutover procedure.
 
 All scripts gate on `config.billing.meterMode === true` and exit 0 immediately when the flag is `false` (default).
 No `node-cron` dependency — orchestration is handled by Kubernetes CronJob manifests.

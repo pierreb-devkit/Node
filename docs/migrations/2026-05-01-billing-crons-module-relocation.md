@@ -24,30 +24,22 @@ modules/billing/crons/billing.dunningSweep.js
 modules/billing/tests/billing.cron.*.unit.tests.js
 ```
 
-## Backward-compat shim
+## Cutover procedure
 
-Three re-export shims remain at `scripts/crons/billing.*.js`:
+This is an atomic move with no backward-compat shim. The cutover for each downstream project requires coordinated steps:
 
-```js
-// LEGACY SHIM — remove ~2026-07-01
-await import('../../modules/billing/crons/billing.weeklyReset.js');
-```
+1. Run `/update-stack` on the downstream project repo (e.g. trawl_node) — pulls the new structure with crons at `modules/billing/crons/`.
+2. CI on the downstream repo builds a new image and pushes to GHCR.
+3. Update the infra K8s CronJob manifests in `clusters/{cluster}/apps/{project}-billing-*.yaml` — change `args: ["scripts/crons/billing.*.js"]` to `args: ["modules/billing/crons/billing.*.js"]`.
+4. Push the infra change → Flux applies → CronJobs use new args + new image together.
 
-These keep existing infra K8s manifests and downstream `scripts/crons/` references working during the migration window.
+Expect a ≤5 min window where a CronJob run might fail with "script not found" if it fires between step 2 and step 4. Acceptable for billing crons (run weekly / daily / hourly — single missed run is recoverable on next tick).
 
-## Downstream owner steps
+If the cutover window is unacceptable for a specific cron, schedule the migration during that cron's idle gap.
 
-1. Pull devkit via `/update-stack`.
-2. Run `git status` — verify `scripts/crons/billing.*.js` are now shims (3-line files forwarding via `await import`).
-3. K8s CronJob manifests pointing to `args: ["scripts/crons/billing.*.js"]` keep working via the shim. To migrate proactively, update to `args: ["modules/billing/crons/billing.*.js"]`.
-4. Run `NODE_ENV={project} npm run test:unit -- billing` to confirm tests pass.
+No shim — atomic migration.
 
 ## Validation
 
-- Shim `await import()` chain tested locally — syntax OK (`node --check` green on all 6 files).
 - Unit tests pass (relocated to `modules/billing/tests/`, imports updated to relative `../`).
 - `scripts/crons/scraps.js` untouched — separate concern, not billing.
-
-## Shim removal timeline
-
-~2026-07-01 — coordinated with planDefinitions shim cleanup (see `2026-05-01-billing-plan-definitions-array.md`). Once all downstream + infra manifests updated to the new path, drop the 3 shim files and remove this note from `scripts/crons/README.md`.
