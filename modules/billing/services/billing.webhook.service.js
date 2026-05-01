@@ -80,8 +80,11 @@ const withIdempotency = async (event, handler) => {
   try {
     return await handler(event);
   } catch (err) {
-    // Rollback claim so Stripe can retry on a fresh delivery
-    await ProcessedStripeEventRepository.deleteByEventId(event.id);
+    // Rollback claim so Stripe can retry on a fresh delivery.
+    // Swallow rollback errors so the original handler error is always propagated.
+    await ProcessedStripeEventRepository.deleteByEventId(event.id).catch((rollbackErr) => {
+      console.error('[billing.webhook] rollback deleteByEventId failed — event may be stuck:', rollbackErr);
+    });
     throw err;
   }
 };

@@ -166,6 +166,23 @@ describe('Billing webhook idempotency unit tests:', () => {
     });
 
     /**
+     * Rollback itself fails (DB outage) — original handler error must still be thrown,
+     * not the rollback error. The swallowed rollback error is logged but never re-thrown.
+     */
+    test('rollback fails → original handler error still propagated (not masked)', async () => {
+      mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: true });
+      mockProcessedStripeEventRepository.deleteByEventId.mockRejectedValue(new Error('DB outage'));
+      const handler = jest.fn().mockRejectedValue(new Error('handler blew up'));
+      const event = makeEvent();
+
+      await expect(
+        BillingWebhookService.withIdempotency(event, handler),
+      ).rejects.toThrow('handler blew up');
+
+      expect(mockProcessedStripeEventRepository.deleteByEventId).toHaveBeenCalledWith('evt_test_001');
+    });
+
+    /**
      * Retry after rollback: handler fails (rollback), then Stripe retries.
      * On the second delivery tryRecord succeeds again (record was deleted) → handler runs.
      */
