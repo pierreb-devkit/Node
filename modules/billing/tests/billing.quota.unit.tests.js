@@ -252,6 +252,7 @@ describe('requireQuota middleware:', () => {
 
   describe('meter mode (meterMode: true)', () => {
     let mockBillingExtraBalanceRepository;
+    let mockBillingPlanService;
 
     beforeEach(async () => {
       jest.resetModules();
@@ -262,6 +263,7 @@ describe('requireQuota middleware:', () => {
           quotas: {},
           packs: [{ packId: 'pack_500k', meterUnits: 500000 }],
           upgradeUrl: '/billing/plans',
+          defaultPlan: 'free',
         },
       };
 
@@ -274,6 +276,10 @@ describe('requireQuota middleware:', () => {
         getBalance: jest.fn(),
       };
 
+      mockBillingPlanService = {
+        getActivePlan: jest.fn(),
+      };
+
       jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
         default: mockSubscriptionRepository,
       }));
@@ -284,6 +290,10 @@ describe('requireQuota middleware:', () => {
 
       jest.unstable_mockModule('../repositories/billing.extraBalance.repository.js', () => ({
         default: mockBillingExtraBalanceRepository,
+      }));
+
+      jest.unstable_mockModule('../services/billing.plan.service.js', () => ({
+        default: mockBillingPlanService,
       }));
 
       jest.unstable_mockModule('../../../config/index.js', () => ({
@@ -345,15 +355,93 @@ describe('requireQuota middleware:', () => {
       expect(Array.isArray(errData.packsAvailable)).toBe(true);
     });
 
-    test('should return 402 when meter doc is null (no usage yet) and no extras', async () => {
+    test('should return 402 when meter doc is null and plan quota is 0 (no extras)', async () => {
+      // No BillingUsage doc yet; plan has meterQuota=0 (e.g. unconfigured plan)
       mockBillingUsageService.getMeter.mockResolvedValue(null);
       mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'free', status: 'active' });
+      mockBillingPlanService.getActivePlan.mockResolvedValue({ meterQuota: 0, version: 'v1' });
 
       await requireQuota('scraps', 'create')(req, res, next);
 
       // meterUsed=0, meterQuota=0 → remaining = (0-0)+0 = 0 → 402
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(402);
+    });
+
+    // ── Fix #3569: lazy fallback for new-user first scrap ─────────────────────
+
+    test('fix #3575: no meter doc + getActivePlan returns null — returns 503 PLAN_NOT_CONFIGURED (not 402)', async () => {
+      // getActivePlan returns null during seeding / version bump — must NOT surface as 402 METER_EXHAUSTED.
+      mockBillingUsageService.getMeter.mockResolvedValue(null);
+      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'free', status: 'active' });
+      mockBillingPlanService.getActivePlan.mockResolvedValue(null);
+
+      await requireQuota('scraps', 'create')(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(503);
+      const payload = res.json.mock.calls[0][0];
+      const errData = JSON.parse(payload.error);
+      expect(errData.type).toBe('PLAN_NOT_CONFIGURED');
+    });
+
+    test('fix #3569: new Free user — 1st scrap passes when plan meterQuota > 0', async () => {
+      // No BillingUsage doc yet (getMeter returns null) — first scrap of the week.
+      // Middleware should fall back to plan quota instead of blocking with 402.
+      mockBillingUsageService.getMeter.mockResolvedValue(null);
+      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'free', status: 'active' });
+      mockBillingPlanService.getActivePlan.mockResolvedValue({ meterQuota: 10, version: 'v1' });
+
+      await requireQuota('scraps', 'create')(req, res, next);
+
+      // meterUsed=0, meterQuota=10 → remaining = 10 > 0 → allow
+      expect(next).toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    test('fix #3569: new Pro user — 1st scrap passes with full pro quota', async () => {
+      mockBillingUsageService.getMeter.mockResolvedValue(null);
+      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro', status: 'active' });
+      mockBillingPlanService.getActivePlan.mockResolvedValue({ meterQuota: 200000, version: 'v1' });
+
+      await requireQuota('scraps', 'create')(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalled();
+      expect(mockBillingPlanService.getActivePlan).toHaveBeenCalledWith('pro');
+    });
+
+    test('fix #3569: no meter doc + no subscription — falls back to defaultPlan quota', async () => {
+      mockBillingUsageService.getMeter.mockResolvedValue(null);
+      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue(null);
+      mockBillingPlanService.getActivePlan.mockResolvedValue({ meterQuota: 5, version: 'v1' });
+
+      await requireQuota('scraps', 'create')(req, res, next);
+
+      // Falls back to config.billing.defaultPlan = 'free'
+      expect(mockBillingPlanService.getActivePlan).toHaveBeenCalledWith('free');
+      expect(next).toHaveBeenCalled();
+    });
+
+    test('fix #3569: no meter doc — does NOT write a BillingUsage doc (incrementMeter creates it)', async () => {
+      // The middleware must never write the usage doc — only incrementMeter should create it.
+      mockBillingUsageService.getMeter.mockResolvedValue(null);
+      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro', status: 'active' });
+      mockBillingPlanService.getActivePlan.mockResolvedValue({ meterQuota: 200000, version: 'v1' });
+
+      await requireQuota('scraps', 'create')(req, res, next);
+
+      // incrementMeter and upsert should never be called by the middleware
+      expect(mockBillingUsageService.getMeter).toHaveBeenCalledTimes(1);
+      // get (legacy path) should not be called at all in meter mode
+      expect(mockBillingUsageService.get).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalled();
     });
 
     test('should call SubscriptionRepository in meter mode (degraded-mode gate)', async () => {

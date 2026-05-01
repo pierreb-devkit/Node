@@ -187,6 +187,231 @@ describe('Billing webhook subscription unit tests:', () => {
       ).resolves.not.toThrow();
     });
 
+    // ── Fix #3571: plan change mid-cycle triggers resetWeek ───────────────────
+
+    test('fix #3571: plan change with same period_start — resetWeek called once', async () => {
+      const periodStart = 1700000000;
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockSubscriptionRepository.update.mockResolvedValue({});
+
+      await BillingWebhookService.handleSubscriptionUpdated(
+        {
+          id: 'sub_456',
+          status: 'active',
+          current_period_end: periodStart + 2592000,
+          current_period_start: periodStart,
+          cancel_at_period_end: false,
+          items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
+        },
+        {
+          data: {
+            previous_attributes: {
+              // Same period_start → only plan changed
+              items: {
+                data: [{ price: { metadata: { planId: 'starter' } } }],
+              },
+            },
+          },
+        },
+      );
+
+      expect(mockResetService.resetWeek).toHaveBeenCalledTimes(1);
+      // Plan-only change (no period change) → anchor is new Date() (current moment), NOT the
+      // billing-cycle start. Using newPeriodStart here would resolve to a past ISO week bucket.
+      expect(mockResetService.resetWeek).toHaveBeenCalledWith(orgId, expect.any(Date));
+      const [, anchor] = mockResetService.resetWeek.mock.calls[0];
+      // Anchor must NOT be the period start (which is in the past relative to the plan switch)
+      expect(anchor.getTime()).not.toBe(periodStart * 1000);
+    });
+
+    test('fix #3571: plan change AND period_start change — resetWeek called exactly once (not twice)', async () => {
+      const oldPeriodStart = 1700000000;
+      const newPeriodStart = 1700604800;
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockSubscriptionRepository.update.mockResolvedValue({});
+
+      await BillingWebhookService.handleSubscriptionUpdated(
+        {
+          id: 'sub_456',
+          status: 'active',
+          current_period_end: newPeriodStart + 2592000,
+          current_period_start: newPeriodStart,
+          cancel_at_period_end: false,
+          items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
+        },
+        {
+          data: {
+            previous_attributes: {
+              current_period_start: oldPeriodStart,
+              items: {
+                data: [{ price: { metadata: { planId: 'starter' } } }],
+              },
+            },
+          },
+        },
+      );
+
+      // Plan-change reset triggers first; period-start reset is skipped to avoid double reset.
+      expect(mockResetService.resetWeek).toHaveBeenCalledTimes(1);
+      // When period also changed, anchor must be newPeriodStart (not now)
+      expect(mockResetService.resetWeek).toHaveBeenCalledWith(
+        orgId,
+        new Date(newPeriodStart * 1000),
+      );
+    });
+
+    test('fix #3571: no plan change — resetWeek NOT called on same period_start', async () => {
+      const periodStart = 1700000000;
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockSubscriptionRepository.update.mockResolvedValue({});
+
+      await BillingWebhookService.handleSubscriptionUpdated(
+        {
+          id: 'sub_456',
+          status: 'active',
+          current_period_end: periodStart + 2592000,
+          current_period_start: periodStart,
+          cancel_at_period_end: false,
+          items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
+        },
+        {
+          data: {
+            previous_attributes: {
+              // cancel_at_period_end changed, plan did not change
+              cancel_at_period_end: true,
+            },
+          },
+        },
+      );
+
+      expect(mockResetService.resetWeek).not.toHaveBeenCalled();
+    });
+
+    test('fix #3571: plan upgrade Growth→Pro — resetWeek called with current anchor (allows full Pro quota)', async () => {
+      const periodStart = 1700000000;
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockSubscriptionRepository.update.mockResolvedValue({});
+
+      await BillingWebhookService.handleSubscriptionUpdated(
+        {
+          id: 'sub_456',
+          status: 'active',
+          current_period_end: periodStart + 2592000,
+          current_period_start: periodStart,
+          cancel_at_period_end: false,
+          items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
+        },
+        {
+          data: {
+            previous_attributes: {
+              items: {
+                data: [{ price: { metadata: { planId: 'starter' } } }],
+              },
+            },
+          },
+        },
+      );
+
+      expect(mockResetService.resetWeek).toHaveBeenCalledTimes(1);
+      const [calledOrg, calledAnchor] = mockResetService.resetWeek.mock.calls[0];
+      expect(calledOrg).toBe(orgId);
+      // Anchor should be the new period start (Date object from current_period_start)
+      expect(calledAnchor).toBeInstanceOf(Date);
+    });
+
+    test('fix #3571: plan downgrade Pro→Growth — resetWeek called (meterUsed reset to 0)', async () => {
+      const periodStart = 1700000000;
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockSubscriptionRepository.update.mockResolvedValue({});
+
+      await BillingWebhookService.handleSubscriptionUpdated(
+        {
+          id: 'sub_456',
+          status: 'active',
+          current_period_end: periodStart + 2592000,
+          current_period_start: periodStart,
+          cancel_at_period_end: false,
+          items: { data: [{ price: { metadata: { planId: 'starter' } } }] },
+        },
+        {
+          data: {
+            previous_attributes: {
+              items: {
+                data: [{ price: { metadata: { planId: 'pro' } } }],
+              },
+            },
+          },
+        },
+      );
+
+      expect(mockResetService.resetWeek).toHaveBeenCalledTimes(1);
+    });
+
+    test('fix #3571: resetWeek on plan change — errors do not throw (non-fatal)', async () => {
+      const periodStart = 1700000000;
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockSubscriptionRepository.update.mockResolvedValue({});
+      mockResetService.resetWeek.mockRejectedValue(new Error('db unavailable'));
+
+      await expect(
+        BillingWebhookService.handleSubscriptionUpdated(
+          {
+            id: 'sub_456',
+            status: 'active',
+            current_period_end: periodStart + 2592000,
+            current_period_start: periodStart,
+            cancel_at_period_end: false,
+            items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
+          },
+          {
+            data: {
+              previous_attributes: {
+                items: {
+                  data: [{ price: { metadata: { planId: 'starter' } } }],
+                },
+              },
+            },
+          },
+        ),
+      ).resolves.not.toThrow();
+    });
+
+    test('fix #3571: plan change with no newPeriodStart falls back to now for anchor', async () => {
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockSubscriptionRepository.update.mockResolvedValue({});
+
+      await BillingWebhookService.handleSubscriptionUpdated(
+        {
+          id: 'sub_456',
+          status: 'active',
+          current_period_end: 1700000000 + 2592000,
+          // No current_period_start field
+          cancel_at_period_end: false,
+          items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
+        },
+        {
+          data: {
+            previous_attributes: {
+              items: {
+                data: [{ price: { metadata: { planId: 'starter' } } }],
+              },
+            },
+          },
+        },
+      );
+
+      expect(mockResetService.resetWeek).toHaveBeenCalledTimes(1);
+      const [, anchor] = mockResetService.resetWeek.mock.calls[0];
+      expect(anchor).toBeInstanceOf(Date);
+    });
+
     test('should update currentPeriodStart in subscription when period_start is present', async () => {
       const newPeriodStart = 1700604800;
       const existing = { _id: subId, organization: orgId };

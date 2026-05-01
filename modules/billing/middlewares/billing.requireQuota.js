@@ -4,6 +4,7 @@
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import BillingUsageService from '../services/billing.usage.service.js';
 import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
+import BillingPlanService from '../services/billing.plan.service.js';
 
 import { activeStatuses } from '../lib/constants.js';
 import config from '../../../config/index.js';
@@ -72,8 +73,33 @@ function requireQuota(resource, action) {
         const usage = await BillingUsageService.getMeter(orgId);
         const extrasBalance = await BillingExtraBalanceRepository.getBalance(orgId);
 
-        const meterUsed = usage?.meterUsed ?? 0;
-        const meterQuota = usage?.meterQuota ?? 0;
+        let meterUsed;
+        let meterQuota;
+
+        if (!usage) {
+          // No BillingUsage doc yet (new user / first scrap of the week).
+          // Don't create the doc here — let incrementMeter do it on first attribution.
+          // Fall back to the plan quota so first-run requests are not blocked.
+          // Reuse the `subscription` already fetched by the degraded-mode gate above.
+          const planId = subscription?.plan ?? config?.billing?.defaultPlan ?? 'free';
+          const activePlan = await BillingPlanService.getActivePlan(planId);
+
+          // Plan missing (seeding / version bump in progress) → fail safe with 503
+          // rather than defaulting to meterQuota=0 which would surface as 402 METER_EXHAUSTED.
+          if (activePlan === null || activePlan === undefined) {
+            return responses.error(res, 503, 'Service Unavailable', 'Billing plan configuration is temporarily unavailable')({
+              type: 'PLAN_NOT_CONFIGURED',
+              planId,
+            });
+          }
+
+          meterUsed = 0;
+          meterQuota = activePlan.meterQuota ?? 0;
+        } else {
+          meterUsed = usage.meterUsed ?? 0;
+          meterQuota = usage.meterQuota ?? 0;
+        }
+
         const remaining = (meterQuota - meterUsed) + extrasBalance;
 
         if (remaining <= 0) {
