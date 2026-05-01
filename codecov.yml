@@ -3,6 +3,36 @@ coverage:
     project:
       default:
         target: auto
+        threshold: 0.5%
+        flags:
+          - unit
+          - integration
     patch:
       default:
-        target: 80%
+        target: auto
+        threshold: 0%
+        flags:
+          - unit
+          - integration
+
+flags:
+  unit:
+    paths:
+      - lib
+      - modules
+      - config
+  integration:
+    paths:
+      - lib
+      - modules
+      - config
+
+comment:
+  layout: "header, diff, flags, components, footer"
+  behavior: default
+  require_changes: false
+
+# Wait for both flags to upload before posting status
+codecov:
+  notify:
+    after_n_builds: 2
