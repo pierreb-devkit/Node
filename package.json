@@ -98,7 +98,7 @@
     "zxcvbn": "^4.4.2"
   },
   "devDependencies": {
-    "@commitlint/cli": "^20.5.2",
+    "@commitlint/cli": "^20.5.3",
     "@commitlint/config-conventional": "^20.5.0",
     "@eslint/js": "^10.0.0",
     "@semantic-release/changelog": "^6.0.3",
