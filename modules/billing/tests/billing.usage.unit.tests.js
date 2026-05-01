@@ -156,6 +156,7 @@ describe('BillingUsage unit tests:', () => {
   describe('Service layer', () => {
     let BillingUsageService;
     let mockUsageRepository;
+    let mockSubscriptionRepository;
 
     const orgId = '507f1f77bcf86cd799439011';
 
@@ -168,8 +169,16 @@ describe('BillingUsage unit tests:', () => {
         reset: jest.fn(),
       };
 
+      mockSubscriptionRepository = {
+        findByOrganization: jest.fn(),
+      };
+
       jest.unstable_mockModule('../repositories/billing.usage.repository.js', () => ({
         default: mockUsageRepository,
+      }));
+
+      jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
+        default: mockSubscriptionRepository,
       }));
 
       const mod = await import('../services/billing.usage.service.js');

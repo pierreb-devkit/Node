@@ -110,6 +110,20 @@ const findByStripeSubscriptionId = (stripeSubscriptionId) => {
 };
 
 /**
+ * @function findPlan
+ * @description Lean lookup that returns only the `plan` field for a given organization.
+ *              Used on hot paths (meter attribution, weekly reset) where only the plan
+ *              identifier is needed — avoids the full populate overhead of findByOrganization.
+ * @param {String} organizationId - The organization ID.
+ * @returns {Promise<{plan: string}|null>} A lean plain object with just `plan`, or null.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const findPlan = (organizationId) => {
+  if (!mongoose.Types.ObjectId.isValid(organizationId)) return null;
+  return Subscription.findOne({ organization: organizationId }, { plan: 1 }).lean().exec();
+};
+
+/**
  * @function findAllDueForReset
  * @description Fetch active/trialing subscriptions whose currentPeriodStart falls
  *              within the provided time window. Used by the weekly meter reset sweep.
@@ -173,6 +187,7 @@ export default {
   update,
   remove,
   findByOrganization,
+  findPlan,
   findByStripeCustomerId,
   findByStripeSubscriptionId,
   findAllDueForReset,

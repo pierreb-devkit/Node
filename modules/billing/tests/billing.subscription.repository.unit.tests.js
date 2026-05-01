@@ -147,6 +147,43 @@ describe('BillingSubscriptionRepository unit tests:', () => {
     });
   });
 
+  // ── findPlan ──────────────────────────────────────────────────────────────
+
+  describe('findPlan', () => {
+    test('returns plan field for a valid organizationId', async () => {
+      const planDoc = { _id: subId, plan: 'pro' };
+      const execMock = jest.fn().mockResolvedValue(planDoc);
+      const leanMock = jest.fn().mockReturnValue({ exec: execMock });
+      mockModel.findOne.mockReturnValue({ lean: leanMock });
+
+      const result = await BillingSubscriptionRepository.findPlan(orgId);
+
+      expect(mockModel.findOne).toHaveBeenCalledWith(
+        { organization: orgId },
+        { plan: 1 },
+      );
+      expect(leanMock).toHaveBeenCalled();
+      expect(result).toEqual(planDoc);
+    });
+
+    test('returns null for an invalid organizationId without querying', async () => {
+      const result = await BillingSubscriptionRepository.findPlan('not-a-valid-id');
+
+      expect(result).toBeNull();
+      expect(mockModel.findOne).not.toHaveBeenCalled();
+    });
+
+    test('returns null when no subscription exists for the organization', async () => {
+      const execMock = jest.fn().mockResolvedValue(null);
+      const leanMock = jest.fn().mockReturnValue({ exec: execMock });
+      mockModel.findOne.mockReturnValue({ lean: leanMock });
+
+      const result = await BillingSubscriptionRepository.findPlan(orgId);
+
+      expect(result).toBeNull();
+    });
+  });
+
   // ── findAllDueForReset (existing — smoke test) ────────────────────────────
 
   describe('findAllDueForReset', () => {

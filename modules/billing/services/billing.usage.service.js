@@ -3,6 +3,7 @@
  */
 import config from '../../../config/index.js';
 import UsageRepository from '../repositories/billing.usage.repository.js';
+import BillingSubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import BillingPlanService from './billing.plan.service.js';
 
 /**
@@ -104,8 +105,9 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
   const weekKey = currentWeekKey();
   const monthKey = currentMonth();
 
-  // Fetch active plan for quota snapshot
-  const planId = config?.billing?.plans?.[0] ?? 'pro';
+  // Fetch active plan for quota snapshot — lean projection (plan field only, no populate)
+  const subscription = await BillingSubscriptionRepository.findPlan(organizationId);
+  const planId = subscription?.plan ?? config?.billing?.defaultPlan ?? 'free';
   const activePlan = await BillingPlanService.getActivePlan(planId);
   const meterQuota = activePlan?.meterQuota ?? 0;
   const planVersion = activePlan?.version ?? null;
