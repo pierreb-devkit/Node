@@ -21,10 +21,10 @@ export default (app) => {
   const billingGuards = [
     passport.authenticate('jwt', { session: false }),
     organization.resolveOrganization,
+    policy.isAllowed,
     ...(config.billing?.meterMode === true && config.billing?.attachUsageHeader === true
       ? [attachUsageContext]
       : []),
-    policy.isAllowed,
   ];
 
   // plans (public)

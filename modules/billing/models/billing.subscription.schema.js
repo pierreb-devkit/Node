@@ -79,15 +79,16 @@ const ExtrasCheckoutRequest = z
 const AdminRefundRequest = z
   .object({
     chargeId: z.string().trim().min(1, 'chargeId is required'),
-    amountCents: z.number().int().positive(),
-    reason: z.string().trim().optional(),
+    amountCents: z.number().int().positive().optional(),
+    // Stripe refund reason: https://stripe.com/docs/api/refunds/create#create_refund-reason
+    reason: z.enum(['duplicate', 'fraudulent', 'requested_by_customer']).optional(),
   })
   .strict();
 
 const AdminBumpPlanRequest = z
   .object({
     planId: z.string().trim().min(1, 'planId is required'),
-    meterQuota: z.number().int().nonnegative().optional(),
+    meterQuota: z.number().int().nonnegative(),
     ratios: z.record(z.string(), z.number().nonnegative()).optional(),
   })
   .strict();

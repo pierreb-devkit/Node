@@ -72,7 +72,9 @@ const expireOldEntries = (orgId) =>
  * @param {string} stripeSessionId - Stripe session ID of the original purchase (to find the pack).
  * @param {number} amountRefundedCents - Amount refunded in cents (integer).
  * @param {string|undefined} [packId] - Optional pack identifier from Stripe metadata for exact correlation.
- * @returns {Promise<{doc: Object, applied: boolean, refundUnits: number}>}
+ * @returns {Promise<{doc: Object|null, applied: boolean, refundUnits: number, reason?: string}>}
+ *          `reason` is present only when `applied === false`: 'meter_mode_disabled' | 'invalid_org' |
+ *          'pack_not_found' | 'ambiguous_pack_match'.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const refundPartial = async (orgId, stripeSessionId, amountRefundedCents, packId) => {

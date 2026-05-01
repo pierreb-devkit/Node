@@ -84,7 +84,7 @@ describe('Billing admin integration tests:', () => {
     };
 
     mockBillingPlanService = {
-      bumpVersion: jest.fn().mockResolvedValue({
+      bumpVersionWithRetry: jest.fn().mockResolvedValue({
         _id: '507f1f77bcf86cd799439011',
         planId: 'pro',
         version: 'v7',
@@ -232,7 +232,7 @@ describe('Billing admin integration tests:', () => {
       res,
     );
 
-    expect(mockBillingPlanService.bumpVersion).toHaveBeenCalledWith('pro', { meterQuota: 12345, ratios: { llm: 2 } });
+    expect(mockBillingPlanService.bumpVersionWithRetry).toHaveBeenCalledWith('pro', { meterQuota: 12345, ratios: { llm: 2 } });
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -247,6 +247,58 @@ describe('Billing admin integration tests:', () => {
     await runHandlers(
       [...refundRoute.all, ...refundRoute.post],
       { method: 'POST', headers: { 'x-role': 'admin' }, body: { chargeId: '', amountCents: 0 } },
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(422);
+  });
+
+  test('invalid Stripe reason returns 422 from schema validation', async () => {
+    const routes = await buildRoutes();
+    const refundRoute = routes.get('/api/admin/billing/refund');
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+    };
+
+    await runHandlers(
+      [...refundRoute.all, ...refundRoute.post],
+      { method: 'POST', headers: { 'x-role': 'admin' }, body: { chargeId: 'ch_test_123', reason: 'not_a_valid_reason' } },
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(422);
+  });
+
+  test('admin user can POST full refund without amountCents', async () => {
+    const routes = await buildRoutes();
+    const refundRoute = routes.get('/api/admin/billing/refund');
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+    };
+
+    await runHandlers(
+      [...refundRoute.all, ...refundRoute.post],
+      { method: 'POST', headers: { 'x-role': 'admin' }, body: { chargeId: 'ch_test_123', reason: 'requested_by_customer' } },
+      res,
+    );
+
+    expect(mockBillingRefundService.refundCharge).toHaveBeenCalledWith('ch_test_123', undefined, { reason: 'requested_by_customer' });
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  test('bump plan without meterQuota returns 422 from schema validation', async () => {
+    const routes = await buildRoutes();
+    const bumpRoute = routes.get('/api/admin/billing/plans/bump');
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+    };
+
+    await runHandlers(
+      [...bumpRoute.all, ...bumpRoute.post],
+      { method: 'POST', headers: { 'x-role': 'admin' }, body: { planId: 'pro' } },
       res,
     );
 

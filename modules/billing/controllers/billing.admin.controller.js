@@ -32,10 +32,12 @@ const adminRefundCharge = async (req, res) => {
 const adminBumpPlanVersion = async (req, res) => {
   try {
     const { planId, meterQuota, ratios } = req.body;
-    const nextPlan = await BillingPlanService.bumpVersion(planId, { meterQuota, ratios });
+    const nextPlan = await BillingPlanService.bumpVersionWithRetry(planId, { meterQuota, ratios });
     responses.success(res, 'billing plan version bumped')(nextPlan);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', 'Failed to bump billing plan version')(err);
+    const status = err.message?.startsWith('invalid argument') ? 422 : 502;
+    const title = status === 422 ? 'Unprocessable Entity' : 'Bad Gateway';
+    responses.error(res, status, title, 'Failed to bump billing plan version')(err);
   }
 };
 
