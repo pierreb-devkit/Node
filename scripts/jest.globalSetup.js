@@ -1,7 +1,19 @@
 /**
- * Jest global setup - drops the test database before the test suite runs.
- * Replaces the gulp dropDB task that previously ran before jest.
- * Silently skips if MongoDB is unreachable (e.g. fresh CI environment).
+ * Jest global setup — runs once in the jest main process before any test file.
+ *
+ * Responsibilities:
+ *  1. Drop the test database (clean-slate guard, original behaviour).
+ *  2. Run migrations once and set `process.env.DEVKIT_MIGRATIONS_RAN = '1'`
+ *     so that per-suite bootstrap() calls can skip the migrations step.
+ *
+ * Why process.env and not process properties or globalThis?
+ *   Jest --experimental-vm-modules creates a fresh vm.createContext() for each
+ *   test file. Both globalThis and arbitrary process properties set INSIDE a vm
+ *   context are cleaned up by jest's GlobalProxy on teardown.
+ *   process.env keys set IN GLOBALSETUP (before any vm context is created) are
+ *   present when jest calls protectProperties(process) during vm context
+ *   initialisation — they land in the "protected" set and survive all
+ *   per-suite teardown cycles unchanged.
  *
  * Safety guards (#3476):
  *   1. Refuse to drop anything when `NODE_ENV !== 'test'`. Protects downstream
@@ -15,14 +27,12 @@
  * Both checks log a clear refusal reason and exit without connecting.
  */
 import mongoose from 'mongoose';
+import path from 'path';
+import { pathToFileURL } from 'url';
 
 /**
- * Jest global setup entry point — drops the test database before the suite runs.
- * Enforces the NODE_ENV + DB-name guards described at the top of this file.
- * @returns {Promise<void>} Resolves once the guard check completes and, when
- * guards pass and Mongo is reachable, once the database has been dropped and
- * the connection closed. Never rejects — a Mongo failure is swallowed so tests
- * can still run against existing state (e.g. fresh CI without mongo).
+ * Jest global setup entry point.
+ * @returns {Promise<void>}
  */
 export default async () => {
   if (process.env.NODE_ENV !== 'test') {
@@ -31,6 +41,8 @@ export default async () => {
     );
     return;
   }
+
+  // 1. Drop the test database (clean-slate guard)
   try {
     const config = (await import('../config/index.js')).default;
     const dbName = new URL(config.db.uri).pathname.replace(/^\//, '');
@@ -40,7 +52,7 @@ export default async () => {
       );
       return;
     }
-    await mongoose.connect(config.db.uri);
+    await mongoose.connect(config.db.uri, config.db.options);
     try {
       await mongoose.connection.dropDatabase();
     } finally {
@@ -48,5 +60,39 @@ export default async () => {
     }
   } catch {
     // MongoDB unreachable or drop failed — tests will run against existing state
+  }
+
+  // 2. Run migrations once before any test vm context is created.
+  //    Set process.env.DEVKIT_MIGRATIONS_RAN = '1' so per-suite bootstrap() calls
+  //    can skip migrations.run() (saves ~100ms × 18 suites ≈ 1.8s).
+  //    Keys set on process.env HERE (before vm contexts) are included in jest's
+  //    protectProperties() pass and survive per-suite GlobalProxy teardown.
+  try {
+    const config = (await import('../config/index.js')).default;
+    if (!Array.isArray(config.files?.mongooseModels)) {
+      console.warn('[jest.globalSetup] migrations pre-run skipped: config.files.mongooseModels is absent or not an array.');
+      return;
+    }
+    await mongoose.connect(config.db.uri, config.db.options);
+    try {
+      // Load mongoose models (needed by migration model registry)
+      await Promise.all(
+        config.files.mongooseModels.map(async (modelPath) => {
+          await import(pathToFileURL(path.resolve(modelPath)).href);
+        }),
+      );
+
+      // Run pending migrations
+      const migrations = (await import('../lib/services/migrations.js')).default;
+      await migrations.run();
+
+      // Mark migrations as run so test vm contexts skip migrations.run()
+      process.env.DEVKIT_MIGRATIONS_RAN = '1';
+    } finally {
+      await mongoose.disconnect();
+    }
+  } catch (err) {
+    // Non-fatal: test suites will run migrations themselves (pre-existing behaviour)
+    console.warn('[jest.globalSetup] migrations pre-run failed — suites run individually:', err.message);
   }
 };
