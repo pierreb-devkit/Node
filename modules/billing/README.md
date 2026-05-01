@@ -1,6 +1,6 @@
 # Billing Module
 
-Stripe-based billing with per-plan quota management.
+Stripe-based billing with per-plan quota management and meter-based compute pricing.
 
 ## Quota System
 
@@ -61,3 +61,47 @@ billingEvents.on('plan.changed', ({ organizationId, previousPlan, newPlan, isDow
   }
 });
 ```
+
+## Meter Attribution — `BillingMeterService.attribute`
+
+Charges compute units for a completed history run. Idempotent per `(history._id, stepKey)` pair.
+
+```js
+import BillingMeterService from '../billing/services/billing.meter.service.js';
+
+// Initial charge — default stepKey='initial'
+await BillingMeterService.attribute(history, organizationId);
+
+// Delta charge after setDigest (pass ONLY the digest cost delta, not cumulative)
+await BillingMeterService.attribute(historyWithDigestDelta, organizationId, { stepKey: 'digest' });
+
+// Delta charge per fix attempt
+await BillingMeterService.attribute(historyWithFixDelta, organizationId, { stepKey: 'fix:1' });
+await BillingMeterService.attribute(historyWithFixDelta, organizationId, { stepKey: 'fix:2' });
+```
+
+**Per-step semantics**: each `stepKey` is independently idempotent. Replaying the same
+`(history._id, stepKey)` is a safe no-op. Passing a new `stepKey` charges the delta once.
+
+**Cost composition rule**: always pass ONLY the incremental cost delta in `history.costs` for each
+step. Passing the cumulative total will double-charge costs already attributed in prior steps.
+
+**Backward compat**: callers that only ever attribute once (no multi-step) continue to work
+unchanged — the default `stepKey='initial'` makes the idempotency key `${history._id}:initial`.
+
+## Stripe — `automatic_tax` flag
+
+```js
+// config/defaults/development.config.js (downstream project override)
+stripe: {
+  automaticTax: true, // set true once Stripe Tax product is enabled in Dashboard
+}
+```
+
+Default is `false` (devkit default). When `false`, checkout sessions are created without
+`automatic_tax` or `customer_update` fields, which is safe for merchants not using Stripe Tax
+(e.g. auto-entrepreneur FR, franchise TVA art. 293 B).
+
+**V1 note**: do NOT set `automaticTax: true` in production until the Stripe Tax product is
+activated in the Stripe Dashboard. In LIVE mode without Tax setup Stripe returns:
+`invalid_request_error — The 'automatic_tax' parameter requires the Stripe Tax product`.
