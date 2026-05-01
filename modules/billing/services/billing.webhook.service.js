@@ -218,8 +218,9 @@ const handleSubscriptionUpdated = async (subscription, event) => {
   const organizationId = String(existing.organization?._id || existing.organization);
   await syncOrganizationPlan(organizationId, newPlan);
 
-  // Detect plan change from previous_attributes and emit event
+  // Detect plan change from previous_attributes and emit event + trigger meter reset
   const previousItems = event?.data?.previous_attributes?.items?.data;
+  let planChangeResetTriggered = false;
   if (previousItems) {
     const previousPlan = previousItems[0]?.price?.metadata?.planId
       || previousItems[0]?.plan?.metadata?.planId
@@ -240,12 +241,26 @@ const handleSubscriptionUpdated = async (subscription, event) => {
         // Listener errors must not disrupt webhook processing — log for traceability
         console.error('[billing.webhook] plan.changed listener error (non-fatal):', evtErr?.message ?? evtErr);
       }
+
+      // Memo edge case 5: plan switch mid-cycle = immediate reset of weekly meter.
+      // Stripe does NOT advance current_period_start on plan switch (proration only),
+      // so we must trigger resetWeek here independently of the period-start change block.
+      // Use newPeriodStart when available (renewal happened simultaneously), fall back to now.
+      const anchor = newPeriodStart ?? new Date();
+      try {
+        await BillingResetService.resetWeek(organizationId, anchor);
+        planChangeResetTriggered = true;
+      } catch (err) {
+        // Log for monitoring — not thrown so webhook processing continues
+        console.error('[billing.webhook] resetWeek on plan change failed (non-fatal):', err?.message ?? err);
+      }
     }
   }
 
-  // Detect period start change — trigger weekly meter reset
+  // Detect period start change — trigger weekly meter reset (only when not already triggered by plan change)
   const previousPeriodStart = event?.data?.previous_attributes?.current_period_start;
   if (
+    !planChangeResetTriggered &&
     previousPeriodStart !== undefined &&
     subscription.current_period_start !== previousPeriodStart &&
     newPeriodStart
