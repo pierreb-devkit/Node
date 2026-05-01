@@ -55,7 +55,26 @@ const wasProcessed = async (eventId) => {
   return doc !== null;
 };
 
+/**
+ * @function deleteByEventId
+ * @description Delete the processed event record for the given eventId.
+ *              Called by withIdempotency rollback when the handler throws — allows
+ *              Stripe to retry the event on a subsequent delivery.
+ *              Returns { deleted: true } if a document was removed, { deleted: false } if none found.
+ * @param {string} eventId - Stripe event ID to remove.
+ * @returns {Promise<{deleted: boolean}>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const deleteByEventId = async (eventId) => {
+  if (typeof eventId !== 'string' || eventId.trim() === '') {
+    throw new Error('invalid argument: eventId must be a non-empty string');
+  }
+  const result = await ProcessedStripeEvent().deleteOne({ eventId });
+  return { deleted: result.deletedCount > 0 };
+};
+
 export default {
   tryRecord,
   wasProcessed,
+  deleteByEventId,
 };

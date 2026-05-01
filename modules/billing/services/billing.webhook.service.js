@@ -58,15 +58,13 @@ const syncOrganizationPlan = async (organizationId, plan) => {
 /**
  * @description Wrap a webhook handler with idempotency using ProcessedStripeEvent.
  *
- * Semantics:
- * - Pre-check via wasProcessed: short-circuits Stripe retries of identical events that already
- *   completed — handler is not invoked again.
- * - Record AFTER handler: if handler throws, the event remains "not processed" so Stripe can
- *   retry and the handler can eventually succeed. Prevents silent loss.
- * - TOCTOU between wasProcessed and tryRecord: two concurrent Stripe deliveries of the same
- *   event can both pass wasProcessed and both run handler. Acceptable because data-layer
- *   mutations are idempotent (creditPack uses $ne stripeSessionId, refundPartial uses $ne refId,
- *   subscription update is last-write-wins). tryRecord is best-effort dedup after success.
+ * Atomic-claim semantics (closes TOCTOU race):
+ * 1. tryRecord atomically inserts the event record BEFORE running the handler.
+ *    The unique index on eventId means only the first concurrent delivery succeeds;
+ *    all others get E11000 → { recorded: false } → skip.
+ * 2. If the handler throws, deleteByEventId rolls back the claim so Stripe can retry.
+ * 3. On handler success the record stays permanently — subsequent Stripe retries are
+ *    skipped via tryRecord returning { recorded: false }.
  *
  * @param {Object} event - Full Stripe event object (must have event.id and event.type).
  * @param {Function} handler - Async function (event) => result called when event is new.
@@ -74,15 +72,18 @@ const syncOrganizationPlan = async (organizationId, plan) => {
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const withIdempotency = async (event, handler) => {
-  // Pre-check: if already processed, skip (Stripe retry of the same event)
-  if (await ProcessedStripeEventRepository.wasProcessed(event.id)) {
+  // Atomically claim the event — only the first delivery wins
+  const { recorded } = await ProcessedStripeEventRepository.tryRecord(event.id, event.type);
+  if (!recorded) {
     return { skipped: true, reason: 'duplicate_event' };
   }
-  // Run handler first — data-layer is already idempotent (creditPack, refundPartial, etc.)
-  const result = await handler(event);
-  // Best-effort dedup hint after success — TOCTOU is acceptable since data-layer guards prevent double-effect
-  await ProcessedStripeEventRepository.tryRecord(event.id, event.type);
-  return result;
+  try {
+    return await handler(event);
+  } catch (err) {
+    // Rollback claim so Stripe can retry on a fresh delivery
+    await ProcessedStripeEventRepository.deleteByEventId(event.id);
+    throw err;
+  }
 };
 
 /**
