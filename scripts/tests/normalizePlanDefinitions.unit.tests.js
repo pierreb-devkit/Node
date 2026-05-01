@@ -81,4 +81,26 @@ describe('normalizePlanDefinitions unit tests:', () => {
     // planId should not be doubled/nested
     expect(entry).not.toHaveProperty('enterprise');
   });
+
+  test('object key remains authoritative when nested def.planId conflicts with it', () => {
+    const legacy = {
+      starter: { planId: 'wrong', meterQuota: 50000, ratios: { default: 1 } },
+    };
+
+    const result = normalizePlanDefinitions(legacy);
+
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(1);
+    const [entry] = result;
+    // The object key 'starter' must win over the nested def.planId 'wrong'
+    expect(entry.planId).toBe('starter');
+    expect(entry.meterQuota).toBe(50000);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[billing] planDefinitions object shape is deprecated'),
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('2026-05-01-billing-plan-definitions-array.md'),
+    );
+  });
 });

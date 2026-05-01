@@ -205,11 +205,13 @@ const initGlobalConfig = async () => {
  * Accepts either:
  *  - Array (new shape): returned as-is.
  *  - Plain object (legacy shape): converted to array and a deprecation warning is emitted.
+ *    The object key is always authoritative as planId; any nested planId value is overridden.
  *
  * Safe when planDefinitions is missing/null — returns the input unchanged.
+ * Non-object, non-array values (e.g. strings) are returned unchanged.
  *
  * @param {Array|Object|null|undefined} planDefinitions
- * @returns {Array|null|undefined} Array form, or the original value if not an object/array.
+ * @returns {Array|Object|null|undefined} Array form when convertible; original value otherwise.
  */
 const normalizePlanDefinitions = (planDefinitions) => {
   if (!planDefinitions) return planDefinitions;
@@ -218,7 +220,7 @@ const normalizePlanDefinitions = (planDefinitions) => {
     console.warn(
       '[billing] planDefinitions object shape is deprecated, switch to array — see docs/migrations/2026-05-01-billing-plan-definitions-array.md. Will be removed ~2026-07.',
     );
-    return Object.entries(planDefinitions).map(([planId, def]) => ({ planId, ...def }));
+    return Object.entries(planDefinitions).map(([planId, def]) => ({ ...(def ?? {}), planId }));
   }
   return planDefinitions;
 };
@@ -229,7 +231,9 @@ const config = await initGlobalConfig();
 if (config.billing?.planDefinitions != null) {
   config.billing.planDefinitions = normalizePlanDefinitions(config.billing.planDefinitions);
   if (Array.isArray(config.billing.planDefinitions)) {
-    config.billing.plans = config.billing.planDefinitions.map((p) => p.planId);
+    config.billing.plans = config.billing.planDefinitions
+      .map((p) => p.planId)
+      .filter((id) => typeof id === 'string' && id.length > 0);
   }
 }
 
