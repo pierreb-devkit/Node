@@ -58,25 +58,41 @@ const unitsFromCosts = async (costs, planId, ratioVersion) => {
 
 /**
  * @function capBreakdown
- * @description Clamp a feature breakdown map so its summed units do not exceed the capped total.
- *              Preserves key order and reduces the final contributing bucket when needed.
+ * @description Rescale a feature breakdown map proportionally so its summed units do not exceed
+ *              the capped total. Each bucket is scaled by (cappedUnits / originalTotal) and
+ *              floored; any remainder is distributed to the largest remaining buckets so that
+ *              sum(result) === cappedUnits exactly.
  * @param {Object} breakdown - Feature-keyed units map.
  * @param {number} cappedUnits - Final capped total units to apply.
- * @returns {Object} Capped feature-keyed units map.
+ * @param {number} originalTotal - Original uncapped total (used as the scaling denominator).
+ * @returns {Object} Proportionally rescaled feature-keyed units map.
  */
-const capBreakdown = (breakdown, cappedUnits) => {
+const capBreakdown = (breakdown, cappedUnits, originalTotal) => {
   if (!breakdown || typeof breakdown !== 'object' || cappedUnits === Infinity) return breakdown;
 
-  const cappedBreakdown = {};
-  let remaining = cappedUnits;
+  const entries = Object.entries(breakdown).filter(
+    ([, value]) => Number.isFinite(value) && value > 0,
+  );
+  if (entries.length === 0 || originalTotal <= 0) return Object.create(null);
 
-  for (const [key, value] of Object.entries(breakdown)) {
-    if (!Number.isFinite(value) || value <= 0 || remaining <= 0) continue;
+  const ratio = cappedUnits / originalTotal;
+  const cappedBreakdown = Object.create(null);
+  let allocated = 0;
 
-    const applied = Math.min(value, remaining);
-    if (applied > 0) {
-      cappedBreakdown[key] = applied;
-      remaining -= applied;
+  for (const [key, value] of entries) {
+    const scaled = Math.floor(value * ratio);
+    cappedBreakdown[key] = scaled;
+    allocated += scaled;
+  }
+
+  // Distribute remainder (due to floor) to the largest buckets first
+  let remainder = cappedUnits - allocated;
+  if (remainder > 0) {
+    const sorted = entries.slice().sort(([, a], [, b]) => b - a);
+    for (const [key] of sorted) {
+      if (remainder <= 0) break;
+      cappedBreakdown[key] += 1;
+      remainder -= 1;
     }
   }
 
@@ -119,8 +135,9 @@ const attribute = async (history, organizationId) => {
 
   const maxUnits = config?.billing?.meter?.maxUnitsPerOperation ?? Infinity;
   const cappedUnits = Math.min(totalUnits, maxUnits);
-  const cappedBreakdown = cappedUnits < totalUnits ? capBreakdown(breakdown, cappedUnits) : breakdown;
-  if (cappedUnits < totalUnits) {
+  const isCapped = cappedUnits < totalUnits;
+  const cappedBreakdown = isCapped ? capBreakdown(breakdown, cappedUnits, totalUnits) : breakdown;
+  if (isCapped) {
     console.warn(
       `[billing.meter] units capped: requested ${totalUnits}, cap ${maxUnits}, applied ${cappedUnits}`,
     );

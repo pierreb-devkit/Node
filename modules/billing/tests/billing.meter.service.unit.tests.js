@@ -260,4 +260,45 @@ describe('BillingMeterService unit tests:', () => {
       expect(warnSpy).not.toHaveBeenCalled();
     });
   });
+
+  describe('capBreakdown — proportional rescaling', () => {
+    test('rescales a multi-key breakdown proportionally to the capped total', async () => {
+      const mod = await import('../services/billing.meter.service.js');
+      const { capBreakdown } = mod.default;
+
+      // breakdown: { scrap: 6000, autofix: 4000 } → total = 10000, cap to 5000
+      // scrap:  floor(6000 * 5000/10000) = 3000
+      // autofix: floor(4000 * 5000/10000) = 2000
+      // allocated = 5000, remainder = 0
+      const result = capBreakdown({ scrap: 6000, autofix: 4000 }, 5000, 10000);
+
+      expect(result.scrap).toBe(3000);
+      expect(result.autofix).toBe(2000);
+      expect(result.scrap + result.autofix).toBe(5000);
+    });
+
+    test('distributes floor remainder to the largest bucket first', async () => {
+      const mod = await import('../services/billing.meter.service.js');
+      const { capBreakdown } = mod.default;
+
+      // breakdown: { a: 3, b: 2, c: 1 } → total = 6, cap to 4
+      // a: floor(3 * 4/6) = floor(2) = 2
+      // b: floor(2 * 4/6) = floor(1.33) = 1
+      // c: floor(1 * 4/6) = floor(0.66) = 0
+      // allocated = 3, remainder = 1 → add 1 to largest bucket (a)
+      const result = capBreakdown({ a: 3, b: 2, c: 1 }, 4, 6);
+
+      expect(result.a + result.b + (result.c ?? 0)).toBe(4);
+      expect(result.a).toBeGreaterThanOrEqual(result.b);
+    });
+
+    test('returns empty object when breakdown has no valid entries', async () => {
+      const mod = await import('../services/billing.meter.service.js');
+      const { capBreakdown } = mod.default;
+
+      const result = capBreakdown({}, 5000, 10000);
+
+      expect(Object.keys(result)).toHaveLength(0);
+    });
+  });
 });
