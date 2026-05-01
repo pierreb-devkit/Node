@@ -1506,6 +1506,21 @@ describe('Auth integration tests:', () => {
       expect(result.body.data.organizations.enabled).toBe(true);
       config.organizations.enabled = original;
     });
+
+    test('should expose billing config to authenticated users', async () => {
+      const result = await agent.get('/api/auth/config').expect(200);
+      expect(result.body.data.billing).toBeDefined();
+      expect(typeof result.body.data.billing.enabled).toBe('boolean');
+      expect(typeof result.body.data.billing.meterMode).toBe('boolean');
+    });
+
+    test('should reflect billing.meterMode=true when enabled (authenticated)', async () => {
+      const originalMeterMode = config.billing?.meterMode;
+      config.billing = { ...config.billing, meterMode: true };
+      const result = await agent.get('/api/auth/config').expect(200);
+      expect(result.body.data.billing.meterMode).toBe(true);
+      config.billing = { ...config.billing, meterMode: originalMeterMode };
+    });
   });
 
   describe('Email verification', () => {
