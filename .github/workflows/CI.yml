@@ -20,6 +20,10 @@ concurrency:
 
 jobs:
   test:
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [unit, integration, e2e]
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
@@ -49,16 +53,29 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run lint
+      - name: Lint (once on the unit job)
+        if: matrix.suite == 'unit'
+        run: npm run lint
 
-      - run: npm run test:coverage
+      - name: Run tests
+        run: |
+          case "${{ matrix.suite }}" in
+            unit|integration)
+              npm run test:${{ matrix.suite }}:coverage
+              ;;
+            e2e)
+              npm run test:e2e
+              ;;
+          esac
 
-      - uses: codecov/codecov-action@v5
-        if: env.CODECOV_TOKEN != ''
+      - name: Upload coverage
+        if: matrix.suite != 'e2e'
+        uses: codecov/codecov-action@v5
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          flags: ${{ matrix.suite }}
           slug: ${{ github.repository }}
 
   parallel-smoke:

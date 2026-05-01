@@ -83,14 +83,18 @@ npm run prod
 ### Testing
 
 ```bash
-npm test                       # Run all tests (one-shot)
-npm run test:unit              # Run unit tests once (alias of npm test)
-npm run test:watch             # Run tests in watch mode
-npm run test:coverage          # Generate coverage report
-npm run test:parallel-smoke    # Regression gate for per-pid test DB isolation (#3515)
+npm test                            # Run unit tests (one-shot)
+npm run test:unit                   # Run unit tests once (alias of npm test)
+npm run test:integration            # Run integration tests once
+npm run test:e2e                    # Run e2e tests once (pass/fail gate, no coverage)
+npm run test:watch                  # Run tests in watch mode
+npm run test:unit:coverage          # Unit tests + coverage report (CI: unit matrix job)
+npm run test:integration:coverage   # Integration tests + coverage report (CI: integration matrix job)
+npm run test:coverage               # Legacy alias: all suites + coverage (local dev convenience)
+npm run test:parallel-smoke         # Regression gate for per-pid test DB isolation (#3515)
 ```
 
-Tests are organized per module in `modules/*/tests/`. The `test:parallel-smoke` script spawns N concurrent jest children against the same mongod and asserts none of them trample each other — gates against accidental regression of the per-pid `NodeTest_${pid}` default in `config/defaults/test.config.js`. Off the critical path in CI (own job), so it never blocks merges.
+Tests are organized per module in `modules/*/tests/`. In CI the test job runs as a 3-way matrix (`unit` / `integration` / `e2e`) in parallel: `unit` and `integration` each upload a Codecov flag, and Codecov merges them server-side to compute combined coverage. e2e tests run as a pure pass/fail gate without coverage upload — they verify product-critical flows, not coverage. The `test:parallel-smoke` script spawns N concurrent jest children against the same mongod and asserts none of them trample each other — gates against accidental regression of the per-pid `NodeTest_${pid}` default in `config/defaults/test.config.js`. Off the critical path in CI (own job), so it never blocks merges.
 
 ### Code Quality
 

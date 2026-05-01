@@ -64,15 +64,9 @@ export default {
   // A list of reporter names that Jest uses when writing coverage reports
   coverageReporters: ['json', 'lcov', 'clover', 'text'],
 
-  // An object that configures minimum threshold enforcement for coverage results
-  coverageThreshold: {
-    global: {
-      statements: 80,
-      branches: 65,
-      functions: 80,
-      lines: 80,
-    },
-  },
+  // coverageThreshold removed — coverage gating moved to Codecov status checks
+  // (unit + integration flags merged server-side; per-job thresholds would fail
+  //  since each job covers only its slice of source paths)
 
   // Make calling deprecated APIs throw helpful error messages
   // errorOnDeprecated: false,
