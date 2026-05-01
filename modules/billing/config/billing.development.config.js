@@ -50,6 +50,7 @@ const config = {
       free: { meterQuota: 0, ratios: { default: 1 } },
       starter: { meterQuota: 50000, ratios: { default: 1 } },
       pro: { meterQuota: 500000, ratios: { default: 1 } },
+      enterprise: { meterQuota: 2000000, ratios: { default: 1 } },
     },
     /**
      * Meter unit parameters — downstream projects must override with their
