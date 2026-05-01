@@ -9,17 +9,17 @@
  * this cron fires on day 14+ and downgrades to free.
  *
  * No-op when config.billing.meterMode === false (default).
- * Intended to run as a Kubernetes CronJob — see scripts/crons/README.md.
+ * Intended to run as a Kubernetes CronJob — see modules/billing/crons/README.md.
  *
  * Usage:
- *   NODE_ENV=production node scripts/crons/billing.dunningSweep.js
+ *   NODE_ENV=production node modules/billing/crons/billing.dunningSweep.js
  */
 
 process.env.NODE_ENV = process.env.NODE_ENV || 'development';
 
 const [{ default: config }, { default: mongooseService }] = await Promise.all([
-  import('../../config/index.js'),
-  import('../../lib/services/mongoose.js'),
+  import('../../../config/index.js'),
+  import('../../../lib/services/mongoose.js'),
 ]);
 
 if (!config?.billing?.meterMode) {
@@ -31,8 +31,8 @@ try {
   await mongooseService.connect();
 
   const [{ default: BillingSubscriptionRepository }, { default: OrganizationRepository }] = await Promise.all([
-    import('../../modules/billing/repositories/billing.subscription.repository.js'),
-    import('../../modules/organizations/repositories/organizations.repository.js'),
+    import('../repositories/billing.subscription.repository.js'),
+    import('../../organizations/repositories/organizations.repository.js'),
   ]);
 
   const now = new Date();

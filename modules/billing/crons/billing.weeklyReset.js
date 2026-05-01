@@ -5,17 +5,17 @@
  * billing period rolled over within the last 7 days.
  *
  * No-op when config.billing.meterMode === false (default).
- * Intended to run as a Kubernetes CronJob — see scripts/crons/README.md.
+ * Intended to run as a Kubernetes CronJob — see modules/billing/crons/README.md.
  *
  * Usage:
- *   NODE_ENV=production node scripts/crons/billing.weeklyReset.js
+ *   NODE_ENV=production node modules/billing/crons/billing.weeklyReset.js
  */
 
 process.env.NODE_ENV = process.env.NODE_ENV || 'development';
 
 const [{ default: config }, { default: mongooseService }] = await Promise.all([
-  import('../../config/index.js'),
-  import('../../lib/services/mongoose.js'),
+  import('../../../config/index.js'),
+  import('../../../lib/services/mongoose.js'),
 ]);
 
 if (!config?.billing?.meterMode) {
@@ -26,7 +26,7 @@ if (!config?.billing?.meterMode) {
 try {
   await mongooseService.connect();
 
-  const { default: BillingResetService } = await import('../../modules/billing/services/billing.reset.service.js');
+  const { default: BillingResetService } = await import('../services/billing.reset.service.js');
 
   const result = await BillingResetService.resetAllDue();
   console.log(`[billing.weeklyReset] done — processed: ${result.processed}, errors: ${result.errors}`);

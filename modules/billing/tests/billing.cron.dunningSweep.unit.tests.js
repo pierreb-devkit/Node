@@ -41,7 +41,7 @@ describe('billing.dunningSweep cron — BillingSubscriptionRepository:', () => {
       findByIdAndUpdate: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue({}) }),
     };
 
-    jest.unstable_mockModule('../../config/index.js', () => ({ default: mockConfig }));
+    jest.unstable_mockModule('../../../config/index.js', () => ({ default: mockConfig }));
 
     jest.unstable_mockModule('mongoose', () => ({
       default: {
@@ -53,7 +53,7 @@ describe('billing.dunningSweep cron — BillingSubscriptionRepository:', () => {
       },
     }));
 
-    const mod = await import('../../modules/billing/repositories/billing.subscription.repository.js');
+    const mod = await import('../repositories/billing.subscription.repository.js');
     BillingSubscriptionRepository = mod.default;
   });
 

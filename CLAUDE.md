@@ -41,6 +41,12 @@ Node / Express / Mongoose / JWT stack from Devkit. Standalone backend or fullsta
 - Export `up()`, auto-run at boot after MongoDB connects, tracked in `migrations` collection.
 - Must be idempotent.
 
+## Cron scripts
+
+- Module-specific crons: `modules/{name}/crons/{name}.{action}.js` — billing crons live in `modules/billing/crons/`.
+- Cron tests: `modules/{name}/tests/{name}.cron.*.unit.tests.js` — test the underlying services, not the CLI entry point.
+- Generic repo-level scripts: `scripts/` — use for non-module-specific tooling only.
+
 ## Scripts & testing conventions
 
 | Script | Command | Purpose |

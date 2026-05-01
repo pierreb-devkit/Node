@@ -25,9 +25,9 @@ describe('billing.extrasExpiration cron — logic:', () => {
       billing: { meterMode: true },
     };
 
-    jest.unstable_mockModule('../../config/index.js', () => ({ default: mockConfig }));
+    jest.unstable_mockModule('../../../config/index.js', () => ({ default: mockConfig }));
 
-    jest.unstable_mockModule('../../modules/billing/repositories/billing.extraBalance.repository.js', () => ({
+    jest.unstable_mockModule('../repositories/billing.extraBalance.repository.js', () => ({
       default: {
         findOrgsWithExpiringTopups: jest.fn(),
         addExpirationEntries: jest.fn(),
@@ -39,7 +39,7 @@ describe('billing.extrasExpiration cron — logic:', () => {
       },
     }));
 
-    jest.unstable_mockModule('../../modules/billing/services/billing.extra.service.js', () => ({
+    jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
       default: {
         expireOldEntries: jest.fn(),
         creditPack: jest.fn(),
@@ -50,8 +50,8 @@ describe('billing.extrasExpiration cron — logic:', () => {
     }));
 
     const [extraServiceMod, repMod] = await Promise.all([
-      import('../../modules/billing/services/billing.extra.service.js'),
-      import('../../modules/billing/repositories/billing.extraBalance.repository.js'),
+      import('../services/billing.extra.service.js'),
+      import('../repositories/billing.extraBalance.repository.js'),
     ]);
     BillingExtraService = extraServiceMod.default;
     BillingExtraBalanceRepository = repMod.default;
@@ -128,4 +128,3 @@ describe('billing.extrasExpiration cron — logic:', () => {
     expect(errors).toBe(1);
   });
 });
-
