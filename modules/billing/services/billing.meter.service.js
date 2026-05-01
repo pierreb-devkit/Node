@@ -19,6 +19,10 @@ export const METER_RUN_BASE = config?.billing?.meter?.runBaseUnits ?? 1;
  *              Formula per key: floor(cost[key] * ratio[key] * dollarsToUnitRatio)
  *              Total: max(sum(per-key units), METER_RUN_BASE)
  *
+ *              When getPlanByVersion returns null (version mismatch), logs a WARN and
+ *              falls back to ratio=1 for all features. Check logs if charges look flat —
+ *              this indicates meter.ratioVersion vs planDefinitions version drift.
+ *
  * @param {Object} costs - Feature-keyed cost map: { featureKey: usdCost }.
  * @param {string} planId - Logical plan identifier (e.g. "pro").
  * @param {string} ratioVersion - Specific plan version for the ratio lookup.
@@ -34,6 +38,14 @@ const unitsFromCosts = async (costs, planId, ratioVersion) => {
 
   // Fetch the frozen plan snapshot for the given version
   const plan = await BillingPlanService.getPlanByVersion(planId, ratioVersion);
+  if (!plan) {
+    // WARN: version mismatch likely — costs.config emits a version that has no matching BillingPlan.
+    // Charges will use ratio=1 (flat) for all features. Align meter.ratioVersion + planDefinitions[].version
+    // + downstream cost-config emitted version to resolve. See billing README — Version Namespace Contract.
+    console.warn(
+      `[billing.meter] getPlanByVersion(${planId}, ${ratioVersion}) returned null — ratio=1 fallback applied. Check version namespace alignment.`,
+    );
+  }
   const ratios = (plan && typeof plan.ratios === 'object' && !Array.isArray(plan.ratios)) ? plan.ratios : {};
 
   const breakdown = {};
