@@ -430,11 +430,10 @@ describe('BillingResetService unit tests:', () => {
       ];
 
       for (const { lastResetAt, expectedKey } of runsAndExpectedKeys) {
-        jest.resetModules();
         const anchor = new Date(lastResetAt.getTime() + 7 * 24 * 60 * 60 * 1000);
         jest.setSystemTime(anchor);
 
-        // Re-import with fresh mocks for each simulated run
+        // Reconfigure mocks for each simulated run
         const capturedAnchors = [];
         mockSubscriptionRepository.findAllDueForResetByLastReset.mockResolvedValue([
           { organization: orgId, currentPeriodStart: cycleStart, lastResetAt },

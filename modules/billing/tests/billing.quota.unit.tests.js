@@ -371,6 +371,22 @@ describe('requireQuota middleware:', () => {
 
     // ── Fix #3569: lazy fallback for new-user first scrap ─────────────────────
 
+    test('fix #3575: no meter doc + getActivePlan returns null — returns 503 PLAN_NOT_CONFIGURED (not 402)', async () => {
+      // getActivePlan returns null during seeding / version bump — must NOT surface as 402 METER_EXHAUSTED.
+      mockBillingUsageService.getMeter.mockResolvedValue(null);
+      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'free', status: 'active' });
+      mockBillingPlanService.getActivePlan.mockResolvedValue(null);
+
+      await requireQuota('scraps', 'create')(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(503);
+      const payload = res.json.mock.calls[0][0];
+      const errData = JSON.parse(payload.error);
+      expect(errData.type).toBe('PLAN_NOT_CONFIGURED');
+    });
+
     test('fix #3569: new Free user — 1st scrap passes when plan meterQuota > 0', async () => {
       // No BillingUsage doc yet (getMeter returns null) — first scrap of the week.
       // Middleware should fall back to plan quota instead of blocking with 402.

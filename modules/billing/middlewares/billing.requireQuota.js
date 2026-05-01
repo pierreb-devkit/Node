@@ -83,8 +83,18 @@ function requireQuota(resource, action) {
           // Reuse the `subscription` already fetched by the degraded-mode gate above.
           const planId = subscription?.plan ?? config?.billing?.defaultPlan ?? 'free';
           const activePlan = await BillingPlanService.getActivePlan(planId);
+
+          // Plan missing (seeding / version bump in progress) → fail safe with 503
+          // rather than defaulting to meterQuota=0 which would surface as 402 METER_EXHAUSTED.
+          if (activePlan === null || activePlan === undefined) {
+            return responses.error(res, 503, 'Service Unavailable', 'Billing plan configuration is temporarily unavailable')({
+              type: 'PLAN_NOT_CONFIGURED',
+              planId,
+            });
+          }
+
           meterUsed = 0;
-          meterQuota = activePlan?.meterQuota ?? 0;
+          meterQuota = activePlan.meterQuota ?? 0;
         } else {
           meterUsed = usage.meterUsed ?? 0;
           meterQuota = usage.meterQuota ?? 0;
