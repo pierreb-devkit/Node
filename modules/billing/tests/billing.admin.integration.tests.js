@@ -304,4 +304,80 @@ describe('Billing admin integration tests:', () => {
 
     expect(res.status).toHaveBeenCalledWith(422);
   });
+
+  test('refund service upstream error returns 502', async () => {
+    const routes = await buildRoutes();
+    const refundRoute = routes.get('/api/admin/billing/refund');
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+    };
+
+    mockBillingRefundService.refundCharge.mockRejectedValueOnce(new Error('upstream error'));
+
+    await runHandlers(
+      [...refundRoute.all, ...refundRoute.post],
+      { method: 'POST', headers: { 'x-role': 'admin' }, body: { chargeId: 'ch_test_123', amountCents: 2500 } },
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(502);
+  });
+
+  test('refund service invalid argument error returns 422', async () => {
+    const routes = await buildRoutes();
+    const refundRoute = routes.get('/api/admin/billing/refund');
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+    };
+
+    mockBillingRefundService.refundCharge.mockRejectedValueOnce(new Error('invalid argument: amountCents must be > 0'));
+
+    await runHandlers(
+      [...refundRoute.all, ...refundRoute.post],
+      { method: 'POST', headers: { 'x-role': 'admin' }, body: { chargeId: 'ch_test_123', amountCents: 2500 } },
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(422);
+  });
+
+  test('bump plan service upstream error returns 502', async () => {
+    const routes = await buildRoutes();
+    const bumpRoute = routes.get('/api/admin/billing/plans/bump');
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+    };
+
+    mockBillingPlanService.bumpVersionWithRetry.mockRejectedValueOnce(new Error('E11000 duplicate key'));
+
+    await runHandlers(
+      [...bumpRoute.all, ...bumpRoute.post],
+      { method: 'POST', headers: { 'x-role': 'admin' }, body: { planId: 'pro', meterQuota: 12345 } },
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(502);
+  });
+
+  test('bump plan service invalid argument error returns 422', async () => {
+    const routes = await buildRoutes();
+    const bumpRoute = routes.get('/api/admin/billing/plans/bump');
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+    };
+
+    mockBillingPlanService.bumpVersionWithRetry.mockRejectedValueOnce(new Error('invalid argument: meterQuota must be >= 0'));
+
+    await runHandlers(
+      [...bumpRoute.all, ...bumpRoute.post],
+      { method: 'POST', headers: { 'x-role': 'admin' }, body: { planId: 'pro', meterQuota: 12345 } },
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(422);
+  });
 });
