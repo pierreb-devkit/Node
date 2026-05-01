@@ -87,6 +87,16 @@ const config = {
   stripe: {
     secretKey: process.env.DEVKIT_NODE_stripe_secretKey ?? '',
     webhookSecret: process.env.DEVKIT_NODE_stripe_webhookSecret ?? '',
+    /**
+     * Feature flag — default OFF.
+     * Set to true in downstream project config once Stripe Tax product is enabled
+     * in the Stripe Dashboard. In LIVE mode, Stripe rejects automatic_tax: enabled
+     * if the Tax product is not activated → checkout sessions will fail.
+     * See: https://stripe.com/docs/tax/set-up
+     *
+     * V1 intent: disabled (auto-entrepreneur FR, franchise TVA art. 293 B).
+     */
+    automaticTax: false,
     prices: {
       starter: {
         monthly: process.env.DEVKIT_NODE_stripe_prices_starter_monthly ?? '',

@@ -197,7 +197,7 @@ describe('BillingMeterService unit tests:', () => {
         orgId,
         10000,
         { scrap: 10000 },
-        '507f1f77bcf86cd799439033',
+        '507f1f77bcf86cd799439033:initial',
       );
       expect(warnSpy).toHaveBeenCalledWith(
         '[billing.meter] units capped: requested 20000, cap 10000, applied 10000',
@@ -227,7 +227,7 @@ describe('BillingMeterService unit tests:', () => {
         orgId,
         5000,
         { scrap: 5000 },
-        '507f1f77bcf86cd799439034',
+        '507f1f77bcf86cd799439034:initial',
       );
       expect(warnSpy).not.toHaveBeenCalled();
     });
@@ -255,9 +255,162 @@ describe('BillingMeterService unit tests:', () => {
         orgId,
         20000,
         { scrap: 20000 },
-        '507f1f77bcf86cd799439035',
+        '507f1f77bcf86cd799439035:initial',
       );
       expect(warnSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('attribute — per-step idempotency keys', () => {
+    test('same history attributed twice with default stepKey: 2nd is no-op (regression)', async () => {
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
+      // First call: applied
+      mockBillingUsageService.incrementMeter.mockResolvedValueOnce({
+        applied: true,
+        meterUsed: 1000,
+        extrasConsumed: 0,
+      });
+      // Second call: no-op (replay)
+      mockBillingUsageService.incrementMeter.mockResolvedValueOnce({
+        applied: false,
+        meterUsed: 1000,
+      });
+
+      const history = {
+        _id: '507f1f77bcf86cd799439040',
+        costs: { scrap: 1 },
+        planId: 'pro',
+        planVersion: 'v1',
+      };
+
+      const first = await BillingMeterService.attribute(history, orgId);
+      const second = await BillingMeterService.attribute(history, orgId);
+
+      expect(first.applied).toBe(true);
+      expect(second.applied).toBe(false);
+
+      // Both calls must use the same idempotency key (stepKey defaults to 'initial')
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenNthCalledWith(
+        1, orgId, expect.any(Number), expect.any(Object), '507f1f77bcf86cd799439040:initial',
+      );
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenNthCalledWith(
+        2, orgId, expect.any(Number), expect.any(Object), '507f1f77bcf86cd799439040:initial',
+      );
+    });
+
+    test('same history attributed with {stepKey:"initial"} then {stepKey:"digest"}: both charged', async () => {
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingUsageService.incrementMeter.mockResolvedValue({
+        applied: true,
+        meterUsed: 500,
+        extrasConsumed: 0,
+      });
+
+      const history = {
+        _id: '507f1f77bcf86cd799439041',
+        costs: { scrap: 0.5 },
+        planId: 'pro',
+        planVersion: 'v1',
+      };
+
+      const initial = await BillingMeterService.attribute(history, orgId, { stepKey: 'initial' });
+      const digest = await BillingMeterService.attribute(history, orgId, { stepKey: 'digest' });
+
+      expect(initial.applied).toBe(true);
+      expect(digest.applied).toBe(true);
+
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenNthCalledWith(
+        1, orgId, expect.any(Number), expect.any(Object), '507f1f77bcf86cd799439041:initial',
+      );
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenNthCalledWith(
+        2, orgId, expect.any(Number), expect.any(Object), '507f1f77bcf86cd799439041:digest',
+      );
+    });
+
+    test('same history attributed with {stepKey:"fix:1"} then {stepKey:"fix:2"}: both charged', async () => {
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingUsageService.incrementMeter.mockResolvedValue({
+        applied: true,
+        meterUsed: 200,
+        extrasConsumed: 0,
+      });
+
+      const history = {
+        _id: '507f1f77bcf86cd799439042',
+        costs: { scrap: 0.2 },
+        planId: 'pro',
+        planVersion: 'v1',
+      };
+
+      const fix1 = await BillingMeterService.attribute(history, orgId, { stepKey: 'fix:1' });
+      const fix2 = await BillingMeterService.attribute(history, orgId, { stepKey: 'fix:2' });
+
+      expect(fix1.applied).toBe(true);
+      expect(fix2.applied).toBe(true);
+
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenNthCalledWith(
+        1, orgId, expect.any(Number), expect.any(Object), '507f1f77bcf86cd799439042:fix:1',
+      );
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenNthCalledWith(
+        2, orgId, expect.any(Number), expect.any(Object), '507f1f77bcf86cd799439042:fix:2',
+      );
+    });
+
+    test('invalid stepKey (special chars) falls back to "initial"', async () => {
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingUsageService.incrementMeter.mockResolvedValue({
+        applied: true,
+        meterUsed: 100,
+        extrasConsumed: 0,
+      });
+
+      const history = {
+        _id: '507f1f77bcf86cd799439099',
+        costs: { scrap: 0.1 },
+        planId: 'pro',
+        planVersion: 'v1',
+      };
+
+      await BillingMeterService.attribute(history, orgId, { stepKey: 'bad key! @#$' });
+
+      // Invalid stepKey falls back to 'initial'
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
+        orgId, expect.any(Number), expect.any(Object), '507f1f77bcf86cd799439099:initial',
+      );
+    });
+
+    test('replay of {stepKey:"digest"} is blocked (idempotent)', async () => {
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
+      // First digest call: applied
+      mockBillingUsageService.incrementMeter.mockResolvedValueOnce({
+        applied: true,
+        meterUsed: 300,
+        extrasConsumed: 0,
+      });
+      // Replay: no-op
+      mockBillingUsageService.incrementMeter.mockResolvedValueOnce({
+        applied: false,
+        meterUsed: 300,
+      });
+
+      const history = {
+        _id: '507f1f77bcf86cd799439043',
+        costs: { scrap: 0.3 },
+        planId: 'pro',
+        planVersion: 'v1',
+      };
+
+      const first = await BillingMeterService.attribute(history, orgId, { stepKey: 'digest' });
+      const replay = await BillingMeterService.attribute(history, orgId, { stepKey: 'digest' });
+
+      expect(first.applied).toBe(true);
+      expect(replay.applied).toBe(false);
+
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledTimes(2);
+      // Both calls use the same digest key
+      for (const call of mockBillingUsageService.incrementMeter.mock.calls) {
+        expect(call[3]).toBe('507f1f77bcf86cd799439043:digest');
+      }
     });
   });
 
