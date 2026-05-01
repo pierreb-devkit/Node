@@ -179,9 +179,15 @@ const initGlobalConfig = async () => {
     const workerId = process.env.JEST_WORKER_ID;
     const uri = config.db?.uri ?? '';
     const workerSuffix = `_w${workerId}`;
-    if (uri && !uri.includes(workerSuffix)) {
-      // Insert suffix between path and optional query string
-      config.db.uri = uri.replace(/(\?|$)/, `${workerSuffix}$1`);
+    if (uri) {
+      // Use the URL API to safely append the worker suffix to the database name
+      // in the path segment, avoiding corruption of host/port or query string.
+      const parsed = new URL(uri);
+      const dbName = parsed.pathname.replace(/^\//, '') || 'test';
+      if (!dbName.endsWith(workerSuffix)) {
+        parsed.pathname = `/${dbName}${workerSuffix}`;
+        config.db.uri = parsed.toString();
+      }
     }
   }
 
