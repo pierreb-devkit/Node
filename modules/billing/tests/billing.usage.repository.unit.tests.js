@@ -309,7 +309,7 @@ describe('BillingUsageRepository — meter extensions unit tests:', () => {
   });
 
   describe('archiveOtherWeeks', () => {
-    test('should call updateMany excluding currentWeekKey on docs without archivedAt', async () => {
+    test('should call updateMany excluding currentWeekKey on docs with archivedAt unset/null', async () => {
       mockModel.updateMany.mockResolvedValue({ modifiedCount: 2 });
       const archivedAt = new Date('2026-04-28T00:00:00Z');
 
@@ -319,7 +319,7 @@ describe('BillingUsageRepository — meter extensions unit tests:', () => {
         {
           organizationId: orgId,
           weekKey: { $ne: weekKey },
-          archivedAt: { $exists: false },
+          archivedAt: null,
         },
         { $set: { archivedAt } },
       );

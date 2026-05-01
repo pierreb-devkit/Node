@@ -98,6 +98,13 @@ const UsageMongoose = new Schema(
       default: null,
     },
     /**
+     * Timestamp when this usage period was archived by the reset sweep.
+     */
+    archivedAt: {
+      type: Date,
+      default: null,
+    },
+    /**
      * ObjectIds of History documents consumed (attributed) this period.
      * Used for idempotent attribution checks.
      */

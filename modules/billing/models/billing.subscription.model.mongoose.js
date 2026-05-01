@@ -71,6 +71,14 @@ const SubscriptionMongoose = new Schema(
       type: Date,
       default: null,
     },
+    /**
+     * Timestamp of the last successful weekly meter reset sweep.
+     * Used by the scheduler to recover after delayed or missed runs.
+     */
+    lastResetAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

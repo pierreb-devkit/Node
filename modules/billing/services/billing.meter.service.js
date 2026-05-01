@@ -57,6 +57,33 @@ const unitsFromCosts = async (costs, planId, ratioVersion) => {
 };
 
 /**
+ * @function capBreakdown
+ * @description Clamp a feature breakdown map so its summed units do not exceed the capped total.
+ *              Preserves key order and reduces the final contributing bucket when needed.
+ * @param {Object} breakdown - Feature-keyed units map.
+ * @param {number} cappedUnits - Final capped total units to apply.
+ * @returns {Object} Capped feature-keyed units map.
+ */
+const capBreakdown = (breakdown, cappedUnits) => {
+  if (!breakdown || typeof breakdown !== 'object' || cappedUnits === Infinity) return breakdown;
+
+  const cappedBreakdown = {};
+  let remaining = cappedUnits;
+
+  for (const [key, value] of Object.entries(breakdown)) {
+    if (!Number.isFinite(value) || value <= 0 || remaining <= 0) continue;
+
+    const applied = Math.min(value, remaining);
+    if (applied > 0) {
+      cappedBreakdown[key] = applied;
+      remaining -= applied;
+    }
+  }
+
+  return cappedBreakdown;
+};
+
+/**
  * @function attribute
  * @description Attribute meter units from a History-like input to a Usage document
  *              for the given organization. If the plan quota is exceeded, falls back
@@ -90,12 +117,21 @@ const attribute = async (history, organizationId) => {
     ({ totalUnits, breakdown } = await unitsFromCosts(history.costs, planId, ratioVersion));
   }
 
+  const maxUnits = config?.billing?.meter?.maxUnitsPerOperation ?? Infinity;
+  const cappedUnits = Math.min(totalUnits, maxUnits);
+  const cappedBreakdown = cappedUnits < totalUnits ? capBreakdown(breakdown, cappedUnits) : breakdown;
+  if (cappedUnits < totalUnits) {
+    console.warn(
+      `[billing.meter] units capped: requested ${totalUnits}, cap ${maxUnits}, applied ${cappedUnits}`,
+    );
+  }
+
   const idempotencyKey = history._id?.toString?.() ?? String(history._id);
 
   const result = await BillingUsageService.incrementMeter(
     organizationId,
-    totalUnits,
-    breakdown,
+    cappedUnits,
+    cappedBreakdown,
     idempotencyKey,
   );
 
@@ -122,5 +158,6 @@ const attribute = async (history, organizationId) => {
 export default {
   unitsFromCosts,
   attribute,
+  capBreakdown,
   METER_RUN_BASE,
 };

@@ -36,6 +36,7 @@ const BillingUsage = z.object({
   resetAt: z.coerce.date().optional().nullable(),
   alertedAt80: z.coerce.date().optional().nullable(),
   alertedAt100: z.coerce.date().optional().nullable(),
+  archivedAt: z.coerce.date().optional().nullable(),
 
   /**
    * Array of ObjectIds of History documents attributed to this period.

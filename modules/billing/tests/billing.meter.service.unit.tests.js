@@ -10,6 +10,8 @@ describe('BillingMeterService unit tests:', () => {
   let BillingMeterService;
   let mockBillingPlanService;
   let mockConfig;
+  let mockBillingUsageService;
+  let mockBillingExtraService;
 
   const orgId = '507f1f77bcf86cd799439011';
 
@@ -48,12 +50,28 @@ describe('BillingMeterService unit tests:', () => {
       getActivePlan: jest.fn(),
     };
 
+    mockBillingUsageService = {
+      incrementMeter: jest.fn(),
+    };
+
+    mockBillingExtraService = {
+      debit: jest.fn(),
+    };
+
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: mockConfig,
     }));
 
     jest.unstable_mockModule('../services/billing.plan.service.js', () => ({
       default: mockBillingPlanService,
+    }));
+
+    jest.unstable_mockModule('../services/billing.usage.service.js', () => ({
+      default: mockBillingUsageService,
+    }));
+
+    jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
+      default: mockBillingExtraService,
     }));
 
     const mod = await import('../services/billing.meter.service.js');
@@ -153,6 +171,93 @@ describe('BillingMeterService unit tests:', () => {
 
       expect(result.applied).toBe(false);
       expect(result.meterUsed).toBe(0);
+    });
+  });
+
+  describe('attribute — maxUnitsPerOperation cap', () => {
+    test('caps metered units when computed units exceed config cap', async () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingUsageService.incrementMeter.mockResolvedValue({
+        applied: true,
+        meterUsed: 10000,
+        extrasConsumed: 0,
+      });
+
+      const history = {
+        _id: '507f1f77bcf86cd799439033',
+        costs: { scrap: 20 },
+        planId: 'pro',
+        planVersion: 'v1',
+      };
+
+      const result = await BillingMeterService.attribute(history, orgId);
+
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
+        orgId,
+        10000,
+        { scrap: 10000 },
+        '507f1f77bcf86cd799439033',
+      );
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[billing.meter] units capped: requested 20000, cap 10000, applied 10000',
+      );
+      expect(result).toEqual({ applied: true, meterUsed: 10000, extrasConsumed: 0 });
+    });
+
+    test('does not clamp when units are within the configured cap', async () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingUsageService.incrementMeter.mockResolvedValue({
+        applied: true,
+        meterUsed: 5000,
+        extrasConsumed: 0,
+      });
+
+      const history = {
+        _id: '507f1f77bcf86cd799439034',
+        costs: { scrap: 5 },
+        planId: 'pro',
+        planVersion: 'v1',
+      };
+
+      await BillingMeterService.attribute(history, orgId);
+
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
+        orgId,
+        5000,
+        { scrap: 5000 },
+        '507f1f77bcf86cd799439034',
+      );
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    test('does not clamp when maxUnitsPerOperation is undefined', async () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      delete mockConfig.billing.meter.maxUnitsPerOperation;
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingUsageService.incrementMeter.mockResolvedValue({
+        applied: true,
+        meterUsed: 20000,
+        extrasConsumed: 0,
+      });
+
+      const history = {
+        _id: '507f1f77bcf86cd799439035',
+        costs: { scrap: 20 },
+        planId: 'pro',
+        planVersion: 'v1',
+      };
+
+      await BillingMeterService.attribute(history, orgId);
+
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
+        orgId,
+        20000,
+        { scrap: 20000 },
+        '507f1f77bcf86cd799439035',
+      );
+      expect(warnSpy).not.toHaveBeenCalled();
     });
   });
 });
