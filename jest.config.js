@@ -221,4 +221,11 @@ export default {
 
   // Whether to use watchman for file crawling
   // watchman: true,
+
+  // Recycle worker child processes when their RSS exceeds this threshold.
+  // Counters jest's per-vm-context module registry accumulation (~14 MB
+  // retained per loaded suite under --experimental-vm-modules) which would
+  // otherwise OOM long-lived workers on large downstream test suites.
+  // The respawn cost (~150-300 ms) is negligible vs. the OOM crash it avoids.
+  workerIdleMemoryLimit: '512MB',
 };
