@@ -69,7 +69,7 @@ jobs:
           esac
 
       - name: Upload coverage
-        if: matrix.suite != 'e2e'
+        if: "!cancelled() && matrix.suite != 'e2e' && env.CODECOV_TOKEN != ''"
         uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe  # v5.5.4
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
