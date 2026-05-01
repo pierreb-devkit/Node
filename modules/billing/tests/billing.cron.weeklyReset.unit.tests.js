@@ -45,18 +45,18 @@ describe('billing.weeklyReset cron — BillingResetService.resetAllDue:', () => 
       updateLastResetAt: jest.fn().mockResolvedValue(undefined),
     };
 
-    jest.unstable_mockModule('../../config/index.js', () => ({ default: mockConfig }));
-    jest.unstable_mockModule('../../modules/billing/repositories/billing.usage.repository.js', () => ({
+    jest.unstable_mockModule('../../../config/index.js', () => ({ default: mockConfig }));
+    jest.unstable_mockModule('../repositories/billing.usage.repository.js', () => ({
       default: mockUsageRepository,
     }));
-    jest.unstable_mockModule('../../modules/billing/repositories/billing.subscription.repository.js', () => ({
+    jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
       default: mockSubscriptionRepository,
     }));
-    jest.unstable_mockModule('../../modules/billing/services/billing.plan.service.js', () => ({
+    jest.unstable_mockModule('../services/billing.plan.service.js', () => ({
       default: mockPlanService,
     }));
 
-    const mod = await import('../../modules/billing/services/billing.reset.service.js');
+    const mod = await import('../services/billing.reset.service.js');
     BillingResetService = mod.default;
   });
 

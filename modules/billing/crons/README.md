@@ -1,11 +1,9 @@
 # Billing Cron Scripts
 
-> **Migration (2026-05-01):** Billing cron scripts have been relocated to `modules/billing/crons/` (#3546).
-> The files at this path (`scripts/crons/billing.*.js`) are now backward-compat shims that forward to the new location.
-> Shims will be removed ~2026-07-01. Update infra K8s manifests to point to `modules/billing/crons/` at your convenience.
-> See `docs/migrations/2026-05-01-billing-crons-module-relocation.md` for full details.
-
 Standalone CLI scripts intended to be executed as Kubernetes CronJobs.
+
+Relocated here from `scripts/crons/` as of 2026-05-01 (#3546) — billing logic belongs in the billing module.
+Backward-compat shims at `scripts/crons/billing.*.js` forward to this location until ~2026-07-01.
 
 All scripts gate on `config.billing.meterMode === true` and exit 0 immediately when the flag is `false` (default).
 No `node-cron` dependency — orchestration is handled by Kubernetes CronJob manifests.
@@ -21,9 +19,9 @@ No `node-cron` dependency — orchestration is handled by Kubernetes CronJob man
 ## Usage
 
 ```sh
-NODE_ENV=production node scripts/crons/billing.weeklyReset.js
-NODE_ENV=production node scripts/crons/billing.extrasExpiration.js
-NODE_ENV=production node scripts/crons/billing.dunningSweep.js
+NODE_ENV=production node modules/billing/crons/billing.weeklyReset.js
+NODE_ENV=production node modules/billing/crons/billing.extrasExpiration.js
+NODE_ENV=production node modules/billing/crons/billing.dunningSweep.js
 ```
 
 Exit code 0 = success (or meterMode disabled). Exit code 1 = at least one error or fatal failure.
@@ -47,7 +45,7 @@ spec:
           containers:
             - name: billing-weekly-reset
               image: ghcr.io/your-org/your-app:main  # replace with your project image
-              command: ["node", "scripts/crons/billing.weeklyReset.js"]
+              command: ["node", "modules/billing/crons/billing.weeklyReset.js"]
               env:
                 - name: NODE_ENV
                   value: production
