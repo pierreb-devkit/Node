@@ -32,6 +32,26 @@ const config = {
      */
     meterMode: false,
     /**
+     * Default plan used when an organization has no subscription. Configurable per project.
+     */
+    defaultPlan: 'free',
+    /**
+     * URL the front-end should redirect users to when quota is exhausted or past_due.
+     * Used by middleware error responses (METER_EXHAUSTED, QUOTA_EXCEEDED).
+     */
+    upgradeUrl: '/billing/plans',
+    /**
+     * Plan definitions — DOWNSTREAM-OVERRIDE-REQUIRED for meter mode.
+     * Used by BillingPlanService.ensureSeeded() at boot to upsert BillingPlan docs.
+     * Each entry: { meterQuota: units/week, ratios: { featureKey: multiplier } }.
+     * Plans listed here must also exist in billing.plans enum.
+     */
+    planDefinitions: {
+      free: { meterQuota: 0, ratios: { default: 1 } },
+      starter: { meterQuota: 50000, ratios: { default: 1 } },
+      pro: { meterQuota: 500000, ratios: { default: 1 } },
+    },
+    /**
      * Meter unit parameters — downstream projects must override with their
      * actual unit economics before enabling meterMode in production.
      *

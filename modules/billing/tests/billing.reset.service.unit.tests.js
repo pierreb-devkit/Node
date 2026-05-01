@@ -11,7 +11,7 @@ describe('BillingResetService unit tests:', () => {
   let mockUsageRepository;
   let mockPlanService;
   let mockConfig;
-  let mockMongooseSubscription;
+  let mockSubscriptionRepository;
 
   const orgId = '507f1f77bcf86cd799439011';
 
@@ -47,7 +47,7 @@ describe('BillingResetService unit tests:', () => {
     mockConfig = {
       billing: {
         meterMode: true,
-        plans: ['pro'],
+        defaultPlan: 'starter',
       },
     };
 
@@ -65,7 +65,8 @@ describe('BillingResetService unit tests:', () => {
       getActivePlan: jest.fn(),
     };
 
-    mockMongooseSubscription = {
+    mockSubscriptionRepository = {
+      findByOrganization: jest.fn(),
       findAllDueForReset: jest.fn(),
     };
 
@@ -78,7 +79,7 @@ describe('BillingResetService unit tests:', () => {
     }));
 
     jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
-      default: mockMongooseSubscription,
+      default: mockSubscriptionRepository,
     }));
 
     jest.unstable_mockModule('../services/billing.plan.service.js', () => ({
@@ -121,6 +122,7 @@ describe('BillingResetService unit tests:', () => {
     });
 
     test('should archive old week docs and upsert new week doc', async () => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockResolvedValue(makePlan());
       mockUsageRepository.findByWeek.mockResolvedValue(null);
       const newDoc = makeUsageDoc({ weekKey: '2026-W18' });
@@ -137,6 +139,7 @@ describe('BillingResetService unit tests:', () => {
     });
 
     test('should be idempotent — return existing doc if week already exists', async () => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockResolvedValue(makePlan());
       const existingDoc = makeUsageDoc({ weekKey: '2026-W18' });
       mockUsageRepository.findByWeek.mockResolvedValue(existingDoc);
@@ -149,6 +152,7 @@ describe('BillingResetService unit tests:', () => {
     });
 
     test('should snapshot meterQuota and planVersion from active plan', async () => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 1000000, version: 'v3' }));
       mockUsageRepository.findByWeek.mockResolvedValue(null);
       let capturedSnapshot;
@@ -163,7 +167,40 @@ describe('BillingResetService unit tests:', () => {
       expect(capturedSnapshot.planVersion).toBe('v3');
     });
 
+    test('should use subscribed plan as source of truth', async () => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan({ planId: 'pro' }));
+      mockUsageRepository.findByWeek.mockResolvedValue(makeUsageDoc({ weekKey: '2026-W18' }));
+
+      await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
+
+      expect(mockSubscriptionRepository.findByOrganization).toHaveBeenCalledWith(orgId);
+      expect(mockPlanService.getActivePlan).toHaveBeenCalledWith('pro');
+    });
+
+    test('should use defaultPlan when subscription is missing', async () => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue(null);
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan({ planId: 'starter' }));
+      mockUsageRepository.findByWeek.mockResolvedValue(makeUsageDoc({ weekKey: '2026-W18' }));
+
+      await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
+
+      expect(mockPlanService.getActivePlan).toHaveBeenCalledWith('starter');
+    });
+
+    test('should fall back to free when subscription and defaultPlan are missing', async () => {
+      mockConfig.billing.defaultPlan = undefined;
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue(null);
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan({ planId: 'free' }));
+      mockUsageRepository.findByWeek.mockResolvedValue(makeUsageDoc({ weekKey: '2026-W18' }));
+
+      await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
+
+      expect(mockPlanService.getActivePlan).toHaveBeenCalledWith('free');
+    });
+
     test('should use meterQuota=0 when no active plan exists', async () => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockResolvedValue(null);
       mockUsageRepository.findByWeek.mockResolvedValue(null);
       let capturedSnapshot;
@@ -179,6 +216,7 @@ describe('BillingResetService unit tests:', () => {
     });
 
     test('should handle E11000 race by falling back to findByWeek', async () => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockResolvedValue(makePlan());
       mockUsageRepository.findByWeek
         .mockResolvedValueOnce(null) // First call: doc not yet created
@@ -205,11 +243,12 @@ describe('BillingResetService unit tests:', () => {
       const now = new Date();
       const periodStart = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
 
-      mockMongooseSubscription.findAllDueForReset.mockResolvedValue([
+      mockSubscriptionRepository.findAllDueForReset.mockResolvedValue([
         { organization: '507f1f77bcf86cd799439011', currentPeriodStart: periodStart },
         { organization: '507f1f77bcf86cd799439022', currentPeriodStart: periodStart },
       ]);
 
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockResolvedValue(makePlan());
       mockUsageRepository.findByWeek.mockResolvedValue(null);
       mockUsageRepository.upsertWeekSnapshot.mockResolvedValue(makeUsageDoc());
@@ -221,9 +260,10 @@ describe('BillingResetService unit tests:', () => {
 
     test('should count errors when resetWeek fails for a subscription', async () => {
       const periodStart = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
-      mockMongooseSubscription.findAllDueForReset.mockResolvedValue([
+      mockSubscriptionRepository.findAllDueForReset.mockResolvedValue([
         { organization: '507f1f77bcf86cd799439011', currentPeriodStart: periodStart },
       ]);
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockRejectedValue(new Error('DB error'));
       mockUsageRepository.findByWeek.mockResolvedValue(null);
 
@@ -239,9 +279,10 @@ describe('BillingResetService unit tests:', () => {
       // We verify that when the correct field `organization` is present, it is forwarded correctly.
       const periodStart = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
       const capturedOrgIds = [];
-      mockMongooseSubscription.findAllDueForReset.mockResolvedValue([
+      mockSubscriptionRepository.findAllDueForReset.mockResolvedValue([
         { organization: '507f1f77bcf86cd799439011', currentPeriodStart: periodStart },
       ]);
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockResolvedValue(makePlan());
       mockUsageRepository.findByWeek.mockImplementation((orgId) => {
         capturedOrgIds.push(orgId);

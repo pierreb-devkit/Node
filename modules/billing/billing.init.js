@@ -4,6 +4,7 @@
 import config from '../../config/index.js';
 import AnalyticsService from '../../lib/services/analytics.js';
 import billingEvents from './lib/events.js';
+import BillingPlanService from './services/billing.plan.service.js';
 
 /**
  * Billing module initialisation.
@@ -29,4 +30,13 @@ export default async (app) => {
       AnalyticsService.groupIdentify('company', String(organizationId), { plan: newPlan });
     } catch (_) { /* analytics must not break billing flow */ }
   });
+
+  try {
+    const { seeded, skipped } = await BillingPlanService.ensureSeeded();
+    if (seeded > 0) {
+      console.info(`[billing] seeded ${seeded} plan(s) from config.billing.planDefinitions (skipped ${skipped} already active)`);
+    }
+  } catch (err) {
+    console.error('[billing] ensureSeeded failed:', err);
+  }
 };

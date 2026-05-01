@@ -1,6 +1,7 @@
 /**
  * Module dependencies
  */
+import config from '../../../config/index.js';
 import BillingPlanRepository from '../repositories/billing.plan.repository.js';
 
 /**
@@ -161,10 +162,49 @@ const bumpVersionWithRetry = async (planId, fields, { maxAttempts = 3 } = {}) =>
   throw lastErr;
 };
 
+/**
+ * @function ensureSeeded
+ * @description Upsert BillingPlan docs from config.billing.planDefinitions.
+ *              For each configured planId, ensures an active plan exists.
+ *              No-op when meter mode is disabled. Idempotent on re-run.
+ * @returns {Promise<{seeded: number, skipped: number}>} Seed summary.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const ensureSeeded = async () => {
+  if (!config?.billing?.meterMode) return { seeded: 0, skipped: 0 };
+
+  const definitions = config?.billing?.planDefinitions ?? {};
+  let seeded = 0;
+  let skipped = 0;
+
+  for (const [planId, def] of Object.entries(definitions)) {
+    const existing = await BillingPlanRepository.findActive(planId);
+    if (existing) {
+      skipped += 1;
+      continue;
+    }
+
+    await BillingPlanRepository.create({
+      planId,
+      version: 'v1',
+      meterQuota: def.meterQuota ?? 0,
+      ratios: def.ratios ?? { default: 1 },
+      effectiveFrom: new Date(),
+      effectiveUntil: null,
+      active: true,
+    });
+    cache.delete(planId);
+    seeded += 1;
+  }
+
+  return { seeded, skipped };
+};
+
 export default {
   getActivePlan,
   getPlanByVersion,
   bumpVersion,
   bumpVersionWithRetry,
+  ensureSeeded,
   invalidateCache,
 };

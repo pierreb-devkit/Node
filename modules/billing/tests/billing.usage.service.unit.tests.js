@@ -10,6 +10,7 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
   let BillingUsageService;
   let mockUsageRepository;
   let mockPlanService;
+  let mockSubscriptionRepository;
   let mockConfig;
 
   const orgId = '507f1f77bcf86cd799439011';
@@ -50,7 +51,7 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
     mockConfig = {
       billing: {
         meterMode: true,
-        plans: ['pro'],
+        defaultPlan: 'starter',
         meter: {
           runBaseUnits: 1,
           dollarsToUnitRatio: 1000,
@@ -71,12 +72,20 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       getActivePlan: jest.fn(),
     };
 
+    mockSubscriptionRepository = {
+      findByOrganization: jest.fn(),
+    };
+
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: mockConfig,
     }));
 
     jest.unstable_mockModule('../repositories/billing.usage.repository.js', () => ({
       default: mockUsageRepository,
+    }));
+
+    jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
+      default: mockSubscriptionRepository,
     }));
 
     jest.unstable_mockModule('../services/billing.plan.service.js', () => ({
@@ -117,6 +126,7 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
 
   describe('incrementMeter — happy path', () => {
     test('should attribute units and return applied=true', async () => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockResolvedValue(makePlan());
       const updatedDoc = makeUsageDoc({ meterUsed: 100 });
       mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
@@ -136,7 +146,40 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       expect(result.extrasConsumed).toBe(0);
     });
 
+    test('should use subscribed plan as source of truth', async () => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan());
+      mockUsageRepository.incrementMeter.mockResolvedValue(makeUsageDoc({ meterUsed: 10 }));
+
+      await BillingUsageService.incrementMeter(orgId, 10, {}, 'hist_plan_pro');
+
+      expect(mockSubscriptionRepository.findByOrganization).toHaveBeenCalledWith(orgId);
+      expect(mockPlanService.getActivePlan).toHaveBeenCalledWith('pro');
+    });
+
+    test('should use defaultPlan when subscription is missing', async () => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue(null);
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan({ planId: 'starter' }));
+      mockUsageRepository.incrementMeter.mockResolvedValue(makeUsageDoc({ meterUsed: 10 }));
+
+      await BillingUsageService.incrementMeter(orgId, 10, {}, 'hist_default_plan');
+
+      expect(mockPlanService.getActivePlan).toHaveBeenCalledWith('starter');
+    });
+
+    test('should fall back to free when subscription and defaultPlan are missing', async () => {
+      mockConfig.billing.defaultPlan = undefined;
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue(null);
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan({ planId: 'free' }));
+      mockUsageRepository.incrementMeter.mockResolvedValue(makeUsageDoc({ meterUsed: 10 }));
+
+      await BillingUsageService.incrementMeter(orgId, 10, {}, 'hist_free_fallback');
+
+      expect(mockPlanService.getActivePlan).toHaveBeenCalledWith('free');
+    });
+
     test('should return applied=false and fetch existing doc on replay', async () => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockResolvedValue(makePlan());
       // repo returns null = replay
       mockUsageRepository.incrementMeter.mockResolvedValue(null);
@@ -150,6 +193,7 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
     });
 
     test('incrementMeter same idempotencyKey twice → second is no-op', async () => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockResolvedValue(makePlan());
       mockUsageRepository.incrementMeter
         .mockResolvedValueOnce(makeUsageDoc({ meterUsed: 100 }))
@@ -166,6 +210,7 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
 
   describe('incrementMeter — overflow to extras', () => {
     test('should compute extrasConsumed when meterUsed exceeds quota', async () => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 500000 }));
       // meterUsed = 510000, quota = 500000 → 10000 overflow
       const updatedDoc = makeUsageDoc({ meterUsed: 510000, meterQuota: 500000 });
@@ -177,6 +222,7 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
     });
 
     test('should return extrasConsumed=0 when within quota', async () => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 500000 }));
       const updatedDoc = makeUsageDoc({ meterUsed: 100, meterQuota: 500000 });
       mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
@@ -189,6 +235,7 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
 
   describe('incrementMeter — threshold detection', () => {
     test('should emit threshold 80 alert when crossing 80% (once per cycle)', async () => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 500000 }));
       // 80% of 500000 = 400000 → crossing at meterUsed = 400001
       const updatedDoc = makeUsageDoc({ meterUsed: 400001, meterQuota: 500000, alertedAt80: null, alertedAt100: null });
@@ -202,6 +249,7 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
     });
 
     test('should NOT re-emit threshold 80 when already alerted (alertedAt80 set)', async () => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 500000 }));
       const updatedDoc = makeUsageDoc({
         meterUsed: 450000,
@@ -217,6 +265,7 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
     });
 
     test('should emit threshold 100 alert when at 100%', async () => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 500000 }));
       const updatedDoc = makeUsageDoc({
         meterUsed: 500001,
@@ -232,6 +281,7 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
     });
 
     test('should NOT re-emit threshold 100 when already alerted', async () => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 500000 }));
       const updatedDoc = makeUsageDoc({
         meterUsed: 600000,
@@ -249,6 +299,7 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
     test('should NOT set alertCrossed when markThreshold returns modifiedCount=0 (another pod won)', async () => {
       // markThreshold returns modifiedCount=0 → we lost the race, must not emit
       mockUsageRepository.markThreshold.mockResolvedValue({ modifiedCount: 0 });
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 500000 }));
       const updatedDoc = makeUsageDoc({ meterUsed: 400001, meterQuota: 500000, alertedAt80: null, alertedAt100: null });
       mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
