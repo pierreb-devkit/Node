@@ -41,6 +41,12 @@ const config = {
      */
     upgradeUrl: '/billing/plans',
     /**
+     * When true, mounts attachUsageContext on protected /api/billing/* routes.
+     * Emits X-Meter-Remaining on billing responses. Off by default to avoid
+     * extra DB reads on routes that do not need the header.
+     */
+    attachUsageHeader: false,
+    /**
      * Plan definitions — DOWNSTREAM-OVERRIDE-REQUIRED for meter mode.
      * Used by BillingPlanService.ensureSeeded() at boot to upsert BillingPlan docs.
      * Each entry: { meterQuota: units/week, ratios: { featureKey: multiplier } }.

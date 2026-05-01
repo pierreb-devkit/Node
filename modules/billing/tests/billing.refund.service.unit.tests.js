@@ -58,6 +58,15 @@ describe('BillingRefundService unit tests:', () => {
       );
     });
 
+    test('should forward an explicit reason when provided', async () => {
+      await BillingRefundService.refundCharge('ch_test_xyz', 2000, { reason: 'duplicate' });
+
+      expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
+        { charge: 'ch_test_xyz', reason: 'duplicate', amount: 2000 },
+        { idempotencyKey: 'refund_ch_test_xyz_2000' },
+      );
+    });
+
     test('idempotency key is "refund_{chargeId}_full" for full refund', async () => {
       await BillingRefundService.refundCharge('ch_abc');
 

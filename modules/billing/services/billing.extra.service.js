@@ -71,10 +71,17 @@ const expireOldEntries = (orgId) =>
  * @param {string} orgId - The organization ObjectId (string).
  * @param {string} stripeSessionId - Stripe session ID of the original purchase (to find the pack).
  * @param {number} amountRefundedCents - Amount refunded in cents (integer).
- * @returns {Promise<{doc: Object, applied: boolean, refundUnits: number}>}
+ * @param {string|undefined} [packId] - Optional pack identifier from Stripe metadata for exact correlation.
+ * @returns {Promise<{doc: Object|null, applied: boolean, refundUnits: number, reason?: string}>}
+ *          `reason` is present only when `applied === false`: 'meter_mode_disabled' | 'invalid_org' |
+ *          'pack_not_found' | 'ambiguous_pack_match'.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const refundPartial = async (orgId, stripeSessionId, amountRefundedCents) => {
+const refundPartial = async (orgId, stripeSessionId, amountRefundedCents, packId) => {
+  if (!config?.billing?.meterMode) {
+    return { doc: null, applied: false, reason: 'meter_mode_disabled', refundUnits: 0 };
+  }
+
   // Find the topup ledger entry for this session to identify the pack
   const doc = await BillingExtraBalanceRepository.getOrCreate(orgId);
   if (!doc) return { doc: null, applied: false, reason: 'invalid_org', refundUnits: 0 };
@@ -87,23 +94,27 @@ const refundPartial = async (orgId, stripeSessionId, amountRefundedCents) => {
     return { doc, applied: false, refundUnits: 0 };
   }
 
-  // Find the pack config to compute proportion using the topup entry's meterUnits.
-  // Ambiguity guard: if 0 or >1 packs share the same meterUnits, fall back to
-  // applied=false rather than using a wrong priceUsd.
-  // NOTE: packId is not passed to refundPartial — charge.refunded carries it in
-  // charge.metadata but the webhook call-site only passes (orgId, stripeSessionId, amountCents).
-  // This heuristic is therefore intentionally retained; the ambiguity guard is the safety net.
   const packs = config?.billing?.packs ?? [];
-  const matchingPacks = packs.filter(
-    (p) => (p.meterUnits ?? p.computeUnits) === topupEntry.amount,
-  );
+  let matchingPack;
 
-  if (matchingPacks.length !== 1) {
-    // Ambiguous or unknown pack — cannot compute proportional refund safely.
-    return { doc, applied: false, reason: 'ambiguous_pack_match', refundUnits: 0 };
+  if (packId) {
+    matchingPack = packs.find((p) => p.packId === packId);
+    if (!matchingPack) {
+      return { doc, applied: false, reason: 'pack_not_found', refundUnits: 0 };
+    }
+  } else {
+    const matchingPacks = packs.filter(
+      (p) => (p.meterUnits ?? p.computeUnits) === topupEntry.amount,
+    );
+
+    if (matchingPacks.length !== 1) {
+      // Ambiguous or unknown pack — cannot compute proportional refund safely.
+      return { doc, applied: false, reason: 'ambiguous_pack_match', refundUnits: 0 };
+    }
+
+    matchingPack = matchingPacks[0];
   }
 
-  const matchingPack = matchingPacks[0];
   let refundUnits;
   if (matchingPack.priceUsd && matchingPack.priceUsd > 0) {
     const packUnits = matchingPack.meterUnits ?? matchingPack.computeUnits;

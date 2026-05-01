@@ -234,7 +234,7 @@ describe('BillingExtraService unit tests:', () => {
       const updatedDoc = makeDoc({ cachedBalance: 0 });
       mockRepository.refundPartial.mockResolvedValue({ doc: updatedDoc, applied: true });
 
-      const result = await BillingExtraService.refundPartial(orgId, 'cs_refund_test', 4900);
+      const result = await BillingExtraService.refundPartial(orgId, 'cs_refund_test', 4900, 'pack_500k');
 
       // $49 / $49 * 500000 = 500000 units
       expect(result.refundUnits).toBe(500000);
@@ -260,7 +260,7 @@ describe('BillingExtraService unit tests:', () => {
       mockRepository.getOrCreate.mockResolvedValue(doc);
       mockRepository.refundPartial.mockResolvedValue({ doc: makeDoc({ cachedBalance: -500000 }), applied: true });
 
-      const result = await BillingExtraService.refundPartial(orgId, 'cs_consumed', 4900);
+      const result = await BillingExtraService.refundPartial(orgId, 'cs_consumed', 4900, 'pack_500k');
       // Applied (even with negative resulting balance — correct economic reflection)
       expect(result.applied).toBe(true);
     });
@@ -274,11 +274,31 @@ describe('BillingExtraService unit tests:', () => {
       expect(result.refundUnits).toBe(0);
     });
 
-    test('should return applied=false with reason ambiguous_pack_match when multiple packs have same meterUnits', async () => {
-      // Simulate two packs with identical meterUnits
+    test('should resolve duplicate meterUnits correctly when packId is provided', async () => {
       mockConfig.billing.packs = [
         { packId: 'pack_a', meterUnits: 500000, priceUsd: 49 },
         { packId: 'pack_b', meterUnits: 500000, priceUsd: 39 }, // promo duplicate
+      ];
+      const topupEntry = {
+        _id: '507f1f77bcf86cd799439ccc',
+        kind: 'topup',
+        amount: 500000,
+        stripeSessionId: 'cs_ambiguous',
+      };
+      const doc = makeDoc({ ledger: [topupEntry], cachedBalance: 500000 });
+      mockRepository.getOrCreate.mockResolvedValue(doc);
+      mockRepository.refundPartial.mockResolvedValue({ doc: makeDoc({ cachedBalance: 374359 }), applied: true });
+
+      const result = await BillingExtraService.refundPartial(orgId, 'cs_ambiguous', 4900, 'pack_a');
+      expect(result.applied).toBe(true);
+      expect(result.refundUnits).toBe(500000);
+      expect(mockRepository.refundPartial).toHaveBeenCalled();
+    });
+
+    test('should return applied=false with reason ambiguous_pack_match when multiple packs have same meterUnits and no packId', async () => {
+      mockConfig.billing.packs = [
+        { packId: 'pack_a', meterUnits: 500000, priceUsd: 49 },
+        { packId: 'pack_b', meterUnits: 500000, priceUsd: 39 },
       ];
       const topupEntry = {
         _id: '507f1f77bcf86cd799439ccc',
@@ -294,6 +314,47 @@ describe('BillingExtraService unit tests:', () => {
       expect(result.reason).toBe('ambiguous_pack_match');
       expect(result.refundUnits).toBe(0);
       expect(mockRepository.refundPartial).not.toHaveBeenCalled();
+    });
+
+    test('should return pack_not_found when packId metadata is unknown', async () => {
+      const topupEntry = {
+        _id: '507f1f77bcf86cd799439ddd',
+        kind: 'topup',
+        amount: 500000,
+        stripeSessionId: 'cs_unknown_pack',
+      };
+      const doc = makeDoc({ ledger: [topupEntry], cachedBalance: 500000 });
+      mockRepository.getOrCreate.mockResolvedValue(doc);
+
+      const result = await BillingExtraService.refundPartial(orgId, 'cs_unknown_pack', 4900, 'pack_missing');
+
+      expect(result.applied).toBe(false);
+      expect(result.reason).toBe('pack_not_found');
+      expect(result.refundUnits).toBe(0);
+      expect(mockRepository.refundPartial).not.toHaveBeenCalled();
+    });
+
+    test('legacy topup with no packId still falls back to meterUnits heuristic', async () => {
+      const topupEntry = {
+        _id: '507f1f77bcf86cd799439eee',
+        kind: 'topup',
+        amount: 2000000,
+        stripeSessionId: 'cs_legacy',
+      };
+      const doc = makeDoc({ ledger: [topupEntry], cachedBalance: 2000000 });
+      mockRepository.getOrCreate.mockResolvedValue(doc);
+      mockRepository.refundPartial.mockResolvedValue({ doc: makeDoc({ cachedBalance: 1000000 }), applied: true });
+
+      const result = await BillingExtraService.refundPartial(orgId, 'cs_legacy', 7450);
+
+      expect(result.applied).toBe(true);
+      expect(result.refundUnits).toBe(1000000);
+      expect(mockRepository.refundPartial).toHaveBeenCalledWith(
+        orgId,
+        'cs_legacy',
+        1000000,
+        'refund-cs_legacy-7450-507f1f77bcf86cd799439eee',
+      );
     });
   });
 });
