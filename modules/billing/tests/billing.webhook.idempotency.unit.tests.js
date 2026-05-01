@@ -5,6 +5,12 @@ import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globa
 
 /**
  * Unit tests for webhook idempotency (withIdempotency guard)
+ *
+ * Contract (post #3573 fix — atomic-claim):
+ * - tryRecord is called BEFORE the handler (atomic claim via unique index)
+ * - If tryRecord returns { recorded: false } → skip (Stripe retry or concurrent delivery)
+ * - If handler throws → deleteByEventId rollback → Stripe can retry
+ * - On success → record stays permanently (subsequent Stripe retries skipped)
  */
 describe('Billing webhook idempotency unit tests:', () => {
   let BillingWebhookService;
@@ -26,8 +32,9 @@ describe('Billing webhook idempotency unit tests:', () => {
     jest.resetModules();
 
     mockProcessedStripeEventRepository = {
-      wasProcessed: jest.fn(),
       tryRecord: jest.fn(),
+      wasProcessed: jest.fn(),
+      deleteByEventId: jest.fn(),
     };
 
     jest.unstable_mockModule('../repositories/billing.processedStripeEvent.repository.js', () => ({
@@ -79,68 +86,75 @@ describe('Billing webhook idempotency unit tests:', () => {
   });
 
   describe('withIdempotency', () => {
-    test('should call handler when event is new (wasProcessed=false), then record', async () => {
-      mockProcessedStripeEventRepository.wasProcessed.mockResolvedValue(false);
+    /**
+     * Happy path: new event — tryRecord succeeds, handler runs, result returned.
+     */
+    test('new event: tryRecord=true → handler runs → result returned', async () => {
       mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: true });
       const handler = jest.fn().mockResolvedValue({ ok: true });
       const event = makeEvent();
 
       const result = await BillingWebhookService.withIdempotency(event, handler);
 
-      expect(mockProcessedStripeEventRepository.wasProcessed).toHaveBeenCalledWith('evt_test_001');
+      expect(mockProcessedStripeEventRepository.tryRecord).toHaveBeenCalledWith(
+        'evt_test_001',
+        'checkout.session.completed',
+      );
       expect(handler).toHaveBeenCalledWith(event);
-      expect(mockProcessedStripeEventRepository.tryRecord).toHaveBeenCalledWith('evt_test_001', 'checkout.session.completed');
       expect(result).toEqual({ ok: true });
     });
 
     /**
-     * Stripe retry after success: wasProcessed returns true → handler not run.
-     * This is the primary dedup path for Stripe event retries after successful processing.
+     * Stripe retry after success: tryRecord returns { recorded: false } (unique index hit)
+     * → handler not invoked → skip sentinel returned.
      */
-    test('Stripe retry after success: wasProcessed=true → handler not run', async () => {
-      mockProcessedStripeEventRepository.wasProcessed.mockResolvedValue(true);
+    test('Stripe retry: tryRecord=false → handler not run → skip sentinel', async () => {
+      mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: false });
       const handler = jest.fn();
       const event = makeEvent();
 
       const result = await BillingWebhookService.withIdempotency(event, handler);
 
-      expect(mockProcessedStripeEventRepository.wasProcessed).toHaveBeenCalledWith('evt_test_001');
+      expect(mockProcessedStripeEventRepository.tryRecord).toHaveBeenCalledWith(
+        'evt_test_001',
+        'checkout.session.completed',
+      );
       expect(handler).not.toHaveBeenCalled();
-      expect(mockProcessedStripeEventRepository.tryRecord).not.toHaveBeenCalled();
       expect(result).toEqual({ skipped: true, reason: 'duplicate_event' });
     });
 
     /**
-     * Concurrent delivery: two simultaneous Stripe deliveries of the same event both pass
-     * wasProcessed (it's not atomic). Both handlers run (acceptable per data-layer idempotency).
-     * Only the first tryRecord succeeds; the second gets E11000 → recorded=false (best-effort).
+     * Concurrent delivery: two simultaneous Stripe deliveries — tryRecord is atomic.
+     * First call wins (recorded: true) → handler runs once.
+     * Second call loses (recorded: false) → handler not run → skip.
+     *
+     * This is the TOCTOU fix: only ONE handler execution vs the old 2-execution race.
      */
-    test('concurrent delivery: both pass wasProcessed, both run handler, second tryRecord gets E11000', async () => {
-      mockProcessedStripeEventRepository.wasProcessed.mockResolvedValue(false);
+    test('concurrent delivery: only the first claim runs the handler (TOCTOU fix)', async () => {
       mockProcessedStripeEventRepository.tryRecord
-        .mockResolvedValueOnce({ recorded: true })
-        .mockResolvedValueOnce({ recorded: false }); // E11000 on the second concurrent delivery
-
+        .mockResolvedValueOnce({ recorded: true }) // first delivery wins
+        .mockResolvedValueOnce({ recorded: false }); // second delivery loses
       const handler = jest.fn().mockResolvedValue(undefined);
       const event = makeEvent('evt_concurrent', 'customer.subscription.updated');
 
-      // Both deliveries run concurrently — both pass wasProcessed
-      await Promise.all([
+      const results = await Promise.all([
         BillingWebhookService.withIdempotency(event, handler),
         BillingWebhookService.withIdempotency(event, handler),
       ]);
 
-      // Both handlers ran (acceptable — data-layer mutations are idempotent)
-      expect(handler).toHaveBeenCalledTimes(2);
+      // Handler runs exactly ONCE (not twice as in the old TOCTOU bug)
+      expect(handler).toHaveBeenCalledTimes(1);
       expect(mockProcessedStripeEventRepository.tryRecord).toHaveBeenCalledTimes(2);
+      expect(results.some((r) => r && r.skipped)).toBe(true);
     });
 
     /**
-     * Silent-loss fix proof: if handler throws, no record is persisted.
-     * Stripe will retry; the handler gets another chance → no silent event loss.
+     * Handler throws → deleteByEventId rollback → event stays unprocessed for Stripe to retry.
+     * wasProcessed is NOT called (old pre-check removed in favour of atomic-claim).
      */
-    test('handler throws → no record persisted (silent-loss fix)', async () => {
-      mockProcessedStripeEventRepository.wasProcessed.mockResolvedValue(false);
+    test('handler throws → deleteByEventId called (rollback) → error re-thrown', async () => {
+      mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: true });
+      mockProcessedStripeEventRepository.deleteByEventId.mockResolvedValue({ deleted: true });
       const handler = jest.fn().mockRejectedValue(new Error('handler blew up'));
       const event = makeEvent();
 
@@ -148,20 +162,69 @@ describe('Billing webhook idempotency unit tests:', () => {
         BillingWebhookService.withIdempotency(event, handler),
       ).rejects.toThrow('handler blew up');
 
-      // tryRecord must NOT have been called — event stays unprocessed for Stripe to retry
-      expect(mockProcessedStripeEventRepository.tryRecord).not.toHaveBeenCalled();
+      expect(mockProcessedStripeEventRepository.deleteByEventId).toHaveBeenCalledWith('evt_test_001');
     });
 
-    test('wasProcessed called exactly once per withIdempotency invocation', async () => {
-      mockProcessedStripeEventRepository.wasProcessed.mockResolvedValue(false);
+    /**
+     * Rollback itself fails (DB outage) — original handler error must still be thrown,
+     * not the rollback error. The swallowed rollback error is logged but never re-thrown.
+     */
+    test('rollback fails → original handler error still propagated (not masked)', async () => {
+      mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: true });
+      mockProcessedStripeEventRepository.deleteByEventId.mockRejectedValue(new Error('DB outage'));
+      const handler = jest.fn().mockRejectedValue(new Error('handler blew up'));
+      const event = makeEvent();
+
+      await expect(
+        BillingWebhookService.withIdempotency(event, handler),
+      ).rejects.toThrow('handler blew up');
+
+      expect(mockProcessedStripeEventRepository.deleteByEventId).toHaveBeenCalledWith('evt_test_001');
+    });
+
+    /**
+     * Retry after rollback: handler fails (rollback), then Stripe retries.
+     * On the second delivery tryRecord succeeds again (record was deleted) → handler runs.
+     */
+    test('retry after rollback: second delivery succeeds after first handler failure', async () => {
+      // First delivery: claim succeeds, handler throws, rollback runs
+      mockProcessedStripeEventRepository.tryRecord
+        .mockResolvedValueOnce({ recorded: true })
+        .mockResolvedValueOnce({ recorded: true }); // second delivery can claim again
+      mockProcessedStripeEventRepository.deleteByEventId.mockResolvedValue({ deleted: true });
+
+      const handler = jest.fn()
+        .mockRejectedValueOnce(new Error('transient failure'))
+        .mockResolvedValueOnce({ ok: true });
+
+      const event = makeEvent('evt_retry_test');
+
+      // First delivery fails
+      await expect(
+        BillingWebhookService.withIdempotency(event, handler),
+      ).rejects.toThrow('transient failure');
+
+      expect(mockProcessedStripeEventRepository.deleteByEventId).toHaveBeenCalledWith('evt_retry_test');
+
+      // Second delivery (Stripe retry) succeeds
+      const result = await BillingWebhookService.withIdempotency(event, handler);
+      expect(result).toEqual({ ok: true });
+      expect(handler).toHaveBeenCalledTimes(2);
+    });
+
+    /**
+     * tryRecord called exactly once per withIdempotency invocation.
+     * wasProcessed must NOT be called (old contract removed).
+     */
+    test('tryRecord called exactly once; wasProcessed never called', async () => {
       mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: true });
       const handler = jest.fn().mockResolvedValue(undefined);
       const event = makeEvent('evt_single_check');
 
       await BillingWebhookService.withIdempotency(event, handler);
 
-      expect(mockProcessedStripeEventRepository.wasProcessed).toHaveBeenCalledTimes(1);
       expect(mockProcessedStripeEventRepository.tryRecord).toHaveBeenCalledTimes(1);
+      expect(mockProcessedStripeEventRepository.wasProcessed).not.toHaveBeenCalled();
     });
   });
 });

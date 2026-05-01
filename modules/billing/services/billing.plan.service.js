@@ -169,9 +169,15 @@ const bumpVersionWithRetry = async (planId, fields, { maxAttempts = 3 } = {}) =>
  *              No-op when meter mode is disabled. Idempotent on re-run.
  *
  *              Accepts the canonical array-of-objects shape:
- *              [{ planId, meterQuota, ratios }, ...].
+ *              [{ planId, meterQuota, ratios, version? }, ...].
  *              The legacy object shape is normalized upstream in config/index.js
  *              before this service is ever called.
+ *
+ *              Version resolution priority (see billing README — Version Namespace Contract):
+ *              1. Explicit version in planDefinitions entry (e.g. '2026.05' — YYYY.MM contract).
+ *              2. config.billing.meter.ratioVersion (canonical version emitted by attribute()).
+ *              3. Derived from count (v${total + 1}) — full backward compat for projects
+ *                 that do not set either.
  *
  *              Race / E11000 safety: version is derived from the total count of
  *              existing docs for the planId (same strategy as bumpVersion). A
@@ -197,10 +203,15 @@ const ensureSeeded = async () => {
     }
 
     try {
-      // Derive version from total count so that an inactive v1 record does not
-      // collide with the insert (same approach as bumpVersion to avoid hardcoding 'v1').
-      const total = await BillingPlanRepository.count(planId);
-      const version = `v${total + 1}`;
+      // Version resolution priority:
+      // 1. Explicit version in planDefinitions entry (e.g. '2026.05' — YYYY.MM contract)
+      // 2. config.billing.meter.ratioVersion (canonical version emitted by attribute())
+      // 3. Derived from count (v${total + 1}) — full backward compat for projects without version config
+      let version = planDef.version ?? config?.billing?.meter?.ratioVersion ?? null;
+      if (!version) {
+        const total = await BillingPlanRepository.count(planId);
+        version = `v${total + 1}`;
+      }
 
       await BillingPlanRepository.create({
         planId,

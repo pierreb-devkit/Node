@@ -197,6 +197,30 @@ Both file types are optional and can be used independently or together. Per-modu
 
 > See [MIGRATIONS.md](MIGRATIONS.md) for the full migration guide from route-level CASL to document-level CASL v2.
 
+## :credit_card: Billing — Version Namespace Contract
+
+When `meterMode` is enabled, three values must be aligned so `getPlanByVersion` resolves correctly and plan ratios are applied (not the ratio=1 fallback):
+
+| Value | Where set | Format |
+|-------|-----------|--------|
+| `config.billing.meter.ratioVersion` | downstream project config | `YYYY.MM` (e.g. `'2026.05'`) |
+| `planDefinitions[].version` | downstream project config (optional, takes priority) | same as above |
+| `history.planVersion` | written at run-time by the downstream cost-config | same as above |
+
+**Version resolution priority in `ensureSeeded`:**
+1. Explicit `version` in `planDefinitions` entry (e.g. `{ planId: 'pro', version: '2026.05', ... }`).
+2. `config.billing.meter.ratioVersion` — canonical fallback.
+3. Count-derived `v${n+1}` — backward compat for projects that set neither.
+
+**Preferred format:** `YYYY.MM` (calendar-style). Legacy `v${N}` is supported but new projects should use YYYY.MM.
+
+**Drift detection:** when `getPlanByVersion` returns null (version mismatch), `unitsFromCosts` emits a `[billing.meter] … ratio=1 fallback applied` WARN. Check that log at boot if meter charges look unexpectedly flat.
+
+**Downstream checklist:**
+- Set `billing.meter.ratioVersion` in your project config (e.g. `'2026.05'`).
+- Either set `version` in each `planDefinitions` entry or rely on `ratioVersion` as the fallback.
+- Ensure your cost-config writes the same version string into `history.planVersion`.
+
 ## :whale: Docker
 
 ```bash

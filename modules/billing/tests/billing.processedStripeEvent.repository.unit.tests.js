@@ -22,6 +22,7 @@ describe('ProcessedStripeEventRepository unit tests:', () => {
     mockModel = {
       create: jest.fn(),
       findOne: jest.fn(),
+      deleteOne: jest.fn(),
     };
 
     jest.unstable_mockModule('mongoose', () => ({
@@ -134,6 +135,45 @@ describe('ProcessedStripeEventRepository unit tests:', () => {
     test('should return false for non-string eventId', async () => {
       const result = await ProcessedStripeEventRepository.wasProcessed(null);
       expect(result).toBe(false);
+    });
+  });
+
+  describe('deleteByEventId', () => {
+    test('returns { deleted: true } when document removed', async () => {
+      mockModel.deleteOne.mockResolvedValue({ deletedCount: 1 });
+
+      const result = await ProcessedStripeEventRepository.deleteByEventId('evt_to_delete');
+
+      expect(result).toEqual({ deleted: true });
+      expect(mockModel.deleteOne).toHaveBeenCalledWith({ eventId: 'evt_to_delete' });
+    });
+
+    test('returns { deleted: false } when document not found', async () => {
+      mockModel.deleteOne.mockResolvedValue({ deletedCount: 0 });
+
+      const result = await ProcessedStripeEventRepository.deleteByEventId('evt_missing');
+
+      expect(result).toEqual({ deleted: false });
+    });
+
+    test('throws for empty eventId', async () => {
+      await expect(
+        ProcessedStripeEventRepository.deleteByEventId(''),
+      ).rejects.toThrow('invalid argument: eventId must be a non-empty string');
+    });
+
+    test('throws for non-string eventId', async () => {
+      await expect(
+        ProcessedStripeEventRepository.deleteByEventId(null),
+      ).rejects.toThrow('invalid argument: eventId must be a non-empty string');
+    });
+
+    test('propagates DB errors', async () => {
+      mockModel.deleteOne.mockRejectedValue(new Error('DB connection lost'));
+
+      await expect(
+        ProcessedStripeEventRepository.deleteByEventId('evt_abc'),
+      ).rejects.toThrow('DB connection lost');
     });
   });
 });

@@ -156,4 +156,57 @@ describe('BillingPlanService.ensureSeeded unit tests:', () => {
 
     await expect(BillingPlanService.ensureSeeded()).rejects.toThrow('DB connection lost');
   });
+
+  // Version Namespace Contract tests (#3574)
+
+  test('explicit version in planDefinitions entry is used as-is (YYYY.MM contract)', async () => {
+    mockConfig.billing.planDefinitions = [
+      { planId: 'pro', meterQuota: 500000, ratios: { default: 1 }, version: '2026.05' },
+    ];
+    mockBillingPlanRepository.findActive.mockResolvedValue(null);
+    mockBillingPlanRepository.create.mockResolvedValue({});
+
+    await BillingPlanService.ensureSeeded();
+
+    // count should NOT be called — version resolved from explicit entry
+    expect(mockBillingPlanRepository.count).not.toHaveBeenCalled();
+    expect(mockBillingPlanRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ planId: 'pro', version: '2026.05' }),
+    );
+  });
+
+  test('no explicit version + meter.ratioVersion in config → uses ratioVersion (YYYY.MM fallback)', async () => {
+    mockConfig.billing.planDefinitions = [
+      { planId: 'starter', meterQuota: 50000, ratios: { default: 1 } },
+    ];
+    mockConfig.billing.meter = { ratioVersion: '2026.05' };
+    mockBillingPlanRepository.findActive.mockResolvedValue(null);
+    mockBillingPlanRepository.create.mockResolvedValue({});
+
+    await BillingPlanService.ensureSeeded();
+
+    // count should NOT be called — version resolved from ratioVersion
+    expect(mockBillingPlanRepository.count).not.toHaveBeenCalled();
+    expect(mockBillingPlanRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ planId: 'starter', version: '2026.05' }),
+    );
+  });
+
+  test('no explicit version + no ratioVersion → falls back to count-derived v${n+1}', async () => {
+    mockConfig.billing.planDefinitions = [
+      { planId: 'free', meterQuota: 0, ratios: { default: 1 } },
+    ];
+    // Ensure no meter.ratioVersion
+    mockConfig.billing.meter = { runBaseUnits: 1, dollarsToUnitRatio: 1000 };
+    mockBillingPlanRepository.findActive.mockResolvedValue(null);
+    mockBillingPlanRepository.count.mockResolvedValue(0);
+    mockBillingPlanRepository.create.mockResolvedValue({});
+
+    await BillingPlanService.ensureSeeded();
+
+    expect(mockBillingPlanRepository.count).toHaveBeenCalledTimes(1);
+    expect(mockBillingPlanRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ planId: 'free', version: 'v1' }),
+    );
+  });
 });

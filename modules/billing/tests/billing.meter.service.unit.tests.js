@@ -139,7 +139,8 @@ describe('BillingMeterService unit tests:', () => {
       expect(result.totalUnits).toBe(1);
     });
 
-    test('should use ratio=1 when plan not found (null)', async () => {
+    test('should use ratio=1 when plan not found (null) and emit a WARN log', async () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
       mockBillingPlanService.getPlanByVersion.mockResolvedValue(null);
 
       const costs = { scrap: 0.001 };
@@ -147,6 +148,10 @@ describe('BillingMeterService unit tests:', () => {
 
       // ratio defaults to 1: floor(0.001 * 1 * 1000) = 1
       expect(result.totalUnits).toBe(1);
+      // WARN must be emitted so operators notice the version drift
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[billing.meter] getPlanByVersion(pro, v1) returned null'),
+      );
     });
 
     test('should skip cost entries with non-numeric or zero values', async () => {

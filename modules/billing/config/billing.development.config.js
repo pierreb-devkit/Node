@@ -47,9 +47,12 @@ const config = {
     /**
      * Plan definitions — DOWNSTREAM-OVERRIDE-REQUIRED for meter mode.
      * Used by BillingPlanService.ensureSeeded() at boot to upsert BillingPlan docs.
-     * Array of objects: { planId, meterQuota: units/week, ratios: { featureKey: multiplier } }.
+     * Array of objects: { planId, meterQuota: units/week, ratios: { featureKey: multiplier }, version? }.
      * billing.plans enum is derived at boot from planDefinitions.map(p => p.planId) — do NOT
      * declare billing.plans manually. This is the single source of truth for plan identifiers.
+     *
+     * version: optional — falls back to billing.meter.ratioVersion, then v${count + 1}.
+     * Downstream projects that use YYYY.MM versioning should set this (or set ratioVersion).
      */
     planDefinitions: [
       { planId: 'free', meterQuota: 0, ratios: { default: 1 } },
@@ -66,6 +69,23 @@ const config = {
      */
     meter: {
       runBaseUnits: 1,
+      /**
+       * Canonical version string emitted by billing.meter.service attribute() when writing
+       * history.planVersion. Downstream projects MUST override this value and keep it
+       * aligned with:
+       *   1. planDefinitions[].version (or omit it and rely on this value as the fallback)
+       *   2. The version string their cost-config writes into history records
+       *
+       * Preferred format: YYYY.MM (calendar-style, e.g. '2026.05').
+       * Legacy format v${N} (e.g. 'v1') is still supported for backward compat,
+       * but new projects should use YYYY.MM from the start.
+       *
+       * A mismatch here causes getPlanByVersion() to return null → ratio=1 fallback +
+       * a WARN log in unitsFromCosts. Check that warn at boot if meter charges look flat.
+       *
+       * DOWNSTREAM-OVERRIDE-REQUIRED — this devkit default is illustrative.
+       */
+      ratioVersion: '2026.05',
       /**
        * Conversion ratio: 1 unit = 1 / dollarsToUnitRatio USD of underlying cost.
        *
