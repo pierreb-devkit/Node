@@ -110,7 +110,7 @@ describe('auth.controller getConfig:', () => {
     expect(data.billing).toBeUndefined();
   });
 
-  test('data.billing defaults to false/false when config.billing is undefined (authenticated)', async () => {
+  test('data.billing defaults to false/false/null when config.billing is undefined (authenticated)', async () => {
     // config has no billing key
     const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
 
@@ -123,6 +123,7 @@ describe('auth.controller getConfig:', () => {
     expect(data.billing).toBeDefined();
     expect(data.billing.enabled).toBe(false);
     expect(data.billing.meterMode).toBe(false);
+    expect(data.billing.equivalences).toBeNull();
   });
 
   test('data.billing reflects config truthfully when both flags are enabled (authenticated)', async () => {
@@ -139,5 +140,26 @@ describe('auth.controller getConfig:', () => {
     expect(data.billing).toBeDefined();
     expect(data.billing.enabled).toBe(true);
     expect(data.billing.meterMode).toBe(true);
+    expect(data.billing.equivalences).toBeNull();
+  });
+
+  test('data.billing.equivalences is returned verbatim when set in config (authenticated)', async () => {
+    const equivalences = {
+      plans: {
+        growth: { scrapsPerMonth: 200, typicalScrapsPerMonth: 50, features: ['alerts', 'export'] },
+        pro: { scrapsPerMonth: 1000, typicalScrapsPerMonth: 200, features: ['alerts', 'export', 'api'] },
+      },
+    };
+    mockConfig.billing = { enabled: true, meterMode: true, equivalences };
+
+    const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
+
+    const req = { user: { id: '1' } };
+    const res = {};
+
+    AuthController.getConfig(req, res);
+
+    const [data] = mockResponses.successCb.mock.calls[0];
+    expect(data.billing.equivalences).toEqual(equivalences);
   });
 });

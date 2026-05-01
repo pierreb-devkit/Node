@@ -583,6 +583,7 @@ const getConfig = (req, res) => {
     data.billing = {
       enabled: !!config.billing?.enabled,
       meterMode: !!config.billing?.meterMode,
+      equivalences: config.billing?.equivalences ?? null,
     };
   }
 

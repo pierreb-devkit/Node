@@ -1542,6 +1542,7 @@ describe('Auth integration tests:', () => {
       expect(result.body.data.billing).toBeDefined();
       expect(typeof result.body.data.billing.enabled).toBe('boolean');
       expect(typeof result.body.data.billing.meterMode).toBe('boolean');
+      expect(result.body.data.billing.equivalences).toBeNull();
     });
 
     test('should reflect billing.meterMode=true when enabled (authenticated)', async () => {
@@ -1552,6 +1553,22 @@ describe('Auth integration tests:', () => {
         expect(result.body.data.billing.meterMode).toBe(true);
       } finally {
         config.billing = { ...config.billing, meterMode: originalMeterMode };
+      }
+    });
+
+    test('should return equivalences verbatim when set in config (authenticated)', async () => {
+      const originalBilling = config.billing;
+      const equivalences = {
+        plans: {
+          growth: { scrapsPerMonth: 200, typicalScrapsPerMonth: 50, features: ['alerts', 'export'] },
+        },
+      };
+      config.billing = { ...config.billing, equivalences };
+      try {
+        const result = await authAgent.get('/api/auth/config').expect(200);
+        expect(result.body.data.billing.equivalences).toEqual(equivalences);
+      } finally {
+        config.billing = originalBilling;
       }
     });
   });
