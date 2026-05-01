@@ -48,6 +48,9 @@ export default {
     '!<rootDir>/lib/helpers/mailer/**',
     // Exclude DB migrations — one-time data scripts, not business logic
     '!<rootDir>/modules/**/migrations/**',
+    // Exclude cron CLI entry points — top-level-await scripts requiring live DB;
+    // underlying business logic is covered via the corresponding service tests
+    '!<rootDir>/modules/**/crons/**',
     // Exclude static upload config — just object literals, like config/defaults
     '!<rootDir>/modules/uploads/config/config.uploads.js',
     // Exclude test fixtures — helper stubs used by tests, not production code
