@@ -39,8 +39,10 @@ describe('billing.weeklyReset cron — BillingResetService.resetAllDue:', () => 
 
     mockSubscriptionRepository = {
       findAllDueForReset: jest.fn(),
+      findAllDueForResetByLastReset: jest.fn(),
       findByOrganization: jest.fn().mockResolvedValue({ plan: 'pro' }),
       findPlan: jest.fn().mockResolvedValue({ plan: 'pro' }),
+      updateLastResetAt: jest.fn().mockResolvedValue(undefined),
     };
 
     jest.unstable_mockModule('../../config/index.js', () => ({ default: mockConfig }));
@@ -68,11 +70,11 @@ describe('billing.weeklyReset cron — BillingResetService.resetAllDue:', () => 
     const result = await BillingResetService.resetAllDue();
 
     expect(result).toEqual({ processed: 0, errors: 0 });
-    expect(mockSubscriptionRepository.findAllDueForReset).not.toHaveBeenCalled();
+    expect(mockSubscriptionRepository.findAllDueForResetByLastReset).not.toHaveBeenCalled();
   });
 
   test('resetAllDue returns { processed: 0, errors: 0 } when no subscriptions are due', async () => {
-    mockSubscriptionRepository.findAllDueForReset.mockResolvedValue([]);
+    mockSubscriptionRepository.findAllDueForResetByLastReset.mockResolvedValue([]);
 
     const result = await BillingResetService.resetAllDue();
 
@@ -84,7 +86,7 @@ describe('billing.weeklyReset cron — BillingResetService.resetAllDue:', () => 
       { organization: '507f1f77bcf86cd799439011', currentPeriodStart: new Date() },
       { organization: '507f1f77bcf86cd799439022', currentPeriodStart: new Date() },
     ];
-    mockSubscriptionRepository.findAllDueForReset.mockResolvedValue(subs);
+    mockSubscriptionRepository.findAllDueForResetByLastReset.mockResolvedValue(subs);
     mockUsageRepository.upsertWeekSnapshot.mockResolvedValue({ weekKey: '2026-W18' });
 
     const result = await BillingResetService.resetAllDue();
@@ -98,7 +100,7 @@ describe('billing.weeklyReset cron — BillingResetService.resetAllDue:', () => 
       { organization: '507f1f77bcf86cd799439011', currentPeriodStart: new Date() },
       { organization: '507f1f77bcf86cd799439022', currentPeriodStart: new Date() },
     ];
-    mockSubscriptionRepository.findAllDueForReset.mockResolvedValue(subs);
+    mockSubscriptionRepository.findAllDueForResetByLastReset.mockResolvedValue(subs);
     // First call throws, second succeeds
     mockUsageRepository.upsertWeekSnapshot
       .mockRejectedValueOnce(new Error('DB error'))
@@ -112,7 +114,7 @@ describe('billing.weeklyReset cron — BillingResetService.resetAllDue:', () => 
 
   test('resetAllDue is idempotent — no double-upsert when week doc already exists', async () => {
     const subs = [{ organization: '507f1f77bcf86cd799439011', currentPeriodStart: new Date() }];
-    mockSubscriptionRepository.findAllDueForReset.mockResolvedValue(subs);
+    mockSubscriptionRepository.findAllDueForResetByLastReset.mockResolvedValue(subs);
     // findByWeek returns existing doc → resetWeek returns early without upsert
     mockUsageRepository.findByWeek.mockResolvedValue({ weekKey: '2026-W18', meterUsed: 100 });
 

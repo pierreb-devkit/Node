@@ -103,11 +103,7 @@ const resetAllDue = async () => {
   if (!config?.billing?.meterMode) return { processed: 0, errors: 0 };
 
   const now = new Date();
-  const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-
-  // Find subscriptions whose period started within the last week.
-  // TODO PR-N5: replace window query with lastResetAt field for scheduler-delay resilience.
-  const subs = await BillingSubscriptionRepository.findAllDueForReset(oneWeekAgo, now);
+  const subs = await BillingSubscriptionRepository.findAllDueForResetByLastReset(now);
 
   let processed = 0;
   let errors = 0;
@@ -115,6 +111,7 @@ const resetAllDue = async () => {
   for (const sub of subs) {
     try {
       await resetWeek(String(sub.organization), new Date(sub.currentPeriodStart));
+      await BillingSubscriptionRepository.updateLastResetAt(String(sub.organization), now);
       processed += 1;
     } catch (err) {
       errors += 1;

@@ -43,6 +43,8 @@ describe('BillingResetService unit tests:', () => {
 
   beforeEach(async () => {
     jest.resetModules();
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-05-01T12:00:00.000Z'));
 
     mockConfig = {
       billing: {
@@ -69,6 +71,8 @@ describe('BillingResetService unit tests:', () => {
       findByOrganization: jest.fn(),
       findPlan: jest.fn(),
       findAllDueForReset: jest.fn(),
+      findAllDueForResetByLastReset: jest.fn(),
+      updateLastResetAt: jest.fn(),
     };
 
     jest.unstable_mockModule('../../../config/index.js', () => ({
@@ -92,6 +96,7 @@ describe('BillingResetService unit tests:', () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     jest.restoreAllMocks();
   });
 
@@ -241,13 +246,14 @@ describe('BillingResetService unit tests:', () => {
     });
 
     test('should call resetWeek for each active subscription', async () => {
-      const now = new Date();
-      const periodStart = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+      const now = new Date('2026-05-01T12:00:00.000Z');
+      const periodStart = new Date('2026-04-29T12:00:00.000Z');
 
-      mockSubscriptionRepository.findAllDueForReset.mockResolvedValue([
+      mockSubscriptionRepository.findAllDueForResetByLastReset.mockResolvedValue([
         { organization: '507f1f77bcf86cd799439011', currentPeriodStart: periodStart },
         { organization: '507f1f77bcf86cd799439022', currentPeriodStart: periodStart },
       ]);
+      mockSubscriptionRepository.updateLastResetAt.mockResolvedValue({});
 
       mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockResolvedValue(makePlan());
@@ -257,11 +263,22 @@ describe('BillingResetService unit tests:', () => {
       const result = await BillingResetService.resetAllDue();
       expect(result.processed).toBe(2);
       expect(result.errors).toBe(0);
+      expect(mockSubscriptionRepository.findAllDueForResetByLastReset).toHaveBeenCalledWith(now);
+      expect(mockSubscriptionRepository.updateLastResetAt).toHaveBeenNthCalledWith(
+        1,
+        '507f1f77bcf86cd799439011',
+        now,
+      );
+      expect(mockSubscriptionRepository.updateLastResetAt).toHaveBeenNthCalledWith(
+        2,
+        '507f1f77bcf86cd799439022',
+        now,
+      );
     });
 
     test('should count errors when resetWeek fails for a subscription', async () => {
       const periodStart = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
-      mockSubscriptionRepository.findAllDueForReset.mockResolvedValue([
+      mockSubscriptionRepository.findAllDueForResetByLastReset.mockResolvedValue([
         { organization: '507f1f77bcf86cd799439011', currentPeriodStart: periodStart },
       ]);
       mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
@@ -271,6 +288,7 @@ describe('BillingResetService unit tests:', () => {
       const result = await BillingResetService.resetAllDue();
       expect(result.errors).toBe(1);
       expect(result.processed).toBe(0);
+      expect(mockSubscriptionRepository.updateLastResetAt).not.toHaveBeenCalled();
     });
 
     test('should pass undefined orgId when sub uses organizationId (wrong field) — regression guard', async () => {
@@ -280,10 +298,11 @@ describe('BillingResetService unit tests:', () => {
       // We verify that when the correct field `organization` is present, it is forwarded correctly.
       const periodStart = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
       const capturedOrgIds = [];
-      mockSubscriptionRepository.findAllDueForReset.mockResolvedValue([
+      mockSubscriptionRepository.findAllDueForResetByLastReset.mockResolvedValue([
         { organization: '507f1f77bcf86cd799439011', currentPeriodStart: periodStart },
       ]);
       mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockSubscriptionRepository.updateLastResetAt.mockResolvedValue({});
       mockPlanService.getActivePlan.mockResolvedValue(makePlan());
       mockUsageRepository.findByWeek.mockImplementation((orgId) => {
         capturedOrgIds.push(orgId);
@@ -294,6 +313,22 @@ describe('BillingResetService unit tests:', () => {
 
       // The orgId forwarded to the repo must be the real ObjectId, not 'undefined'
       expect(capturedOrgIds[0]).toBe('507f1f77bcf86cd799439011');
+    });
+
+    test('should update lastResetAt after a successful reset', async () => {
+      const now = new Date('2026-05-01T12:00:00.000Z');
+      mockSubscriptionRepository.findAllDueForResetByLastReset.mockResolvedValue([
+        { organization: orgId, currentPeriodStart: new Date('2026-04-27T00:00:00.000Z') },
+      ]);
+      mockSubscriptionRepository.updateLastResetAt.mockResolvedValue({});
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan());
+      mockUsageRepository.findByWeek.mockResolvedValue(null);
+      mockUsageRepository.upsertWeekSnapshot.mockResolvedValue(makeUsageDoc());
+
+      const result = await BillingResetService.resetAllDue();
+
+      expect(result).toEqual({ processed: 1, errors: 0 });
+      expect(mockSubscriptionRepository.updateLastResetAt).toHaveBeenCalledWith(orgId, now);
     });
   });
 });

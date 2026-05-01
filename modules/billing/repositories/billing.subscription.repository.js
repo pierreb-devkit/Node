@@ -128,6 +128,7 @@ const findPlan = (organizationId) => {
  * @description Fetch active/trialing subscriptions whose currentPeriodStart falls
  *              within the provided time window. Used by the weekly meter reset sweep.
  *              Returns lean plain objects (no population) for performance.
+ * @deprecated Prefer findAllDueForResetByLastReset() for scheduler-delay resilience.
  * @param {Date} from - The start of the window (inclusive).
  * @param {Date} to - The end of the window (inclusive).
  * @returns {Promise<Array<{organization: string, currentPeriodStart: Date}>>}
@@ -141,6 +142,52 @@ const findAllDueForReset = (from, to) =>
     },
     { organization: 1, currentPeriodStart: 1 },
   ).lean();
+
+/**
+ * @function findAllDueForResetByLastReset
+ * @description Fetch active/trialing subscriptions whose last successful reset is missing
+ *              or older than 7 days. Filters out subscriptions without currentPeriodStart
+ *              because resetWeek derives the next usage period from that timestamp.
+ *              Returns lean plain objects (no population) for performance.
+ * @param {Date} now - The current timestamp used to compute the stale-reset threshold.
+ * @returns {Promise<Array<{organization: string, currentPeriodStart: Date, lastResetAt: Date|null}>>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const findAllDueForResetByLastReset = (now) => {
+  if (!(now instanceof Date)) throw new TypeError('now must be a Date instance');
+  const threshold = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  return Subscription.find(
+    {
+      status: { $in: ['active', 'trialing'] },
+      currentPeriodStart: { $ne: null },
+      $or: [
+        { lastResetAt: null },
+        { lastResetAt: { $lt: threshold } },
+      ],
+    },
+    { organization: 1, currentPeriodStart: 1, lastResetAt: 1 },
+  ).lean();
+};
+
+/**
+ * @function updateLastResetAt
+ * @description Update the last successful reset timestamp for a subscription by organization.
+ * @param {string} organizationId - The organization ObjectId (string).
+ * @param {Date} date - The timestamp to persist.
+ * @returns {Promise<Object|null>} The updated subscription document, or null if the id is invalid.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const updateLastResetAt = (organizationId, date) => {
+  if (!mongoose.Types.ObjectId.isValid(organizationId)) return null;
+  if (!(date instanceof Date)) throw new TypeError('date must be a Date instance');
+
+  return Subscription.findOneAndUpdate(
+    { organization: organizationId },
+    { $set: { lastResetAt: date } },
+    { returnDocument: 'after', runValidators: true },
+  ).exec();
+};
 
 /**
  * @function findStaleDunning
@@ -191,6 +238,8 @@ export default {
   findByStripeCustomerId,
   findByStripeSubscriptionId,
   findAllDueForReset,
+  findAllDueForResetByLastReset,
+  updateLastResetAt,
   findStaleDunning,
   markUnpaid,
 };

@@ -10,6 +10,8 @@ describe('BillingMeterService unit tests:', () => {
   let BillingMeterService;
   let mockBillingPlanService;
   let mockConfig;
+  let mockBillingUsageService;
+  let mockBillingExtraService;
 
   const orgId = '507f1f77bcf86cd799439011';
 
@@ -48,12 +50,28 @@ describe('BillingMeterService unit tests:', () => {
       getActivePlan: jest.fn(),
     };
 
+    mockBillingUsageService = {
+      incrementMeter: jest.fn(),
+    };
+
+    mockBillingExtraService = {
+      debit: jest.fn(),
+    };
+
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: mockConfig,
     }));
 
     jest.unstable_mockModule('../services/billing.plan.service.js', () => ({
       default: mockBillingPlanService,
+    }));
+
+    jest.unstable_mockModule('../services/billing.usage.service.js', () => ({
+      default: mockBillingUsageService,
+    }));
+
+    jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
+      default: mockBillingExtraService,
     }));
 
     const mod = await import('../services/billing.meter.service.js');
@@ -153,6 +171,134 @@ describe('BillingMeterService unit tests:', () => {
 
       expect(result.applied).toBe(false);
       expect(result.meterUsed).toBe(0);
+    });
+  });
+
+  describe('attribute — maxUnitsPerOperation cap', () => {
+    test('caps metered units when computed units exceed config cap', async () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingUsageService.incrementMeter.mockResolvedValue({
+        applied: true,
+        meterUsed: 10000,
+        extrasConsumed: 0,
+      });
+
+      const history = {
+        _id: '507f1f77bcf86cd799439033',
+        costs: { scrap: 20 },
+        planId: 'pro',
+        planVersion: 'v1',
+      };
+
+      const result = await BillingMeterService.attribute(history, orgId);
+
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
+        orgId,
+        10000,
+        { scrap: 10000 },
+        '507f1f77bcf86cd799439033',
+      );
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[billing.meter] units capped: requested 20000, cap 10000, applied 10000',
+      );
+      expect(result).toEqual({ applied: true, meterUsed: 10000, extrasConsumed: 0 });
+    });
+
+    test('does not clamp when units are within the configured cap', async () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingUsageService.incrementMeter.mockResolvedValue({
+        applied: true,
+        meterUsed: 5000,
+        extrasConsumed: 0,
+      });
+
+      const history = {
+        _id: '507f1f77bcf86cd799439034',
+        costs: { scrap: 5 },
+        planId: 'pro',
+        planVersion: 'v1',
+      };
+
+      await BillingMeterService.attribute(history, orgId);
+
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
+        orgId,
+        5000,
+        { scrap: 5000 },
+        '507f1f77bcf86cd799439034',
+      );
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    test('does not clamp when maxUnitsPerOperation is undefined', async () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      delete mockConfig.billing.meter.maxUnitsPerOperation;
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingUsageService.incrementMeter.mockResolvedValue({
+        applied: true,
+        meterUsed: 20000,
+        extrasConsumed: 0,
+      });
+
+      const history = {
+        _id: '507f1f77bcf86cd799439035',
+        costs: { scrap: 20 },
+        planId: 'pro',
+        planVersion: 'v1',
+      };
+
+      await BillingMeterService.attribute(history, orgId);
+
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
+        orgId,
+        20000,
+        { scrap: 20000 },
+        '507f1f77bcf86cd799439035',
+      );
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('capBreakdown — proportional rescaling', () => {
+    test('rescales a multi-key breakdown proportionally to the capped total', async () => {
+      const mod = await import('../services/billing.meter.service.js');
+      const { capBreakdown } = mod.default;
+
+      // breakdown: { scrap: 6000, autofix: 4000 } → total = 10000, cap to 5000
+      // scrap:  floor(6000 * 5000/10000) = 3000
+      // autofix: floor(4000 * 5000/10000) = 2000
+      // allocated = 5000, remainder = 0
+      const result = capBreakdown({ scrap: 6000, autofix: 4000 }, 5000, 10000);
+
+      expect(result.scrap).toBe(3000);
+      expect(result.autofix).toBe(2000);
+      expect(result.scrap + result.autofix).toBe(5000);
+    });
+
+    test('distributes floor remainder to the largest bucket first', async () => {
+      const mod = await import('../services/billing.meter.service.js');
+      const { capBreakdown } = mod.default;
+
+      // breakdown: { a: 3, b: 2, c: 1 } → total = 6, cap to 4
+      // a: floor(3 * 4/6) = floor(2) = 2
+      // b: floor(2 * 4/6) = floor(1.33) = 1
+      // c: floor(1 * 4/6) = floor(0.66) = 0
+      // allocated = 3, remainder = 1 → add 1 to largest bucket (a)
+      const result = capBreakdown({ a: 3, b: 2, c: 1 }, 4, 6);
+
+      expect(result.a + result.b + (result.c ?? 0)).toBe(4);
+      expect(result.a).toBeGreaterThanOrEqual(result.b);
+    });
+
+    test('returns empty object when breakdown has no valid entries', async () => {
+      const mod = await import('../services/billing.meter.service.js');
+      const { capBreakdown } = mod.default;
+
+      const result = capBreakdown({}, 5000, 10000);
+
+      expect(Object.keys(result)).toHaveLength(0);
     });
   });
 });

@@ -57,6 +57,49 @@ const unitsFromCosts = async (costs, planId, ratioVersion) => {
 };
 
 /**
+ * @function capBreakdown
+ * @description Rescale a feature breakdown map proportionally so its summed units do not exceed
+ *              the capped total. Each bucket is scaled by (cappedUnits / originalTotal) and
+ *              floored; any remainder is distributed to the largest remaining buckets so that
+ *              sum(result) === cappedUnits exactly.
+ * @param {Object} breakdown - Feature-keyed units map.
+ * @param {number} cappedUnits - Final capped total units to apply.
+ * @param {number} originalTotal - Original uncapped total (used as the scaling denominator).
+ * @returns {Object} Proportionally rescaled feature-keyed units map.
+ */
+const capBreakdown = (breakdown, cappedUnits, originalTotal) => {
+  if (!breakdown || typeof breakdown !== 'object' || cappedUnits === Infinity) return breakdown;
+
+  const entries = Object.entries(breakdown).filter(
+    ([, value]) => Number.isFinite(value) && value > 0,
+  );
+  if (entries.length === 0 || originalTotal <= 0) return Object.create(null);
+
+  const ratio = cappedUnits / originalTotal;
+  const cappedBreakdown = Object.create(null);
+  let allocated = 0;
+
+  for (const [key, value] of entries) {
+    const scaled = Math.floor(value * ratio);
+    cappedBreakdown[key] = scaled;
+    allocated += scaled;
+  }
+
+  // Distribute remainder (due to floor) to the largest buckets first
+  let remainder = cappedUnits - allocated;
+  if (remainder > 0) {
+    const sorted = entries.slice().sort(([, a], [, b]) => b - a);
+    for (const [key] of sorted) {
+      if (remainder <= 0) break;
+      cappedBreakdown[key] += 1;
+      remainder -= 1;
+    }
+  }
+
+  return cappedBreakdown;
+};
+
+/**
  * @function attribute
  * @description Attribute meter units from a History-like input to a Usage document
  *              for the given organization. If the plan quota is exceeded, falls back
@@ -90,12 +133,22 @@ const attribute = async (history, organizationId) => {
     ({ totalUnits, breakdown } = await unitsFromCosts(history.costs, planId, ratioVersion));
   }
 
+  const maxUnits = config?.billing?.meter?.maxUnitsPerOperation ?? Infinity;
+  const cappedUnits = Math.min(totalUnits, maxUnits);
+  const isCapped = cappedUnits < totalUnits;
+  const cappedBreakdown = isCapped ? capBreakdown(breakdown, cappedUnits, totalUnits) : breakdown;
+  if (isCapped) {
+    console.warn(
+      `[billing.meter] units capped: requested ${totalUnits}, cap ${maxUnits}, applied ${cappedUnits}`,
+    );
+  }
+
   const idempotencyKey = history._id?.toString?.() ?? String(history._id);
 
   const result = await BillingUsageService.incrementMeter(
     organizationId,
-    totalUnits,
-    breakdown,
+    cappedUnits,
+    cappedBreakdown,
     idempotencyKey,
   );
 
@@ -122,5 +175,6 @@ const attribute = async (history, organizationId) => {
 export default {
   unitsFromCosts,
   attribute,
+  capBreakdown,
   METER_RUN_BASE,
 };

@@ -20,6 +20,7 @@ describe('BillingSubscriptionRepository unit tests:', () => {
     mockModel = {
       find: jest.fn(),
       findOne: jest.fn(),
+      findOneAndUpdate: jest.fn(),
       findByIdAndUpdate: jest.fn(),
       deleteOne: jest.fn(),
     };
@@ -202,6 +203,68 @@ describe('BillingSubscriptionRepository unit tests:', () => {
         },
         { organization: 1, currentPeriodStart: 1 },
       );
+    });
+  });
+
+  describe('findAllDueForResetByLastReset', () => {
+    test('includes subscriptions with lastResetAt=null', async () => {
+      const now = new Date('2026-05-01T12:00:00.000Z');
+      const leanMock = jest.fn().mockResolvedValue([{ organization: orgId, lastResetAt: null }]);
+      mockModel.find.mockReturnValue({ lean: leanMock });
+
+      const result = await BillingSubscriptionRepository.findAllDueForResetByLastReset(now);
+
+      expect(mockModel.find).toHaveBeenCalledWith(
+        {
+          status: { $in: ['active', 'trialing'] },
+          currentPeriodStart: { $ne: null },
+          $or: [
+            { lastResetAt: null },
+            { lastResetAt: { $lt: new Date('2026-04-24T12:00:00.000Z') } },
+          ],
+        },
+        { organization: 1, currentPeriodStart: 1, lastResetAt: 1 },
+      );
+      expect(result).toEqual([{ organization: orgId, lastResetAt: null }]);
+    });
+
+    test('includes subscriptions with lastResetAt older than 7 days', async () => {
+      const now = new Date('2026-05-01T12:00:00.000Z');
+      const stale = new Date('2026-04-23T12:00:00.000Z');
+      const leanMock = jest.fn().mockResolvedValue([{ organization: orgId, lastResetAt: stale }]);
+      mockModel.find.mockReturnValue({ lean: leanMock });
+
+      const result = await BillingSubscriptionRepository.findAllDueForResetByLastReset(now);
+
+      expect(result).toEqual([{ organization: orgId, lastResetAt: stale }]);
+    });
+
+    test('excludes subscriptions reset within the last 7 days', async () => {
+      const now = new Date('2026-05-01T12:00:00.000Z');
+      mockModel.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
+
+      const result = await BillingSubscriptionRepository.findAllDueForResetByLastReset(now);
+
+      expect(result).toEqual([]);
+      const query = mockModel.find.mock.calls[0][0];
+      expect(query.$or[1].lastResetAt.$lt).toEqual(new Date('2026-04-24T12:00:00.000Z'));
+    });
+  });
+
+  describe('updateLastResetAt', () => {
+    test('updates the subscription reset timestamp by organization', async () => {
+      const date = new Date('2026-05-01T12:00:00.000Z');
+      const exec = jest.fn().mockResolvedValue({ organization: orgId, lastResetAt: date });
+      mockModel.findOneAndUpdate.mockReturnValue({ exec });
+
+      const result = await BillingSubscriptionRepository.updateLastResetAt(orgId, date);
+
+      expect(mockModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { organization: orgId },
+        { $set: { lastResetAt: date } },
+        { returnDocument: 'after', runValidators: true },
+      );
+      expect(result).toEqual({ organization: orgId, lastResetAt: date });
     });
   });
 });

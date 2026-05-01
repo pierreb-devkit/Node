@@ -24,6 +24,7 @@ const baseShape = {
   planVersion: z.string().trim().optional(),
   currentPeriodStart: z.coerce.date().nullable().optional(),
   pastDueSince: z.coerce.date().nullable().optional(),
+  lastResetAt: z.coerce.date().nullable().optional(),
 };
 
 const Subscription = z.object({

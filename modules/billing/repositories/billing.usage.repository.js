@@ -176,7 +176,7 @@ const archiveOtherWeeks = (orgId, currentWeekKey, archivedAt) =>
     {
       organizationId: orgId,
       weekKey: { $ne: currentWeekKey },
-      archivedAt: { $exists: false },
+      archivedAt: null,
     },
     { $set: { archivedAt } },
   );
