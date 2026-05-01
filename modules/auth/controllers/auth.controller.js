@@ -573,12 +573,16 @@ const getConfig = (req, res) => {
     },
   };
 
-  // Authenticated users get extended org config
+  // Authenticated users get extended org config and billing config
   if (req.user) {
     data.organizations = {
       ...data.organizations,
       roles: config.organizations?.roles || [],
       roleDescriptions: config.organizations?.roleDescriptions || {},
+    };
+    data.billing = {
+      enabled: !!config.billing?.enabled,
+      meterMode: !!config.billing?.meterMode,
     };
   }
 

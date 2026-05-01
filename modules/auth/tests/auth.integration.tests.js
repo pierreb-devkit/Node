@@ -1506,6 +1506,54 @@ describe('Auth integration tests:', () => {
       expect(result.body.data.organizations.enabled).toBe(true);
       config.organizations.enabled = original;
     });
+
+    test('should NOT expose billing config in unauthenticated response', async () => {
+      const result = await agent.get('/api/auth/config').expect(200);
+      expect(result.body.data.billing).toBeUndefined();
+    });
+  });
+
+  describe('Config endpoint (authenticated)', () => {
+    const billingUserEmail = 'billing-config@test.com';
+    let authAgent;
+
+    beforeAll(async () => {
+      authAgent = request.agent(app);
+      await authAgent
+        .post('/api/auth/signup')
+        .send({
+          firstName: 'Billing',
+          lastName: 'Config',
+          email: billingUserEmail,
+          password: 'W@os.jsI$Aw3$0m3',
+        })
+        .expect(200);
+    });
+
+    afterAll(async () => {
+      try {
+        const u = await UserService.getBrut({ email: billingUserEmail });
+        if (u) await UserService.remove(u);
+      } catch (_) { /* cleanup – ignore errors */ }
+    });
+
+    test('should expose billing config to authenticated users', async () => {
+      const result = await authAgent.get('/api/auth/config').expect(200);
+      expect(result.body.data.billing).toBeDefined();
+      expect(typeof result.body.data.billing.enabled).toBe('boolean');
+      expect(typeof result.body.data.billing.meterMode).toBe('boolean');
+    });
+
+    test('should reflect billing.meterMode=true when enabled (authenticated)', async () => {
+      const originalMeterMode = config.billing?.meterMode;
+      config.billing = { ...config.billing, meterMode: true };
+      try {
+        const result = await authAgent.get('/api/auth/config').expect(200);
+        expect(result.body.data.billing.meterMode).toBe(true);
+      } finally {
+        config.billing = { ...config.billing, meterMode: originalMeterMode };
+      }
+    });
   });
 
   describe('Email verification', () => {
