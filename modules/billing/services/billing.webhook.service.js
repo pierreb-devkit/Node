@@ -339,12 +339,12 @@ const handleInvoicePaymentSucceeded = async (invoice) => {
 
 /**
  * @description Handle charge.refunded event — debit ledger proportionally.
- *       Reads charge.metadata.{organizationId, stripeSessionId} which must be propagated
+ *       Reads charge.metadata.{organizationId, stripeSessionId, packId} which must be propagated
  *       via the upstream session creation pattern:
  *         stripe.checkout.sessions.create({
  *           ...,
- *           metadata: { organizationId, stripeSessionId, ... },
- *           payment_intent_data: { metadata: { organizationId, stripeSessionId, ... } },
+ *           metadata: { organizationId, stripeSessionId, packId, ... },
+ *           payment_intent_data: { metadata: { organizationId, stripeSessionId, packId, ... } },
  *         })
  *       Without payment_intent_data.metadata, charge.metadata will be empty and refunds
  *       silently skip. Downstream (trawl_node) is responsible for setting these at session creation.
@@ -363,7 +363,7 @@ const handleChargeRefunded = async (charge) => {
   // The session ID and organizationId must have been stamped on charge metadata
   // via payment_intent_data.metadata at session creation (not automatic — caller must set both
   // session.metadata and payment_intent_data.metadata explicitly).
-  const { organizationId, stripeSessionId } = metadata ?? {};
+  const { organizationId, stripeSessionId, packId } = metadata ?? {};
 
   if (!organizationId || !mongoose.Types.ObjectId.isValid(organizationId)) return;
   if (!stripeSessionId) return;
@@ -374,7 +374,7 @@ const handleChargeRefunded = async (charge) => {
   if (!thisRefundAmount || thisRefundAmount <= 0) return;
 
   // Service layer computes proportional refundUnits from config.billing.packs.
-  await BillingExtraService.refundPartial(organizationId, stripeSessionId, thisRefundAmount);
+  await BillingExtraService.refundPartial(organizationId, stripeSessionId, thisRefundAmount, packId);
 };
 
 export default {

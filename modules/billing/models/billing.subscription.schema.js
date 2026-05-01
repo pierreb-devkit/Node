@@ -76,10 +76,33 @@ const ExtrasCheckoutRequest = z
   })
   .strict();
 
+const AdminRefundRequest = z
+  .object({
+    chargeId: z.string().trim().min(1, 'chargeId is required'),
+    amountCents: z.number().int().positive(),
+    reason: z.string().trim().optional(),
+  })
+  .strict();
+
+const AdminBumpPlanRequest = z
+  .object({
+    planId: z.string().trim().min(1, 'planId is required'),
+    meterQuota: z.number().int().nonnegative().optional(),
+    ratios: z.record(z.string(), z.number().nonnegative()).optional(),
+  })
+  .strict();
+
+export {
+  AdminRefundRequest,
+  AdminBumpPlanRequest,
+};
+
 export default {
   Subscription,
   SubscriptionUpdate,
   CheckoutRequest,
   PortalRequest,
   ExtrasCheckoutRequest,
+  AdminRefundRequest,
+  AdminBumpPlanRequest,
 };

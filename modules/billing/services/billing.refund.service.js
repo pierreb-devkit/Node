@@ -13,10 +13,12 @@ import getStripe from '../lib/stripe.js';
  *
  * @param {string} stripeChargeId - Stripe charge ID (ch_xxx). Must be non-empty.
  * @param {number|undefined} [amountCents] - Amount to refund in cents. Omit for full refund. Must be > 0 if provided.
+ * @param {Object} [options={}] - Optional Stripe refund options.
+ * @param {string} [options.reason] - Optional Stripe refund reason.
  * @returns {Promise<Object>} The Stripe refund object.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const refundCharge = async (stripeChargeId, amountCents) => {
+const refundCharge = async (stripeChargeId, amountCents, { reason } = {}) => {
   if (typeof stripeChargeId !== 'string' || stripeChargeId.trim() === '') {
     throw new Error('invalid argument: stripeChargeId must be a non-empty string');
   }
@@ -33,7 +35,7 @@ const refundCharge = async (stripeChargeId, amountCents) => {
 
   const params = {
     charge: stripeChargeId,
-    reason: 'requested_by_customer',
+    reason: reason || 'requested_by_customer',
   };
   if (amountCents !== undefined) {
     params.amount = amountCents;

@@ -28,6 +28,7 @@ describe('Billing webhook refund integration tests:', () => {
     metadata: {
       organizationId: orgId,
       stripeSessionId,
+      packId: 'pack_500k',
     },
     ...overrides,
   });
@@ -93,13 +94,13 @@ describe('Billing webhook refund integration tests:', () => {
   });
 
   describe('handleChargeRefunded', () => {
-    test('full refund — calls refundPartial with correct orgId, sessionId and delta amount', async () => {
+    test('full refund — calls refundPartial with correct orgId, sessionId, delta amount and packId', async () => {
       // refunds.data[0].amount = 4900 (this event's delta, same as total for single refund)
       await BillingWebhookService.handleChargeRefunded(
         makeCharge({ refunds: { data: [{ id: 'rf_001', amount: 4900 }] } }),
       );
 
-      expect(mockExtraService.refundPartial).toHaveBeenCalledWith(orgId, stripeSessionId, 4900);
+      expect(mockExtraService.refundPartial).toHaveBeenCalledWith(orgId, stripeSessionId, 4900, 'pack_500k');
     });
 
     test('partial refund — calls refundPartial with delta amount (not cumulative total)', async () => {
@@ -112,7 +113,7 @@ describe('Billing webhook refund integration tests:', () => {
         }),
       );
 
-      expect(mockExtraService.refundPartial).toHaveBeenCalledWith(orgId, stripeSessionId, 2450);
+      expect(mockExtraService.refundPartial).toHaveBeenCalledWith(orgId, stripeSessionId, 2450, 'pack_500k');
     });
 
     test('should skip when organizationId is missing', async () => {

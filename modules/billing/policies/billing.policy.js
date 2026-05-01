@@ -19,6 +19,8 @@ export function billingSubjectRegistration({ registerPathSubject }) {
   registerPathSubject('/api/billing/extras/checkout', 'BillingExtrasCheckout');
   registerPathSubject('/api/billing/extras/balance', 'BillingExtrasBalance');
   registerPathSubject('/api/billing/extras/ledger', 'BillingExtrasLedger');
+  registerPathSubject('/api/admin/billing/refund', 'BillingAdminRefund');
+  registerPathSubject('/api/admin/billing/plans/bump', 'BillingAdminPlanBump');
   // Webhook is mounted in billing.preroute.js before body parsing and auth middleware,
   // so it bypasses policy.isAllowed entirely. Registered here for documentation completeness.
   registerPathSubject('/api/billing/webhook', 'BillingWebhook');
