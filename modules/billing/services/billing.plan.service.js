@@ -165,8 +165,13 @@ const bumpVersionWithRetry = async (planId, fields, { maxAttempts = 3 } = {}) =>
 /**
  * @function ensureSeeded
  * @description Upsert BillingPlan docs from config.billing.planDefinitions.
- *              For each configured planId, ensures an active plan exists.
+ *              For each configured plan entry, ensures an active plan exists.
  *              No-op when meter mode is disabled. Idempotent on re-run.
+ *
+ *              Accepts the canonical array-of-objects shape:
+ *              [{ planId, meterQuota, ratios }, ...].
+ *              The legacy object shape is normalized upstream in config/index.js
+ *              before this service is ever called.
  *
  *              Race / E11000 safety: version is derived from the total count of
  *              existing docs for the planId (same strategy as bumpVersion). A
@@ -179,11 +184,12 @@ const bumpVersionWithRetry = async (planId, fields, { maxAttempts = 3 } = {}) =>
 const ensureSeeded = async () => {
   if (!config?.billing?.meterMode) return { seeded: 0, skipped: 0 };
 
-  const definitions = config?.billing?.planDefinitions ?? {};
+  const definitions = config?.billing?.planDefinitions ?? [];
   let seeded = 0;
   let skipped = 0;
 
-  for (const [planId, def] of Object.entries(definitions)) {
+  for (const def of definitions) {
+    const { planId, ...planDef } = def;
     const existing = await BillingPlanRepository.findActive(planId);
     if (existing) {
       skipped += 1;
@@ -199,8 +205,8 @@ const ensureSeeded = async () => {
       await BillingPlanRepository.create({
         planId,
         version,
-        meterQuota: def.meterQuota ?? 0,
-        ratios: def.ratios ?? { default: 1 },
+        meterQuota: planDef.meterQuota ?? 0,
+        ratios: planDef.ratios ?? { default: 1 },
         effectiveFrom: new Date(),
         effectiveUntil: null,
         active: true,

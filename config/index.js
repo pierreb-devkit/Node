@@ -199,6 +199,43 @@ const initGlobalConfig = async () => {
   return conf;
 };
 
+/**
+ * Normalize billing.planDefinitions to the canonical array-of-objects shape.
+ *
+ * Accepts either:
+ *  - Array (new shape): returned as-is.
+ *  - Plain object (legacy shape): converted to array and a deprecation warning is emitted.
+ *    The object key is always authoritative as planId; any nested planId value is overridden.
+ *
+ * Safe when planDefinitions is missing/null — returns the input unchanged.
+ * Non-object, non-array values (e.g. strings) are returned unchanged.
+ *
+ * @param {Array|Object|null|undefined} planDefinitions
+ * @returns {Array|Object|null|undefined} Array form when convertible; original value otherwise.
+ */
+const normalizePlanDefinitions = (planDefinitions) => {
+  if (!planDefinitions) return planDefinitions;
+  if (Array.isArray(planDefinitions)) return planDefinitions;
+  if (typeof planDefinitions === 'object') {
+    console.warn(
+      '[billing] planDefinitions object shape is deprecated, switch to array — see docs/migrations/2026-05-01-billing-plan-definitions-array.md. Will be removed ~2026-07.',
+    );
+    return Object.entries(planDefinitions).map(([planId, def]) => ({ ...(def ?? {}), planId }));
+  }
+  return planDefinitions;
+};
+
 const config = await initGlobalConfig();
-export { deepMerge, assertSafeEnv };
+
+// Post-merge billing normalization: shim legacy planDefinitions + derive plans enum.
+if (config.billing?.planDefinitions != null) {
+  config.billing.planDefinitions = normalizePlanDefinitions(config.billing.planDefinitions);
+  if (Array.isArray(config.billing.planDefinitions)) {
+    config.billing.plans = config.billing.planDefinitions
+      .map((p) => p.planId)
+      .filter((id) => typeof id === 'string' && id.length > 0);
+  }
+}
+
+export { deepMerge, assertSafeEnv, normalizePlanDefinitions };
 export default config;
