@@ -330,5 +330,97 @@ describe('BillingResetService unit tests:', () => {
       expect(result).toEqual({ processed: 1, errors: 0 });
       expect(mockSubscriptionRepository.updateLastResetAt).toHaveBeenCalledWith(orgId, now);
     });
+
+    // ── Fix #3569: week anchor derived from lastResetAt+7d, not currentPeriodStart ──
+
+    test('fix #3569: anchor = lastResetAt+7d when lastResetAt is set (advances across weeks)', async () => {
+      const now = new Date('2026-05-08T12:00:00.000Z'); // W19
+      jest.setSystemTime(now);
+      // lastResetAt was one week ago (W18 reset)
+      const lastResetAt = new Date('2026-05-01T12:00:00.000Z'); // W18
+      // currentPeriodStart is the Stripe billing cycle start (same for all 4 weeks of the month)
+      const currentPeriodStart = new Date('2026-04-15T00:00:00.000Z'); // stays constant within cycle
+
+      const capturedAnchors = [];
+      mockSubscriptionRepository.findAllDueForResetByLastReset.mockResolvedValue([
+        { organization: orgId, currentPeriodStart, lastResetAt },
+      ]);
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockSubscriptionRepository.updateLastResetAt.mockResolvedValue({});
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan());
+      mockUsageRepository.findByWeek.mockImplementation((_orgId, weekKey) => {
+        capturedAnchors.push(weekKey);
+        return Promise.resolve(null);
+      });
+      mockUsageRepository.upsertWeekSnapshot.mockResolvedValue(makeUsageDoc({ weekKey: '2026-W19' }));
+
+      const result = await BillingResetService.resetAllDue();
+
+      expect(result.processed).toBe(1);
+      // Anchor = lastResetAt + 7d = 2026-05-08 → isoWeekKey = W19
+      expect(capturedAnchors[0]).toBe('2026-W19');
+    });
+
+    test('fix #3569: anchor = now when lastResetAt is null (first ever reset)', async () => {
+      // currentPeriodStart stays the same as above but lastResetAt is null
+      const capturedAnchors = [];
+      mockSubscriptionRepository.findAllDueForResetByLastReset.mockResolvedValue([
+        {
+          organization: orgId,
+          currentPeriodStart: new Date('2026-04-15T00:00:00.000Z'),
+          lastResetAt: null,
+        },
+      ]);
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockSubscriptionRepository.updateLastResetAt.mockResolvedValue({});
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan());
+      mockUsageRepository.findByWeek.mockImplementation((_orgId, weekKey) => {
+        capturedAnchors.push(weekKey);
+        return Promise.resolve(null);
+      });
+      mockUsageRepository.upsertWeekSnapshot.mockResolvedValue(makeUsageDoc({ weekKey: '2026-W18' }));
+
+      const result = await BillingResetService.resetAllDue();
+
+      expect(result.processed).toBe(1);
+      // Anchor = now (2026-05-01 system time) → isoWeekKey = W18
+      expect(capturedAnchors[0]).toBe('2026-W18');
+    });
+
+    test('fix #3569: S+1/S+2/S+3 within same Stripe cycle produce distinct weekKeys', async () => {
+      // Simulate 3 consecutive weekly cron runs within the same monthly billing cycle.
+      // currentPeriodStart is the same for all 3; lastResetAt advances by 7d each run.
+      const cycleStart = new Date('2026-04-15T00:00:00.000Z');
+      const runsAndExpectedKeys = [
+        { lastResetAt: new Date('2026-04-24T12:00:00.000Z'), expectedKey: '2026-W18' }, // +7d = May 1
+        { lastResetAt: new Date('2026-05-01T12:00:00.000Z'), expectedKey: '2026-W19' }, // +7d = May 8
+        { lastResetAt: new Date('2026-05-08T12:00:00.000Z'), expectedKey: '2026-W20' }, // +7d = May 15
+      ];
+
+      for (const { lastResetAt, expectedKey } of runsAndExpectedKeys) {
+        jest.resetModules();
+        const anchor = new Date(lastResetAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+        jest.setSystemTime(anchor);
+
+        // Re-import with fresh mocks for each simulated run
+        const capturedAnchors = [];
+        mockSubscriptionRepository.findAllDueForResetByLastReset.mockResolvedValue([
+          { organization: orgId, currentPeriodStart: cycleStart, lastResetAt },
+        ]);
+        mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+        mockSubscriptionRepository.updateLastResetAt.mockResolvedValue({});
+        mockPlanService.getActivePlan.mockResolvedValue(makePlan());
+        mockUsageRepository.findByWeek.mockImplementation((_orgId, weekKey) => {
+          capturedAnchors.push(weekKey);
+          return Promise.resolve(null);
+        });
+        mockUsageRepository.upsertWeekSnapshot.mockResolvedValue(makeUsageDoc({ weekKey: expectedKey }));
+
+        const result = await BillingResetService.resetAllDue();
+
+        expect(result.processed).toBe(1);
+        expect(capturedAnchors[0]).toBe(expectedKey);
+      }
+    });
   });
 });

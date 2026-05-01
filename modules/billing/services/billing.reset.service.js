@@ -110,7 +110,13 @@ const resetAllDue = async () => {
 
   for (const sub of subs) {
     try {
-      await resetWeek(String(sub.organization), new Date(sub.currentPeriodStart));
+      // Derive the week anchor from lastResetAt + 7d (or now when no prior reset exists).
+      // Using currentPeriodStart would derive the same weekKey every run within the same
+      // monthly/annual Stripe cycle → reset would be a no-op for weeks 2/3/4.
+      const anchor = sub.lastResetAt
+        ? new Date(new Date(sub.lastResetAt).getTime() + 7 * 24 * 60 * 60 * 1000)
+        : now;
+      await resetWeek(String(sub.organization), anchor);
       await BillingSubscriptionRepository.updateLastResetAt(String(sub.organization), now);
       processed += 1;
     } catch (err) {
