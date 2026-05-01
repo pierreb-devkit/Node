@@ -97,20 +97,23 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
     if (latest?.stripeCustomerId) subscription = latest;
   }
 
-  const session = await stripe.checkout.sessions.create(
-    {
-      customer: subscription.stripeCustomerId,
-      mode: 'subscription',
-      line_items: [{ price: priceId, quantity: 1 }],
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      automatic_tax: { enabled: true },
-      customer_update: { address: 'auto', name: 'auto' },
-      metadata: {
-        organizationId: String(organization._id),
-        plan: matchedPlan.planId,
-      },
+  const checkoutParams = {
+    customer: subscription.stripeCustomerId,
+    mode: 'subscription',
+    line_items: [{ price: priceId, quantity: 1 }],
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+    metadata: {
+      organizationId: String(organization._id),
+      plan: matchedPlan.planId,
     },
+  };
+  if (config?.stripe?.automaticTax) {
+    checkoutParams.automatic_tax = { enabled: true };
+    checkoutParams.customer_update = { address: 'auto', name: 'auto' };
+  }
+  const session = await stripe.checkout.sessions.create(
+    checkoutParams,
     { idempotencyKey: `sub_checkout_${String(organization._id)}_${priceId}` },
   );
 
@@ -214,30 +217,33 @@ const createExtrasCheckout = async (organization, packId, successUrl, cancelUrl)
   // Use a timestamped idempotency key (debounce double-click within ~1s granularity)
   const idempotencyKey = `extras_checkout_${String(organization._id)}_${packId}_${Date.now()}`;
 
-  const session = await stripe.checkout.sessions.create(
-    {
-      customer: subscription.stripeCustomerId,
-      mode: 'payment',
-      line_items: [{ price: priceId, quantity: 1 }],
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      automatic_tax: { enabled: true },
-      customer_update: { address: 'auto', name: 'auto' },
+  const extrasCheckoutParams = {
+    customer: subscription.stripeCustomerId,
+    mode: 'payment',
+    line_items: [{ price: priceId, quantity: 1 }],
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+    metadata: {
+      organizationId: String(organization._id),
+      packId,
+      kind: 'extras',
+      stripeSessionId: '__pending__',
+    },
+    payment_intent_data: {
       metadata: {
         organizationId: String(organization._id),
         packId,
         kind: 'extras',
         stripeSessionId: '__pending__',
       },
-      payment_intent_data: {
-        metadata: {
-          organizationId: String(organization._id),
-          packId,
-          kind: 'extras',
-          stripeSessionId: '__pending__',
-        },
-      },
     },
+  };
+  if (config?.stripe?.automaticTax) {
+    extrasCheckoutParams.automatic_tax = { enabled: true };
+    extrasCheckoutParams.customer_update = { address: 'auto', name: 'auto' };
+  }
+  const session = await stripe.checkout.sessions.create(
+    extrasCheckoutParams,
     { idempotencyKey },
   );
 

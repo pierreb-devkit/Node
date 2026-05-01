@@ -211,7 +211,7 @@ describe('Billing service unit tests:', () => {
       });
     });
 
-    test('should use existing customer when subscription has stripeCustomerId', async () => {
+    test('should use existing customer when subscription has stripeCustomerId — automaticTax off by default', async () => {
       jest.unstable_mockModule('../../../config/index.js', () => ({
         default: { stripe: { secretKey: 'sk_test_789' } },
       }));
@@ -234,8 +234,6 @@ describe('Billing service unit tests:', () => {
           line_items: [{ price: 'price_starter_m', quantity: 1 }],
           success_url: 'http://ok',
           cancel_url: 'http://cancel',
-          automatic_tax: { enabled: true },
-          customer_update: { address: 'auto', name: 'auto' },
           metadata: {
             organizationId: orgId,
             plan: 'starter',
@@ -245,13 +243,13 @@ describe('Billing service unit tests:', () => {
       );
     });
 
-    test('should include customer_update in checkout session params', async () => {
+    test('should NOT include automatic_tax when config.stripe.automaticTax is false', async () => {
       jest.unstable_mockModule('../../../config/index.js', () => ({
-        default: { stripe: { secretKey: 'sk_test_cu' } },
+        default: { stripe: { secretKey: 'sk_test_no_tax', automaticTax: false } },
       }));
 
       mockSubscriptionRepository.findByOrganization.mockResolvedValue({
-        stripeCustomerId: 'cus_cu_test',
+        stripeCustomerId: 'cus_no_tax',
       });
 
       const mod = await import('../services/billing.service.js');
@@ -260,6 +258,26 @@ describe('Billing service unit tests:', () => {
       await BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel');
 
       const callArgs = mockStripeInstance.checkout.sessions.create.mock.calls[0][0];
+      expect(callArgs.automatic_tax).toBeUndefined();
+      expect(callArgs.customer_update).toBeUndefined();
+    });
+
+    test('should include automatic_tax and customer_update when config.stripe.automaticTax is true', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_with_tax', automaticTax: true } },
+      }));
+
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        stripeCustomerId: 'cus_with_tax',
+      });
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      await BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel');
+
+      const callArgs = mockStripeInstance.checkout.sessions.create.mock.calls[0][0];
+      expect(callArgs.automatic_tax).toEqual({ enabled: true });
       expect(callArgs.customer_update).toEqual({ address: 'auto', name: 'auto' });
     });
   });
@@ -354,6 +372,64 @@ describe('Billing service unit tests:', () => {
       BillingService = mod.default;
 
       await expect(BillingService.createPortalSession(mockOrganization, 'not-a-url')).rejects.toThrow('Invalid return URL');
+    });
+  });
+
+  describe('createExtrasCheckout — automaticTax flag', () => {
+    test('should NOT include automatic_tax when config.stripe.automaticTax is false', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: {
+          stripe: {
+            secretKey: 'sk_test_ext_no_tax',
+            automaticTax: false,
+            prices: { packs: { pack_500k: 'price_pack500' } },
+          },
+          billing: {
+            packs: [{ packId: 'pack_500k', meterUnits: 500000 }],
+          },
+        },
+      }));
+
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        stripeCustomerId: 'cus_ext_no_tax',
+      });
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      await BillingService.createExtrasCheckout(mockOrganization, 'pack_500k', 'http://ok', 'http://cancel');
+
+      const callArgs = mockStripeInstance.checkout.sessions.create.mock.calls[0][0];
+      expect(callArgs.automatic_tax).toBeUndefined();
+      expect(callArgs.customer_update).toBeUndefined();
+    });
+
+    test('should include automatic_tax and customer_update when config.stripe.automaticTax is true', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: {
+          stripe: {
+            secretKey: 'sk_test_ext_with_tax',
+            automaticTax: true,
+            prices: { packs: { pack_500k: 'price_pack500' } },
+          },
+          billing: {
+            packs: [{ packId: 'pack_500k', meterUnits: 500000 }],
+          },
+        },
+      }));
+
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        stripeCustomerId: 'cus_ext_with_tax',
+      });
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      await BillingService.createExtrasCheckout(mockOrganization, 'pack_500k', 'http://ok', 'http://cancel');
+
+      const callArgs = mockStripeInstance.checkout.sessions.create.mock.calls[0][0];
+      expect(callArgs.automatic_tax).toEqual({ enabled: true });
+      expect(callArgs.customer_update).toEqual({ address: 'auto', name: 'auto' });
     });
   });
 

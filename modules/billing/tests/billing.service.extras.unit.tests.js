@@ -155,7 +155,6 @@ describe('BillingService.createExtrasCheckout unit tests:', () => {
         customer: 'cus_existing',
         mode: 'payment',
         line_items: [{ price: 'price_pack500k', quantity: 1 }],
-        automatic_tax: { enabled: true },
         metadata: expect.objectContaining({
           organizationId: orgId,
           packId: 'pack_500k',
@@ -235,7 +234,7 @@ describe('BillingService.createExtrasCheckout unit tests:', () => {
     expect(mockStripeInstance.checkout.sessions.create).toHaveBeenCalled();
   });
 
-  test('should include customer_update in extras checkout session params', async () => {
+  test('should NOT include customer_update when automaticTax flag is off (default)', async () => {
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: makeConfig(),
     }));
@@ -250,7 +249,33 @@ describe('BillingService.createExtrasCheckout unit tests:', () => {
     );
 
     const [params] = mockStripeInstance.checkout.sessions.create.mock.calls[0];
+    expect(params.customer_update).toBeUndefined();
+    expect(params.automatic_tax).toBeUndefined();
+  });
+
+  test('should include customer_update and automatic_tax when automaticTax flag is on', async () => {
+    jest.unstable_mockModule('../../../config/index.js', () => ({
+      default: {
+        ...makeConfig(),
+        stripe: {
+          ...makeConfig().stripe,
+          automaticTax: true,
+        },
+      },
+    }));
+
+    const mod = await import('../services/billing.service.js');
+    BillingService = mod.default;
+
+    mockSubscriptionRepository.findByOrganization.mockResolvedValue({ stripeCustomerId: 'cus_existing' });
+
+    await BillingService.createExtrasCheckout(
+      mockOrganization, 'pack_500k', 'http://success', 'http://cancel',
+    );
+
+    const [params] = mockStripeInstance.checkout.sessions.create.mock.calls[0];
     expect(params.customer_update).toEqual({ address: 'auto', name: 'auto' });
+    expect(params.automatic_tax).toEqual({ enabled: true });
   });
 
   test('should handle 11000 duplicate key on subscription create gracefully', async () => {
