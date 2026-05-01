@@ -37,7 +37,6 @@
     "test:coverage": "cross-env NODE_ENV=test NODE_OPTIONS=\"--experimental-vm-modules --max-old-space-size=6144 --expose-gc\" jest --coverage --maxWorkers=2",
     "test:unit:coverage": "cross-env NODE_ENV=test NODE_OPTIONS=\"--experimental-vm-modules --max-old-space-size=4096 --expose-gc\" jest --coverage --maxWorkers=2 --testPathPatterns='unit'",
     "test:integration:coverage": "cross-env NODE_ENV=test NODE_OPTIONS=\"--experimental-vm-modules --max-old-space-size=4096 --expose-gc\" jest --coverage --maxWorkers=2 --testPathPatterns='integration'",
-    "test:parallel-smoke": "cross-env NODE_ENV=test node scripts/parallel-integration.smoke.js",
     "lint": "eslint ./modules ./lib ./config ./scripts",
     "seed:dev": "cross-env NODE_ENV=development node scripts/seed.js seed",
     "seed:prod": "cross-env NODE_ENV=production node scripts/seed.js seed",
