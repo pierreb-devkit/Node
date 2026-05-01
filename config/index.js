@@ -170,22 +170,29 @@ const initGlobalConfig = async () => {
   if (process.env.NODE_ENV !== 'test') configHelper.validateDomainIsSet(config);
   if (process.env.NODE_ENV !== 'test') configHelper.validateJwtSecret(config);
 
-  // Worker DB isolation: when running inside a jest worker (--maxWorkers > 1, no --runInBand),
-  // suffix db.uri with JEST_WORKER_ID so each worker hits an independent MongoDB database.
-  // Without this, the CI DEVKIT_NODE_db_uri override flattens all workers onto the same DB
-  // and causes data races. The main jest process (globalSetup) has no JEST_WORKER_ID so it
-  // operates on the unsuffixed URI, which is intentional (single drop+migrate).
-  if (process.env.NODE_ENV === 'test' && process.env.JEST_WORKER_ID) {
-    const workerId = process.env.JEST_WORKER_ID;
+  // Per-process DB isolation (single mechanism — #3563):
+  // Append _p${pid}_w${workerId} to db.uri so every jest invocation hits its own
+  // isolated MongoDB database. This covers both:
+  //   - Multi-worktree agent batches running npm run test:coverage in parallel
+  //     (each process has a distinct pid; workerId = '0' when JEST_WORKER_ID is unset).
+  //   - Jest --maxWorkers > 1 within a single invocation (each worker has a distinct
+  //     JEST_WORKER_ID; pid anchors the invocation, workerId anchors the in-process worker).
+  // The globalSetup main process (no JEST_WORKER_ID) gets suffix _p${pid}_w0 — it always
+  // operates on the correct unsuffixed-for-sibling-isolation URI for drop+migrate.
+  // CI sets DEVKIT_NODE_db_uri explicitly (Layer 4), so the suffix appends after that
+  // override and remains unique across concurrent CI runs on the same mongod.
+  if (process.env.NODE_ENV === 'test') {
+    const pid = process.pid;
+    const workerId = process.env.JEST_WORKER_ID ?? '0';
+    const suffix = `_p${pid}_w${workerId}`;
     const uri = config.db?.uri ?? '';
-    const workerSuffix = `_w${workerId}`;
     if (uri) {
-      // Use the URL API to safely append the worker suffix to the database name
+      // Use the URL API to safely append the suffix to the database name
       // in the path segment, avoiding corruption of host/port or query string.
       const parsed = new URL(uri);
       const dbName = parsed.pathname.replace(/^\//, '') || 'test';
-      if (!dbName.endsWith(workerSuffix)) {
-        parsed.pathname = `/${dbName}${workerSuffix}`;
+      if (!dbName.endsWith(suffix)) {
+        parsed.pathname = `/${dbName}${suffix}`;
         config.db.uri = parsed.toString();
       }
     }

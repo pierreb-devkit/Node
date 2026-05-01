@@ -1,26 +1,22 @@
 /**
- * Regression test for `config/defaults/test.config.js` per-pid DB URI (#3515).
+ * Regression tests for `config/defaults/test.config.js` (#3515, #3563).
  *
- * Without isolation, parallel jest processes (multi-worktree agent batches)
- * stomp on each other's fixtures via the shared `NodeTest` DB and
- * `globalSetup.dropDatabase()`. The default URI must include
- * `process.pid` so each invocation gets its own database.
- *
- * The literal `NodeTest_` prefix preserves the `/test/i` DB-name guard in
- * `scripts/jest.globalSetup.js`. Both invariants are asserted here.
+ * The default URI is a neutral `NodeTest` base. Per-process isolation is now
+ * applied by a single block in `config/index.js` that appends `_p${pid}_w${workerId}`.
+ * These tests verify the neutral base shape and the /test/i drop-guard invariant.
  */
 import { describe, test, expect } from '@jest/globals';
 
 import testConfig from '../../config/defaults/test.config.js';
 
-describe('config/defaults/test.config.js per-pid DB URI', () => {
-  test('default db.uri includes process.pid (parallel-process isolation)', () => {
-    expect(testConfig.db.uri).toContain(String(process.pid));
+describe('config/defaults/test.config.js base URI shape', () => {
+  test('default db.uri is the neutral NodeTest base (suffix applied by config/index.js)', () => {
+    expect(testConfig.db.uri).toBe('mongodb://127.0.0.1:27017/NodeTest');
   });
 
-  test('default db.uri starts with NodeTest_ to preserve /test/i drop-guard', () => {
+  test('default db.uri starts with NodeTest to preserve /test/i drop-guard', () => {
     const dbName = new URL(testConfig.db.uri).pathname.replace(/^\//, '');
-    expect(dbName).toMatch(/^NodeTest_/);
+    expect(dbName).toMatch(/^NodeTest/);
     expect(/test/i.test(dbName)).toBe(true);
   });
 
