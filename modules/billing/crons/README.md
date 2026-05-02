@@ -93,13 +93,18 @@ env:
     value: "8"
 ```
 
-Then filter in the script:
+Then filter in the script by hashing a stable field (e.g. the string representation of `_id`) against the shard count:
 
 ```js
 const shardIndex = parseInt(process.env.SHARD_INDEX ?? '0', 10);
 const shardTotal = parseInt(process.env.SHARD_TOTAL ?? '1', 10);
-// Only process orgs whose ID hashes to this shard
-const orgs = await Org.find({ $where: `this._id % ${shardTotal} === ${shardIndex}` });
+// Only process orgs assigned to this shard (stable hash on _id string)
+const allOrgs = await Org.find({}, '_id').lean();
+const orgs = allOrgs.filter(o => {
+  const id = o._id.toString();
+  const hash = [...id].reduce((a, c) => ((a << 5) - a + c.charCodeAt(0)) | 0, 0);
+  return Math.abs(hash) % shardTotal === shardIndex;
+});
 ```
 
 ### Constraints
