@@ -167,7 +167,7 @@ const incrementMeter = async (organizationId, weekKey, units, breakdown, idempot
           $inc: incPayload,
           $push: { consumedAttributionKeys: idempotencyKey },
         },
-        { returnDocument: 'after', strictQuery: false },
+        { returnDocument: 'after', strict: false, strictQuery: false },
       );
     }
     throw err;
