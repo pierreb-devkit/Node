@@ -77,7 +77,10 @@ const markCommitted = (id) =>
 /**
  * @function markFailedAttempt
  * @description Record a failed debit attempt. The fifth failed attempt exhausts
- *              the row and moves it to failed status.
+ *              the row and moves it to failed status atomically. The status
+ *              transition uses `{ status: 'pending' }` as a filter on the
+ *              exhaustion update so that concurrent cron runs cannot emit
+ *              duplicate exhausted events.
  * @param {string} id - Outbox row id.
  * @param {Error|string} error - Failure to record.
  * @returns {Promise<Object|null>} Updated outbox row after failure accounting.
@@ -86,7 +89,7 @@ const markCommitted = (id) =>
 const markFailedAttempt = async (id, error) => {
   const message = error?.message ?? String(error);
   const doc = await BillingMeterOutbox().findOneAndUpdate(
-    { _id: id },
+    { _id: id, status: 'pending' },
     {
       $inc: { attempts: 1 },
       $set: {
@@ -98,9 +101,11 @@ const markFailedAttempt = async (id, error) => {
   ).lean();
 
   if (!doc) return null;
-  if (doc.attempts >= 5 && doc.status !== 'failed') {
+  if (doc.attempts >= 5) {
+    // Atomic exhaustion transition: filter on status:'pending' ensures only
+    // the first concurrent caller wins the status flip and owns the event emit.
     return BillingMeterOutbox().findOneAndUpdate(
-      { _id: id },
+      { _id: id, status: 'pending' },
       { $set: { status: 'failed' } },
       { returnDocument: 'after' },
     ).lean();

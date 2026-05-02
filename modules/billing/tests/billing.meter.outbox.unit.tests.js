@@ -154,6 +154,8 @@ describe('BillingMeterOutbox unit tests:', () => {
       const result = await BillingMeterOutboxRepository.markFailedAttempt(outboxId, new Error('debit failed'));
 
       expect(mockModel.findOneAndUpdate).toHaveBeenCalledTimes(2);
+      // First call: increment with status:'pending' filter to guard against concurrent updates
+      expect(mockModel.findOneAndUpdate.mock.calls[0][0]).toEqual({ _id: outboxId, status: 'pending' });
       expect(mockModel.findOneAndUpdate.mock.calls[0][1]).toEqual({
         $inc: { attempts: 1 },
         $set: {
@@ -161,7 +163,24 @@ describe('BillingMeterOutbox unit tests:', () => {
           lastAttemptedAt: expect.any(Date),
         },
       });
+      // Second call: exhaustion transition also guarded by status:'pending' so only one cron wins
+      expect(mockModel.findOneAndUpdate.mock.calls[1][0]).toEqual({ _id: outboxId, status: 'pending' });
       expect(result.status).toBe('failed');
+    });
+
+    test('markFailedAttempt returns null on exhaustion transition when concurrent cron already marked failed', async () => {
+      // Simulates second concurrent cron: first update finds pending row, increments to attempts=5,
+      // second update returns null because status is already 'failed' (first cron won the race).
+      const leanFirst = jest.fn().mockResolvedValue(makeOutbox({ attempts: 5 }));
+      const leanSecond = jest.fn().mockResolvedValue(null);
+      mockModel.findOneAndUpdate
+        .mockReturnValueOnce({ lean: leanFirst })
+        .mockReturnValueOnce({ lean: leanSecond });
+
+      const result = await BillingMeterOutboxRepository.markFailedAttempt(outboxId, new Error('concurrent'));
+
+      expect(mockModel.findOneAndUpdate).toHaveBeenCalledTimes(2);
+      expect(result).toBeNull();
     });
   });
 });
