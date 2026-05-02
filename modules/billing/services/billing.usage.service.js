@@ -4,6 +4,7 @@
 import config from '../../../config/index.js';
 import UsageRepository from '../repositories/billing.usage.repository.js';
 import BillingSubscriptionRepository from '../repositories/billing.subscription.repository.js';
+import BillingMeterOutboxRepository from '../repositories/billing.meter.outbox.repository.js';
 import BillingPlanService from './billing.plan.service.js';
 
 /**
@@ -215,6 +216,34 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
 };
 
 /**
+ * @function incrementMeterWithOutbox
+ * @description Increment meter usage and, when the increment overflows into
+ *              extras, create the pending extras-debit outbox row before
+ *              returning to the caller. This keeps usage idempotency and the
+ *              reconciliation record coupled on the hot path. If Mongo
+ *              transactions are unavailable in the deployment, this is the
+ *              immediate-after fallback described by the billing lifecycle docs.
+ * @param {string} organizationId - The organization ObjectId (string).
+ * @param {number} units - Meter units to attribute.
+ * @param {Object} breakdown - Feature-keyed breakdown: { featureKey: units }.
+ * @param {string} idempotencyKey - Unique key for replay protection.
+ * @returns {Promise<{applied: boolean, meterUsed: number, meterQuota: number, extrasConsumed: number, alertCrossed: string|null, outbox?: Object}>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const incrementMeterWithOutbox = async (organizationId, units, breakdown, idempotencyKey) => {
+  const result = await incrementMeter(organizationId, units, breakdown, idempotencyKey);
+  if (!result.applied || result.extrasConsumed <= 0) return result;
+
+  const outbox = await BillingMeterOutboxRepository.create({
+    organizationId,
+    idempotencyKey,
+    extrasUnits: result.extrasConsumed,
+  });
+
+  return { ...result, outbox };
+};
+
+/**
  * @function getMeter
  * @description Return the current week's meter document for an organization,
  *              including the plan quota snapshot.
@@ -234,5 +263,6 @@ export default {
   reset,
   currentWeekKey,
   incrementMeter,
+  incrementMeterWithOutbox,
   getMeter,
 };

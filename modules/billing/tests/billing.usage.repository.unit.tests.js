@@ -144,6 +144,7 @@ describe('BillingUsageRepository — meter extensions unit tests:', () => {
 
       expect(capturedUpdate.$inc['meterBreakdown.scrap']).toBe(100);
       expect(capturedUpdate.$inc['meterBreakdown.autofix']).toBe(50);
+      expect(capturedUpdate.$setOnInsert.meterBreakdown).toBeUndefined();
     });
 
     test('should drop breakdown entries with non-positive or non-finite values', async () => {
@@ -360,6 +361,55 @@ describe('BillingUsageRepository — meter extensions unit tests:', () => {
         expect.objectContaining({ upsert: true, returnDocument: 'after' }),
       );
       expect(result).toBe(newDoc);
+    });
+  });
+
+  describe('rotateWeekSnapshotForPlanChange', () => {
+    test('updates snapshot fields while preserving usage', async () => {
+      const lean = jest.fn().mockResolvedValue(makeUsageDoc({ meterQuota: 1000000, planVersion: 'v2' }));
+      mockModel.findOneAndUpdate.mockReturnValue({ lean });
+
+      await BillingUsageRepository.rotateWeekSnapshotForPlanChange(
+        orgId,
+        weekKey,
+        { meterQuota: 1000000, planVersion: 'v2', month: '2026-05' },
+        true,
+      );
+
+      expect(mockModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { organizationId: orgId, weekKey },
+        {
+          $set: {
+            meterQuota: 1000000,
+            planVersion: 'v2',
+            month: '2026-05',
+          },
+        },
+        { returnDocument: 'after', runValidators: false },
+      );
+      expect(lean).toHaveBeenCalled();
+    });
+
+    test('resets meterUsed and meterBreakdown when preserveUsage=false', async () => {
+      const lean = jest.fn().mockResolvedValue(makeUsageDoc({ meterUsed: 0, meterBreakdown: {} }));
+      mockModel.findOneAndUpdate.mockReturnValue({ lean });
+
+      await BillingUsageRepository.rotateWeekSnapshotForPlanChange(
+        orgId,
+        weekKey,
+        { meterQuota: 100000, planVersion: 'v3', month: '2026-05' },
+        false,
+      );
+
+      expect(mockModel.findOneAndUpdate.mock.calls[0][1].$set).toEqual({
+        meterQuota: 100000,
+        planVersion: 'v3',
+        month: '2026-05',
+        meterUsed: 0,
+        meterBreakdown: {},
+        alertedAt80: null,
+        alertedAt100: null,
+      });
     });
   });
 

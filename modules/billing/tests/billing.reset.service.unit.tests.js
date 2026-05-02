@@ -12,6 +12,7 @@ describe('BillingResetService unit tests:', () => {
   let mockPlanService;
   let mockConfig;
   let mockSubscriptionRepository;
+  let mockEvents;
 
   const orgId = '507f1f77bcf86cd799439011';
 
@@ -61,6 +62,7 @@ describe('BillingResetService unit tests:', () => {
       incrementMeter: jest.fn(),
       archiveOtherWeeks: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
       upsertWeekSnapshot: jest.fn(),
+      rotateWeekSnapshotForPlanChange: jest.fn(),
     };
 
     mockPlanService = {
@@ -73,6 +75,10 @@ describe('BillingResetService unit tests:', () => {
       findAllDueForReset: jest.fn(),
       findAllDueForResetByLastReset: jest.fn(),
       updateLastResetAt: jest.fn(),
+    };
+
+    mockEvents = {
+      emit: jest.fn(),
     };
 
     jest.unstable_mockModule('../../../config/index.js', () => ({
@@ -89,6 +95,10 @@ describe('BillingResetService unit tests:', () => {
 
     jest.unstable_mockModule('../services/billing.plan.service.js', () => ({
       default: mockPlanService,
+    }));
+
+    jest.unstable_mockModule('../lib/events.js', () => ({
+      default: mockEvents,
     }));
 
     const mod = await import('../services/billing.reset.service.js');
@@ -235,6 +245,83 @@ describe('BillingResetService unit tests:', () => {
 
       expect(result).toBeDefined();
       expect(mockUsageRepository.findByWeek).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('forceRotateForPlanChange', () => {
+    test('updates quota and version while preserving usage by default', async () => {
+      const existingDoc = makeUsageDoc({
+        meterUsed: 1234,
+        meterQuota: 500000,
+        planVersion: 'v1',
+      });
+      const updatedDoc = makeUsageDoc({
+        meterUsed: 1234,
+        meterQuota: 1000000,
+        planVersion: 'v2',
+      });
+      mockUsageRepository.findByWeek.mockResolvedValue(existingDoc);
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 1000000, version: 'v2' }));
+      mockUsageRepository.rotateWeekSnapshotForPlanChange.mockResolvedValue(updatedDoc);
+
+      const result = await BillingResetService.forceRotateForPlanChange(orgId);
+
+      expect(mockUsageRepository.rotateWeekSnapshotForPlanChange).toHaveBeenCalledWith(
+        orgId,
+        '2026-W18',
+        { meterQuota: 1000000, planVersion: 'v2', month: '2026-05' },
+        true,
+      );
+      expect(result).toBe(updatedDoc);
+      expect(mockEvents.emit).toHaveBeenCalledWith('billing.plan_change.rotated', {
+        organizationId: orgId,
+        oldQuota: 500000,
+        newQuota: 1000000,
+        oldVersion: 'v1',
+        newVersion: 'v2',
+        preserveUsage: true,
+      });
+    });
+
+    test('resets usage when preserveUsage=false', async () => {
+      const existingDoc = makeUsageDoc({
+        meterUsed: 1234,
+        meterBreakdown: { scrap: 1234 },
+      });
+      const updatedDoc = makeUsageDoc({
+        meterUsed: 0,
+        meterBreakdown: {},
+        meterQuota: 100000,
+        planVersion: 'v3',
+      });
+      mockUsageRepository.findByWeek.mockResolvedValue(existingDoc);
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'starter' });
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 100000, version: 'v3' }));
+      mockUsageRepository.rotateWeekSnapshotForPlanChange.mockResolvedValue(updatedDoc);
+
+      const result = await BillingResetService.forceRotateForPlanChange(orgId, { preserveUsage: false });
+
+      expect(mockUsageRepository.rotateWeekSnapshotForPlanChange).toHaveBeenCalledWith(
+        orgId,
+        '2026-W18',
+        { meterQuota: 100000, planVersion: 'v3', month: '2026-05' },
+        false,
+      );
+      expect(result.meterUsed).toBe(0);
+      expect(result.meterBreakdown).toEqual({});
+    });
+
+    test('returns null without fetching plan when no current week doc exists', async () => {
+      mockUsageRepository.findByWeek.mockResolvedValue(null);
+
+      const result = await BillingResetService.forceRotateForPlanChange(orgId);
+
+      expect(result).toBeNull();
+      expect(mockSubscriptionRepository.findPlan).not.toHaveBeenCalled();
+      expect(mockPlanService.getActivePlan).not.toHaveBeenCalled();
+      expect(mockUsageRepository.rotateWeekSnapshotForPlanChange).not.toHaveBeenCalled();
+      expect(mockEvents.emit).not.toHaveBeenCalled();
     });
   });
 

@@ -36,6 +36,7 @@ describe('Billing webhook subscription unit tests:', () => {
 
     mockResetService = {
       resetWeek: jest.fn().mockResolvedValue({}),
+      forceRotateForPlanChange: jest.fn().mockResolvedValue({}),
     };
 
     mockEvents = { emit: jest.fn() };
@@ -187,9 +188,9 @@ describe('Billing webhook subscription unit tests:', () => {
       ).resolves.not.toThrow();
     });
 
-    // ── Fix #3571: plan change mid-cycle triggers resetWeek ───────────────────
+    // ── Plan changes refresh the active week snapshot without weekly rollover ──
 
-    test('fix #3571: plan change with same period_start — resetWeek called once', async () => {
+    test('plan change with same period_start — forceRotateForPlanChange called once', async () => {
       const periodStart = 1700000000;
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
@@ -216,16 +217,18 @@ describe('Billing webhook subscription unit tests:', () => {
         },
       );
 
-      expect(mockResetService.resetWeek).toHaveBeenCalledTimes(1);
-      // Plan-only change (no period change) → anchor is new Date() (current moment), NOT the
-      // billing-cycle start. Using newPeriodStart here would resolve to a past ISO week bucket.
-      expect(mockResetService.resetWeek).toHaveBeenCalledWith(orgId, expect.any(Date));
-      const [, anchor] = mockResetService.resetWeek.mock.calls[0];
-      // Anchor must NOT be the period start (which is in the past relative to the plan switch)
-      expect(anchor.getTime()).not.toBe(periodStart * 1000);
+      expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledTimes(1);
+      expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledWith(
+        orgId,
+        { preserveUsage: true },
+      );
+      expect(mockResetService.resetWeek).not.toHaveBeenCalled();
     });
 
-    test('fix #3571: plan change AND period_start change — resetWeek called exactly once (not twice)', async () => {
+    test('plan change AND period_start change — forceRotateForPlanChange AND resetWeek both called', async () => {
+      // Combined plan+period change (e.g. annual→monthly on renewal):
+      // forceRotateForPlanChange refreshes quota snapshot; resetWeek archives the old week.
+      // planChangeResetTriggered must NOT suppress resetWeek when period also changed.
       const oldPeriodStart = 1700000000;
       const newPeriodStart = 1700604800;
       const existing = { _id: subId, organization: orgId };
@@ -253,13 +256,14 @@ describe('Billing webhook subscription unit tests:', () => {
         },
       );
 
-      // Plan-change reset triggers first; period-start reset is skipped to avoid double reset.
-      expect(mockResetService.resetWeek).toHaveBeenCalledTimes(1);
-      // When period also changed, anchor must be newPeriodStart (not now)
-      expect(mockResetService.resetWeek).toHaveBeenCalledWith(
+      expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledTimes(1);
+      expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledWith(
         orgId,
-        new Date(newPeriodStart * 1000),
+        { preserveUsage: true },
       );
+      // resetWeek must also run to archive the old week on the period rollover
+      expect(mockResetService.resetWeek).toHaveBeenCalledTimes(1);
+      expect(mockResetService.resetWeek).toHaveBeenCalledWith(orgId, new Date(newPeriodStart * 1000));
     });
 
     test('fix #3571: no plan change — resetWeek NOT called on same period_start', async () => {
@@ -290,7 +294,7 @@ describe('Billing webhook subscription unit tests:', () => {
       expect(mockResetService.resetWeek).not.toHaveBeenCalled();
     });
 
-    test('fix #3571: plan upgrade Growth→Pro — resetWeek called with current anchor (allows full Pro quota)', async () => {
+    test('plan upgrade Growth→Pro — forceRotateForPlanChange preserves usage', async () => {
       const periodStart = 1700000000;
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
@@ -316,14 +320,13 @@ describe('Billing webhook subscription unit tests:', () => {
         },
       );
 
-      expect(mockResetService.resetWeek).toHaveBeenCalledTimes(1);
-      const [calledOrg, calledAnchor] = mockResetService.resetWeek.mock.calls[0];
+      expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledTimes(1);
+      const [calledOrg, options] = mockResetService.forceRotateForPlanChange.mock.calls[0];
       expect(calledOrg).toBe(orgId);
-      // Anchor should be the new period start (Date object from current_period_start)
-      expect(calledAnchor).toBeInstanceOf(Date);
+      expect(options).toEqual({ preserveUsage: true });
     });
 
-    test('fix #3571: plan downgrade Pro→Growth — resetWeek called (meterUsed reset to 0)', async () => {
+    test('plan downgrade Pro→Growth — forceRotateForPlanChange called with preserveUsage=true', async () => {
       const periodStart = 1700000000;
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
@@ -349,15 +352,19 @@ describe('Billing webhook subscription unit tests:', () => {
         },
       );
 
-      expect(mockResetService.resetWeek).toHaveBeenCalledTimes(1);
+      expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledTimes(1);
+      expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledWith(
+        orgId,
+        { preserveUsage: true },
+      );
     });
 
-    test('fix #3571: resetWeek on plan change — errors do not throw (non-fatal)', async () => {
+    test('forceRotateForPlanChange errors do not throw (non-fatal)', async () => {
       const periodStart = 1700000000;
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
       mockSubscriptionRepository.update.mockResolvedValue({});
-      mockResetService.resetWeek.mockRejectedValue(new Error('db unavailable'));
+      mockResetService.forceRotateForPlanChange.mockRejectedValue(new Error('db unavailable'));
 
       await expect(
         BillingWebhookService.handleSubscriptionUpdated(
@@ -382,7 +389,7 @@ describe('Billing webhook subscription unit tests:', () => {
       ).resolves.not.toThrow();
     });
 
-    test('fix #3571: plan change with no newPeriodStart falls back to now for anchor', async () => {
+    test('plan change with no newPeriodStart still force rotates', async () => {
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
       mockSubscriptionRepository.update.mockResolvedValue({});
@@ -407,9 +414,11 @@ describe('Billing webhook subscription unit tests:', () => {
         },
       );
 
-      expect(mockResetService.resetWeek).toHaveBeenCalledTimes(1);
-      const [, anchor] = mockResetService.resetWeek.mock.calls[0];
-      expect(anchor).toBeInstanceOf(Date);
+      expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledTimes(1);
+      expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledWith(
+        orgId,
+        { preserveUsage: true },
+      );
     });
 
     test('should update currentPeriodStart in subscription when period_start is present', async () => {

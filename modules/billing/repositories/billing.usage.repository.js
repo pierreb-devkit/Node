@@ -92,10 +92,12 @@ const findByWeek = (organizationId, weekKey) => {
  * @param {Object} breakdown - Feature-level breakdown map { featureKey: units }.
  * @param {String} idempotencyKey - Unique key (usually history._id.toString()) for replay protection.
  * @param {Object} baseSnapshot - Fields written only on first upsert: { meterQuota, planVersion, resetAt, month }.
+ * @param {Object} [options={}] - Optional write options.
+ * @param {import('mongoose').ClientSession} [options.session] - Optional Mongo session for transaction-scoped writes.
  * @returns {Promise<Object|null>} The updated usage document, or null if this was a replay (no-op).
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
-const incrementMeter = async (organizationId, weekKey, units, breakdown, idempotencyKey, baseSnapshot) => {
+const incrementMeter = async (organizationId, weekKey, units, breakdown, idempotencyKey, baseSnapshot, options = {}) => {
   if (!mongoose.Types.ObjectId.isValid(organizationId)) return null;
 
   // Build $inc for meterUsed + per-feature breakdown keys
@@ -108,6 +110,7 @@ const incrementMeter = async (organizationId, weekKey, units, breakdown, idempot
       }
     }
   }
+  const hasBreakdownIncrements = Object.keys(incPayload).some((key) => key.startsWith('meterBreakdown.'));
 
   // Transition logic — remove after migration is confirmed complete on all production deployments.
   // TODO(PR-A migration): drop legacy consumedHistoryIds dual-read once deployed data is fully migrated.
@@ -150,12 +153,19 @@ const incrementMeter = async (organizationId, weekKey, units, breakdown, idempot
           meterQuota: baseSnapshot?.meterQuota ?? 0,
           planVersion: baseSnapshot?.planVersion ?? null,
           resetAt: baseSnapshot?.resetAt ?? null,
-          meterBreakdown: {},
+          ...(hasBreakdownIncrements ? {} : { meterBreakdown: {} }),
           alertedAt80: null,
           alertedAt100: null,
         },
       },
-      { upsert: true, returnDocument: 'after', runValidators: false, strict: false, strictQuery: false },
+      {
+        upsert: true,
+        returnDocument: 'after',
+        runValidators: false,
+        strict: false,
+        strictQuery: false,
+        session: options.session,
+      },
     );
     return doc;
   } catch (err) {
@@ -167,7 +177,7 @@ const incrementMeter = async (organizationId, weekKey, units, breakdown, idempot
           $inc: incPayload,
           $push: { consumedAttributionKeys: idempotencyKey },
         },
-        { returnDocument: 'after', strict: false, strictQuery: false },
+        { returnDocument: 'after', strict: false, strictQuery: false, session: options.session },
       );
     }
     throw err;
@@ -216,6 +226,44 @@ const upsertWeekSnapshot = (orgId, weekKey, snapshotFields) =>
   );
 
 /**
+ * @function rotateWeekSnapshotForPlanChange
+ * @description Update an existing current-week usage document with the active
+ *              plan snapshot. Preserves usage by default; optionally resets
+ *              usage and clears the breakdown for clean-break plan changes.
+ *              Does not upsert — plan-change rotation is only needed when a
+ *              current week document already exists.
+ * @param {string} orgId - The organization ObjectId (string).
+ * @param {string} weekKey - The current ISO week key.
+ * @param {Object} snapshotFields - Fields to set: { meterQuota, planVersion, month }.
+ * @param {boolean} preserveUsage - Whether to keep existing meterUsed and breakdown.
+ * @returns {Promise<Object|null>} The updated usage document, or null when none exists.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const rotateWeekSnapshotForPlanChange = (orgId, weekKey, snapshotFields, preserveUsage = true) => {
+  const update = {
+    $set: {
+      meterQuota: snapshotFields.meterQuota,
+      planVersion: snapshotFields.planVersion,
+      month: snapshotFields.month,
+    },
+  };
+
+  if (!preserveUsage) {
+    update.$set.meterUsed = 0;
+    update.$set.meterBreakdown = {};
+    // Clear threshold flags so the new quota window can trigger alerts again.
+    update.$set.alertedAt80 = null;
+    update.$set.alertedAt100 = null;
+  }
+
+  return BillingUsage.findOneAndUpdate(
+    { organizationId: orgId, weekKey },
+    update,
+    { returnDocument: 'after', runValidators: false },
+  ).lean();
+};
+
+/**
  * @function markThreshold
  * @description Atomically set a threshold timestamp field on a usage document,
  *              only when the field is currently null (deduplication guard).
@@ -239,5 +287,6 @@ export default {
   incrementMeter,
   archiveOtherWeeks,
   upsertWeekSnapshot,
+  rotateWeekSnapshotForPlanChange,
   markThreshold,
 };

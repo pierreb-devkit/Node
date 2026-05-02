@@ -124,9 +124,11 @@ const capBreakdown = (breakdown, cappedUnits, originalTotal) => {
 /**
  * @function attribute
  * @description Attribute meter units from a History-like input to a Usage document
- *              for the given organization. If the plan quota is exceeded, falls back
- *              to BillingExtraService.debit (best-effort — does not throw when extras
- *              are exhausted; extrasConsumed=0 is returned instead).
+ *              for the given organization. If the plan quota is exceeded, creates a
+ *              pending BillingMeterOutbox row before attempting BillingExtraService.debit.
+ *              The return is optimistic once usage is counted: debit failures leave the
+ *              outbox pending for retry and still return extrasConsumed so callers do not
+ *              retry an already-applied attribution.
  *
  *              Per-step idempotency: the idempotency key is `${history._id}:${stepKey}`.
  *              This allows multiple attributions on the same history at different processing
@@ -164,9 +166,10 @@ const capBreakdown = (breakdown, cappedUnits, originalTotal) => {
  * @param {string|null|undefined} [options.ratioVersion=null] - Optional ratio snapshot override
  *   paired with options.planId. Falls back to history.planVersion when omitted.
  * @returns {Promise<{applied: boolean, meterUsed: number, extrasConsumed: number, reason?: string}>}
- *   `reason` is present for zero-cost skips and exhausted extras:
+ *   `reason` is present for zero-cost skips:
  *   `{ applied: false, meterUsed: 0, extrasConsumed: 0, reason: 'zero_cost_skipped' }`
- *   or `{ applied: true, meterUsed, extrasConsumed: 0, reason: 'extras_exhausted' }`.
+ *   Extras debit failures after usage is applied are reconciled by the outbox cron;
+ *   consumers should not retry when `applied: true`.
  * @throws {Error} If stepKey is non-null/undefined and does not match the expected format.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
@@ -229,7 +232,10 @@ const attribute = async (history, organizationId, options = {}) => {
 
   const idempotencyKey = `${history._id?.toString?.() ?? String(history._id)}:${validatedStepKey}`;
 
-  const result = await BillingUsageService.incrementMeter(
+  // incrementMeterWithOutbox atomically creates the outbox row before returning so there
+  // is exactly one pending row per (idempotencyKey) when extras overflow. result.outbox is
+  // always present when extrasConsumed > 0.
+  const result = await BillingUsageService.incrementMeterWithOutbox(
     organizationId,
     cappedUnits,
     cappedBreakdown,
@@ -243,13 +249,19 @@ const attribute = async (history, organizationId, options = {}) => {
 
   let extrasConsumed = 0;
   if (result.extrasConsumed > 0) {
-    const debitResult = await BillingExtraService.debit(organizationId, result.extrasConsumed, idempotencyKey);
-    if (debitResult.applied) {
-      extrasConsumed = result.extrasConsumed;
-    } else {
-      // Debit was not applied (balance exhausted or idempotency hit).
-      // Report extrasConsumed=0 so callers are not misled about charge application.
-      return { applied: true, meterUsed: result.meterUsed, extrasConsumed: 0, reason: 'extras_exhausted' };
+    extrasConsumed = result.extrasConsumed;
+    const outboxDoc = result.outbox;
+
+    try {
+      const debitResult = await BillingExtraService.debit(organizationId, extrasConsumed, idempotencyKey);
+      if (debitResult.applied && outboxDoc) {
+        // Lazy import to avoid pulling in repository at module load time
+        const { default: BillingMeterOutboxRepository } = await import('../repositories/billing.meter.outbox.repository.js');
+        await BillingMeterOutboxRepository.markCommitted(outboxDoc._id);
+      }
+    } catch (err) {
+      // Usage is already counted and the outbox row is pending. The retry cron owns reconciliation.
+      console.warn('[billing.meter] extras debit deferred to outbox:', err?.message ?? err);
     }
   }
 

@@ -15,6 +15,7 @@ No `node-cron` dependency — orchestration is handled by Kubernetes CronJob man
 | `billing.weeklyReset.js` | Reset meter counters for orgs whose billing period rolled over | Daily `0 1 * * *` |
 | `billing.extrasExpiration.js` | Expire topup ledger entries past their `expiresAt` date | Daily `0 2 * * *` |
 | `billing.dunningSweep.js` | Downgrade stale `past_due` subs (>14d) to `unpaid` + `free` | Daily `0 3 * * *` |
+| `retry-pending-extras-debit.cron.js` | Retry pending extras debits from the meter outbox | Every 5 minutes `*/5 * * * *` |
 
 ## Usage
 
@@ -22,6 +23,7 @@ No `node-cron` dependency — orchestration is handled by Kubernetes CronJob man
 NODE_ENV=production node modules/billing/crons/billing.weeklyReset.js
 NODE_ENV=production node modules/billing/crons/billing.extrasExpiration.js
 NODE_ENV=production node modules/billing/crons/billing.dunningSweep.js
+NODE_ENV=production node modules/billing/crons/retry-pending-extras-debit.cron.js
 ```
 
 Exit code 0 = success (or meterMode disabled). Exit code 1 = at least one error or fatal failure.
