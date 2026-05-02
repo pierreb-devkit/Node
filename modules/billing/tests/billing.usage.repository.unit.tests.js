@@ -407,6 +407,8 @@ describe('BillingUsageRepository — meter extensions unit tests:', () => {
         month: '2026-05',
         meterUsed: 0,
         meterBreakdown: {},
+        alertedAt80: null,
+        alertedAt100: null,
       });
     });
   });

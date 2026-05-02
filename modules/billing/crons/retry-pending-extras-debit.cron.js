@@ -34,7 +34,12 @@ try {
   console.log(
     `[billing.retryPendingExtrasDebit] done — scanned: ${result.scanned}, committed: ${result.committed}, failedAttempts: ${result.failedAttempts}, exhausted: ${result.exhausted}`,
   );
-  process.exitCode = result.exhausted > 0 ? 1 : 0;
+  if (result.exhausted > 0) {
+    // Exhausted rows are a handled business outcome (alert event already emitted),
+    // not an operational cron failure — log for visibility without failing the job.
+    console.warn(`[billing.retryPendingExtrasDebit] exhausted rows (alert emitted): ${result.exhausted}`);
+  }
+  process.exitCode = 0;
 } catch (err) {
   console.error('[billing.retryPendingExtrasDebit] fatal:', err);
   process.exitCode = 1;

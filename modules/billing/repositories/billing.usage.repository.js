@@ -251,6 +251,9 @@ const rotateWeekSnapshotForPlanChange = (orgId, weekKey, snapshotFields, preserv
   if (!preserveUsage) {
     update.$set.meterUsed = 0;
     update.$set.meterBreakdown = {};
+    // Clear threshold flags so the new quota window can trigger alerts again.
+    update.$set.alertedAt80 = null;
+    update.$set.alertedAt100 = null;
   }
 
   return BillingUsage.findOneAndUpdate(
