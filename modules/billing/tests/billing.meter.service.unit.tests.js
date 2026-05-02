@@ -380,6 +380,46 @@ describe('BillingMeterService unit tests:', () => {
       expect(mockBillingUsageService.incrementMeter).not.toHaveBeenCalled();
     });
 
+    test('null and undefined stepKey fall back to initial while invalid values throw', async () => {
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingUsageService.incrementMeter.mockResolvedValue({
+        applied: true,
+        meterUsed: 100,
+        extrasConsumed: 0,
+      });
+      const history = {
+        _id: '507f1f77bcf86cd799439098',
+        costs: { scrap: 0.1 },
+        planId: 'pro',
+        planVersion: 'v1',
+      };
+
+      await expect(BillingMeterService.attribute(history, orgId, { stepKey: null })).resolves.toEqual({
+        applied: true,
+        meterUsed: 100,
+        extrasConsumed: 0,
+      });
+      await expect(BillingMeterService.attribute(history, orgId, { stepKey: undefined })).resolves.toEqual({
+        applied: true,
+        meterUsed: 100,
+        extrasConsumed: 0,
+      });
+
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenNthCalledWith(
+        1, orgId, expect.any(Number), expect.any(Object), '507f1f77bcf86cd799439098:initial',
+      );
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenNthCalledWith(
+        2, orgId, expect.any(Number), expect.any(Object), '507f1f77bcf86cd799439098:initial',
+      );
+
+      await expect(
+        BillingMeterService.attribute(history, orgId, { stepKey: 123 }),
+      ).rejects.toThrow('[billing.meter] invalid stepKey');
+      await expect(
+        BillingMeterService.attribute(history, orgId, { stepKey: 'bad space' }),
+      ).rejects.toThrow('[billing.meter] invalid stepKey');
+    });
+
     test('replay of {stepKey:"digest"} is blocked (idempotent)', async () => {
       mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
       // First digest call: applied

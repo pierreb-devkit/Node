@@ -109,13 +109,31 @@ const incrementMeter = async (organizationId, weekKey, units, breakdown, idempot
     }
   }
 
+  // Transition logic — remove after migration is confirmed complete on all production deployments.
+  // TODO(PR-A migration): drop legacy consumedHistoryIds dual-read once deployed data is fully migrated.
+  //
+  // Pre-migration docs have legacy consumedHistoryIds entries (raw ObjectIds for 'initial' attribution).
+  // Per-step keys ('digest', 'fix:N') didn't exist pre-PR-A so no legacy entries protect those.
+  const isInitial = idempotencyKey.endsWith(':initial');
+  const legacyId = isInitial ? idempotencyKey.split(':')[0] : null;
+  const filter = {
+    organizationId,
+    weekKey,
+    consumedAttributionKeys: { $ne: idempotencyKey },
+  };
+  if (legacyId) {
+    // Avoid double-charge during migration window: also check the legacy field.
+    // Use ObjectId cast for the legacy field type ([ObjectId] in older docs).
+    try {
+      filter.consumedHistoryIds = { $ne: new mongoose.Types.ObjectId(legacyId) };
+    } catch {
+      // Defensive only: initial keys are expected to contain a real history._id.
+    }
+  }
+
   try {
     const doc = await BillingUsage.findOneAndUpdate(
-      {
-        organizationId,
-        weekKey,
-        consumedAttributionKeys: { $ne: idempotencyKey },
-      },
+      filter,
       {
         $inc: incPayload,
         $push: { consumedAttributionKeys: idempotencyKey },
@@ -137,23 +155,19 @@ const incrementMeter = async (organizationId, weekKey, units, breakdown, idempot
           alertedAt100: null,
         },
       },
-      { upsert: true, returnDocument: 'after', runValidators: false },
+      { upsert: true, returnDocument: 'after', runValidators: false, strict: false, strictQuery: false },
     );
     return doc;
   } catch (err) {
     if (err.code === 11000) {
       // Duplicate key on upsert race — retry without upsert
       return BillingUsage.findOneAndUpdate(
-        {
-          organizationId,
-          weekKey,
-          consumedAttributionKeys: { $ne: idempotencyKey },
-        },
+        filter,
         {
           $inc: incPayload,
           $push: { consumedAttributionKeys: idempotencyKey },
         },
-        { returnDocument: 'after' },
+        { returnDocument: 'after', strictQuery: false },
       );
     }
     throw err;

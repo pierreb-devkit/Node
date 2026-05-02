@@ -147,7 +147,7 @@ const attribute = async (history, organizationId, { stepKey = 'initial' } = {}) 
   // Silent fallback to 'initial' was removed — it collides with the actual initial attribution
   // and silently drops subsequent step charges (e.g. 'digest', 'fix:1').
   if (
-    stepKey !== undefined &&
+    stepKey != null &&
     (typeof stepKey !== 'string' || !/^[a-zA-Z0-9:_-]{1,64}$/.test(stepKey))
   ) {
     throw new Error(`[billing.meter] invalid stepKey: ${JSON.stringify(stepKey)}`);

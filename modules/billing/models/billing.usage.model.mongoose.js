@@ -107,7 +107,7 @@ const UsageMongoose = new Schema(
     /**
      * Per-step attribution keys consumed this period, in `${historyId}:${stepKey}` format.
      * Legacy raw ObjectId strings (before per-step idempotency) are stored as `${id}:initial`.
-     * Used for idempotent attribution checks — indexed for $ne query performance.
+     * Used for idempotent attribution checks — indexed for future $in / $elemMatch queries.
      */
     consumedAttributionKeys: {
       type: [String],
