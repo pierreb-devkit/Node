@@ -124,7 +124,7 @@ const capBreakdown = (breakdown, cappedUnits, originalTotal) => {
  *              cost delta for subsequent steps.
  *
  *              Each stepKey call is independently idempotent — replaying the same
- *              `(history._id, stepKey)` pair is a no-op (replay protection via consumedHistoryIds).
+ *              `(history._id, stepKey)` pair is a no-op (replay protection via consumedAttributionKeys).
  *
  *              IMPORTANT: each call must pass ONLY the cost delta for that step (not the
  *              cumulative total), otherwise earlier steps will be double-charged.
@@ -143,11 +143,16 @@ const capBreakdown = (breakdown, cappedUnits, originalTotal) => {
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const attribute = async (history, organizationId, { stepKey = 'initial' } = {}) => {
-  // Validate stepKey: must be a non-empty alphanumeric+colon+hyphen+underscore string
-  // to prevent arbitrary data from polluting consumedHistoryIds
-  const validatedStepKey = (typeof stepKey === 'string' && /^[a-zA-Z0-9:_-]{1,64}$/.test(stepKey))
-    ? stepKey
-    : 'initial';
+  // Validate stepKey: must be a non-empty alphanumeric+colon+hyphen+underscore string.
+  // Silent fallback to 'initial' was removed — it collides with the actual initial attribution
+  // and silently drops subsequent step charges (e.g. 'digest', 'fix:1').
+  if (
+    stepKey !== undefined &&
+    (typeof stepKey !== 'string' || !/^[a-zA-Z0-9:_-]{1,64}$/.test(stepKey))
+  ) {
+    throw new Error(`[billing.meter] invalid stepKey: ${JSON.stringify(stepKey)}`);
+  }
+  const validatedStepKey = stepKey ?? 'initial';
   if (!config?.billing?.meterMode) {
     return { applied: false, meterUsed: 0, extrasConsumed: 0 };
   }

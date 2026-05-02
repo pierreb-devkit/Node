@@ -105,12 +105,14 @@ const UsageMongoose = new Schema(
       default: null,
     },
     /**
-     * ObjectIds of History documents consumed (attributed) this period.
-     * Used for idempotent attribution checks.
+     * Per-step attribution keys consumed this period, in `${historyId}:${stepKey}` format.
+     * Legacy raw ObjectId strings (before per-step idempotency) are stored as `${id}:initial`.
+     * Used for idempotent attribution checks — indexed for $ne query performance.
      */
-    consumedHistoryIds: {
-      type: [Schema.ObjectId],
+    consumedAttributionKeys: {
+      type: [String],
       default: () => [],
+      index: true,
     },
   },
   {

@@ -7,10 +7,16 @@ import { z } from 'zod';
  * BillingUsage Zod schema — mirrors billing.usage.model.mongoose.js
  *
  * Legacy fields (organizationId, month, counters) are always required.
- * Meter fields (weekKey, consumedHistoryIds, etc.) are optional to preserve
+ * Meter fields (weekKey, consumedAttributionKeys, etc.) are optional to preserve
  * backward compatibility with non-meter downstream projects.
  */
 const objectIdRegex = /^[a-f\d]{24}$/i;
+
+/**
+ * Attribution key regex: accepts raw ObjectId (legacy) or `${id}:${stepKey}` format.
+ * stepKey may contain alphanumeric chars, colons, hyphens, underscores (1-64 chars).
+ */
+const attributionKeyRegex = /^[a-fA-F0-9]{24}(:[a-zA-Z0-9:_-]{1,64})?$/;
 
 const BillingUsage = z.object({
   organizationId: z.string().trim().regex(objectIdRegex, 'organizationId must be a valid ObjectId'),
@@ -39,10 +45,20 @@ const BillingUsage = z.object({
   archivedAt: z.coerce.date().optional().nullable(),
 
   /**
-   * Array of ObjectIds of History documents attributed to this period.
+   * Per-step attribution keys consumed this period.
+   * Format: `${historyId}:${stepKey}` (e.g. "507f1f77bcf86cd799439011:initial").
+   * Legacy raw ObjectId strings are also accepted for backward compatibility.
    */
-  consumedHistoryIds: z
-    .array(z.string().trim().regex(objectIdRegex, 'consumedHistoryIds entries must be valid ObjectIds'))
+  consumedAttributionKeys: z
+    .array(
+      z
+        .string()
+        .trim()
+        .regex(
+          attributionKeyRegex,
+          'consumedAttributionKeys entries must be <objectId> or <objectId>:<stepKey>',
+        ),
+    )
     .default(() => []),
 });
 

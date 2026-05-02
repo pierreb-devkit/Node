@@ -109,47 +109,61 @@ describe('BillingUsage unit tests:', () => {
     });
   });
 
-  describe('Schema validation — consumedHistoryIds', () => {
+  describe('Schema validation — consumedAttributionKeys', () => {
     const objectIdRegex = /^[a-f\d]{24}$/i;
 
-    test('should accept an empty consumedHistoryIds array', () => {
+    test('should accept an empty consumedAttributionKeys array', () => {
       const result = schema.BillingUsage.safeParse({
         organizationId: '507f1f77bcf86cd799439011',
         month: '2026-03',
-        consumedHistoryIds: [],
+        consumedAttributionKeys: [],
       });
       expect(result.error).toBeFalsy();
-      expect(result.data.consumedHistoryIds).toEqual([]);
+      expect(result.data.consumedAttributionKeys).toEqual([]);
     });
 
-    test('should accept valid ObjectId strings in consumedHistoryIds', () => {
+    test('should accept legacy raw ObjectId strings (pre-stepKey era)', () => {
       const result = schema.BillingUsage.safeParse({
         organizationId: '507f1f77bcf86cd799439011',
         month: '2026-03',
-        consumedHistoryIds: ['507f1f77bcf86cd799439012', '507f1f77bcf86cd799439013'],
+        consumedAttributionKeys: ['507f1f77bcf86cd799439012', '507f1f77bcf86cd799439013'],
       });
       expect(result.error).toBeFalsy();
-      for (const id of result.data.consumedHistoryIds) {
-        expect(objectIdRegex.test(id)).toBe(true);
+      for (const key of result.data.consumedAttributionKeys) {
+        expect(objectIdRegex.test(key)).toBe(true);
       }
     });
 
-    test('should reject invalid ObjectId strings in consumedHistoryIds', () => {
+    test('should accept id:stepKey format strings', () => {
       const result = schema.BillingUsage.safeParse({
         organizationId: '507f1f77bcf86cd799439011',
         month: '2026-03',
-        consumedHistoryIds: ['not-an-objectid'],
+        consumedAttributionKeys: [
+          '507f1f77bcf86cd799439012:initial',
+          '507f1f77bcf86cd799439013:digest',
+          '507f1f77bcf86cd799439014:fix:1',
+        ],
+      });
+      expect(result.error).toBeFalsy();
+      expect(result.data.consumedAttributionKeys).toHaveLength(3);
+    });
+
+    test('should reject strings that are neither raw ObjectId nor id:stepKey', () => {
+      const result = schema.BillingUsage.safeParse({
+        organizationId: '507f1f77bcf86cd799439011',
+        month: '2026-03',
+        consumedAttributionKeys: ['not-an-objectid'],
       });
       expect(result.error).toBeDefined();
     });
 
-    test('should default consumedHistoryIds to empty array when missing', () => {
+    test('should default consumedAttributionKeys to empty array when missing', () => {
       const result = schema.BillingUsage.safeParse({
         organizationId: '507f1f77bcf86cd799439011',
         month: '2026-03',
       });
       expect(result.error).toBeFalsy();
-      expect(result.data.consumedHistoryIds).toEqual([]);
+      expect(result.data.consumedAttributionKeys).toEqual([]);
     });
   });
 

@@ -81,7 +81,7 @@ const findByWeek = (organizationId, weekKey) => {
 /**
  * @function incrementMeter
  * @description Atomically increment meter usage for the given org+weekKey, with upsert.
- *              Replay protection: the idempotencyKey is appended to consumedHistoryIds;
+ *              Replay protection: the idempotencyKey is appended to consumedAttributionKeys;
  *              if it is already present, the update is skipped (returns null).
  *              baseSnapshot fields ($setOnInsert) are only written on document creation,
  *              preserving the quota snapshot for the lifetime of the week.
@@ -114,11 +114,11 @@ const incrementMeter = async (organizationId, weekKey, units, breakdown, idempot
       {
         organizationId,
         weekKey,
-        consumedHistoryIds: { $ne: idempotencyKey },
+        consumedAttributionKeys: { $ne: idempotencyKey },
       },
       {
         $inc: incPayload,
-        $push: { consumedHistoryIds: idempotencyKey },
+        $push: { consumedAttributionKeys: idempotencyKey },
         $setOnInsert: {
           organizationId,
           weekKey,
@@ -147,11 +147,11 @@ const incrementMeter = async (organizationId, weekKey, units, breakdown, idempot
         {
           organizationId,
           weekKey,
-          consumedHistoryIds: { $ne: idempotencyKey },
+          consumedAttributionKeys: { $ne: idempotencyKey },
         },
         {
           $inc: incPayload,
-          $push: { consumedHistoryIds: idempotencyKey },
+          $push: { consumedAttributionKeys: idempotencyKey },
         },
         { returnDocument: 'after' },
       );
@@ -190,7 +190,7 @@ const archiveOtherWeeks = (orgId, currentWeekKey, archivedAt) =>
  * @param {string} weekKey - The ISO week key for the new period.
  * @param {Object} snapshotFields - Fields written only on document creation
  *   (organizationId, weekKey, month, meterUsed, meterQuota, planVersion,
- *    meterBreakdown, resetAt, alertedAt80, alertedAt100, consumedHistoryIds).
+ *    meterBreakdown, resetAt, alertedAt80, alertedAt100, consumedAttributionKeys).
  * @returns {Promise<Object>} The upserted document.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik

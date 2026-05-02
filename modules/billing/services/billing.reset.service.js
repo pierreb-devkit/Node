@@ -32,7 +32,7 @@ const isoWeekKey = (date) => {
  *              both operations are no-ops.
  *
  *              Race: if resetWeek and incrementMeter race on the same weekKey,
- *              incrementMeter uses $ne on consumedHistoryIds so a duplicate upsert
+ *              incrementMeter uses $ne on consumedAttributionKeys so a duplicate upsert
  *              will hit the 11000 path in incrementMeter's retry branch.
  *
  * @param {string} orgId - The organization ObjectId (string).
@@ -79,7 +79,7 @@ const resetWeek = async (orgId, periodStart) => {
       resetAt,
       alertedAt80: null,
       alertedAt100: null,
-      consumedHistoryIds: [],
+      consumedAttributionKeys: [],
     });
   } catch (err) {
     if (err.code === 11000) {
