@@ -8,18 +8,26 @@ import billingEvents from '../lib/events.js';
 /**
  * @function emitExhausted
  * @description Emit the alert event for an outbox row that exhausted retries.
+ *              Listener exceptions are swallowed so observer failures cannot affect
+ *              retry accounting (markFailedAttempt must not be called a second time
+ *              due to a misbehaving listener).
  * @param {Object} row - Original pending outbox row.
  * @param {Object} updated - Updated failed outbox row.
  * @returns {void}
  */
 const emitExhausted = (row, updated) => {
-  billingEvents.emit('billing.extras_debit.exhausted', {
-    organizationId: String(row.organizationId),
-    idempotencyKey: row.idempotencyKey,
-    extrasUnits: row.extrasUnits,
-    attempts: updated.attempts,
-    lastError: updated.lastError,
-  });
+  try {
+    billingEvents.emit('billing.extras_debit.exhausted', {
+      organizationId: String(row.organizationId),
+      idempotencyKey: row.idempotencyKey,
+      extrasUnits: row.extrasUnits,
+      attempts: updated.attempts,
+      lastError: updated.lastError,
+    });
+  } catch (evtErr) {
+    // Listener errors must not disrupt outbox retry accounting — log for traceability
+    console.error('[billing.outbox] billing.extras_debit.exhausted listener error (non-fatal):', evtErr?.message ?? evtErr);
+  }
 };
 
 /**

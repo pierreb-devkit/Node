@@ -64,13 +64,15 @@ const findPendingDue = (thresholdMs = 5 * 60 * 1000, limit = 100) => {
 /**
  * @function markCommitted
  * @description Mark an outbox row as committed after a successful extras debit.
+ *              The `status:'pending'` filter makes this idempotent: committed or
+ *              failed rows are immutable and concurrent calls are no-ops.
  * @param {string} id - Outbox row id.
  * @returns {Promise<Object>} Mongo update result.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const markCommitted = (id) =>
   BillingMeterOutbox().updateOne(
-    { _id: id },
+    { _id: id, status: 'pending' },
     { $set: { status: 'committed', lastError: null, lastAttemptedAt: new Date() } },
   );
 

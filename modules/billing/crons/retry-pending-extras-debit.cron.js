@@ -20,7 +20,8 @@ if (!config?.billing?.meterMode) {
   process.exit(0);
 }
 
-const jitterMs = Math.floor(Math.random() * 60_000);
+const { randomInt } = await import('node:crypto');
+const jitterMs = randomInt(0, 60_000);
 await new Promise((resolve) => setTimeout(resolve, jitterMs));
 
 try {

@@ -127,13 +127,13 @@ describe('BillingMeterOutbox unit tests:', () => {
       expect(lean).toHaveBeenCalled();
     });
 
-    test('markCommitted sets committed status', async () => {
+    test('markCommitted sets committed status and is idempotent via status filter', async () => {
       mockModel.updateOne.mockResolvedValue({ modifiedCount: 1 });
 
       await BillingMeterOutboxRepository.markCommitted(outboxId);
 
       expect(mockModel.updateOne).toHaveBeenCalledWith(
-        { _id: outboxId },
+        { _id: outboxId, status: 'pending' },
         {
           $set: {
             status: 'committed',

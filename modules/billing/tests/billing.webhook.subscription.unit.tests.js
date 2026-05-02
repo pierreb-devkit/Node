@@ -225,7 +225,10 @@ describe('Billing webhook subscription unit tests:', () => {
       expect(mockResetService.resetWeek).not.toHaveBeenCalled();
     });
 
-    test('plan change AND period_start change — forceRotateForPlanChange called exactly once', async () => {
+    test('plan change AND period_start change — forceRotateForPlanChange AND resetWeek both called', async () => {
+      // Combined plan+period change (e.g. annual→monthly on renewal):
+      // forceRotateForPlanChange refreshes quota snapshot; resetWeek archives the old week.
+      // planChangeResetTriggered must NOT suppress resetWeek when period also changed.
       const oldPeriodStart = 1700000000;
       const newPeriodStart = 1700604800;
       const existing = { _id: subId, organization: orgId };
@@ -258,7 +261,9 @@ describe('Billing webhook subscription unit tests:', () => {
         orgId,
         { preserveUsage: true },
       );
-      expect(mockResetService.resetWeek).not.toHaveBeenCalled();
+      // resetWeek must also run to archive the old week on the period rollover
+      expect(mockResetService.resetWeek).toHaveBeenCalledTimes(1);
+      expect(mockResetService.resetWeek).toHaveBeenCalledWith(orgId, new Date(newPeriodStart * 1000));
     });
 
     test('fix #3571: no plan change — resetWeek NOT called on same period_start', async () => {
