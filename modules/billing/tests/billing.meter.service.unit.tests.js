@@ -361,14 +361,10 @@ describe('BillingMeterService unit tests:', () => {
       );
     });
 
-    test('invalid stepKey (special chars) falls back to "initial"', async () => {
-      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
-      mockBillingUsageService.incrementMeter.mockResolvedValue({
-        applied: true,
-        meterUsed: 100,
-        extrasConsumed: 0,
-      });
-
+    test('invalid stepKey (special chars) throws instead of silently falling back to "initial"', async () => {
+      // Previously: invalid stepKey silently fell back to 'initial', which collides with the
+      // actual initial attribution key and would silently drop subsequent step charges.
+      // Fix: throw immediately so callers can detect and correct the issue.
       const history = {
         _id: '507f1f77bcf86cd799439099',
         costs: { scrap: 0.1 },
@@ -376,12 +372,52 @@ describe('BillingMeterService unit tests:', () => {
         planVersion: 'v1',
       };
 
-      await BillingMeterService.attribute(history, orgId, { stepKey: 'bad key! @#$' });
+      await expect(
+        BillingMeterService.attribute(history, orgId, { stepKey: 'bad key! @#$' }),
+      ).rejects.toThrow('[billing.meter] invalid stepKey');
 
-      // Invalid stepKey falls back to 'initial'
-      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
-        orgId, expect.any(Number), expect.any(Object), '507f1f77bcf86cd799439099:initial',
+      // incrementMeter must NOT be called — the throw happens before any DB write
+      expect(mockBillingUsageService.incrementMeter).not.toHaveBeenCalled();
+    });
+
+    test('null and undefined stepKey fall back to initial while invalid values throw', async () => {
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingUsageService.incrementMeter.mockResolvedValue({
+        applied: true,
+        meterUsed: 100,
+        extrasConsumed: 0,
+      });
+      const history = {
+        _id: '507f1f77bcf86cd799439098',
+        costs: { scrap: 0.1 },
+        planId: 'pro',
+        planVersion: 'v1',
+      };
+
+      await expect(BillingMeterService.attribute(history, orgId, { stepKey: null })).resolves.toEqual({
+        applied: true,
+        meterUsed: 100,
+        extrasConsumed: 0,
+      });
+      await expect(BillingMeterService.attribute(history, orgId, { stepKey: undefined })).resolves.toEqual({
+        applied: true,
+        meterUsed: 100,
+        extrasConsumed: 0,
+      });
+
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenNthCalledWith(
+        1, orgId, expect.any(Number), expect.any(Object), '507f1f77bcf86cd799439098:initial',
       );
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenNthCalledWith(
+        2, orgId, expect.any(Number), expect.any(Object), '507f1f77bcf86cd799439098:initial',
+      );
+
+      await expect(
+        BillingMeterService.attribute(history, orgId, { stepKey: 123 }),
+      ).rejects.toThrow('[billing.meter] invalid stepKey');
+      await expect(
+        BillingMeterService.attribute(history, orgId, { stepKey: 'bad space' }),
+      ).rejects.toThrow('[billing.meter] invalid stepKey');
     });
 
     test('replay of {stepKey:"digest"} is blocked (idempotent)', async () => {

@@ -41,7 +41,7 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
     planVersion: 'v1',
     alertedAt80: null,
     alertedAt100: null,
-    consumedHistoryIds: [],
+    consumedAttributionKeys: [],
     ...overrides,
   });
 

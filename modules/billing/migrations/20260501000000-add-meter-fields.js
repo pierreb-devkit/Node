@@ -1,8 +1,10 @@
 /**
- * Migration: Add meter fields to billing_usages collection
+ * Migration: Add meter fields to billingusages collection
  *
  * Adds weekKey, meterUsed, meterQuota, planVersion, meterBreakdown,
- * resetAt, alertedAt80, alertedAt100, consumedHistoryIds to existing documents.
+ * resetAt, alertedAt80, alertedAt100 to existing documents.
+ * NOTE: consumedHistoryIds (original field) was renamed to consumedAttributionKeys
+ * in migration 20260502100000-rename-consumed-history-ids-to-attribution-keys.js.
  *
  * The (organizationId, weekKey) sparse unique index is owned by the Mongoose
  * schema and synced at bootstrap — do not duplicate it here (name mismatch
@@ -17,7 +19,7 @@ export async function up() {
   // No raw index creation needed: all billingusages indexes are managed by the
   // Mongoose BillingUsage model and auto-synced on connection.
   // No document backfill: new fields have defaults in the Mongoose schema
-  // (meterUsed: 0, meterQuota: 0, meterBreakdown: {}, consumedHistoryIds: []).
+  // (meterUsed: 0, meterQuota: 0, meterBreakdown: {}, consumedAttributionKeys: []).
   // Existing documents without these fields will use Mongoose defaults on read.
 }
 

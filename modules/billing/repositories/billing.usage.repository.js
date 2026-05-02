@@ -81,7 +81,7 @@ const findByWeek = (organizationId, weekKey) => {
 /**
  * @function incrementMeter
  * @description Atomically increment meter usage for the given org+weekKey, with upsert.
- *              Replay protection: the idempotencyKey is appended to consumedHistoryIds;
+ *              Replay protection: the idempotencyKey is appended to consumedAttributionKeys;
  *              if it is already present, the update is skipped (returns null).
  *              baseSnapshot fields ($setOnInsert) are only written on document creation,
  *              preserving the quota snapshot for the lifetime of the week.
@@ -109,16 +109,34 @@ const incrementMeter = async (organizationId, weekKey, units, breakdown, idempot
     }
   }
 
+  // Transition logic — remove after migration is confirmed complete on all production deployments.
+  // TODO(PR-A migration): drop legacy consumedHistoryIds dual-read once deployed data is fully migrated.
+  //
+  // Pre-migration docs have legacy consumedHistoryIds entries (raw ObjectIds for 'initial' attribution).
+  // Per-step keys ('digest', 'fix:N') didn't exist pre-PR-A so no legacy entries protect those.
+  const isInitial = idempotencyKey.endsWith(':initial');
+  const legacyId = isInitial ? idempotencyKey.split(':')[0] : null;
+  const filter = {
+    organizationId,
+    weekKey,
+    consumedAttributionKeys: { $ne: idempotencyKey },
+  };
+  if (legacyId) {
+    // Avoid double-charge during migration window: also check the legacy field.
+    // Use ObjectId cast for the legacy field type ([ObjectId] in older docs).
+    try {
+      filter.consumedHistoryIds = { $ne: new mongoose.Types.ObjectId(legacyId) };
+    } catch {
+      // Defensive only: initial keys are expected to contain a real history._id.
+    }
+  }
+
   try {
     const doc = await BillingUsage.findOneAndUpdate(
-      {
-        organizationId,
-        weekKey,
-        consumedHistoryIds: { $ne: idempotencyKey },
-      },
+      filter,
       {
         $inc: incPayload,
-        $push: { consumedHistoryIds: idempotencyKey },
+        $push: { consumedAttributionKeys: idempotencyKey },
         $setOnInsert: {
           organizationId,
           weekKey,
@@ -137,23 +155,19 @@ const incrementMeter = async (organizationId, weekKey, units, breakdown, idempot
           alertedAt100: null,
         },
       },
-      { upsert: true, returnDocument: 'after', runValidators: false },
+      { upsert: true, returnDocument: 'after', runValidators: false, strict: false, strictQuery: false },
     );
     return doc;
   } catch (err) {
     if (err.code === 11000) {
       // Duplicate key on upsert race — retry without upsert
       return BillingUsage.findOneAndUpdate(
-        {
-          organizationId,
-          weekKey,
-          consumedHistoryIds: { $ne: idempotencyKey },
-        },
+        filter,
         {
           $inc: incPayload,
-          $push: { consumedHistoryIds: idempotencyKey },
+          $push: { consumedAttributionKeys: idempotencyKey },
         },
-        { returnDocument: 'after' },
+        { returnDocument: 'after', strict: false, strictQuery: false },
       );
     }
     throw err;
@@ -190,7 +204,7 @@ const archiveOtherWeeks = (orgId, currentWeekKey, archivedAt) =>
  * @param {string} weekKey - The ISO week key for the new period.
  * @param {Object} snapshotFields - Fields written only on document creation
  *   (organizationId, weekKey, month, meterUsed, meterQuota, planVersion,
- *    meterBreakdown, resetAt, alertedAt80, alertedAt100, consumedHistoryIds).
+ *    meterBreakdown, resetAt, alertedAt80, alertedAt100, consumedAttributionKeys).
  * @returns {Promise<Object>} The upserted document.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik

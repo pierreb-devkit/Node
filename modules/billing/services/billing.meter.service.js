@@ -124,7 +124,7 @@ const capBreakdown = (breakdown, cappedUnits, originalTotal) => {
  *              cost delta for subsequent steps.
  *
  *              Each stepKey call is independently idempotent — replaying the same
- *              `(history._id, stepKey)` pair is a no-op (replay protection via consumedHistoryIds).
+ *              `(history._id, stepKey)` pair is a no-op (replay protection via consumedAttributionKeys).
  *
  *              IMPORTANT: each call must pass ONLY the cost delta for that step (not the
  *              cumulative total), otherwise earlier steps will be double-charged.
@@ -132,25 +132,39 @@ const capBreakdown = (breakdown, cappedUnits, originalTotal) => {
  * @param {Object} history - History-like object with _id, costs, planId, planVersion fields.
  * @param {string} organizationId - The organization ObjectId (string).
  * @param {Object} [options={}] - Optional per-step configuration.
- * @param {string} [options.stepKey='initial'] - Logical step name scoping this attribution.
+ * @param {string|null|undefined} [options.stepKey='initial'] - Logical step name scoping this attribution.
  *   Use 'initial' for the first (and often only) charge per history.
  *   Use a distinct value (e.g. 'digest', 'fix:1', 'fix:2') for subsequent attributions on
  *   the same history after cost-impacting mutations (setDigest, setFixCost).
  *   Downstream callers must pass ONLY the incremental cost delta in history.costs for each step.
+ *   Format: alphanumeric, colon, hyphen, underscore only, 1-64 chars (e.g. 'initial', 'digest', 'fix:1').
+ *   null/undefined → defaults to 'initial'. Any other invalid value → throws Error.
+ *   No-op when config.billing.meterMode is false (validation is skipped in that case).
  * @returns {Promise<{applied: boolean, meterUsed: number, extrasConsumed: number, reason?: string}>}
  *   `reason` is present only when `applied` is true but extras were exhausted:
  *   `{ applied: true, meterUsed, extrasConsumed: 0, reason: 'extras_exhausted' }`.
+ * @throws {Error} If stepKey is non-null/undefined and does not match the expected format.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const attribute = async (history, organizationId, { stepKey = 'initial' } = {}) => {
-  // Validate stepKey: must be a non-empty alphanumeric+colon+hyphen+underscore string
-  // to prevent arbitrary data from polluting consumedHistoryIds
-  const validatedStepKey = (typeof stepKey === 'string' && /^[a-zA-Z0-9:_-]{1,64}$/.test(stepKey))
-    ? stepKey
-    : 'initial';
+  // Fast-path: when metering is disabled, skip all validation and return immediately.
+  // This preserves the documented no-op behavior for callers passing any stepKey when meterMode=false.
   if (!config?.billing?.meterMode) {
     return { applied: false, meterUsed: 0, extrasConsumed: 0 };
   }
+
+  // Validate stepKey: must be a non-empty alphanumeric+colon+hyphen+underscore string (1-64 chars).
+  // Silent fallback to 'initial' was removed — it collides with the actual initial attribution
+  // and silently drops subsequent step charges (e.g. 'digest', 'fix:1').
+  // null/undefined → treated as absent → defaults to 'initial' (safe, intentional).
+  // Any other non-conforming value → throws so callers can detect and fix bad inputs.
+  if (
+    stepKey != null &&
+    (typeof stepKey !== 'string' || !/^[a-zA-Z0-9:_-]{1,64}$/.test(stepKey))
+  ) {
+    throw new Error(`[billing.meter] invalid stepKey: ${JSON.stringify(stepKey)}`);
+  }
+  const validatedStepKey = stepKey ?? 'initial';
 
   // Lazy imports to avoid circular deps — these services import billing.meter.service
   const { default: BillingUsageService } = await import('./billing.usage.service.js');

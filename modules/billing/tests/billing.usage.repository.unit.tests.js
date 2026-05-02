@@ -24,7 +24,7 @@ describe('BillingUsageRepository — meter extensions unit tests:', () => {
     meterUsed: 0,
     meterQuota: 500000,
     planVersion: 'v1',
-    consumedHistoryIds: [],
+    consumedAttributionKeys: [],
     ...overrides,
   });
 
@@ -97,7 +97,7 @@ describe('BillingUsageRepository — meter extensions unit tests:', () => {
 
   describe('incrementMeter', () => {
     test('should call findOneAndUpdate with correct filter including idempotency key', async () => {
-      const updatedDoc = makeUsageDoc({ meterUsed: 100, consumedHistoryIds: ['hist_001'] });
+      const updatedDoc = makeUsageDoc({ meterUsed: 100, consumedAttributionKeys: ['hist_001'] });
       mockModel.findOneAndUpdate.mockResolvedValue(updatedDoc);
 
       const result = await BillingUsageRepository.incrementMeter(
@@ -113,11 +113,11 @@ describe('BillingUsageRepository — meter extensions unit tests:', () => {
         expect.objectContaining({
           organizationId: orgId,
           weekKey,
-          consumedHistoryIds: { $ne: 'hist_001' },
+          consumedAttributionKeys: { $ne: 'hist_001' },
         }),
         expect.objectContaining({
           $inc: expect.objectContaining({ meterUsed: 100 }),
-          $push: { consumedHistoryIds: 'hist_001' },
+          $push: { consumedAttributionKeys: 'hist_001' },
           $setOnInsert: expect.any(Object),
         }),
         expect.objectContaining({ upsert: true, returnDocument: 'after' }),
@@ -171,7 +171,7 @@ describe('BillingUsageRepository — meter extensions unit tests:', () => {
     });
 
     test('should return null when idempotencyKey already present (replay)', async () => {
-      // findOneAndUpdate returns null when filter does not match (consumedHistoryIds already contains key)
+      // findOneAndUpdate returns null when filter does not match (consumedAttributionKeys already contains key)
       mockModel.findOneAndUpdate.mockResolvedValue(null);
 
       const result = await BillingUsageRepository.incrementMeter(
@@ -188,7 +188,7 @@ describe('BillingUsageRepository — meter extensions unit tests:', () => {
 
     test('incrementMeter same idempotencyKey twice → second returns null', async () => {
       mockModel.findOneAndUpdate
-        .mockResolvedValueOnce(makeUsageDoc({ meterUsed: 100, consumedHistoryIds: ['hist_x'] }))
+        .mockResolvedValueOnce(makeUsageDoc({ meterUsed: 100, consumedAttributionKeys: ['hist_x'] }))
         .mockResolvedValueOnce(null); // second: replay
 
       const r1 = await BillingUsageRepository.incrementMeter(orgId, weekKey, 100, {}, 'hist_x', {});
@@ -347,7 +347,7 @@ describe('BillingUsageRepository — meter extensions unit tests:', () => {
         resetAt: new Date(),
         alertedAt80: null,
         alertedAt100: null,
-        consumedHistoryIds: [],
+        consumedAttributionKeys: [],
       };
       const newDoc = makeUsageDoc();
       mockModel.findOneAndUpdate.mockResolvedValue(newDoc);
