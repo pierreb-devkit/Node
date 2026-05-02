@@ -162,6 +162,44 @@ const bumpVersionWithRetry = async (planId, fields, { maxAttempts = 3 } = {}) =>
   throw lastErr;
 };
 
+const isDuplicateKeyError = (err) =>
+  err.code === 11000 || (err.message && err.message.includes('E11000'));
+
+/**
+ * @desc Resolve the configured immutable version for a plan definition.
+ *       Returns null when config does not pin a version and count-derived
+ *       backward-compat behavior should be used for first-time seeding.
+ * @param {Object} planDef - Configured plan definition without planId.
+ * @returns {string|null} Configured version, or null.
+ */
+const configuredVersion = (planDef) => planDef.version ?? config?.billing?.meter?.ratioVersion ?? null;
+
+/**
+ * @desc Create a configured plan snapshot, deriving a legacy vN version only
+ *       when config did not specify one.
+ * @param {string} planId - Logical plan identifier.
+ * @param {Object} planDef - Configured plan definition without planId.
+ * @param {string|null} [version=null] - Pre-resolved version to use.
+ * @returns {Promise<Object>} The created BillingPlan document.
+ */
+const createConfiguredPlan = async (planId, planDef, version = null) => {
+  let resolvedVersion = version;
+  if (!resolvedVersion) {
+    const total = await BillingPlanRepository.count(planId);
+    resolvedVersion = `v${total + 1}`;
+  }
+
+  return BillingPlanRepository.create({
+    planId,
+    version: resolvedVersion,
+    meterQuota: planDef.meterQuota ?? 0,
+    ratios: planDef.ratios ?? { default: 1 },
+    effectiveFrom: new Date(),
+    effectiveUntil: null,
+    active: true,
+  });
+};
+
 /**
  * @function ensureSeeded
  * @description Upsert BillingPlan docs from config.billing.planDefinitions.
@@ -196,38 +234,39 @@ const ensureSeeded = async () => {
 
   for (const def of definitions) {
     const { planId, ...planDef } = def;
+    const targetVersion = configuredVersion(planDef);
     const existing = await BillingPlanRepository.findActive(planId);
     if (existing) {
-      skipped += 1;
+      if (!targetVersion || existing.version === targetVersion) {
+        skipped += 1;
+        continue;
+      }
+
+      console.info(
+        `[billing.plan] version drift detected for ${planId}: active=${existing.version}, config=${targetVersion}; re-seeding`,
+      );
+      try {
+        await BillingPlanRepository.deactivateAll(planId, new Date());
+        await createConfiguredPlan(planId, planDef, targetVersion);
+        cache.delete(planId);
+        seeded += 1;
+      } catch (err) {
+        if (isDuplicateKeyError(err)) {
+          skipped += 1;
+          continue;
+        }
+        throw err;
+      }
       continue;
     }
 
     try {
-      // Version resolution priority:
-      // 1. Explicit version in planDefinitions entry (e.g. '2026.05' — YYYY.MM contract)
-      // 2. config.billing.meter.ratioVersion (canonical version emitted by attribute())
-      // 3. Derived from count (v${total + 1}) — full backward compat for projects without version config
-      let version = planDef.version ?? config?.billing?.meter?.ratioVersion ?? null;
-      if (!version) {
-        const total = await BillingPlanRepository.count(planId);
-        version = `v${total + 1}`;
-      }
-
-      await BillingPlanRepository.create({
-        planId,
-        version,
-        meterQuota: planDef.meterQuota ?? 0,
-        ratios: planDef.ratios ?? { default: 1 },
-        effectiveFrom: new Date(),
-        effectiveUntil: null,
-        active: true,
-      });
+      await createConfiguredPlan(planId, planDef, targetVersion);
       cache.delete(planId);
       seeded += 1;
     } catch (err) {
       // E11000: concurrent pod beat us to the insert — treat as skip, not fatal.
-      const isE11000 = err.code === 11000 || (err.message && err.message.includes('E11000'));
-      if (isE11000) {
+      if (isDuplicateKeyError(err)) {
         skipped += 1;
         continue;
       }
