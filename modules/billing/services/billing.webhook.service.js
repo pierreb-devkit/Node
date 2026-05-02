@@ -250,24 +250,15 @@ const handleSubscriptionUpdated = async (subscription, event) => {
         console.error('[billing.webhook] plan.changed listener error (non-fatal):', evtErr?.message ?? evtErr);
       }
 
-      // Memo edge case 5: plan switch mid-cycle = immediate reset of weekly meter.
-      // Stripe does NOT advance current_period_start on plan switch (proration only),
-      // so we must trigger resetWeek here independently of the period-start change block.
-      // Anchor = newPeriodStart only when the period ALSO changed simultaneously (e.g. annual→monthly
-      // on renewal day). Plain mid-cycle plan switch → anchor is now (current moment), because
-      // newPeriodStart is the billing-cycle start (potentially weeks in the past) and would resolve
-      // to a past ISO week bucket.
-      const periodChanged =
-        previousPeriodStart !== undefined &&
-        subscription.current_period_start !== previousPeriodStart &&
-        newPeriodStart;
-      const anchor = periodChanged ? newPeriodStart : new Date();
+      // Plan switch mid-cycle = refresh the active week snapshot to the new plan.
+      // Unlike cron-driven resetWeek, this preserves meterUsed by default so a plan
+      // change does not refund or double-charge already attributed usage.
       try {
-        await BillingResetService.resetWeek(organizationId, anchor);
+        await BillingResetService.forceRotateForPlanChange(organizationId, { preserveUsage: true });
         planChangeResetTriggered = true;
       } catch (err) {
         // Log for monitoring — not thrown so webhook processing continues
-        console.error('[billing.webhook] resetWeek on plan change failed (non-fatal):', err?.message ?? err);
+        console.error('[billing.webhook] forceRotateForPlanChange failed (non-fatal):', err?.message ?? err);
       }
     }
   }

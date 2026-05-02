@@ -89,6 +89,20 @@ step. Passing the cumulative total will double-charge costs already attributed i
 **Backward compat**: callers that only ever attribute once (no multi-step) continue to work
 unchanged — the default `stepKey='initial'` makes the idempotency key `${history._id}:initial`.
 
+## Plan-change semantics
+
+When Stripe `plan.changed` webhook fires, devkit calls `forceRotateForPlanChange(orgId, { preserveUsage: true })` by default:
+- Updates `meterQuota` and `planVersion` snapshot to the new plan
+- Preserves `meterUsed` (no refund, no double-charge)
+
+Consumers wanting clean-break behavior on downgrade should pass `{ preserveUsage: false }`.
+
+## Extras debit reliability
+
+`attribute()` returns optimistically after usage increment + outbox row insert. Extras debit happens out of band; if it fails, cron `retry-pending-extras-debit` reconciles within 5min. After 5 failed attempts, the outbox row is marked `failed` and event `billing.extras_debit.exhausted` is emitted for alerting.
+
+Consumers should NOT retry on `applied: true` — the outbox handles eventual consistency.
+
 ## Stripe — `automatic_tax` flag
 
 ```js

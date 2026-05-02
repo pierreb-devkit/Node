@@ -5,6 +5,7 @@ import config from '../../../config/index.js';
 import BillingUsageRepository from '../repositories/billing.usage.repository.js';
 import BillingSubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import BillingPlanService from './billing.plan.service.js';
+import billingEvents from '../lib/events.js';
 
 /**
  * Compute the ISO week key (YYYY-Www) for a given date.
@@ -93,6 +94,62 @@ const resetWeek = async (orgId, periodStart) => {
 };
 
 /**
+ * @function forceRotateForPlanChange
+ * @description Refresh the current week's quota/planVersion snapshot after a
+ *              Stripe plan change. Unlike resetWeek, this does not archive or
+ *              upsert weekly documents: if the current week doc does not exist,
+ *              the next attribution lazily creates it with the active plan.
+ * @param {string} organizationId - The organization ObjectId (string).
+ * @param {Object} [options={}] - Rotation options.
+ * @param {boolean} [options.preserveUsage=true] - Keep meterUsed and breakdown when true; reset them when false.
+ * @returns {Promise<Object|null>} The updated current week usage document, or null when no current doc exists.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const forceRotateForPlanChange = async (organizationId, options = {}) => {
+  if (!config?.billing?.meterMode) return null;
+
+  const { preserveUsage = true } = options ?? {};
+  const now = new Date();
+  const currentWeekKey = isoWeekKey(now);
+  const existingDoc = await BillingUsageRepository.findByWeek(organizationId, currentWeekKey);
+  if (!existingDoc) return null;
+
+  const subscription = await BillingSubscriptionRepository.findPlan(organizationId);
+  const planId = subscription?.plan ?? config?.billing?.defaultPlan ?? 'free';
+  const activePlan = await BillingPlanService.getActivePlan(planId);
+  const newQuota = activePlan?.meterQuota ?? 0;
+  const newVersion = activePlan?.version ?? null;
+  const month = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+
+  const updatedDoc = await BillingUsageRepository.rotateWeekSnapshotForPlanChange(
+    organizationId,
+    currentWeekKey,
+    {
+      meterQuota: newQuota,
+      planVersion: newVersion,
+      month,
+    },
+    preserveUsage,
+  );
+
+  try {
+    billingEvents.emit('billing.plan_change.rotated', {
+      organizationId,
+      oldQuota: existingDoc.meterQuota ?? 0,
+      newQuota,
+      oldVersion: existingDoc.planVersion ?? null,
+      newVersion,
+      preserveUsage,
+    });
+  } catch (evtErr) {
+    // Listener errors must not disrupt plan-change rotation — log for traceability
+    console.error('[billing.reset] billing.plan_change.rotated listener error (non-fatal):', evtErr?.message ?? evtErr);
+  }
+
+  return updatedDoc;
+};
+
+/**
  * @function resetAllDue
  * @description Iterate active subscriptions where current_period_start has crossed
  *              a weekly boundary and call resetWeek for each.
@@ -135,6 +192,7 @@ const resetAllDue = async () => {
 
 export default {
   resetWeek,
+  forceRotateForPlanChange,
   resetAllDue,
   isoWeekKey,
 };

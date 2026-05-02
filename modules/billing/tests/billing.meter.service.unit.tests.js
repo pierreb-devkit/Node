@@ -12,6 +12,7 @@ describe('BillingMeterService unit tests:', () => {
   let mockConfig;
   let mockBillingUsageService;
   let mockBillingExtraService;
+  let mockBillingMeterOutboxRepository;
 
   const orgId = '507f1f77bcf86cd799439011';
 
@@ -52,10 +53,16 @@ describe('BillingMeterService unit tests:', () => {
 
     mockBillingUsageService = {
       incrementMeter: jest.fn(),
+      incrementMeterWithOutbox: jest.fn(),
     };
 
     mockBillingExtraService = {
       debit: jest.fn(),
+    };
+
+    mockBillingMeterOutboxRepository = {
+      create: jest.fn(),
+      markCommitted: jest.fn(),
     };
 
     jest.unstable_mockModule('../../../config/index.js', () => ({
@@ -72,6 +79,10 @@ describe('BillingMeterService unit tests:', () => {
 
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
       default: mockBillingExtraService,
+    }));
+
+    jest.unstable_mockModule('../repositories/billing.meter.outbox.repository.js', () => ({
+      default: mockBillingMeterOutboxRepository,
     }));
 
     const mod = await import('../services/billing.meter.service.js');
@@ -202,11 +213,80 @@ describe('BillingMeterService unit tests:', () => {
     });
   });
 
+  describe('attribute — extras outbox', () => {
+    test('commits outbox row after successful extras debit (outbox created by incrementMeterWithOutbox)', async () => {
+      // attribute() calls incrementMeterWithOutbox which creates the outbox row and returns it.
+      // attribute() then attempts the synchronous debit and marks the outbox committed on success.
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingUsageService.incrementMeterWithOutbox.mockResolvedValue({
+        applied: true,
+        meterUsed: 6000,
+        extrasConsumed: 1000,
+        outbox: { _id: 'outbox_1' },
+      });
+      mockBillingExtraService.debit.mockResolvedValue({ applied: true });
+      mockBillingMeterOutboxRepository.markCommitted.mockResolvedValue({ modifiedCount: 1 });
+
+      const history = {
+        _id: '507f1f77bcf86cd799439051',
+        costs: { scrap: 6 },
+        planId: 'pro',
+        planVersion: 'v1',
+      };
+
+      const result = await BillingMeterService.attribute(history, orgId);
+
+      expect(mockBillingUsageService.incrementMeterWithOutbox).toHaveBeenCalledWith(
+        orgId,
+        6000,
+        { scrap: 6000 },
+        '507f1f77bcf86cd799439051:initial',
+      );
+      // attribute() does NOT call outbox.create directly — incrementMeterWithOutbox owns that
+      expect(mockBillingMeterOutboxRepository.create).not.toHaveBeenCalled();
+      expect(mockBillingExtraService.debit).toHaveBeenCalledWith(
+        orgId,
+        1000,
+        '507f1f77bcf86cd799439051:initial',
+      );
+      expect(mockBillingMeterOutboxRepository.markCommitted).toHaveBeenCalledWith('outbox_1');
+      expect(result).toEqual({ applied: true, meterUsed: 6000, extrasConsumed: 1000 });
+    });
+
+    test('debit failure leaves outbox pending and still returns applied=true', async () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingUsageService.incrementMeterWithOutbox.mockResolvedValue({
+        applied: true,
+        meterUsed: 6000,
+        extrasConsumed: 1000,
+        outbox: { _id: 'outbox_2' },
+      });
+      mockBillingExtraService.debit.mockRejectedValue(new Error('balance write failed'));
+
+      const history = {
+        _id: '507f1f77bcf86cd799439052',
+        costs: { scrap: 6 },
+        planId: 'pro',
+        planVersion: 'v1',
+      };
+
+      const result = await BillingMeterService.attribute(history, orgId);
+
+      expect(result).toEqual({ applied: true, meterUsed: 6000, extrasConsumed: 1000 });
+      expect(mockBillingMeterOutboxRepository.markCommitted).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[billing.meter] extras debit deferred to outbox:',
+        'balance write failed',
+      );
+    });
+  });
+
   describe('attribute — maxUnitsPerOperation cap', () => {
     test('caps metered units when computed units exceed config cap', async () => {
       const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
       mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
-      mockBillingUsageService.incrementMeter.mockResolvedValue({
+      mockBillingUsageService.incrementMeterWithOutbox.mockResolvedValue({
         applied: true,
         meterUsed: 10000,
         extrasConsumed: 0,
@@ -221,7 +301,7 @@ describe('BillingMeterService unit tests:', () => {
 
       const result = await BillingMeterService.attribute(history, orgId);
 
-      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
+      expect(mockBillingUsageService.incrementMeterWithOutbox).toHaveBeenCalledWith(
         orgId,
         10000,
         { scrap: 10000 },
@@ -236,7 +316,7 @@ describe('BillingMeterService unit tests:', () => {
     test('does not clamp when units are within the configured cap', async () => {
       const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
       mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
-      mockBillingUsageService.incrementMeter.mockResolvedValue({
+      mockBillingUsageService.incrementMeterWithOutbox.mockResolvedValue({
         applied: true,
         meterUsed: 5000,
         extrasConsumed: 0,
@@ -251,7 +331,7 @@ describe('BillingMeterService unit tests:', () => {
 
       await BillingMeterService.attribute(history, orgId);
 
-      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
+      expect(mockBillingUsageService.incrementMeterWithOutbox).toHaveBeenCalledWith(
         orgId,
         5000,
         { scrap: 5000 },
@@ -264,7 +344,7 @@ describe('BillingMeterService unit tests:', () => {
       const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
       delete mockConfig.billing.meter.maxUnitsPerOperation;
       mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
-      mockBillingUsageService.incrementMeter.mockResolvedValue({
+      mockBillingUsageService.incrementMeterWithOutbox.mockResolvedValue({
         applied: true,
         meterUsed: 20000,
         extrasConsumed: 0,
@@ -279,7 +359,7 @@ describe('BillingMeterService unit tests:', () => {
 
       await BillingMeterService.attribute(history, orgId);
 
-      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
+      expect(mockBillingUsageService.incrementMeterWithOutbox).toHaveBeenCalledWith(
         orgId,
         20000,
         { scrap: 20000 },
@@ -309,13 +389,13 @@ describe('BillingMeterService unit tests:', () => {
         extrasConsumed: 0,
         reason: 'zero_cost_skipped',
       });
-      expect(mockBillingUsageService.incrementMeter).not.toHaveBeenCalled();
+      expect(mockBillingUsageService.incrementMeterWithOutbox).not.toHaveBeenCalled();
       expect(mockBillingExtraService.debit).not.toHaveBeenCalled();
     });
 
     test('costsOverride charges only the override delta', async () => {
       mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1, digest: 2 } }));
-      mockBillingUsageService.incrementMeter.mockResolvedValue({
+      mockBillingUsageService.incrementMeterWithOutbox.mockResolvedValue({
         applied: true,
         meterUsed: 1000,
         extrasConsumed: 0,
@@ -333,7 +413,7 @@ describe('BillingMeterService unit tests:', () => {
         costsOverride: { digest: 0.5 },
       });
 
-      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
+      expect(mockBillingUsageService.incrementMeterWithOutbox).toHaveBeenCalledWith(
         orgId,
         1000,
         { digest: 1000 },
@@ -344,7 +424,7 @@ describe('BillingMeterService unit tests:', () => {
 
     test('options.costs is accepted as an alias when costsOverride is absent', async () => {
       mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { digest: 2 } }));
-      mockBillingUsageService.incrementMeter.mockResolvedValue({
+      mockBillingUsageService.incrementMeterWithOutbox.mockResolvedValue({
         applied: true,
         meterUsed: 1000,
         extrasConsumed: 0,
@@ -362,7 +442,7 @@ describe('BillingMeterService unit tests:', () => {
         costs: { digest: 0.5 },
       });
 
-      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
+      expect(mockBillingUsageService.incrementMeterWithOutbox).toHaveBeenCalledWith(
         orgId,
         1000,
         { digest: 1000 },
@@ -374,7 +454,7 @@ describe('BillingMeterService unit tests:', () => {
       mockBillingPlanService.getPlanByVersion.mockResolvedValue(
         makePlan({ planId: 'override', version: '2026.05', ratios: { digest: 3 } }),
       );
-      mockBillingUsageService.incrementMeter.mockResolvedValue({
+      mockBillingUsageService.incrementMeterWithOutbox.mockResolvedValue({
         applied: true,
         meterUsed: 1500,
         extrasConsumed: 0,
@@ -394,7 +474,7 @@ describe('BillingMeterService unit tests:', () => {
       });
 
       expect(mockBillingPlanService.getPlanByVersion).toHaveBeenCalledWith('override', '2026.05');
-      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
+      expect(mockBillingUsageService.incrementMeterWithOutbox).toHaveBeenCalledWith(
         orgId,
         1500,
         { digest: 1500 },
@@ -405,13 +485,13 @@ describe('BillingMeterService unit tests:', () => {
     test('same history attributed twice with default stepKey: 2nd is no-op (regression)', async () => {
       mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
       // First call: applied
-      mockBillingUsageService.incrementMeter.mockResolvedValueOnce({
+      mockBillingUsageService.incrementMeterWithOutbox.mockResolvedValueOnce({
         applied: true,
         meterUsed: 1000,
         extrasConsumed: 0,
       });
       // Second call: no-op (replay)
-      mockBillingUsageService.incrementMeter.mockResolvedValueOnce({
+      mockBillingUsageService.incrementMeterWithOutbox.mockResolvedValueOnce({
         applied: false,
         meterUsed: 1000,
       });
@@ -430,17 +510,17 @@ describe('BillingMeterService unit tests:', () => {
       expect(second.applied).toBe(false);
 
       // Both calls must use the same idempotency key (stepKey defaults to 'initial')
-      expect(mockBillingUsageService.incrementMeter).toHaveBeenNthCalledWith(
+      expect(mockBillingUsageService.incrementMeterWithOutbox).toHaveBeenNthCalledWith(
         1, orgId, expect.any(Number), expect.any(Object), '507f1f77bcf86cd799439040:initial',
       );
-      expect(mockBillingUsageService.incrementMeter).toHaveBeenNthCalledWith(
+      expect(mockBillingUsageService.incrementMeterWithOutbox).toHaveBeenNthCalledWith(
         2, orgId, expect.any(Number), expect.any(Object), '507f1f77bcf86cd799439040:initial',
       );
     });
 
     test('same history attributed with {stepKey:"initial"} then {stepKey:"digest"}: both charged', async () => {
       mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
-      mockBillingUsageService.incrementMeter.mockResolvedValue({
+      mockBillingUsageService.incrementMeterWithOutbox.mockResolvedValue({
         applied: true,
         meterUsed: 500,
         extrasConsumed: 0,
@@ -459,17 +539,17 @@ describe('BillingMeterService unit tests:', () => {
       expect(initial.applied).toBe(true);
       expect(digest.applied).toBe(true);
 
-      expect(mockBillingUsageService.incrementMeter).toHaveBeenNthCalledWith(
+      expect(mockBillingUsageService.incrementMeterWithOutbox).toHaveBeenNthCalledWith(
         1, orgId, expect.any(Number), expect.any(Object), '507f1f77bcf86cd799439041:initial',
       );
-      expect(mockBillingUsageService.incrementMeter).toHaveBeenNthCalledWith(
+      expect(mockBillingUsageService.incrementMeterWithOutbox).toHaveBeenNthCalledWith(
         2, orgId, expect.any(Number), expect.any(Object), '507f1f77bcf86cd799439041:digest',
       );
     });
 
     test('same history attributed with {stepKey:"fix:1"} then {stepKey:"fix:2"}: both charged', async () => {
       mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
-      mockBillingUsageService.incrementMeter.mockResolvedValue({
+      mockBillingUsageService.incrementMeterWithOutbox.mockResolvedValue({
         applied: true,
         meterUsed: 200,
         extrasConsumed: 0,
@@ -488,10 +568,10 @@ describe('BillingMeterService unit tests:', () => {
       expect(fix1.applied).toBe(true);
       expect(fix2.applied).toBe(true);
 
-      expect(mockBillingUsageService.incrementMeter).toHaveBeenNthCalledWith(
+      expect(mockBillingUsageService.incrementMeterWithOutbox).toHaveBeenNthCalledWith(
         1, orgId, expect.any(Number), expect.any(Object), '507f1f77bcf86cd799439042:fix:1',
       );
-      expect(mockBillingUsageService.incrementMeter).toHaveBeenNthCalledWith(
+      expect(mockBillingUsageService.incrementMeterWithOutbox).toHaveBeenNthCalledWith(
         2, orgId, expect.any(Number), expect.any(Object), '507f1f77bcf86cd799439042:fix:2',
       );
     });
@@ -512,12 +592,12 @@ describe('BillingMeterService unit tests:', () => {
       ).rejects.toThrow('[billing.meter] invalid stepKey');
 
       // incrementMeter must NOT be called — the throw happens before any DB write
-      expect(mockBillingUsageService.incrementMeter).not.toHaveBeenCalled();
+      expect(mockBillingUsageService.incrementMeterWithOutbox).not.toHaveBeenCalled();
     });
 
     test('null and undefined stepKey fall back to initial while invalid values throw', async () => {
       mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
-      mockBillingUsageService.incrementMeter.mockResolvedValue({
+      mockBillingUsageService.incrementMeterWithOutbox.mockResolvedValue({
         applied: true,
         meterUsed: 100,
         extrasConsumed: 0,
@@ -540,10 +620,10 @@ describe('BillingMeterService unit tests:', () => {
         extrasConsumed: 0,
       });
 
-      expect(mockBillingUsageService.incrementMeter).toHaveBeenNthCalledWith(
+      expect(mockBillingUsageService.incrementMeterWithOutbox).toHaveBeenNthCalledWith(
         1, orgId, expect.any(Number), expect.any(Object), '507f1f77bcf86cd799439098:initial',
       );
-      expect(mockBillingUsageService.incrementMeter).toHaveBeenNthCalledWith(
+      expect(mockBillingUsageService.incrementMeterWithOutbox).toHaveBeenNthCalledWith(
         2, orgId, expect.any(Number), expect.any(Object), '507f1f77bcf86cd799439098:initial',
       );
 
@@ -558,13 +638,13 @@ describe('BillingMeterService unit tests:', () => {
     test('replay of {stepKey:"digest"} is blocked (idempotent)', async () => {
       mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
       // First digest call: applied
-      mockBillingUsageService.incrementMeter.mockResolvedValueOnce({
+      mockBillingUsageService.incrementMeterWithOutbox.mockResolvedValueOnce({
         applied: true,
         meterUsed: 300,
         extrasConsumed: 0,
       });
       // Replay: no-op
-      mockBillingUsageService.incrementMeter.mockResolvedValueOnce({
+      mockBillingUsageService.incrementMeterWithOutbox.mockResolvedValueOnce({
         applied: false,
         meterUsed: 300,
       });
@@ -582,9 +662,9 @@ describe('BillingMeterService unit tests:', () => {
       expect(first.applied).toBe(true);
       expect(replay.applied).toBe(false);
 
-      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledTimes(2);
+      expect(mockBillingUsageService.incrementMeterWithOutbox).toHaveBeenCalledTimes(2);
       // Both calls use the same digest key
-      for (const call of mockBillingUsageService.incrementMeter.mock.calls) {
+      for (const call of mockBillingUsageService.incrementMeterWithOutbox.mock.calls) {
         expect(call[3]).toBe('507f1f77bcf86cd799439043:digest');
       }
     });

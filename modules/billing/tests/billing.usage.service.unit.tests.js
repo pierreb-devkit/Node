@@ -11,6 +11,7 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
   let mockUsageRepository;
   let mockPlanService;
   let mockSubscriptionRepository;
+  let mockMeterOutboxRepository;
   let mockConfig;
 
   const orgId = '507f1f77bcf86cd799439011';
@@ -77,6 +78,10 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       findPlan: jest.fn(),
     };
 
+    mockMeterOutboxRepository = {
+      create: jest.fn(),
+    };
+
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: mockConfig,
     }));
@@ -87,6 +92,10 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
 
     jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
       default: mockSubscriptionRepository,
+    }));
+
+    jest.unstable_mockModule('../repositories/billing.meter.outbox.repository.js', () => ({
+      default: mockMeterOutboxRepository,
     }));
 
     jest.unstable_mockModule('../services/billing.plan.service.js', () => ({
@@ -231,6 +240,47 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       const result = await BillingUsageService.incrementMeter(orgId, 100, {}, 'hist_within');
 
       expect(result.extrasConsumed).toBe(0);
+    });
+
+    test('incrementMeterWithOutbox creates outbox row when extras are consumed', async () => {
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 500000 }));
+      const updatedDoc = makeUsageDoc({ meterUsed: 510000, meterQuota: 500000 });
+      const outbox = { _id: 'outbox_1' };
+      mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
+      mockMeterOutboxRepository.create.mockResolvedValue(outbox);
+
+      const result = await BillingUsageService.incrementMeterWithOutbox(
+        orgId,
+        50000,
+        {},
+        'hist_overflow:initial',
+      );
+
+      expect(mockMeterOutboxRepository.create).toHaveBeenCalledWith({
+        organizationId: orgId,
+        idempotencyKey: 'hist_overflow:initial',
+        extrasUnits: 10000,
+      });
+      expect(result.outbox).toBe(outbox);
+      expect(result.extrasConsumed).toBe(10000);
+    });
+
+    test('incrementMeterWithOutbox does not create outbox row for replay', async () => {
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 500000 }));
+      mockUsageRepository.incrementMeter.mockResolvedValue(null);
+      mockUsageRepository.findByWeek.mockResolvedValue(makeUsageDoc({ meterUsed: 510000 }));
+
+      const result = await BillingUsageService.incrementMeterWithOutbox(
+        orgId,
+        50000,
+        {},
+        'hist_replay:initial',
+      );
+
+      expect(result.applied).toBe(false);
+      expect(mockMeterOutboxRepository.create).not.toHaveBeenCalled();
     });
   });
 
