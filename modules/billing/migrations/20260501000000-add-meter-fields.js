@@ -1,5 +1,5 @@
 /**
- * Migration: Add meter fields to billing_usages collection
+ * Migration: Add meter fields to billingusages collection
  *
  * Adds weekKey, meterUsed, meterQuota, planVersion, meterBreakdown,
  * resetAt, alertedAt80, alertedAt100 to existing documents.

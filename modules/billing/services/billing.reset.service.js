@@ -32,8 +32,10 @@ const isoWeekKey = (date) => {
  *              both operations are no-ops.
  *
  *              Race: if resetWeek and incrementMeter race on the same weekKey,
- *              incrementMeter uses $ne on consumedAttributionKeys so a duplicate upsert
- *              will hit the 11000 path in incrementMeter's retry branch.
+ *              the unique (organizationId, weekKey) index causes the concurrent upsert
+ *              to throw E11000 — handled by incrementMeter's retry branch (non-upsert retry).
+ *              (The $ne on consumedAttributionKeys is replay protection within the same doc,
+ *              not the race guard.)
  *
  * @param {string} orgId - The organization ObjectId (string).
  * @param {Date} periodStart - The start of the new billing period (used to derive newWeekKey).
