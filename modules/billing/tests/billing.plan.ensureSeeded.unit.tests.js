@@ -175,6 +175,33 @@ describe('BillingPlanService.ensureSeeded unit tests:', () => {
     );
   });
 
+  test('active plan with different configured version is re-seeded', async () => {
+    const infoSpy = jest.spyOn(console, 'info').mockImplementation(() => {});
+    mockConfig.billing.planDefinitions = [
+      { planId: 'pro', meterQuota: 500000, ratios: { default: 2 }, version: '2026.05' },
+    ];
+    mockBillingPlanRepository.findActive.mockResolvedValue({ planId: 'pro', version: '2026.04' });
+    mockBillingPlanRepository.deactivateAll.mockResolvedValue({ modifiedCount: 1 });
+    mockBillingPlanRepository.create.mockResolvedValue({});
+
+    const result = await BillingPlanService.ensureSeeded();
+
+    expect(result).toEqual({ seeded: 1, skipped: 0 });
+    expect(mockBillingPlanRepository.deactivateAll).toHaveBeenCalledWith('pro', expect.any(Date));
+    expect(mockBillingPlanRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        planId: 'pro',
+        version: '2026.05',
+        meterQuota: 500000,
+        ratios: { default: 2 },
+        active: true,
+      }),
+    );
+    expect(infoSpy).toHaveBeenCalledWith(
+      '[billing.plan] version drift detected for pro: active=2026.04, config=2026.05; re-seeding',
+    );
+  });
+
   test('no explicit version + meter.ratioVersion in config → uses ratioVersion (YYYY.MM fallback)', async () => {
     mockConfig.billing.planDefinitions = [
       { planId: 'starter', meterQuota: 50000, ratios: { default: 1 } },

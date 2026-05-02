@@ -6,7 +6,7 @@ import BillingPlanService from './billing.plan.service.js';
 
 /**
  * Floor charge per run — configurable via config.billing.meter.runBaseUnits.
- * Guarantees every attributed event costs at least 1 unit regardless of costs.
+ * Applies only when no cost data is available at all.
  */
 export const METER_RUN_BASE = config?.billing?.meter?.runBaseUnits ?? 1;
 
@@ -17,11 +17,12 @@ export const METER_RUN_BASE = config?.billing?.meter?.runBaseUnits ?? 1;
  *              dollar for each feature key.
  *
  *              Formula per key: floor(cost[key] * ratio[key] * dollarsToUnitRatio)
- *              Total: max(sum(per-key units), METER_RUN_BASE)
+ *              Total: sum(per-key units). Empty or zero-only cost maps return 0.
+ *              METER_RUN_BASE applies only when costs is null/undefined.
  *
- *              When getPlanByVersion returns null (version mismatch), logs a WARN and
- *              falls back to ratio=1 for all features. Check logs if charges look flat —
- *              this indicates meter.ratioVersion vs planDefinitions version drift.
+ *              When meterMode is enabled and getPlanByVersion returns null
+ *              (version mismatch), throws so attribution cannot silently bill with
+ *              ratio=1. When meterMode is disabled, keeps the legacy ratio=1 fallback.
  *
  * @param {Object} costs - Feature-keyed cost map: { featureKey: usdCost }.
  * @param {string} planId - Logical plan identifier (e.g. "pro").
@@ -30,15 +31,26 @@ export const METER_RUN_BASE = config?.billing?.meter?.runBaseUnits ?? 1;
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const unitsFromCosts = async (costs, planId, ratioVersion) => {
-  if (!costs || typeof costs !== 'object') {
+  if (costs == null || typeof costs !== 'object') {
     return { totalUnits: METER_RUN_BASE, breakdown: {} };
   }
 
   const dollarsToUnitRatio = config?.billing?.meter?.dollarsToUnitRatio ?? 1000;
 
+  const hasBillableCost = Object.values(costs).some(
+    (cost) => typeof cost === 'number' && Number.isFinite(cost) && cost > 0,
+  );
+  if (!hasBillableCost) {
+    return { totalUnits: 0, breakdown: {} };
+  }
+
   // Fetch the frozen plan snapshot for the given version
   const plan = await BillingPlanService.getPlanByVersion(planId, ratioVersion);
   if (!plan) {
+    if (config?.billing?.meterMode) {
+      throw new Error(`[billing.meter] missing plan version snapshot for (${planId}, ${ratioVersion})`);
+    }
+
     // WARN: version mismatch likely — costs.config emits a version that has no matching BillingPlan.
     // Charges will use ratio=1 (flat) for all features. Align meter.ratioVersion + planDefinitions[].version
     // + downstream cost-config emitted version to resolve. See billing README — Version Namespace Contract.
@@ -63,9 +75,7 @@ const unitsFromCosts = async (costs, planId, ratioVersion) => {
     }
   }
 
-  const totalUnits = Math.max(rawTotal, METER_RUN_BASE);
-
-  return { totalUnits, breakdown };
+  return { totalUnits: rawTotal, breakdown };
 };
 
 /**
@@ -136,22 +146,44 @@ const capBreakdown = (breakdown, cappedUnits, originalTotal) => {
  *   Use 'initial' for the first (and often only) charge per history.
  *   Use a distinct value (e.g. 'digest', 'fix:1', 'fix:2') for subsequent attributions on
  *   the same history after cost-impacting mutations (setDigest, setFixCost).
- *   Downstream callers must pass ONLY the incremental cost delta in history.costs for each step.
+ *   Downstream callers must pass ONLY the incremental cost delta in history.costs for each step,
+ *   or use options.costsOverride to pass the delta directly.
  *   Format: alphanumeric, colon, hyphen, underscore only, 1-64 chars (e.g. 'initial', 'digest', 'fix:1').
  *   null/undefined → defaults to 'initial'. Any other invalid value → throws Error.
  *   No-op when config.billing.meterMode is false (validation is skipped in that case).
+ * @param {Object|null|undefined} [options.costsOverride=null] - Optional cost map to charge
+ *   instead of history.costs. Use for delta charging:
+ *   `attribute(history, orgId, { stepKey: 'digest', costsOverride: { digest: 0.5 } })`.
+ *   Empty or zero-only overrides return `{ applied: false, reason: 'zero_cost_skipped' }`
+ *   before writing the idempotency key.
+ * @param {Object|null|undefined} [options.costs=null] - Alias cost map used when
+ *   options.costsOverride is not provided. Prefer costsOverride for new delta-charge callers.
+ * @param {string|null|undefined} [options.planId=null] - Optional planId override for paths
+ *   where the history plan should not be used:
+ *   `attribute(history, orgId, { planId: 'override', ratioVersion: '2026.05' })`.
+ * @param {string|null|undefined} [options.ratioVersion=null] - Optional ratio snapshot override
+ *   paired with options.planId. Falls back to history.planVersion when omitted.
  * @returns {Promise<{applied: boolean, meterUsed: number, extrasConsumed: number, reason?: string}>}
- *   `reason` is present only when `applied` is true but extras were exhausted:
- *   `{ applied: true, meterUsed, extrasConsumed: 0, reason: 'extras_exhausted' }`.
+ *   `reason` is present for zero-cost skips and exhausted extras:
+ *   `{ applied: false, meterUsed: 0, extrasConsumed: 0, reason: 'zero_cost_skipped' }`
+ *   or `{ applied: true, meterUsed, extrasConsumed: 0, reason: 'extras_exhausted' }`.
  * @throws {Error} If stepKey is non-null/undefined and does not match the expected format.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const attribute = async (history, organizationId, { stepKey = 'initial' } = {}) => {
+const attribute = async (history, organizationId, options = {}) => {
   // Fast-path: when metering is disabled, skip all validation and return immediately.
   // This preserves the documented no-op behavior for callers passing any stepKey when meterMode=false.
   if (!config?.billing?.meterMode) {
     return { applied: false, meterUsed: 0, extrasConsumed: 0 };
   }
+
+  const {
+    stepKey = 'initial',
+    costs: explicitCosts = null,
+    costsOverride = null,
+    planId: explicitPlanId = null,
+    ratioVersion: explicitRatioVersion = null,
+  } = options ?? {};
 
   // Validate stepKey: must be a non-empty alphanumeric+colon+hyphen+underscore string (1-64 chars).
   // Silent fallback to 'initial' was removed — it collides with the actual initial attribution
@@ -170,14 +202,15 @@ const attribute = async (history, organizationId, { stepKey = 'initial' } = {}) 
   const { default: BillingUsageService } = await import('./billing.usage.service.js');
   const { default: BillingExtraService } = await import('./billing.extra.service.js');
 
-  const planId = history.planId ?? config?.billing?.plans?.[0] ?? 'pro';
-  const ratioVersion = history.planVersion ?? null;
+  const planId = explicitPlanId ?? history.planId ?? config?.billing?.plans?.[0] ?? 'pro';
+  const ratioVersion = explicitRatioVersion ?? history.planVersion ?? null;
+  const costs = costsOverride ?? explicitCosts ?? history.costs;
 
   let totalUnits = METER_RUN_BASE;
   let breakdown = {};
 
-  if (history.costs && ratioVersion) {
-    ({ totalUnits, breakdown } = await unitsFromCosts(history.costs, planId, ratioVersion));
+  if (costs && ratioVersion) {
+    ({ totalUnits, breakdown } = await unitsFromCosts(costs, planId, ratioVersion));
   }
 
   const maxUnits = config?.billing?.meter?.maxUnitsPerOperation ?? Infinity;
@@ -188,6 +221,10 @@ const attribute = async (history, organizationId, { stepKey = 'initial' } = {}) 
     console.warn(
       `[billing.meter] units capped: requested ${totalUnits}, cap ${maxUnits}, applied ${cappedUnits}`,
     );
+  }
+
+  if (cappedUnits === 0) {
+    return { applied: false, meterUsed: 0, extrasConsumed: 0, reason: 'zero_cost_skipped' };
   }
 
   const idempotencyKey = `${history._id?.toString?.() ?? String(history._id)}:${validatedStepKey}`;

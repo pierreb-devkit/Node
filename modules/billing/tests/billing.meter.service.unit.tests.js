@@ -116,22 +116,37 @@ describe('BillingMeterService unit tests:', () => {
       expect(result.breakdown.unknown_feature).toBe(1);
     });
 
-    test('should enforce METER_RUN_BASE floor when costs are tiny', async () => {
+    test('should return zero when positive costs floor to zero units', async () => {
       mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
 
-      // 0.000001 * 1 * 1000 = 0.001 → floor = 0 → total = 0, floor to METER_RUN_BASE
+      // 0.000001 * 1 * 1000 = 0.001 → floor = 0
       const costs = { scrap: 0.000001 };
       const result = await BillingMeterService.unitsFromCosts(costs, 'pro', 'v1');
 
-      expect(result.totalUnits).toBe(1); // METER_RUN_BASE
+      expect(result.totalUnits).toBe(0);
+      expect(result.breakdown).toEqual({});
     });
 
-    test('should return METER_RUN_BASE when costs is empty object', async () => {
-      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan());
-
+    test('should return zero when costs is empty object', async () => {
       const result = await BillingMeterService.unitsFromCosts({}, 'pro', 'v1');
-      expect(result.totalUnits).toBe(1);
+      expect(result).toEqual({ totalUnits: 0, breakdown: {} });
+      expect(mockBillingPlanService.getPlanByVersion).not.toHaveBeenCalled();
+    });
+
+    test('should return zero when costs contains only zero values', async () => {
+      const result = await BillingMeterService.unitsFromCosts({ digest: 0 }, 'pro', 'v1');
+      expect(result.totalUnits).toBe(0);
       expect(result.breakdown).toEqual({});
+      expect(mockBillingPlanService.getPlanByVersion).not.toHaveBeenCalled();
+    });
+
+    test('should apply versioned ratio for non-zero digest costs', async () => {
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { digest: 2 } }));
+
+      const result = await BillingMeterService.unitsFromCosts({ digest: 0.5 }, 'pro', 'v1');
+
+      expect(mockBillingPlanService.getPlanByVersion).toHaveBeenCalledWith('pro', 'v1');
+      expect(result).toEqual({ totalUnits: 1000, breakdown: { digest: 1000 } });
     });
 
     test('should return METER_RUN_BASE when costs is null', async () => {
@@ -139,18 +154,26 @@ describe('BillingMeterService unit tests:', () => {
       expect(result.totalUnits).toBe(1);
     });
 
-    test('should use ratio=1 when plan not found (null) and emit a WARN log', async () => {
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    test('should throw when plan version is missing and meterMode is enabled', async () => {
       mockBillingPlanService.getPlanByVersion.mockResolvedValue(null);
 
       const costs = { scrap: 0.001 };
-      const result = await BillingMeterService.unitsFromCosts(costs, 'pro', 'v1');
 
-      // ratio defaults to 1: floor(0.001 * 1 * 1000) = 1
-      expect(result.totalUnits).toBe(1);
-      // WARN must be emitted so operators notice the version drift
+      await expect(BillingMeterService.unitsFromCosts(costs, 'pro', 'nonexistent-version')).rejects.toThrow(
+        '[billing.meter] missing plan version snapshot for (pro, nonexistent-version)',
+      );
+    });
+
+    test('should use ratio=1 when plan not found and meterMode is disabled', async () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      mockConfig.billing.meterMode = false;
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(null);
+
+      const result = await BillingMeterService.unitsFromCosts({ scrap: 0.002 }, 'pro', 'nonexistent-version');
+
+      expect(result).toEqual({ totalUnits: 2, breakdown: { scrap: 2 } });
       expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('[billing.meter] getPlanByVersion(pro, v1) returned null'),
+        expect.stringContaining('[billing.meter] getPlanByVersion(pro, nonexistent-version) returned null'),
       );
     });
 
@@ -267,6 +290,118 @@ describe('BillingMeterService unit tests:', () => {
   });
 
   describe('attribute — per-step idempotency keys', () => {
+    test('costsOverride empty object skips without writing idempotency key', async () => {
+      const history = {
+        _id: '507f1f77bcf86cd799439044',
+        costs: { scrap: 1 },
+        planId: 'pro',
+        planVersion: 'v1',
+      };
+
+      const result = await BillingMeterService.attribute(history, orgId, {
+        stepKey: 'digest',
+        costsOverride: {},
+      });
+
+      expect(result).toEqual({
+        applied: false,
+        meterUsed: 0,
+        extrasConsumed: 0,
+        reason: 'zero_cost_skipped',
+      });
+      expect(mockBillingUsageService.incrementMeter).not.toHaveBeenCalled();
+      expect(mockBillingExtraService.debit).not.toHaveBeenCalled();
+    });
+
+    test('costsOverride charges only the override delta', async () => {
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1, digest: 2 } }));
+      mockBillingUsageService.incrementMeter.mockResolvedValue({
+        applied: true,
+        meterUsed: 1000,
+        extrasConsumed: 0,
+      });
+
+      const history = {
+        _id: '507f1f77bcf86cd799439045',
+        costs: { scrap: 10 },
+        planId: 'pro',
+        planVersion: 'v1',
+      };
+
+      const result = await BillingMeterService.attribute(history, orgId, {
+        stepKey: 'digest',
+        costsOverride: { digest: 0.5 },
+      });
+
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
+        orgId,
+        1000,
+        { digest: 1000 },
+        '507f1f77bcf86cd799439045:digest',
+      );
+      expect(result).toEqual({ applied: true, meterUsed: 1000, extrasConsumed: 0 });
+    });
+
+    test('options.costs is accepted as an alias when costsOverride is absent', async () => {
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { digest: 2 } }));
+      mockBillingUsageService.incrementMeter.mockResolvedValue({
+        applied: true,
+        meterUsed: 1000,
+        extrasConsumed: 0,
+      });
+
+      const history = {
+        _id: '507f1f77bcf86cd799439047',
+        costs: { scrap: 10 },
+        planId: 'pro',
+        planVersion: 'v1',
+      };
+
+      await BillingMeterService.attribute(history, orgId, {
+        stepKey: 'digest',
+        costs: { digest: 0.5 },
+      });
+
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
+        orgId,
+        1000,
+        { digest: 1000 },
+        '507f1f77bcf86cd799439047:digest',
+      );
+    });
+
+    test('explicit planId and ratioVersion override history fields', async () => {
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(
+        makePlan({ planId: 'override', version: '2026.05', ratios: { digest: 3 } }),
+      );
+      mockBillingUsageService.incrementMeter.mockResolvedValue({
+        applied: true,
+        meterUsed: 1500,
+        extrasConsumed: 0,
+      });
+
+      const history = {
+        _id: '507f1f77bcf86cd799439046',
+        costs: { digest: 0.5 },
+        planId: 'pro',
+        planVersion: 'v1',
+      };
+
+      await BillingMeterService.attribute(history, orgId, {
+        stepKey: 'digest',
+        planId: 'override',
+        ratioVersion: '2026.05',
+      });
+
+      expect(mockBillingPlanService.getPlanByVersion).toHaveBeenCalledWith('override', '2026.05');
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
+        orgId,
+        1500,
+        { digest: 1500 },
+        '507f1f77bcf86cd799439046:digest',
+      );
+    });
+
     test('same history attributed twice with default stepKey: 2nd is no-op (regression)', async () => {
       mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
       // First call: applied
