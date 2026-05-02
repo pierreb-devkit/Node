@@ -59,22 +59,48 @@ Devkit-shipped crons run on identical UTC schedules across all consumer deployme
 
 ### Recommended pattern — startup jitter
 
-Wrap the cron handler in a `setTimeout` of 0–N seconds (N = jitter window) computed at process start, persisted across restarts:
+These scripts are invoked once per CronJob execution and exit immediately after. Add a random delay at the top of your entrypoint to spread load across deployments:
 
 ```js
-// illustrative — replace cron.schedule with your scheduler API
+// Add at the top of your cron entrypoint (before the main logic)
+// Jitter is re-randomized on each CronJob invocation — this is intentional for K8s CronJobs.
+// For a stable per-pod offset, derive from process.env.HOSTNAME instead (see note below).
 const jitterMs = Math.floor(Math.random() * 60_000); // 0–60s window
-cron.schedule('0 2 * * 1', async () => {
-  await new Promise(r => setTimeout(r, jitterMs));
-  await BillingResetService.resetAllDue();
-});
+await new Promise(r => setTimeout(r, jitterMs));
+await BillingResetService.resetAllDue();
 ```
+
+> **Stable per-pod jitter (optional):** If you want the same pod to always fire at the same offset within the window, derive jitter from the pod hostname instead of `Math.random()`:
+> ```js
+> const seed = process.env.HOSTNAME ?? 'default';
+> const hash = [...seed].reduce((a, c) => ((a << 5) - a + c.charCodeAt(0)) | 0, 0);
+> const jitterMs = Math.abs(hash) % 60_000;
+> ```
 
 ### When to shard
 
 If your tenant count > 10k OR the operation touches a single table that doesn't tolerate concurrent writes well:
 - Shard by `organizationId` modulo N (e.g. 8 shards, each at a different hour offset: `0 2-9 * * 1`)
 - Or use a per-tenant queue with worker pool
+
+To implement shard-based filtering, pass a `SHARD_INDEX` and `SHARD_TOTAL` env vars in the CronJob manifest:
+
+```yaml
+env:
+  - name: SHARD_INDEX
+    value: "0"       # 0..N-1
+  - name: SHARD_TOTAL
+    value: "8"
+```
+
+Then filter in the script:
+
+```js
+const shardIndex = parseInt(process.env.SHARD_INDEX ?? '0', 10);
+const shardTotal = parseInt(process.env.SHARD_TOTAL ?? '1', 10);
+// Only process orgs whose ID hashes to this shard
+const orgs = await Org.find({ $where: `this._id % ${shardTotal} === ${shardIndex}` });
+```
 
 ### Constraints
 
