@@ -53,6 +53,34 @@ spec:
 
 Repeat the manifest for `billing.extrasExpiration.js` and `billing.dunningSweep.js`, adjusting `name` and `schedule`.
 
+## Jitter & sharding
+
+Devkit-shipped crons run on identical UTC schedules across all consumer deployments. To avoid thundering-herd against a shared DB or external API:
+
+### Recommended pattern — startup jitter
+
+Wrap the cron handler in a `setTimeout` of 0–N seconds (N = jitter window) computed at process start, persisted across restarts:
+
+```js
+// illustrative — replace cron.schedule with your scheduler API
+const jitterMs = Math.floor(Math.random() * 60_000); // 0–60s window
+cron.schedule('0 2 * * 1', async () => {
+  await new Promise(r => setTimeout(r, jitterMs));
+  await BillingResetService.resetAllDue();
+});
+```
+
+### When to shard
+
+If your tenant count > 10k OR the operation touches a single table that doesn't tolerate concurrent writes well:
+- Shard by `organizationId` modulo N (e.g. 8 shards, each at a different hour offset: `0 2-9 * * 1`)
+- Or use a per-tenant queue with worker pool
+
+### Constraints
+
+- Don't jitter more than the operation's idempotency window — if reset is idempotent within 1h, jitter ≤ 30min. Beyond that, late-running jobs miss their window.
+- Don't jitter critical SLA-bound jobs (alerts, notifications) — jitter undermines time-sensitivity.
+
 ## Dependency: meterMode flag
 
 All scripts check `config.billing.meterMode` at startup. Downstream projects must set this flag to `true` in their project config to activate billing crons. The devkit default is `false` — all crons are no-ops until explicitly enabled.
