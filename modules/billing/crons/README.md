@@ -62,19 +62,21 @@ Devkit-shipped crons run on identical UTC schedules across all consumer deployme
 These scripts are invoked once per CronJob execution and exit immediately after. Add a random delay at the top of your entrypoint to spread load across deployments:
 
 ```js
-// Add at the top of your cron entrypoint (before the main logic)
+// Wrap in an async IIFE — cron entrypoints are CommonJS, so top-level await is not available.
 // Jitter is re-randomized on each CronJob invocation — this is intentional for K8s CronJobs.
 // For a stable per-pod offset, derive from process.env.HOSTNAME instead (see note below).
-const jitterMs = Math.floor(Math.random() * 60_000); // 0–60s window
-await new Promise(r => setTimeout(r, jitterMs));
-await BillingResetService.resetAllDue();
+(async () => {
+  const jitterMs = Math.floor(Math.random() * 60_000); // 0–60s window
+  await new Promise(r => setTimeout(r, jitterMs));
+  await BillingResetService.resetAllDue();
+})();
 ```
 
-> **Stable per-pod jitter (optional):** If you want the same pod to always fire at the same offset within the window, derive jitter from the pod hostname instead of `Math.random()`:
+> **Stable per-pod jitter (optional):** If you want the same pod to always fire at the same offset within the window, derive jitter from the pod hostname instead of `Math.random()`. Use a distinct variable name to avoid shadowing if both snippets appear in the same file:
 > ```js
 > const seed = process.env.HOSTNAME ?? 'default';
-> const hash = [...seed].reduce((a, c) => ((a << 5) - a + c.charCodeAt(0)) | 0, 0);
-> const jitterMs = Math.abs(hash) % 60_000;
+> const hostHash = [...seed].reduce((a, c) => ((a << 5) - a + c.charCodeAt(0)) | 0, 0);
+> const stableJitterMs = Math.abs(hostHash) % 60_000;
 > ```
 
 ### When to shard
@@ -98,12 +100,14 @@ Then filter in the script by hashing a stable field (e.g. the string representat
 ```js
 const shardIndex = parseInt(process.env.SHARD_INDEX ?? '0', 10);
 const shardTotal = parseInt(process.env.SHARD_TOTAL ?? '1', 10);
-// Only process orgs assigned to this shard (stable hash on _id string)
+// Only process orgs assigned to this shard (stable hash on _id string).
+// Note: this loads all _id values into memory. For very large tenant counts,
+// prefer a server-side filter (e.g. MongoDB $expr + $mod on a numeric shard key).
 const allOrgs = await Org.find({}, '_id').lean();
 const orgs = allOrgs.filter(o => {
   const id = o._id.toString();
-  const hash = [...id].reduce((a, c) => ((a << 5) - a + c.charCodeAt(0)) | 0, 0);
-  return Math.abs(hash) % shardTotal === shardIndex;
+  const h = [...id].reduce((a, c) => ((a << 5) - a + c.charCodeAt(0)) | 0, 0);
+  return Math.abs(h) % shardTotal === shardIndex;
 });
 ```
 
