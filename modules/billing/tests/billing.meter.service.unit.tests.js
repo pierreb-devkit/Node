@@ -173,6 +173,17 @@ describe('BillingMeterService unit tests:', () => {
       expect(result.totalUnits).toBe(7);
     });
 
+    test('unitsFromCosts reads dollarsToUnitRatio from getDollarsToUnitRatio() (mockable via config)', async () => {
+      mockConfig.billing.meter.dollarsToUnitRatio = 500;
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { scrap: 1 } }));
+
+      // cost=0.001, ratio=1, dollarsToUnitRatio=500 → floor(0.001 * 1 * 500) = 0
+      // cost=0.01, ratio=1, dollarsToUnitRatio=500 → floor(0.01 * 1 * 500) = 5
+      const result = await BillingMeterService.unitsFromCosts({ scrap: 0.01 }, 'pro', 'v1');
+
+      expect(result.totalUnits).toBe(5);
+    });
+
     test('throws when positive costs have no ratioVersion in meterMode', async () => {
       await expect(
         BillingMeterService.unitsFromCosts({ scrap: 0.001 }, 'pro', null),

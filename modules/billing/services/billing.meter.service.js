@@ -6,7 +6,13 @@ import BillingPlanService from './billing.plan.service.js';
 import BillingUsageService from './billing.usage.service.js';
 import BillingExtraService from './billing.extra.service.js';
 import BillingMeterOutboxRepository from '../repositories/billing.meter.outbox.repository.js';
-import { getMeterFallbackPlanId, getMeterRunBase, METER_RUN_BASE } from '../lib/billing.constants.js';
+import {
+  getMeterFallbackPlanId,
+  getMeterRunBase,
+  getDollarsToUnitRatio,
+  getMaxUnitsPerOperation,
+  METER_RUN_BASE,
+} from '../lib/billing.constants.js';
 
 export { METER_RUN_BASE };
 
@@ -35,7 +41,7 @@ const unitsFromCosts = async (costs, planId, ratioVersion) => {
     return { totalUnits: getMeterRunBase(), breakdown: {} };
   }
 
-  const dollarsToUnitRatio = config?.billing?.meter?.dollarsToUnitRatio ?? 1000;
+  const dollarsToUnitRatio = getDollarsToUnitRatio();
 
   const hasBillableCost = Object.values(costs).some(
     (cost) => typeof cost === 'number' && Number.isFinite(cost) && cost > 0,
@@ -223,7 +229,7 @@ const attribute = async (history, organizationId, options = {}) => {
     ({ totalUnits, breakdown } = await unitsFromCosts(costs, planId, ratioVersion));
   }
 
-  const maxUnits = config?.billing?.meter?.maxUnitsPerOperation ?? Infinity;
+  const maxUnits = getMaxUnitsPerOperation();
   const cappedUnits = Math.min(totalUnits, maxUnits);
   const isCapped = cappedUnits < totalUnits;
   const cappedBreakdown = isCapped ? capBreakdown(breakdown, cappedUnits, totalUnits) : breakdown;

@@ -7,6 +7,7 @@ import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.
 import BillingPlanService from '../services/billing.plan.service.js';
 
 import { activeStatuses } from '../lib/constants.js';
+import { getDefaultPlanId } from '../lib/billing.constants.js';
 import config from '../../../config/index.js';
 import responses from '../../../lib/helpers/responses.js';
 
@@ -81,7 +82,7 @@ function requireQuota(resource, action) {
           // Don't create the doc here — let incrementMeter do it on first attribution.
           // Fall back to the plan quota so first-run requests are not blocked.
           // Reuse the `subscription` already fetched by the degraded-mode gate above.
-          const planId = subscription?.plan ?? config?.billing?.defaultPlan ?? 'free';
+          const planId = subscription?.plan ?? getDefaultPlanId();
           const activePlan = await BillingPlanService.getActivePlan(planId);
 
           // Plan missing (seeding / version bump in progress) → fail safe with 503
