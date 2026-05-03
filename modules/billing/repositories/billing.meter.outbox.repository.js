@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import mongoose from 'mongoose';
+import { getOutboxMaxRetryAttempts } from '../lib/billing.constants.js';
 
 /**
  * @function BillingMeterOutbox
@@ -62,6 +63,16 @@ const findPendingDue = (thresholdMs = 5 * 60 * 1000, limit = 100) => {
 };
 
 /**
+ * @function findByIdempotencyKey
+ * @description Fetch an outbox row by its idempotency key.
+ * @param {string} idempotencyKey - Usage attribution idempotency key.
+ * @returns {Promise<Object|null>} Matching outbox row or null.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const findByIdempotencyKey = (idempotencyKey) =>
+  BillingMeterOutbox().findOne({ idempotencyKey }).lean();
+
+/**
  * @function markCommitted
  * @description Mark an outbox row as committed after a successful extras debit.
  *              The `status:'pending'` filter makes this idempotent: committed or
@@ -90,34 +101,37 @@ const markCommitted = (id) =>
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const markFailedAttempt = async (id, error) => {
   const message = error?.message ?? String(error);
-  const doc = await BillingMeterOutbox().findOneAndUpdate(
-    { _id: id, status: 'pending' },
-    {
-      $inc: { attempts: 1 },
-      $set: {
-        lastError: message,
-        lastAttemptedAt: new Date(),
-      },
-    },
-    { returnDocument: 'after' },
-  ).lean();
+  const attemptedAt = new Date();
+  const maxRetryAttempts = getOutboxMaxRetryAttempts();
 
-  if (!doc) return null;
-  if (doc.attempts >= 5) {
-    // Atomic exhaustion transition: filter on status:'pending' ensures only
-    // the first concurrent caller wins the status flip and owns the event emit.
-    return BillingMeterOutbox().findOneAndUpdate(
-      { _id: id, status: 'pending' },
-      { $set: { status: 'failed' } },
-      { returnDocument: 'after' },
-    ).lean();
-  }
-  return doc;
+  const nextAttempts = { $add: [{ $ifNull: ['$attempts', 0] }, 1] };
+
+  return BillingMeterOutbox().findOneAndUpdate(
+    { _id: id, status: 'pending' },
+    [
+      {
+        $set: {
+          attempts: nextAttempts,
+          lastError: message,
+          lastAttemptedAt: attemptedAt,
+          status: {
+            $cond: [
+              { $gte: [nextAttempts, maxRetryAttempts] },
+              'failed',
+              '$status',
+            ],
+          },
+        },
+      },
+    ],
+    { returnDocument: 'after', updatePipeline: true },
+  ).lean();
 };
 
 export default {
   create,
   findPendingDue,
+  findByIdempotencyKey,
   markCommitted,
   markFailedAttempt,
 };

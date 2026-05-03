@@ -6,22 +6,9 @@ import BillingUsageRepository from '../repositories/billing.usage.repository.js'
 import BillingSubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import BillingPlanService from './billing.plan.service.js';
 import billingEvents from '../lib/events.js';
-
-/**
- * Compute the ISO week key (YYYY-Www) for a given date.
- * ISO 8601: week starts on Monday; week 1 contains the first Thursday.
- * @param {Date} date - The date to compute the week key for.
- * @returns {string} The week key in YYYY-Www format (e.g. "2026-W18").
- */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const isoWeekKey = (date) => {
-  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  // Move to the nearest Thursday (ISO week definition anchor)
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const weekNum = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
-  return `${d.getUTCFullYear()}-W${String(weekNum).padStart(2, '0')}`;
-};
+import { isoWeekKey } from '../lib/billing.isoWeek.js';
+import { getPlanChangePreserveUsageDefault } from '../lib/billing.constants.js';
+import { isDuplicateKeyError } from '../lib/billing.errors.js';
 
 /**
  * @function resetWeek
@@ -85,7 +72,7 @@ const resetWeek = async (orgId, periodStart) => {
       consumedAttributionKeys: [],
     });
   } catch (err) {
-    if (err.code === 11000) {
+    if (isDuplicateKeyError(err)) {
       // Race: another pod already created this week's doc
       return BillingUsageRepository.findByWeek(orgId, newWeekKey);
     }
@@ -101,14 +88,14 @@ const resetWeek = async (orgId, periodStart) => {
  *              the next attribution lazily creates it with the active plan.
  * @param {string} organizationId - The organization ObjectId (string).
  * @param {Object} [options={}] - Rotation options.
- * @param {boolean} [options.preserveUsage=true] - Keep meterUsed and breakdown when true; reset them when false.
+ * @param {boolean} [options.preserveUsage] - Keep meterUsed and breakdown when true; defaults to config billing.planChange.preserveUsageDefault.
  * @returns {Promise<Object|null>} The updated current week usage document, or null when no current doc exists.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const forceRotateForPlanChange = async (organizationId, options = {}) => {
   if (!config?.billing?.meterMode) return null;
 
-  const { preserveUsage = true } = options ?? {};
+  const { preserveUsage = getPlanChangePreserveUsageDefault() } = options ?? {};
   const now = new Date();
   const currentWeekKey = isoWeekKey(now);
   const existingDoc = await BillingUsageRepository.findByWeek(organizationId, currentWeekKey);

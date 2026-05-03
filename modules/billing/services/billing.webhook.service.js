@@ -260,12 +260,15 @@ const handleSubscriptionUpdated = async (subscription, event) => {
         previousPeriodStart !== undefined &&
         subscription.current_period_start !== previousPeriodStart &&
         newPeriodStart;
+      planChangeResetTriggered = !periodAlsoChanged;
       try {
         await BillingResetService.forceRotateForPlanChange(organizationId, { preserveUsage: true });
-        planChangeResetTriggered = !periodAlsoChanged;
       } catch (err) {
-        // Log for monitoring — not thrown so webhook processing continues
-        console.error('[billing.webhook] forceRotateForPlanChange failed (non-fatal):', err?.message ?? err);
+        planChangeResetTriggered = false;
+        console.error(
+          '[billing.webhook] forceRotateForPlanChange failed, falling back to resetWeek:',
+          err?.message ?? err,
+        );
       }
     }
   }
@@ -379,8 +382,8 @@ const handleInvoicePaymentSucceeded = async (invoice) => {
  *       silently skip. Downstream (trawl_node) is responsible for setting these at session creation.
  *       Calls BillingExtraService.refundPartial which computes refundUnits from
  *       the original topup entry and config.billing.packs.
- *       Uses charge.refunds.data[0].amount (this event's refund delta) rather than
- *       charge.amount_refunded (cumulative total) to avoid over-debiting on multiple partial refunds.
+ *       Uses the latest refund's amount rather than charge.amount_refunded
+ *       (cumulative total) to avoid over-debiting on multiple partial refunds.
  *       Skips if metadata is incomplete or the refund amount is zero.
  * @param {Object} charge - Stripe charge object
  * @returns {Promise<void>}
@@ -397,9 +400,11 @@ const handleChargeRefunded = async (charge) => {
   if (!organizationId || !mongoose.Types.ObjectId.isValid(organizationId)) return;
   if (!stripeSessionId) return;
 
-  // Use this event's refund delta (charge.refunds.data[0].amount), not the cumulative
+  // Use the latest refund delta, not the cumulative
   // charge.amount_refunded — prevents over-debiting when multiple partial refunds occur.
-  const thisRefundAmount = charge.refunds?.data?.[0]?.amount;
+  const refunds = Array.isArray(charge.refunds?.data) ? charge.refunds.data : [];
+  const latestRefund = [...refunds].sort((a, b) => (b?.created ?? 0) - (a?.created ?? 0))[0];
+  const thisRefundAmount = latestRefund?.amount;
   if (!thisRefundAmount || thisRefundAmount <= 0) return;
 
   // Service layer computes proportional refundUnits from config.billing.packs.

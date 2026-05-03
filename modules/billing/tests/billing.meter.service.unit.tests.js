@@ -38,7 +38,7 @@ describe('BillingMeterService unit tests:', () => {
         meterMode: true,
         plans: ['pro'],
         meter: {
-          runBaseUnits: 1,
+          runBase: 1,
           dollarsToUnitRatio: 1000,
           maxUnitsPerOperation: 10000,
         },
@@ -163,6 +163,34 @@ describe('BillingMeterService unit tests:', () => {
     test('should return METER_RUN_BASE when costs is null', async () => {
       const result = await BillingMeterService.unitsFromCosts(null, 'pro', 'v1');
       expect(result.totalUnits).toBe(1);
+    });
+
+    test('uses config billing.meter.runBase override when costs is null', async () => {
+      mockConfig.billing.meter.runBase = 7;
+
+      const result = await BillingMeterService.unitsFromCosts(null, 'pro', 'v1');
+
+      expect(result.totalUnits).toBe(7);
+    });
+
+    test('throws when positive costs have no ratioVersion in meterMode', async () => {
+      await expect(
+        BillingMeterService.unitsFromCosts({ scrap: 0.001 }, 'pro', null),
+      ).rejects.toThrow('[billing.meter] non-null costs without ratioVersion in meterMode');
+      expect(mockBillingPlanService.getPlanByVersion).not.toHaveBeenCalled();
+    });
+
+    test('warns and uses ratio=1 when positive costs have no ratioVersion outside meterMode', async () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      mockConfig.billing.meterMode = false;
+
+      const result = await BillingMeterService.unitsFromCosts({ scrap: 0.002 }, 'pro', null);
+
+      expect(result).toEqual({ totalUnits: 2, breakdown: { scrap: 2 } });
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[billing.meter] non-null costs without ratioVersion in meterMode',
+      );
+      expect(mockBillingPlanService.getPlanByVersion).not.toHaveBeenCalled();
     });
 
     test('should throw when plan version is missing and meterMode is enabled', async () => {
@@ -370,7 +398,8 @@ describe('BillingMeterService unit tests:', () => {
   });
 
   describe('attribute — per-step idempotency keys', () => {
-    test('costsOverride empty object skips without writing idempotency key', async () => {
+    test('costsOverride empty object writes idempotency key with zero units', async () => {
+      mockBillingUsageService.incrementMeter.mockResolvedValue({ applied: true, meterUsed: 0, extrasConsumed: 0 });
       const history = {
         _id: '507f1f77bcf86cd799439044',
         costs: { scrap: 1 },
@@ -389,8 +418,53 @@ describe('BillingMeterService unit tests:', () => {
         extrasConsumed: 0,
         reason: 'zero_cost_skipped',
       });
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
+        orgId,
+        0,
+        {},
+        '507f1f77bcf86cd799439044:digest',
+      );
       expect(mockBillingUsageService.incrementMeterWithOutbox).not.toHaveBeenCalled();
       expect(mockBillingExtraService.debit).not.toHaveBeenCalled();
+    });
+
+    test('zero-cost attribution blocks a later non-zero replay for the same stepKey', async () => {
+      mockBillingUsageService.incrementMeter.mockResolvedValue({ applied: true, meterUsed: 0, extrasConsumed: 0 });
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(makePlan({ ratios: { digest: 2 } }));
+      mockBillingUsageService.incrementMeterWithOutbox.mockResolvedValue({
+        applied: false,
+        meterUsed: 0,
+      });
+      const history = {
+        _id: '507f1f77bcf86cd799439055',
+        costs: { scrap: 1 },
+        planId: 'pro',
+        planVersion: 'v1',
+      };
+
+      const first = await BillingMeterService.attribute(history, orgId, {
+        stepKey: 'digest',
+        costsOverride: {},
+      });
+      const second = await BillingMeterService.attribute(history, orgId, {
+        stepKey: 'digest',
+        costsOverride: { digest: 0.5 },
+      });
+
+      expect(first.reason).toBe('zero_cost_skipped');
+      expect(second).toEqual({ applied: false, meterUsed: 0, extrasConsumed: 0 });
+      expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
+        orgId,
+        0,
+        {},
+        '507f1f77bcf86cd799439055:digest',
+      );
+      expect(mockBillingUsageService.incrementMeterWithOutbox).toHaveBeenCalledWith(
+        orgId,
+        1000,
+        { digest: 1000 },
+        '507f1f77bcf86cd799439055:digest',
+      );
     });
 
     test('costsOverride charges only the override delta', async () => {
@@ -480,6 +554,28 @@ describe('BillingMeterService unit tests:', () => {
         { digest: 1500 },
         '507f1f77bcf86cd799439046:digest',
       );
+    });
+
+    test('uses billing.meter.fallbackPlanId when history has no planId', async () => {
+      mockConfig.billing.meter.fallbackPlanId = 'starter';
+      delete mockConfig.billing.plans;
+      mockBillingPlanService.getPlanByVersion.mockResolvedValue(
+        makePlan({ planId: 'starter', version: 'v1', ratios: { digest: 1 } }),
+      );
+      mockBillingUsageService.incrementMeterWithOutbox.mockResolvedValue({
+        applied: true,
+        meterUsed: 500,
+        extrasConsumed: 0,
+      });
+      const history = {
+        _id: '507f1f77bcf86cd799439056',
+        costs: { digest: 0.5 },
+        planVersion: 'v1',
+      };
+
+      await BillingMeterService.attribute(history, orgId, { stepKey: 'digest' });
+
+      expect(mockBillingPlanService.getPlanByVersion).toHaveBeenCalledWith('starter', 'v1');
     });
 
     test('same history attributed twice with default stepKey: 2nd is no-op (regression)', async () => {

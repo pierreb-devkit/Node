@@ -124,26 +124,6 @@ const findPlan = (organizationId) => {
 };
 
 /**
- * @function findAllDueForReset
- * @description Fetch active/trialing subscriptions whose currentPeriodStart falls
- *              within the provided time window. Used by the weekly meter reset sweep.
- *              Returns lean plain objects (no population) for performance.
- * @deprecated Prefer findAllDueForResetByLastReset() for scheduler-delay resilience.
- * @param {Date} from - The start of the window (inclusive).
- * @param {Date} to - The end of the window (inclusive).
- * @returns {Promise<Array<{organization: string, currentPeriodStart: Date}>>}
- */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
-const findAllDueForReset = (from, to) =>
-  Subscription.find(
-    {
-      status: { $in: ['active', 'trialing'] },
-      currentPeriodStart: { $gte: from, $lte: to },
-    },
-    { organization: 1, currentPeriodStart: 1 },
-  ).lean();
-
-/**
  * @function findAllDueForResetByLastReset
  * @description Fetch active/trialing subscriptions whose last successful reset is missing
  *              or older than 7 days. Filters out subscriptions without currentPeriodStart
@@ -237,7 +217,6 @@ export default {
   findPlan,
   findByStripeCustomerId,
   findByStripeSubscriptionId,
-  findAllDueForReset,
   findAllDueForResetByLastReset,
   updateLastResetAt,
   findStaleDunning,

@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import mongoose from 'mongoose';
+import { isDuplicateKeyError } from '../lib/billing.errors.js';
 
 const BillingUsage = mongoose.model('BillingUsage');
 
@@ -38,7 +39,7 @@ const increment = async (organizationId, month, key, amount) => {
       { upsert: true, returnDocument: 'after', runValidators: true },
     ).exec();
   } catch (err) {
-    if (err.code === 11000) {
+    if (isDuplicateKeyError(err)) {
       return BillingUsage.findOneAndUpdate(
         { organizationId, month },
         { $inc: { [`counters.${key}`]: amount } },
@@ -112,27 +113,11 @@ const incrementMeter = async (organizationId, weekKey, units, breakdown, idempot
   }
   const hasBreakdownIncrements = Object.keys(incPayload).some((key) => key.startsWith('meterBreakdown.'));
 
-  // Transition logic — remove after migration is confirmed complete on all production deployments.
-  // TODO(PR-A migration): drop legacy consumedHistoryIds dual-read once deployed data is fully migrated.
-  //
-  // Pre-migration docs have legacy consumedHistoryIds entries (raw ObjectIds for 'initial' attribution).
-  // Per-step keys ('digest', 'fix:N') didn't exist pre-PR-A so no legacy entries protect those.
-  const isInitial = idempotencyKey.endsWith(':initial');
-  const legacyId = isInitial ? idempotencyKey.split(':')[0] : null;
   const filter = {
     organizationId,
     weekKey,
     consumedAttributionKeys: { $ne: idempotencyKey },
   };
-  if (legacyId) {
-    // Avoid double-charge during migration window: also check the legacy field.
-    // Use ObjectId cast for the legacy field type ([ObjectId] in older docs).
-    try {
-      filter.consumedHistoryIds = { $ne: new mongoose.Types.ObjectId(legacyId) };
-    } catch {
-      // Defensive only: initial keys are expected to contain a real history._id.
-    }
-  }
 
   try {
     const doc = await BillingUsage.findOneAndUpdate(
@@ -169,7 +154,7 @@ const incrementMeter = async (organizationId, weekKey, units, breakdown, idempot
     );
     return doc;
   } catch (err) {
-    if (err.code === 11000) {
+    if (isDuplicateKeyError(err)) {
       // Duplicate key on upsert race — retry without upsert
       return BillingUsage.findOneAndUpdate(
         filter,
@@ -279,6 +264,15 @@ const markThreshold = (docId, field) =>
     { $set: { [field]: new Date() } },
   );
 
+/**
+ * @function countLegacyConsumedHistoryIds
+ * @description Count usage documents that still carry the removed legacy migration field.
+ * @returns {Promise<number>} Number of documents with consumedHistoryIds present.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const countLegacyConsumedHistoryIds = () =>
+  BillingUsage.countDocuments({ consumedHistoryIds: { $exists: true } });
+
 export default {
   get,
   increment,
@@ -289,4 +283,5 @@ export default {
   upsertWeekSnapshot,
   rotateWeekSnapshotForPlanChange,
   markThreshold,
+  countLegacyConsumedHistoryIds,
 };

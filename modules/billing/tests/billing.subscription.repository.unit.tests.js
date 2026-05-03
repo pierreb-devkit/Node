@@ -185,27 +185,6 @@ describe('BillingSubscriptionRepository unit tests:', () => {
     });
   });
 
-  // ── findAllDueForReset (existing — smoke test) ────────────────────────────
-
-  describe('findAllDueForReset', () => {
-    test('queries for active/trialing status within window', async () => {
-      const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      const to = new Date();
-      const leanMock = jest.fn().mockResolvedValue([]);
-      mockModel.find.mockReturnValue({ lean: leanMock });
-
-      await BillingSubscriptionRepository.findAllDueForReset(from, to);
-
-      expect(mockModel.find).toHaveBeenCalledWith(
-        {
-          status: { $in: ['active', 'trialing'] },
-          currentPeriodStart: { $gte: from, $lte: to },
-        },
-        { organization: 1, currentPeriodStart: 1 },
-      );
-    });
-  });
-
   describe('findAllDueForResetByLastReset', () => {
     test('includes subscriptions with lastResetAt=null', async () => {
       const now = new Date('2026-05-01T12:00:00.000Z');

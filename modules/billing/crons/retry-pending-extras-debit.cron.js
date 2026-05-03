@@ -10,9 +10,16 @@
 
 process.env.NODE_ENV = process.env.NODE_ENV || 'development';
 
-const [{ default: config }, { default: mongooseService }] = await Promise.all([
+const [
+  { default: config },
+  { default: mongooseService },
+  { applyJitter },
+  { getCronJitterMaxMs, getOutboxRetryIntervalMs },
+] = await Promise.all([
   import('../../../config/index.js'),
   import('../../../lib/services/mongoose.js'),
+  import('../lib/billing.cron-utils.js'),
+  import('../lib/billing.constants.js'),
 ]);
 
 if (!config?.billing?.meterMode) {
@@ -20,16 +27,14 @@ if (!config?.billing?.meterMode) {
   process.exit(0);
 }
 
-const { randomInt } = await import('node:crypto');
-const jitterMs = randomInt(0, 60_000);
-await new Promise((resolve) => setTimeout(resolve, jitterMs));
+await applyJitter(getCronJitterMaxMs());
 
 try {
   await mongooseService.loadModels();
   await mongooseService.connect();
 
   const { default: BillingMeterOutboxService } = await import('../services/billing.meter.outbox.service.js');
-  const result = await BillingMeterOutboxService.retryPendingExtrasDebits(5 * 60 * 1000, 100);
+  const result = await BillingMeterOutboxService.retryPendingExtrasDebits(getOutboxRetryIntervalMs(), 100);
 
   console.log(
     `[billing.retryPendingExtrasDebit] done — scanned: ${result.scanned}, committed: ${result.committed}, failedAttempts: ${result.failedAttempts}, exhausted: ${result.exhausted}`,

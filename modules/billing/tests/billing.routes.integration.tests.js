@@ -13,7 +13,6 @@ describe('Billing extras routes integration tests:', () => {
   let mockBillingService;
   let mockBillingExtraService;
   let mockBillingUsageService;
-  let mockBillingExtraBalanceRepository;
   let req;
   let res;
 
@@ -37,16 +36,13 @@ describe('Billing extras routes integration tests:', () => {
 
     mockBillingExtraService = {
       listLedger: jest.fn().mockResolvedValue({ entries: [], total: 0, balance: 0 }),
+      getOrgBalanceContext: jest.fn().mockResolvedValue(0),
     };
 
     mockBillingUsageService = {
       getMeter: jest.fn().mockResolvedValue(null),
       get: jest.fn().mockResolvedValue({ month: '2026-04', counters: {} }),
       currentWeekKey: jest.fn().mockReturnValue('2026-W18'),
-    };
-
-    mockBillingExtraBalanceRepository = {
-      getBalance: jest.fn().mockResolvedValue(0),
     };
 
     jest.unstable_mockModule('../services/billing.service.js', () => ({
@@ -59,10 +55,6 @@ describe('Billing extras routes integration tests:', () => {
 
     jest.unstable_mockModule('../services/billing.usage.service.js', () => ({
       default: mockBillingUsageService,
-    }));
-
-    jest.unstable_mockModule('../repositories/billing.extraBalance.repository.js', () => ({
-      default: mockBillingExtraBalanceRepository,
     }));
 
     jest.unstable_mockModule('../../../config/index.js', () => ({
@@ -143,7 +135,7 @@ describe('Billing extras routes integration tests:', () => {
     });
 
     test('returns 200 with non-zero balance after pack credit', async () => {
-      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(500000);
+      mockBillingExtraService.getOrgBalanceContext.mockResolvedValue(500000);
 
       await BillingController.extrasBalance(req, res);
 
@@ -153,7 +145,7 @@ describe('Billing extras routes integration tests:', () => {
     });
 
     test('returns 500 when repository throws', async () => {
-      mockBillingExtraBalanceRepository.getBalance.mockRejectedValue(new Error('DB down'));
+      mockBillingExtraService.getOrgBalanceContext.mockRejectedValue(new Error('DB down'));
 
       await BillingController.extrasBalance(req, res);
 

@@ -99,9 +99,72 @@ Consumers wanting clean-break behavior on downgrade should pass `{ preserveUsage
 
 ## Extras debit reliability
 
-`attribute()` returns optimistically after usage increment + outbox row insert. Extras debit happens out of band; if it fails, cron `retry-pending-extras-debit` reconciles within 5min. After 5 failed attempts, the outbox row is marked `failed` and event `billing.extras_debit.exhausted` is emitted for alerting.
+`attribute()` returns optimistically after usage increment + outbox row insert. Extras debit happens out of band; if it fails, cron `retry-pending-extras-debit` reconciles on the configured retry interval. After the configured failed-attempt limit, the outbox row is marked `failed` and the configured exhausted event is emitted for alerting.
 
 Consumers should NOT retry on `applied: true` — the outbox handles eventual consistency.
+
+## Meter hardening configuration
+
+Defaults live in `modules/billing/config/billing.development.config.js` and can be overridden by downstream project config:
+
+```js
+billing: {
+  meter: {
+    runBase: 1,
+    maxUnitsPerOperation: 10000,
+    fallbackPlanId: null,
+  },
+  outbox: {
+    maxRetryAttempts: 5,
+    retryIntervalSec: 300,
+  },
+  crons: {
+    jitterMaxMs: 60_000,
+  },
+  planChange: {
+    preserveUsageDefault: true,
+  },
+  alerts: {
+    thresholdPercents: [80, 100],  // only 80 and 100 are supported schema fields; other values warn and are skipped
+  },
+  events: {
+    extrasExhausted: 'billing.extras_debit.exhausted',
+  },
+}
+```
+
+Example override:
+
+```js
+// config/defaults/production.config.js
+export default {
+  billing: {
+    meter: {
+      runBase: 2,
+      maxUnitsPerOperation: 25000,
+      fallbackPlanId: 'starter',
+    },
+    outbox: {
+      maxRetryAttempts: 8,
+      retryIntervalSec: 120,
+    },
+    crons: {
+      jitterMaxMs: 30_000,
+    },
+    planChange: {
+      preserveUsageDefault: false,
+    },
+    alerts: {
+      thresholdPercents: [80, 100],
+    },
+    events: {
+      extrasExhausted: 'billing.extras_debit.exhausted',
+    },
+  },
+};
+```
+
+`meter.runBaseUnits` is still accepted as a backward-compatible alias for `meter.runBase`.
 
 ## Stripe — `automatic_tax` flag
 

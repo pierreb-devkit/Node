@@ -4,6 +4,7 @@
 import BillingMeterOutboxRepository from '../repositories/billing.meter.outbox.repository.js';
 import BillingExtraService from './billing.extra.service.js';
 import billingEvents from '../lib/events.js';
+import { getExtrasExhaustedEventName, getOutboxMaxRetryAttempts } from '../lib/billing.constants.js';
 
 /**
  * @function emitExhausted
@@ -16,8 +17,9 @@ import billingEvents from '../lib/events.js';
  * @returns {void}
  */
 const emitExhausted = (row, updated) => {
+  const eventName = getExtrasExhaustedEventName();
   try {
-    billingEvents.emit('billing.extras_debit.exhausted', {
+    billingEvents.emit(eventName, {
       organizationId: String(row.organizationId),
       idempotencyKey: row.idempotencyKey,
       extrasUnits: row.extrasUnits,
@@ -26,9 +28,18 @@ const emitExhausted = (row, updated) => {
     });
   } catch (evtErr) {
     // Listener errors must not disrupt outbox retry accounting — log for traceability
-    console.error('[billing.outbox] billing.extras_debit.exhausted listener error (non-fatal):', evtErr?.message ?? evtErr);
+    console.error(`[billing.outbox] ${eventName} listener error (non-fatal):`, evtErr?.message ?? evtErr);
   }
 };
+
+/**
+ * @function shouldEmitExhausted
+ * @description Check whether a failed row is exactly on the transition attempt.
+ * @param {Object|null} updated - Updated outbox row returned by markFailedAttempt.
+ * @returns {boolean} True when the caller owns the exhausted transition.
+ */
+const shouldEmitExhausted = (updated) =>
+  updated?.status === 'failed' && updated.attempts === getOutboxMaxRetryAttempts();
 
 /**
  * @function retryPendingExtrasDebits
@@ -62,14 +73,14 @@ const retryPendingExtrasDebits = async (thresholdMs = 5 * 60 * 1000, limit = 100
 
       const updated = await BillingMeterOutboxRepository.markFailedAttempt(row._id, 'extras debit not applied');
       failedAttempts += 1;
-      if (updated?.status === 'failed') {
+      if (shouldEmitExhausted(updated)) {
         exhausted += 1;
         emitExhausted(row, updated);
       }
     } catch (err) {
       const updated = await BillingMeterOutboxRepository.markFailedAttempt(row._id, err);
       failedAttempts += 1;
-      if (updated?.status === 'failed') {
+      if (shouldEmitExhausted(updated)) {
         exhausted += 1;
         emitExhausted(row, updated);
       }

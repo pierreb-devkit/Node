@@ -94,6 +94,7 @@ describe('Billing usage header integration tests:', () => {
     };
     mockBillingExtraService = {
       listLedger: jest.fn(),
+      getOrgBalanceContext: jest.fn().mockResolvedValue(700),
     };
     mockBillingExtraBalanceRepository = {
       getBalance: jest.fn().mockResolvedValue(700),

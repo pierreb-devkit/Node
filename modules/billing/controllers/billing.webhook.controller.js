@@ -3,6 +3,7 @@
  */
 import config from '../../../config/index.js';
 import logger from '../../../lib/services/logger.js';
+import responses from '../../../lib/helpers/responses.js';
 import getStripe from '../lib/stripe.js';
 import BillingWebhookService from '../services/billing.webhook.service.js';
 
@@ -15,7 +16,9 @@ import BillingWebhookService from '../services/billing.webhook.service.js';
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const handleWebhook = async (req, res) => {
   const stripe = getStripe();
-  if (!stripe) return res.status(400).json({ error: 'Stripe is not configured' });
+  if (!stripe) {
+    return responses.error(res, 400, 'Bad Request', 'Stripe is not configured')(new Error('Stripe is not configured'));
+  }
 
   const sig = req.headers['stripe-signature'];
   const { webhookSecret } = config.stripe;
@@ -24,7 +27,7 @@ const handleWebhook = async (req, res) => {
   try {
     event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
   } catch (err) {
-    return res.status(400).json({ error: 'Webhook signature verification failed' });
+    return responses.error(res, 400, 'Bad Request', 'Webhook signature verification failed')(err);
   }
 
   try {
@@ -65,7 +68,7 @@ const handleWebhook = async (req, res) => {
     return res.status(200).json({ received: true });
   } catch (err) {
     logger.error('Stripe webhook handler error:', err);
-    return res.status(500).json({ error: 'Webhook handler failed' });
+    return responses.error(res, 500, 'Internal Server Error', 'Webhook handler failed')(err);
   }
 };
 

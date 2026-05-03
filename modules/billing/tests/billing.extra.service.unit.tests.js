@@ -44,6 +44,7 @@ describe('BillingExtraService unit tests:', () => {
       debit: jest.fn(),
       addExpirationEntries: jest.fn(),
       getOrCreate: jest.fn(),
+      getBalance: jest.fn(),
       refundPartial: jest.fn(),
     };
 
@@ -131,6 +132,17 @@ describe('BillingExtraService unit tests:', () => {
 
       expect(r1.applied).toBe(true);
       expect(r2.applied).toBe(false);
+    });
+  });
+
+  describe('getOrgBalanceContext', () => {
+    test('should delegate balance lookup to repository', async () => {
+      mockRepository.getBalance.mockResolvedValue(150000);
+
+      const result = await BillingExtraService.getOrgBalanceContext(orgId);
+
+      expect(mockRepository.getBalance).toHaveBeenCalledWith(orgId);
+      expect(result).toBe(150000);
     });
   });
 

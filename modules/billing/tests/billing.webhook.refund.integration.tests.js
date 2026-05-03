@@ -17,14 +17,13 @@ describe('Billing webhook refund integration tests:', () => {
   /**
    * Build a stub Stripe charge object for charge.refunded webhook tests.
    * @param {Object} [overrides={}] - Fields to override on the stub charge object.
-   * @returns {Object} A stub Stripe charge object with refunds.data[0].amount set.
+   * @returns {Object} A stub Stripe charge object with refund data set.
    */
   const makeCharge = (overrides = {}) => ({
     id: 'ch_test_001',
     amount: 4900,
     amount_refunded: 4900,
-    // charge.refunds.data[0].amount = this event's refund delta (not cumulative)
-    refunds: { data: [{ id: 'rf_test_001', amount: 4900 }] },
+    refunds: { data: [{ id: 'rf_test_001', amount: 4900, created: 1770000000 }] },
     metadata: {
       organizationId: orgId,
       stripeSessionId,
@@ -95,9 +94,9 @@ describe('Billing webhook refund integration tests:', () => {
 
   describe('handleChargeRefunded', () => {
     test('full refund — calls refundPartial with correct orgId, sessionId, delta amount and packId', async () => {
-      // refunds.data[0].amount = 4900 (this event's delta, same as total for single refund)
+      // latest refund amount = 4900 (this event's delta, same as total for single refund)
       await BillingWebhookService.handleChargeRefunded(
-        makeCharge({ refunds: { data: [{ id: 'rf_001', amount: 4900 }] } }),
+        makeCharge({ refunds: { data: [{ id: 'rf_001', amount: 4900, created: 1770000000 }] } }),
       );
 
       expect(mockExtraService.refundPartial).toHaveBeenCalledWith(orgId, stripeSessionId, 4900, 'pack_500k');
@@ -105,15 +104,31 @@ describe('Billing webhook refund integration tests:', () => {
 
     test('partial refund — calls refundPartial with delta amount (not cumulative total)', async () => {
       // Simulates 2nd of two 2450¢ partial refunds: amount_refunded=4900 (cumulative) but
-      // refunds.data[0].amount=2450 (this event's delta) — handler must use delta to avoid over-debit
+      // latest refund amount=2450 (this event's delta) — handler must use delta to avoid over-debit
       await BillingWebhookService.handleChargeRefunded(
         makeCharge({
           amount_refunded: 4900, // cumulative — should NOT be used
-          refunds: { data: [{ id: 'rf_002', amount: 2450 }] }, // delta — correct value
+          refunds: { data: [{ id: 'rf_002', amount: 2450, created: 1770000001 }] }, // delta — correct value
         }),
       );
 
       expect(mockExtraService.refundPartial).toHaveBeenCalledWith(orgId, stripeSessionId, 2450, 'pack_500k');
+    });
+
+    test('uses latest refund by created timestamp instead of array order', async () => {
+      await BillingWebhookService.handleChargeRefunded(
+        makeCharge({
+          amount_refunded: 6000,
+          refunds: {
+            data: [
+              { id: 'rf_old', amount: 1000, created: 1770000000 },
+              { id: 'rf_latest', amount: 5000, created: 1770000100 },
+            ],
+          },
+        }),
+      );
+
+      expect(mockExtraService.refundPartial).toHaveBeenCalledWith(orgId, stripeSessionId, 5000, 'pack_500k');
     });
 
     test('should skip when organizationId is missing', async () => {
@@ -157,7 +172,7 @@ describe('Billing webhook refund integration tests:', () => {
       expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
     });
 
-    test('should skip when refunds.data[0].amount is absent or zero', async () => {
+    test('should skip when latest refund amount is absent or zero', async () => {
       // refunds.data empty — no delta available
       await BillingWebhookService.handleChargeRefunded(
         makeCharge({ refunds: { data: [] } }),

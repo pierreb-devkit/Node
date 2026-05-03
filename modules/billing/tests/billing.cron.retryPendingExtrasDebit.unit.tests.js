@@ -11,6 +11,7 @@ describe('billing.retryPendingExtrasDebit cron — BillingMeterOutboxService:', 
   let mockOutboxRepository;
   let mockExtraService;
   let mockEvents;
+  let mockConfig;
 
   const orgId = '507f1f77bcf86cd799439011';
 
@@ -44,6 +45,17 @@ describe('billing.retryPendingExtrasDebit cron — BillingMeterOutboxService:', 
     mockEvents = {
       emit: jest.fn(),
     };
+
+    mockConfig = {
+      billing: {
+        outbox: { maxRetryAttempts: 5 },
+        events: { extrasExhausted: 'billing.extras_debit.exhausted' },
+      },
+    };
+
+    jest.unstable_mockModule('../../../config/index.js', () => ({
+      default: mockConfig,
+    }));
 
     jest.unstable_mockModule('../repositories/billing.meter.outbox.repository.js', () => ({
       default: mockOutboxRepository,
@@ -115,5 +127,39 @@ describe('billing.retryPendingExtrasDebit cron — BillingMeterOutboxService:', 
       lastError: 'still failing',
     });
     expect(result).toEqual({ scanned: 1, committed: 0, failedAttempts: 1, exhausted: 1 });
+  });
+
+  test('uses configured exhausted event name and max retry attempts', async () => {
+    mockConfig.billing.outbox.maxRetryAttempts = 3;
+    mockConfig.billing.events.extrasExhausted = 'billing.custom.exhausted';
+    const row = makeOutbox({ attempts: 2 });
+    const failed = makeOutbox({
+      attempts: 3,
+      status: 'failed',
+      lastError: 'still failing',
+    });
+    mockOutboxRepository.findPendingDue.mockResolvedValue([row]);
+    mockExtraService.debit.mockResolvedValue({ applied: false });
+    mockOutboxRepository.markFailedAttempt.mockResolvedValue(failed);
+
+    const result = await BillingMeterOutboxService.retryPendingExtrasDebits();
+
+    expect(mockEvents.emit).toHaveBeenCalledWith('billing.custom.exhausted', expect.objectContaining({
+      attempts: 3,
+    }));
+    expect(result.exhausted).toBe(1);
+  });
+
+  test('does not emit exhausted event when failed row is past transition attempt', async () => {
+    const row = makeOutbox({ attempts: 5 });
+    const failed = makeOutbox({ attempts: 6, status: 'failed' });
+    mockOutboxRepository.findPendingDue.mockResolvedValue([row]);
+    mockExtraService.debit.mockResolvedValue({ applied: false });
+    mockOutboxRepository.markFailedAttempt.mockResolvedValue(failed);
+
+    const result = await BillingMeterOutboxService.retryPendingExtrasDebits();
+
+    expect(mockEvents.emit).not.toHaveBeenCalled();
+    expect(result.exhausted).toBe(0);
   });
 });

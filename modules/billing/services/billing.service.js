@@ -5,6 +5,7 @@ import config from '../../../config/index.js';
 import getStripe from '../lib/stripe.js';
 import BillingPlansService from './billing.plans.service.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
+import { isDuplicateKeyError } from '../lib/billing.errors.js';
 
 /**
  * Validate that a redirect URL is safe for the current environment.
@@ -30,6 +31,52 @@ const isAllowedUrl = (url) => {
   } catch {
     return false;
   }
+};
+
+/**
+ * @function _ensureStripeCustomer
+ * @description Find or create the billing subscription shell that carries a Stripe customer id.
+ * @param {Object} stripe - Stripe client instance.
+ * @param {Object} organization - Organization document.
+ * @returns {Promise<Object>} Subscription document with stripeCustomerId.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const _ensureStripeCustomer = async (stripe, organization) => {
+  let subscription = await SubscriptionRepository.findByOrganization(organization._id);
+  if (subscription?.stripeCustomerId) return subscription;
+
+  const customer = await stripe.customers.create(
+    {
+      name: organization.name,
+      metadata: { organizationId: String(organization._id) },
+    },
+    { idempotencyKey: `cus_create_${String(organization._id)}` },
+  );
+
+  if (subscription) {
+    subscription = await SubscriptionRepository.update({
+      _id: subscription._id,
+      stripeCustomerId: customer.id,
+    });
+  } else {
+    try {
+      subscription = await SubscriptionRepository.create({
+        organization: organization._id,
+        stripeCustomerId: customer.id,
+      });
+    } catch (err) {
+      if (isDuplicateKeyError(err)) {
+        subscription = await SubscriptionRepository.findByOrganization(organization._id);
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  const latest = await SubscriptionRepository.findByOrganization(organization._id);
+  if (latest?.stripeCustomerId) return latest;
+  if (subscription?.stripeCustomerId) return subscription;
+  throw new Error('No Stripe customer found for this organization');
 };
 
 /**
@@ -61,41 +108,7 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
     throw new Error('Invalid priceId: must be an active published price');
   }
 
-  // Find or create subscription record with Stripe customer
-  let subscription = await SubscriptionRepository.findByOrganization(organization._id);
-
-  if (!subscription?.stripeCustomerId) {
-    const customer = await stripe.customers.create(
-      {
-        name: organization.name,
-        metadata: { organizationId: String(organization._id) },
-      },
-      { idempotencyKey: `cus_create_${String(organization._id)}` },
-    );
-
-    if (subscription) {
-      subscription = await SubscriptionRepository.update({
-        _id: subscription._id,
-        stripeCustomerId: customer.id,
-      });
-    } else {
-      try {
-        subscription = await SubscriptionRepository.create({
-          organization: organization._id,
-          stripeCustomerId: customer.id,
-        });
-      } catch (err) {
-        if (err.code === 11000) {
-          subscription = await SubscriptionRepository.findByOrganization(organization._id);
-        } else {
-          throw err;
-        }
-      }
-    }
-    // Re-read to handle race: if another request already set stripeCustomerId, use that
-    const latest = await SubscriptionRepository.findByOrganization(organization._id);
-    if (latest?.stripeCustomerId) subscription = latest;
-  }
+  const subscription = await _ensureStripeCustomer(stripe, organization);
 
   const checkoutParams = {
     customer: subscription.stripeCustomerId,
@@ -178,41 +191,7 @@ const createExtrasCheckout = async (organization, packId, successUrl, cancelUrl)
   const priceId = config?.stripe?.prices?.packs?.[packId];
   if (!priceId) throw new Error(`Invalid packId: no Stripe price configured for pack: ${packId}`);
 
-  // Find or create subscription record with Stripe customer
-  let subscription = await SubscriptionRepository.findByOrganization(organization._id);
-
-  if (!subscription?.stripeCustomerId) {
-    const customer = await stripe.customers.create(
-      {
-        name: organization.name,
-        metadata: { organizationId: String(organization._id) },
-      },
-      { idempotencyKey: `cus_create_${String(organization._id)}` },
-    );
-
-    if (subscription) {
-      subscription = await SubscriptionRepository.update({
-        _id: subscription._id,
-        stripeCustomerId: customer.id,
-      });
-    } else {
-      try {
-        subscription = await SubscriptionRepository.create({
-          organization: organization._id,
-          stripeCustomerId: customer.id,
-        });
-      } catch (err) {
-        if (err.code === 11000) {
-          subscription = await SubscriptionRepository.findByOrganization(organization._id);
-        } else {
-          throw err;
-        }
-      }
-    }
-    // Re-read to handle race: if another request already set stripeCustomerId, use that
-    const latest = await SubscriptionRepository.findByOrganization(organization._id);
-    if (latest?.stripeCustomerId) subscription = latest;
-  }
+  const subscription = await _ensureStripeCustomer(stripe, organization);
 
   // Use a timestamped idempotency key (debounce double-click within ~1s granularity)
   const idempotencyKey = `extras_checkout_${String(organization._id)}_${packId}_${Date.now()}`;

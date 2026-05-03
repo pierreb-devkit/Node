@@ -17,9 +17,16 @@
 
 process.env.NODE_ENV = process.env.NODE_ENV || 'development';
 
-const [{ default: config }, { default: mongooseService }] = await Promise.all([
+const [
+  { default: config },
+  { default: mongooseService },
+  { applyJitter },
+  { getCronJitterMaxMs },
+] = await Promise.all([
   import('../../../config/index.js'),
   import('../../../lib/services/mongoose.js'),
+  import('../lib/billing.cron-utils.js'),
+  import('../lib/billing.constants.js'),
 ]);
 
 if (!config?.billing?.meterMode) {
@@ -28,6 +35,7 @@ if (!config?.billing?.meterMode) {
 }
 
 try {
+  await applyJitter(getCronJitterMaxMs());
   await mongooseService.connect();
 
   const [{ default: BillingSubscriptionRepository }, { default: OrganizationRepository }] = await Promise.all([

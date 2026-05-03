@@ -7,10 +7,6 @@ import responses from '../../../lib/helpers/responses.js';
 import BillingService from '../services/billing.service.js';
 import BillingUsageService from '../services/billing.usage.service.js';
 import BillingExtraService from '../services/billing.extra.service.js';
-import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
-
-// NOTE: BillingExtraBalance uses field name 'organization', BillingUsage uses 'organizationId' — both are Schema.ObjectId refs to Organization.
-// Only the field name differs (historical reasons) — keep queries consistent with each model's own convention.
 
 /**
  * @desc Endpoint to create a Stripe Checkout session
@@ -81,7 +77,7 @@ const getUsage = async (req, res) => {
     if (config.billing?.meterMode) {
       // Meter mode — return compute fields
       const meter = await BillingUsageService.getMeter(req.organization._id.toString());
-      const extrasRemaining = await BillingExtraBalanceRepository.getBalance(req.organization._id.toString());
+      const extrasRemaining = await BillingExtraService.getOrgBalanceContext(req.organization._id.toString());
       const packsAvailable = config.billing?.packs ?? [];
 
       return responses.success(res, 'billing usage')({
@@ -153,7 +149,7 @@ const extrasCheckout = async (req, res) => {
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const extrasBalance = async (req, res) => {
   try {
-    const balance = await BillingExtraBalanceRepository.getBalance(req.organization._id.toString());
+    const balance = await BillingExtraService.getOrgBalanceContext(req.organization._id.toString());
     const packsAvailable = config.billing?.packs ?? [];
     responses.success(res, 'extras balance')({ balance, packsAvailable });
   } catch (err) {

@@ -11,16 +11,18 @@ const Schema = mongoose.Schema;
  * Stores deferred extras debits created after meter usage crosses plan quota.
  * Pending rows are retried by the billing retry-pending-extras-debit cron.
  */
-const BillingMeterOutboxMongoose = new Schema({
-  organizationId: { type: Schema.ObjectId, required: true, index: true },
-  idempotencyKey: { type: String, required: true, unique: true },
-  extrasUnits: { type: Number, required: true },
-  status: { type: String, enum: ['pending', 'committed', 'failed'], default: 'pending', index: true },
-  attempts: { type: Number, default: 0 },
-  lastError: { type: String, default: null },
-  lastAttemptedAt: { type: Date, default: null },
-  createdAt: { type: Date, default: () => new Date() },
-});
+const BillingMeterOutboxMongoose = new Schema(
+  {
+    organizationId: { type: Schema.ObjectId, required: true, index: true },
+    idempotencyKey: { type: String, required: true, unique: true },
+    extrasUnits: { type: Number, required: true },
+    status: { type: String, enum: ['pending', 'committed', 'failed'], default: 'pending', index: true },
+    attempts: { type: Number, default: 0 },
+    lastError: { type: String, default: null },
+    lastAttemptedAt: { type: Date, default: null },
+  },
+  { timestamps: true },
+);
 
 BillingMeterOutboxMongoose.index({ status: 1, lastAttemptedAt: 1 });
 

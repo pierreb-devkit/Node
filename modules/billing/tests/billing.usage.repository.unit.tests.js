@@ -444,4 +444,15 @@ describe('BillingUsageRepository — meter extensions unit tests:', () => {
       expect(result.modifiedCount).toBe(0);
     });
   });
+
+  describe('countLegacyConsumedHistoryIds', () => {
+    test('counts documents with the legacy consumedHistoryIds field', async () => {
+      mockModel.countDocuments.mockResolvedValue(2);
+
+      const result = await BillingUsageRepository.countLegacyConsumedHistoryIds();
+
+      expect(mockModel.countDocuments).toHaveBeenCalledWith({ consumedHistoryIds: { $exists: true } });
+      expect(result).toBe(2);
+    });
+  });
 });
