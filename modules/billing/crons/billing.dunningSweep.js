@@ -1,12 +1,14 @@
 /**
  * Cron script — dunning sweep.
  *
- * Finds subscriptions in 'past_due' status whose pastDueSince is older than 14 days
- * (7-day grace period + 7-day blocked period elapsed with no payment), transitions them to
+ * Finds subscriptions in 'past_due' status whose pastDueSince is older than the
+ * configured dunning threshold (config.billing.dunningThresholdDays, default 14 days —
+ * i.e. grace period + blocked period elapsed with no payment), transitions them to
  * 'unpaid' + plan 'free', and syncs the Organization.plan field accordingly.
  *
- * Timeline: payment fails → pastDueSince set → 7d grace (degraded mode) → 7d blocked (402) →
- * this cron fires on day 14+ and downgrades to free.
+ * Default timeline: payment fails → pastDueSince set → 7d grace (degraded mode) →
+ * 7d blocked (402) → this cron fires on day 14+ and downgrades to free.
+ * Both grace and dunning thresholds are configurable in billing config.
  *
  * No-op when config.billing.meterMode === false (default).
  * Intended to run as a Kubernetes CronJob — see modules/billing/crons/README.md.

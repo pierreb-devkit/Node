@@ -82,7 +82,8 @@ const expireOldEntries = (orgId) =>
  * @param {string} stripeSessionId - Stripe session ID of the original purchase (to find the pack).
  * @param {number} amountRefundedCents - Amount refunded in cents (integer).
  * @param {string|undefined} [packId] - Optional pack identifier from Stripe metadata for exact correlation.
- * @param {string} stripeRefundId - Stripe refund object ID (e.g. rf_xxx) — used as primary idempotency key.
+ * @param {string|undefined} [stripeRefundId] - Stripe refund object ID (e.g. rf_xxx). When present, used as
+ *        primary idempotency key. When absent (legacy callers), falls back to session+amount+topupId composite.
  * @returns {Promise<{doc: Object|null, applied: boolean, refundUnits: number, reason?: string}>}
  *          `reason` is present only when `applied === false`: 'meter_mode_disabled' | 'invalid_org' |
  *          'pack_not_found' | 'ambiguous_pack_match'.

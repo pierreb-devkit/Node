@@ -21,10 +21,10 @@ import responses from '../../../lib/helpers/responses.js';
  *   When no quota is configured or limit is Infinity, the request is allowed.
  *
  * - When `config.billing.meterMode === true`: meter quota gate.
- *   First checks for past_due degraded mode:
- *     - past_due + pastDueSince set + within 7-day grace: sets res.locals.billingDegraded = true
+ *   First checks for past_due degraded mode (grace period = config.billing.gracePeriodDays, default 7):
+ *     - past_due + pastDueSince set + within grace period: sets res.locals.billingDegraded = true
  *       and falls through to the meter check (may still block on exhaustion).
- *     - past_due + pastDueSince set + grace elapsed (>=7d): returns 402 PAYMENT_PAST_DUE.
+ *     - past_due + pastDueSince set + grace elapsed: returns 402 PAYMENT_PAST_DUE.
  *   Then computes `(meterQuota - meterUsed) + extrasBalance`. Returns 402 METER_EXHAUSTED when <= 0.
  *
  * Expects `req.organization` to be set by resolveOrganization upstream.

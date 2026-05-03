@@ -380,11 +380,10 @@ const handleInvoicePaymentSucceeded = async (invoice) => {
  *         })
  *       Without payment_intent_data.metadata, charge.metadata will be empty and refunds
  *       silently skip. Downstream (trawl_node) is responsible for setting these at session creation.
- *       Calls BillingExtraService.refundPartial which computes refundUnits from
- *       the original topup entry and config.billing.packs.
- *       Uses the latest refund's amount rather than charge.amount_refunded
- *       (cumulative total) to avoid over-debiting on multiple partial refunds.
- *       Skips if metadata is incomplete or the refund amount is zero.
+ *       Calls BillingExtraService.refundPartial for each entry in charge.refunds.data.
+ *       Each refund's rf_ id is used as the idempotency key, making webhook replay safe.
+ *       Individual entries are silently skipped when: metadata is incomplete, refund amount
+ *       is absent/zero, or the refund object has no id.
  * @param {Object} charge - Stripe charge object
  * @returns {Promise<void>}
  */

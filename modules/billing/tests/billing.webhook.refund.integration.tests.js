@@ -23,7 +23,7 @@ describe('Billing webhook refund integration tests:', () => {
     id: 'ch_test_001',
     amount: 4900,
     amount_refunded: 4900,
-    refunds: { data: [{ id: 'rf_test_001', amount: 4900, created: 1770000000 }] },
+    refunds: { data: [{ id: 'rf_test_001', amount: 4900, created: Math.floor(Date.now() / 1000) }] },
     metadata: {
       organizationId: orgId,
       stripeSessionId,
