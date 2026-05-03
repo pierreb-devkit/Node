@@ -216,21 +216,36 @@ const markUnpaid = (id, threshold) => {
  * @description Atomically update a subscription only when the incoming Stripe event is newer
  *              than the last processed event. Prevents out-of-order webhook delivery from
  *              overwriting more-recent state.
+ *              Same-second events are ordered by lex-string comparison of event IDs (evt_ prefix
+ *              makes these globally monotonic within a second) — V5 P1 #2 tiebreaker.
  *              Returns null when the guard prevents the write (stale event).
  * @param {string} id - The subscription ObjectId (string).
- * @param {number} eventCreatedAt - Stripe event.created Unix timestamp.
+ * @param {number} eventCreatedAt - Stripe event.created Unix timestamp (seconds).
+ * @param {string} eventId - Stripe event.id (e.g. evt_xxx) — tiebreaker for same-second delivery.
  * @param {Object} fields - Fields to $set on the document.
  * @returns {Promise<Object|null>} Updated doc, or null if id invalid or event is stale.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
-const updateIfEventNewer = (id, eventCreatedAt, fields) => {
+const updateIfEventNewer = (id, eventCreatedAt, eventId, fields) => {
   if (!id || !mongoose.Types.ObjectId.isValid(id)) return null;
   return Subscription.findOneAndUpdate(
     {
       _id: id,
-      $or: [{ stripeEventCreatedAt: null }, { stripeEventCreatedAt: { $lt: eventCreatedAt } }],
+      $or: [
+        { stripeEventCreatedAt: { $exists: false } },
+        { stripeEventCreatedAt: null },
+        { stripeEventCreatedAt: { $lt: eventCreatedAt } },
+        {
+          stripeEventCreatedAt: eventCreatedAt,
+          $or: [
+            { stripeEventId: { $exists: false } },
+            { stripeEventId: null },
+            { stripeEventId: { $lt: eventId } },
+          ],
+        },
+      ],
     },
-    { $set: { ...fields, stripeEventCreatedAt: eventCreatedAt } },
+    { $set: { ...fields, stripeEventCreatedAt: eventCreatedAt, stripeEventId: eventId } },
     { returnDocument: 'after', runValidators: true },
   )
     .populate(defaultPopulate)
