@@ -44,12 +44,12 @@ const handleWebhook = async (req, res) => {
         break;
       case 'customer.subscription.deleted':
         await BillingWebhookService.withIdempotency(event, (e) =>
-          BillingWebhookService.handleSubscriptionDeleted(e.data.object),
+          BillingWebhookService.handleSubscriptionDeleted(e.data.object, e),
         );
         break;
       case 'invoice.payment_failed':
         await BillingWebhookService.withIdempotency(event, (e) =>
-          BillingWebhookService.handleInvoicePaymentFailed(e.data.object),
+          BillingWebhookService.handleInvoicePaymentFailed(e.data.object, e),
         );
         break;
       case 'invoice.payment_succeeded':

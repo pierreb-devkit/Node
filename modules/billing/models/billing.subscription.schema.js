@@ -25,6 +25,7 @@ const baseShape = {
   currentPeriodStart: z.coerce.date().nullable().optional(),
   pastDueSince: z.coerce.date().nullable().optional(),
   lastResetAt: z.coerce.date().nullable().optional(),
+  stripeEventCreatedAt: z.number().int().nullable().optional(),
 };
 
 const Subscription = z.object({

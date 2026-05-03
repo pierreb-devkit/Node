@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 
 import config from '../../../config/index.js';
 import getStripe from '../lib/stripe.js';
+import logger from '../../../lib/services/logger.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import ProcessedStripeEventRepository from '../repositories/billing.processedStripeEvent.repository.js';
 import OrganizationRepository from '../../organizations/repositories/organizations.repository.js';
@@ -208,16 +209,19 @@ const handleSubscriptionUpdated = async (subscription, event) => {
     ? new Date(subscription.current_period_start * 1000)
     : undefined;
 
-  const updatePayload = {
-    _id: existing._id,
+  const fields = {
     plan: newPlan,
     status: subscription.status,
     currentPeriodEnd: new Date(subscription.current_period_end * 1000),
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
   };
-  if (newPeriodStart) updatePayload.currentPeriodStart = newPeriodStart;
+  if (newPeriodStart) fields.currentPeriodStart = newPeriodStart;
 
-  await SubscriptionRepository.update(updatePayload);
+  const updated = await SubscriptionRepository.updateIfEventNewer(String(existing._id), event.created, fields);
+  if (!updated) {
+    logger.info('[billing.webhook] skipped stale event', { eventId: event.id, type: event.type });
+    return;
+  }
 
   const organizationId = String(existing.organization?._id || existing.organization);
   await syncOrganizationPlan(organizationId, newPlan);
@@ -297,15 +301,18 @@ const handleSubscriptionUpdated = async (subscription, event) => {
  * @returns {Promise<void>}
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const handleSubscriptionDeleted = async (subscription) => {
+const handleSubscriptionDeleted = async (subscription, event) => {
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(subscription.id);
   if (!existing) return;
 
-  await SubscriptionRepository.update({
-    _id: existing._id,
+  const updated = await SubscriptionRepository.updateIfEventNewer(String(existing._id), event.created, {
     plan: 'free',
     status: 'canceled',
   });
+  if (!updated) {
+    logger.info('[billing.webhook] skipped stale event', { eventId: event.id, type: event.type });
+    return;
+  }
 
   await syncOrganizationPlan(existing.organization?._id || existing.organization, 'free');
 };
@@ -319,21 +326,25 @@ const handleSubscriptionDeleted = async (subscription) => {
  * @returns {Promise<void>}
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const handleInvoicePaymentFailed = async (invoice) => {
+const handleInvoicePaymentFailed = async (invoice, event) => {
   const { subscription: stripeSubscriptionId } = invoice;
   if (!stripeSubscriptionId) return;
 
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId);
   if (!existing) return;
 
-  const updatePayload = { _id: existing._id, status: 'past_due' };
+  const fields = { status: 'past_due' };
 
   // Only set pastDueSince on first failure — do not reset the grace-period clock on retries.
   if (existing.pastDueSince == null) {
-    updatePayload.pastDueSince = new Date();
+    fields.pastDueSince = new Date();
   }
 
-  await SubscriptionRepository.update(updatePayload);
+  const updated = await SubscriptionRepository.updateIfEventNewer(String(existing._id), event.created, fields);
+  if (!updated) {
+    logger.info('[billing.webhook] skipped stale event', { eventId: event.id, type: event.type });
+    return;
+  }
 
   const organizationId = String(existing.organization?._id || existing.organization);
   try {

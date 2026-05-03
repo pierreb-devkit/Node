@@ -81,6 +81,30 @@ const _ensureStripeCustomer = async (stripe, organization) => {
 };
 
 /**
+ * @desc Create a Stripe Customer Portal session for the given organization
+ * @param {Object} organization - The organization document
+ * @param {String} returnUrl - Optional URL to redirect back to after portal
+ * @returns {Promise<String>} Portal session URL
+ */
+const createPortalSession = async (organization, returnUrl) => {
+  const stripe = getStripe();
+  if (!stripe) throw new Error('Stripe is not configured');
+
+  const subscription = await SubscriptionRepository.findByOrganization(organization._id);
+  if (!subscription?.stripeCustomerId) throw new Error('No Stripe customer found for this organization');
+
+  const params = { customer: subscription.stripeCustomerId };
+  if (returnUrl) {
+    if (!isAllowedUrl(returnUrl)) throw new Error('Invalid return URL: must be a valid URL (production requires HTTPS and a matching application domain)');
+    params.return_url = returnUrl;
+  }
+
+  const session = await stripe.billingPortal.sessions.create(params);
+
+  return session.url;
+};
+
+/**
  * @desc Create a Stripe Checkout Session for the given organization
  * @param {Object} organization - The organization document
  * @param {String} priceId - Stripe price ID
@@ -109,6 +133,18 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
     throw new Error('Invalid priceId: must be an active published price');
   }
 
+  // Block checkout when an active subscription already exists — direct to portal for changes
+  const existingForBlock = await SubscriptionRepository.findByOrganization(organization._id);
+  const blockStatuses = ['active', 'trialing', 'past_due'];
+  if (existingForBlock?.stripeSubscriptionId && blockStatuses.includes(existingForBlock.status)) {
+    const portalUrl = await createPortalSession(organization);
+    const err = new Error('Subscription already active');
+    err.statusCode = 409;
+    err.code = 'subscription_already_active';
+    err.portalUrl = portalUrl;
+    throw err;
+  }
+
   const subscription = await _ensureStripeCustomer(stripe, organization);
 
   const checkoutParams = {
@@ -130,30 +166,6 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
     checkoutParams,
     { idempotencyKey: `sub_checkout_${String(organization._id)}_${priceId}` },
   );
-
-  return session.url;
-};
-
-/**
- * @desc Create a Stripe Customer Portal session for the given organization
- * @param {Object} organization - The organization document
- * @param {String} returnUrl - Optional URL to redirect back to after portal
- * @returns {Promise<String>} Portal session URL
- */
-const createPortalSession = async (organization, returnUrl) => {
-  const stripe = getStripe();
-  if (!stripe) throw new Error('Stripe is not configured');
-
-  const subscription = await SubscriptionRepository.findByOrganization(organization._id);
-  if (!subscription?.stripeCustomerId) throw new Error('No Stripe customer found for this organization');
-
-  const params = { customer: subscription.stripeCustomerId };
-  if (returnUrl) {
-    if (!isAllowedUrl(returnUrl)) throw new Error('Invalid return URL: must be a valid URL (production requires HTTPS and a matching application domain)');
-    params.return_url = returnUrl;
-  }
-
-  const session = await stripe.billingPortal.sessions.create(params);
 
   return session.url;
 };

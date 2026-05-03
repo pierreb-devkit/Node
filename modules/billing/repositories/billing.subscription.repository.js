@@ -192,19 +192,49 @@ const findStaleDunning = (threshold) => {
 
 /**
  * @function markUnpaid
- * @description Atomically transition a subscription to 'unpaid' and downgrade plan to 'free'.
- *              Idempotent: if the subscription is already unpaid the operation is effectively a no-op.
+ * @description Conditionally transition a subscription to 'unpaid' and downgrade plan to 'free'.
+ *              Guards on status='past_due' AND pastDueSince <= threshold to prevent overwriting
+ *              a subscription recovered by invoice.payment_succeeded between the dunning find and update.
+ *              Returns null when the condition no longer matches (subscription already recovered).
  * @param {string} id - The subscription ObjectId (string).
- * @returns {Promise<Object|null>} The updated subscription document or null if id is invalid.
+ * @param {Date} threshold - Only mark unpaid when pastDueSince <= threshold.
+ * @returns {Promise<Object|null>} The updated subscription document, null if id is invalid or condition unmet.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
-const markUnpaid = (id) => {
+const markUnpaid = (id, threshold) => {
   if (!id || !mongoose.Types.ObjectId.isValid(id)) return null;
-  return Subscription.findByIdAndUpdate(
-    id,
+  if (!(threshold instanceof Date)) throw new TypeError('threshold must be a Date instance');
+  return Subscription.findOneAndUpdate(
+    { _id: id, status: 'past_due', pastDueSince: { $lte: threshold } },
     { $set: { status: 'unpaid', plan: 'free' } },
     { returnDocument: 'after', runValidators: true },
   ).exec();
+};
+
+/**
+ * @function updateIfEventNewer
+ * @description Atomically update a subscription only when the incoming Stripe event is newer
+ *              than the last processed event. Prevents out-of-order webhook delivery from
+ *              overwriting more-recent state.
+ *              Returns null when the guard prevents the write (stale event).
+ * @param {string} id - The subscription ObjectId (string).
+ * @param {number} eventCreatedAt - Stripe event.created Unix timestamp.
+ * @param {Object} fields - Fields to $set on the document.
+ * @returns {Promise<Object|null>} Updated doc, or null if id invalid or event is stale.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const updateIfEventNewer = (id, eventCreatedAt, fields) => {
+  if (!id || !mongoose.Types.ObjectId.isValid(id)) return null;
+  return Subscription.findOneAndUpdate(
+    {
+      _id: id,
+      $or: [{ stripeEventCreatedAt: null }, { stripeEventCreatedAt: { $lt: eventCreatedAt } }],
+    },
+    { $set: { ...fields, stripeEventCreatedAt: eventCreatedAt } },
+    { returnDocument: 'after', runValidators: true },
+  )
+    .populate(defaultPopulate)
+    .exec();
 };
 
 export default {
@@ -221,4 +251,5 @@ export default {
   updateLastResetAt,
   findStaleDunning,
   markUnpaid,
+  updateIfEventNewer,
 };

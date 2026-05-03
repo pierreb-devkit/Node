@@ -79,6 +79,14 @@ const SubscriptionMongoose = new Schema(
       type: Date,
       default: null,
     },
+    /**
+     * Stripe event.created timestamp (Unix seconds) of the last processed subscription event.
+     * Used to guard webhook handlers against out-of-order delivery — older events are skipped.
+     */
+    stripeEventCreatedAt: {
+      type: Number,
+      default: null,
+    },
   },
   {
     timestamps: true,
