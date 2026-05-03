@@ -21,7 +21,7 @@ const [
   { default: config },
   { default: mongooseService },
   { applyJitter },
-  { getCronJitterMaxMs },
+  { getCronJitterMaxMs, getDunningThresholdDays },
 ] = await Promise.all([
   import('../../../config/index.js'),
   import('../../../lib/services/mongoose.js'),
@@ -44,7 +44,7 @@ try {
   ]);
 
   const now = new Date();
-  const threshold = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+  const threshold = new Date(now.getTime() - getDunningThresholdDays() * 24 * 60 * 60 * 1000);
 
   const staleSubs = await BillingSubscriptionRepository.findStaleDunning(threshold);
   console.log(`[billing.dunningSweep] ${staleSubs.length} stale past_due subscription(s) found`);

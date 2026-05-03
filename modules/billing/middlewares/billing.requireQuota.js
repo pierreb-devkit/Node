@@ -7,7 +7,7 @@ import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.
 import BillingPlanService from '../services/billing.plan.service.js';
 
 import { activeStatuses } from '../lib/constants.js';
-import { getDefaultPlanId } from '../lib/billing.constants.js';
+import { getDefaultPlanId, getGracePeriodDays } from '../lib/billing.constants.js';
 import config from '../../../config/index.js';
 import responses from '../../../lib/helpers/responses.js';
 
@@ -58,7 +58,7 @@ function requireQuota(resource, action) {
         // ── Degraded-mode gate (past_due grace period) ─────────────────────
         const subscription = await SubscriptionRepository.findByOrganization(req.organization._id);
         if (subscription?.status === 'past_due' && subscription.pastDueSince != null) {
-          const gracePeriodMs = 7 * 24 * 60 * 60 * 1000;
+          const gracePeriodMs = getGracePeriodDays() * 24 * 60 * 60 * 1000;
           const elapsed = Date.now() - new Date(subscription.pastDueSince).getTime();
           if (elapsed >= gracePeriodMs) {
             return responses.error(res, 402, 'Payment Required', 'Subscription past due, please update payment')({

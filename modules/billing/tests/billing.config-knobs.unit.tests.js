@@ -117,6 +117,26 @@ describe('billing config knob helpers:', () => {
     expect(constants.getAlertThresholdPercents()).toEqual([80]);
   });
 
+  test('getGracePeriodDays reads from config', () => {
+    mockConfig.billing.gracePeriodDays = 10;
+    expect(constants.getGracePeriodDays()).toBe(10);
+  });
+
+  test('getGracePeriodDays defaults to 7', () => {
+    mockConfig.billing = {};
+    expect(constants.getGracePeriodDays()).toBe(7);
+  });
+
+  test('getDunningThresholdDays reads from config', () => {
+    mockConfig.billing.dunningThresholdDays = 21;
+    expect(constants.getDunningThresholdDays()).toBe(21);
+  });
+
+  test('getDunningThresholdDays defaults to 14', () => {
+    mockConfig.billing = {};
+    expect(constants.getDunningThresholdDays()).toBe(14);
+  });
+
   test('keeps backward-compatible defaults and runBaseUnits alias', async () => {
     mockConfig.billing = {
       plans: ['free'],
@@ -136,5 +156,7 @@ describe('billing config knob helpers:', () => {
     expect(constants.getDollarsToUnitRatio()).toBe(1000);
     expect(constants.getMaxUnitsPerOperation()).toBe(Infinity);
     expect(constants.getDefaultPlanId()).toBe('free');
+    expect(constants.getGracePeriodDays()).toBe(7);
+    expect(constants.getDunningThresholdDays()).toBe(14);
   });
 });

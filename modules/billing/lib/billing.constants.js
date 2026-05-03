@@ -10,6 +10,8 @@ export const DEFAULT_CRON_JITTER_MAX_MS = 60_000;
 export const DEFAULT_PLAN_CHANGE_PRESERVE_USAGE = true;
 export const DEFAULT_ALERT_THRESHOLD_PERCENTS = [80, 100];
 export const DEFAULT_EXTRAS_EXHAUSTED_EVENT = 'billing.extras_debit.exhausted';
+export const DEFAULT_GRACE_PERIOD_DAYS = 7;
+export const DEFAULT_DUNNING_THRESHOLD_DAYS = 14;
 
 /**
  * Floor charge per run. `runBaseUnits` is kept as a backward-compatible alias
@@ -129,3 +131,20 @@ export const getDefaultPlanId = () => {
  */
 export const getExtrasExhaustedEventName = () =>
   config?.billing?.events?.extrasExhausted ?? DEFAULT_EXTRAS_EXHAUSTED_EVENT;
+
+/**
+ * @function getGracePeriodDays
+ * @description Resolve the past_due grace period in days. Align with Stripe Dashboard → Smart retries.
+ * @returns {number} Grace period in days.
+ */
+export const getGracePeriodDays = () =>
+  config?.billing?.gracePeriodDays ?? DEFAULT_GRACE_PERIOD_DAYS;
+
+/**
+ * @function getDunningThresholdDays
+ * @description Resolve the dunning threshold in days after which subscriptions are downgraded to free.
+ *              Align with Stripe Dashboard → Smart retries → Final retry.
+ * @returns {number} Dunning threshold in days.
+ */
+export const getDunningThresholdDays = () =>
+  config?.billing?.dunningThresholdDays ?? DEFAULT_DUNNING_THRESHOLD_DAYS;

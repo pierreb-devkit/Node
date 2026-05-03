@@ -455,7 +455,7 @@ describe('requireQuota middleware:', () => {
       expect(next).toHaveBeenCalled();
     });
 
-    test('should allow through with billingDegraded flag when past_due within 7-day grace period (J+5)', async () => {
+    test('should allow through with billingDegraded flag when past_due within grace period (J+5)', async () => {
       const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
       mockSubscriptionRepository.findByOrganization.mockResolvedValue({
         status: 'past_due',
@@ -470,6 +470,26 @@ describe('requireQuota middleware:', () => {
       expect(next).toHaveBeenCalled();
       expect(res.locals.billingDegraded).toBe(true);
       expect(res.status).not.toHaveBeenCalledWith(402);
+    });
+
+    test('grace period reads from config — custom gracePeriodDays=3 blocks at J+4', async () => {
+      mockConfig.billing.gracePeriodDays = 3;
+      const fourDaysAgo = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000);
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        status: 'past_due',
+        pastDueSince: fourDaysAgo,
+      });
+      mockBillingUsageService.getMeter.mockResolvedValue({ meterUsed: 100, meterQuota: 5000 });
+      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+
+      res.locals = {};
+      await requireQuota('scraps', 'create')(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(402);
+      const payload = res.json.mock.calls[0][0];
+      const errData = JSON.parse(payload.error);
+      expect(errData.type).toBe('PAYMENT_PAST_DUE');
     });
 
     test('should return 402 PAYMENT_PAST_DUE when past_due and grace period elapsed (J+10)', async () => {
