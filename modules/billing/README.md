@@ -118,7 +118,7 @@ Consumers should NOT retry on `applied: true` — the outbox handles eventual co
 | `billing.outbox.retryIntervalSec` | number | 300 | Cron retry interval |
 | `billing.crons.jitterMaxMs` | number | 60000 | Cron startup jitter max |
 | `billing.planChange.preserveUsageDefault` | boolean | true | forceRotateForPlanChange default |
-| `billing.alerts.thresholdPercents` | number[] | [80, 100] | Schema-supported only — see thresholdFields |
+| `billing.alerts.thresholdPercents` | number[] | [80, 100] | Schema-supported only — others warn at boot, alert silently skipped |
 | `billing.events.extrasExhausted` | string | 'billing.extras_debit.exhausted' | Event name for downstream alerting |
 | `billing.defaultPlan` | string | 'free' | Default plan ID for fallback |
 

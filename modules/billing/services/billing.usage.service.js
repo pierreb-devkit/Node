@@ -135,12 +135,14 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
 
   if (effectiveQuota > 0) {
     const pct = (newMeterUsed / effectiveQuota) * 100;
+    // loop runs DESC (e.g. [100, 80] from getAlertThresholdPercents()); alertCrossed retains the last (lowest) marked threshold by design.
     for (const threshold of getAlertThresholdPercents()) {
       const field = thresholdFields[threshold];
       if (!field) {
         console.warn(`[billing.usage] threshold ${threshold}% has no schema field (only 80/100 are supported) — skipping`);
         continue;
       }
+      // updatedDoc is pre-mark snapshot; DB-side dedup enforced by markThreshold conditional update.
       if (pct < threshold || updatedDoc[field]) continue;
 
       let marked = false;
