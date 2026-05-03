@@ -3,12 +3,12 @@
  */
 import config from '../../../config/index.js';
 import BillingPlanService from './billing.plan.service.js';
+import BillingUsageService from './billing.usage.service.js';
+import BillingExtraService from './billing.extra.service.js';
+import BillingMeterOutboxRepository from '../repositories/billing.meter.outbox.repository.js';
+import { getMeterFallbackPlanId, getMeterRunBase, METER_RUN_BASE } from '../lib/billing.constants.js';
 
-/**
- * Floor charge per run — configurable via config.billing.meter.runBaseUnits.
- * Applies only when no cost data is available at all.
- */
-export const METER_RUN_BASE = config?.billing?.meter?.runBaseUnits ?? 1;
+export { METER_RUN_BASE };
 
 /**
  * @function unitsFromCosts
@@ -32,7 +32,7 @@ export const METER_RUN_BASE = config?.billing?.meter?.runBaseUnits ?? 1;
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const unitsFromCosts = async (costs, planId, ratioVersion) => {
   if (costs == null || typeof costs !== 'object') {
-    return { totalUnits: METER_RUN_BASE, breakdown: {} };
+    return { totalUnits: getMeterRunBase(), breakdown: {} };
   }
 
   const dollarsToUnitRatio = config?.billing?.meter?.dollarsToUnitRatio ?? 1000;
@@ -44,19 +44,29 @@ const unitsFromCosts = async (costs, planId, ratioVersion) => {
     return { totalUnits: 0, breakdown: {} };
   }
 
-  // Fetch the frozen plan snapshot for the given version
-  const plan = await BillingPlanService.getPlanByVersion(planId, ratioVersion);
-  if (!plan) {
+  if (!ratioVersion) {
+    const message = '[billing.meter] non-null costs without ratioVersion in meterMode';
     if (config?.billing?.meterMode) {
+      throw new Error(message);
+    }
+    console.warn(message);
+  }
+
+  // Fetch the frozen plan snapshot for the given version
+  const plan = ratioVersion ? await BillingPlanService.getPlanByVersion(planId, ratioVersion) : null;
+  if (!plan) {
+    if (config?.billing?.meterMode && ratioVersion) {
       throw new Error(`[billing.meter] missing plan version snapshot for (${planId}, ${ratioVersion})`);
     }
 
     // WARN: version mismatch likely — costs.config emits a version that has no matching BillingPlan.
-    // Charges will use ratio=1 (flat) for all features. Align meter.ratioVersion + planDefinitions[].version
-    // + downstream cost-config emitted version to resolve. See billing README — Version Namespace Contract.
-    console.warn(
-      `[billing.meter] getPlanByVersion(${planId}, ${ratioVersion}) returned null — ratio=1 fallback applied. Check version namespace alignment.`,
-    );
+    if (ratioVersion) {
+      // Charges will use ratio=1 (flat) for all features. Align meter.ratioVersion + planDefinitions[].version
+      // + downstream cost-config emitted version to resolve. See billing README — Version Namespace Contract.
+      console.warn(
+        `[billing.meter] getPlanByVersion(${planId}, ${ratioVersion}) returned null — ratio=1 fallback applied. Check version namespace alignment.`,
+      );
+    }
   }
   const ratios = (plan && typeof plan.ratios === 'object' && !Array.isArray(plan.ratios)) ? plan.ratios : {};
 
@@ -156,8 +166,8 @@ const capBreakdown = (breakdown, cappedUnits, originalTotal) => {
  * @param {Object|null|undefined} [options.costsOverride=null] - Optional cost map to charge
  *   instead of history.costs. Use for delta charging:
  *   `attribute(history, orgId, { stepKey: 'digest', costsOverride: { digest: 0.5 } })`.
- *   Empty or zero-only overrides return `{ applied: false, reason: 'zero_cost_skipped' }`
- *   before writing the idempotency key.
+ *   Empty or zero-only overrides write the idempotency key with a zero-unit attribution,
+ *   then return `{ applied: false, reason: 'zero_cost_skipped' }`.
  * @param {Object|null|undefined} [options.costs=null] - Alias cost map used when
  *   options.costsOverride is not provided. Prefer costsOverride for new delta-charge callers.
  * @param {string|null|undefined} [options.planId=null] - Optional planId override for paths
@@ -201,18 +211,15 @@ const attribute = async (history, organizationId, options = {}) => {
   }
   const validatedStepKey = stepKey ?? 'initial';
 
-  // Lazy imports to avoid circular deps — these services import billing.meter.service
-  const { default: BillingUsageService } = await import('./billing.usage.service.js');
-  const { default: BillingExtraService } = await import('./billing.extra.service.js');
-
-  const planId = explicitPlanId ?? history.planId ?? config?.billing?.plans?.[0] ?? 'pro';
+  const idempotencyKey = `${history._id?.toString?.() ?? String(history._id)}:${validatedStepKey}`;
+  const planId = explicitPlanId ?? history.planId ?? getMeterFallbackPlanId();
   const ratioVersion = explicitRatioVersion ?? history.planVersion ?? null;
   const costs = costsOverride ?? explicitCosts ?? history.costs;
 
-  let totalUnits = METER_RUN_BASE;
+  let totalUnits = getMeterRunBase();
   let breakdown = {};
 
-  if (costs && ratioVersion) {
+  if (costs != null) {
     ({ totalUnits, breakdown } = await unitsFromCosts(costs, planId, ratioVersion));
   }
 
@@ -227,10 +234,9 @@ const attribute = async (history, organizationId, options = {}) => {
   }
 
   if (cappedUnits === 0) {
+    await BillingUsageService.incrementMeter(organizationId, 0, {}, idempotencyKey);
     return { applied: false, meterUsed: 0, extrasConsumed: 0, reason: 'zero_cost_skipped' };
   }
-
-  const idempotencyKey = `${history._id?.toString?.() ?? String(history._id)}:${validatedStepKey}`;
 
   // incrementMeterWithOutbox atomically creates the outbox row before returning so there
   // is exactly one pending row per (idempotencyKey) when extras overflow. result.outbox is
@@ -255,8 +261,6 @@ const attribute = async (history, organizationId, options = {}) => {
     try {
       const debitResult = await BillingExtraService.debit(organizationId, extrasConsumed, idempotencyKey);
       if (debitResult.applied && outboxDoc) {
-        // Lazy import to avoid pulling in repository at module load time
-        const { default: BillingMeterOutboxRepository } = await import('../repositories/billing.meter.outbox.repository.js');
         await BillingMeterOutboxRepository.markCommitted(outboxDoc._id);
       }
     } catch (err) {

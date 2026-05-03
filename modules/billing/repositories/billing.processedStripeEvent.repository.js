@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import mongoose from 'mongoose';
+import { isDuplicateKeyError } from '../lib/billing.errors.js';
 
 /**
  * Lazily resolves the ProcessedStripeEvent Mongoose model.
@@ -34,7 +35,7 @@ const tryRecord = async (eventId, type) => {
     await ProcessedStripeEvent().create({ eventId, type, processedAt: new Date() });
     return { recorded: true };
   } catch (err) {
-    if (err.code === 11000) {
+    if (isDuplicateKeyError(err)) {
       return { recorded: false };
     }
     throw err;

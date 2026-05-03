@@ -3,6 +3,7 @@
  */
 import config from '../../../config/index.js';
 import BillingPlanRepository from '../repositories/billing.plan.repository.js';
+import { isDuplicateKeyError } from '../lib/billing.errors.js';
 
 /**
  * In-memory cache: planId → { plan, fetchedAt }
@@ -151,8 +152,7 @@ const bumpVersionWithRetry = async (planId, fields, { maxAttempts = 3 } = {}) =>
     try {
       return await bumpVersion(planId, fields);
     } catch (err) {
-      const isE11000 = err.code === 11000 || (err.message && err.message.includes('E11000'));
-      if (!isE11000 || attempt === maxAttempts - 1) throw err;
+      if (!isDuplicateKeyError(err) || attempt === maxAttempts - 1) throw err;
       lastErr = err;
       const delay = backoffMs[attempt] ?? 900;
       await new Promise((resolve) => setTimeout(resolve, delay));
@@ -161,9 +161,6 @@ const bumpVersionWithRetry = async (planId, fields, { maxAttempts = 3 } = {}) =>
 
   throw lastErr;
 };
-
-const isDuplicateKeyError = (err) =>
-  err.code === 11000 || (err.message && err.message.includes('E11000'));
 
 /**
  * @desc Resolve the configured immutable version for a plan definition.

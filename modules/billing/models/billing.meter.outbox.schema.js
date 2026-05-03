@@ -20,6 +20,7 @@ const BillingMeterOutbox = z.object({
   lastError: z.string().nullable().default(null),
   lastAttemptedAt: z.coerce.date().nullable().default(null),
   createdAt: z.coerce.date().optional(),
+  updatedAt: z.coerce.date().optional(),
 });
 
 const BillingMeterOutboxCreate = z.object({

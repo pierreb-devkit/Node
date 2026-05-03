@@ -8,7 +8,7 @@ import mongooseService from '../../../lib/services/mongoose.js';
 import { up as renameConsumedHistoryIds } from '../migrations/20260502100000-rename-consumed-history-ids-to-attribution-keys.js';
 
 /**
- * Integration tests for BillingUsageRepository migration-window replay protection.
+ * Integration tests for BillingUsageRepository migration completion checks.
  */
 describe('BillingUsageRepository integration tests:', () => {
   let BillingUsageRepository;
@@ -35,7 +35,7 @@ describe('BillingUsageRepository integration tests:', () => {
     await mongooseService.disconnect();
   });
 
-  test('incrementMeter rejects legacy initial attribution before and after rename migration', async () => {
+  test('legacy consumedHistoryIds are detected until the rename migration runs', async () => {
     const organizationId = new mongoose.Types.ObjectId();
     const historyId = new mongoose.Types.ObjectId();
     const weekKey = '2099-W01';
@@ -53,16 +53,7 @@ describe('BillingUsageRepository integration tests:', () => {
       consumedAttributionKeys: [],
     });
 
-    const preMigrationReplay = await BillingUsageRepository.incrementMeter(
-      organizationId.toString(),
-      weekKey,
-      25,
-      {},
-      idempotencyKey,
-      { meterQuota: 1000, planVersion: 'v1', resetAt: null, month: '2099-01' },
-    );
-
-    expect(preMigrationReplay).toBeNull();
+    await expect(BillingUsageRepository.countLegacyConsumedHistoryIds()).resolves.toBe(1);
     let doc = await collection.findOne({ organizationId, weekKey });
     expect(doc.meterUsed).toBe(100);
     expect(doc.consumedHistoryIds).toEqual([historyId]);
@@ -73,6 +64,7 @@ describe('BillingUsageRepository integration tests:', () => {
     doc = await collection.findOne({ organizationId, weekKey });
     expect(doc.consumedHistoryIds).toBeUndefined();
     expect(doc.consumedAttributionKeys).toEqual([idempotencyKey]);
+    await expect(BillingUsageRepository.countLegacyConsumedHistoryIds()).resolves.toBe(0);
 
     const postMigrationReplay = await BillingUsageRepository.incrementMeter(
       organizationId.toString(),

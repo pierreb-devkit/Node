@@ -54,8 +54,11 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
         meterMode: true,
         defaultPlan: 'starter',
         meter: {
-          runBaseUnits: 1,
+          runBase: 1,
           dollarsToUnitRatio: 1000,
+        },
+        alerts: {
+          thresholdPercents: [80, 100],
         },
       },
     };
@@ -80,6 +83,7 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
 
     mockMeterOutboxRepository = {
       create: jest.fn(),
+      findByIdempotencyKey: jest.fn(),
     };
 
     jest.unstable_mockModule('../../../config/index.js', () => ({
@@ -266,6 +270,41 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       expect(result.extrasConsumed).toBe(10000);
     });
 
+    test('incrementMeterWithOutbox treats E11000 outbox create as existing row', async () => {
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 500000 }));
+      const updatedDoc = makeUsageDoc({ meterUsed: 510000, meterQuota: 500000 });
+      const existingOutbox = { _id: 'outbox_existing', idempotencyKey: 'hist_overflow:initial' };
+      const e11000 = Object.assign(new Error('E11000 duplicate key'), { code: 11000 });
+      mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
+      mockMeterOutboxRepository.create.mockRejectedValue(e11000);
+      mockMeterOutboxRepository.findByIdempotencyKey.mockResolvedValue(existingOutbox);
+
+      const result = await BillingUsageService.incrementMeterWithOutbox(
+        orgId,
+        50000,
+        {},
+        'hist_overflow:initial',
+      );
+
+      expect(mockMeterOutboxRepository.findByIdempotencyKey).toHaveBeenCalledWith('hist_overflow:initial');
+      expect(result.outbox).toBe(existingOutbox);
+      expect(result.extrasConsumed).toBe(10000);
+    });
+
+    test('incrementMeterWithOutbox throws desync error when E11000 row cannot be fetched', async () => {
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 500000 }));
+      const e11000 = Object.assign(new Error('E11000 duplicate key'), { code: 11000 });
+      mockUsageRepository.incrementMeter.mockResolvedValue(makeUsageDoc({ meterUsed: 510000, meterQuota: 500000 }));
+      mockMeterOutboxRepository.create.mockRejectedValue(e11000);
+      mockMeterOutboxRepository.findByIdempotencyKey.mockResolvedValue(null);
+
+      await expect(
+        BillingUsageService.incrementMeterWithOutbox(orgId, 50000, {}, 'hist_desync:initial'),
+      ).rejects.toThrow('[billing] outbox state desynced');
+    });
+
     test('incrementMeterWithOutbox does not create outbox row for replay', async () => {
       mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 500000 }));
@@ -297,6 +336,19 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       expect(result.alertCrossed).toBe('80');
       // Should mark alertedAt80 atomically via repository
       expect(mockUsageRepository.markThreshold).toHaveBeenCalledWith(updatedDoc._id, 'alertedAt80');
+    });
+
+    test('respects thresholdPercents config override', async () => {
+      mockConfig.billing.alerts.thresholdPercents = [100];
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 500000 }));
+      const updatedDoc = makeUsageDoc({ meterUsed: 400001, meterQuota: 500000, alertedAt80: null, alertedAt100: null });
+      mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
+
+      const result = await BillingUsageService.incrementMeter(orgId, 1, {}, 'hist_threshold_override');
+
+      expect(result.alertCrossed).toBeNull();
+      expect(mockUsageRepository.markThreshold).not.toHaveBeenCalled();
     });
 
     test('should NOT re-emit threshold 80 when already alerted (alertedAt80 set)', async () => {

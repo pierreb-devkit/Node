@@ -19,8 +19,10 @@ describe('Billing meter lifecycle integration tests:', () => {
   let BillingExtraBalance;
   let BillingResetService;
   let BillingWebhookService;
+  let BillingUsageService;
   let BillingMeterService;
   let BillingMeterOutboxService;
+  let BillingMeterOutboxRepository;
   let BillingPlanService;
   let billingEvents;
   let originalMeterMode;
@@ -57,10 +59,14 @@ describe('Billing meter lifecycle integration tests:', () => {
 
     BillingResetService = (await import('../services/billing.reset.service.js')).default;
     BillingWebhookService = (await import('../services/billing.webhook.service.js')).default;
+    BillingUsageService = (await import('../services/billing.usage.service.js')).default;
     BillingMeterService = (await import('../services/billing.meter.service.js')).default;
     BillingMeterOutboxService = (await import('../services/billing.meter.outbox.service.js')).default;
+    BillingMeterOutboxRepository = (await import('../repositories/billing.meter.outbox.repository.js')).default;
     BillingPlanService = (await import('../services/billing.plan.service.js')).default;
     billingEvents = (await import('../lib/events.js')).default;
+
+    await BillingMeterOutbox.collection.createIndex({ idempotencyKey: 1 }, { unique: true });
   });
 
   beforeEach(async () => {
@@ -207,5 +213,73 @@ describe('Billing meter lifecycle integration tests:', () => {
         attempts: 5,
       }),
     ]);
+  });
+
+  test('concurrent failed-attempt accounting emits exactly one exhausted event', async () => {
+    const organizationId = new mongoose.Types.ObjectId();
+    const exhaustedEvents = [];
+    billingEvents.on('billing.extras_debit.exhausted', (payload) => exhaustedEvents.push(payload));
+
+    const row = await BillingMeterOutbox.create({
+      organizationId,
+      idempotencyKey: '507f1f77bcf86cd799439099:initial',
+      extrasUnits: 500,
+      status: 'pending',
+      attempts: 0,
+      lastAttemptedAt: null,
+    });
+
+    const updates = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        BillingMeterOutboxRepository.markFailedAttempt(row._id, 'extras debit not applied')),
+    );
+
+    for (const updated of updates) {
+      if (updated?.status === 'failed' && updated.attempts === 5) {
+        billingEvents.emit('billing.extras_debit.exhausted', {
+          organizationId: organizationId.toString(),
+          idempotencyKey: row.idempotencyKey,
+          extrasUnits: row.extrasUnits,
+          attempts: updated.attempts,
+          lastError: updated.lastError,
+        });
+      }
+    }
+
+    const failed = await BillingMeterOutbox.findById(row._id).lean();
+    expect(failed.status).toBe('failed');
+    expect(failed.attempts).toBe(5);
+    expect(updates.filter((updated) => updated?.status === 'failed' && updated.attempts === 5)).toHaveLength(1);
+    expect(exhaustedEvents).toHaveLength(1);
+  });
+
+  test('outbox E11000 after meter increment returns existing row instead of failing', async () => {
+    const organizationId = new mongoose.Types.ObjectId();
+    const idempotencyKey = '507f1f77bcf86cd799439088:initial';
+    await createActivePlan('pro', 'pro-v1', 5);
+    await Subscription.create({
+      organization: organizationId,
+      plan: 'pro',
+      status: 'active',
+    });
+    const existingOutbox = await BillingMeterOutbox.create({
+      organizationId,
+      idempotencyKey,
+      extrasUnits: 5,
+      status: 'pending',
+    });
+
+    const result = await BillingUsageService.incrementMeterWithOutbox(
+      organizationId.toString(),
+      10,
+      { scrap: 10 },
+      idempotencyKey,
+    );
+
+    const outboxRows = await BillingMeterOutbox.find({ idempotencyKey }).lean();
+    expect(result.applied).toBe(true);
+    expect(result.extrasConsumed).toBe(5);
+    expect(String(result.outbox._id)).toBe(String(existingOutbox._id));
+    expect(outboxRows).toHaveLength(1);
   });
 });

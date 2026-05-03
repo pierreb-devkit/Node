@@ -51,6 +51,9 @@ describe('BillingResetService unit tests:', () => {
       billing: {
         meterMode: true,
         defaultPlan: 'starter',
+        planChange: {
+          preserveUsageDefault: true,
+        },
       },
     };
 
@@ -72,7 +75,6 @@ describe('BillingResetService unit tests:', () => {
     mockSubscriptionRepository = {
       findByOrganization: jest.fn(),
       findPlan: jest.fn(),
-      findAllDueForReset: jest.fn(),
       findAllDueForResetByLastReset: jest.fn(),
       updateLastResetAt: jest.fn(),
     };
@@ -310,6 +312,24 @@ describe('BillingResetService unit tests:', () => {
       );
       expect(result.meterUsed).toBe(0);
       expect(result.meterBreakdown).toEqual({});
+    });
+
+    test('uses billing.planChange.preserveUsageDefault when option is omitted', async () => {
+      mockConfig.billing.planChange.preserveUsageDefault = false;
+      const existingDoc = makeUsageDoc({ meterUsed: 1234, meterBreakdown: { scrap: 1234 } });
+      mockUsageRepository.findByWeek.mockResolvedValue(existingDoc);
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'starter' });
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 100000, version: 'v3' }));
+      mockUsageRepository.rotateWeekSnapshotForPlanChange.mockResolvedValue(makeUsageDoc({ meterUsed: 0 }));
+
+      await BillingResetService.forceRotateForPlanChange(orgId);
+
+      expect(mockUsageRepository.rotateWeekSnapshotForPlanChange).toHaveBeenCalledWith(
+        orgId,
+        '2026-W18',
+        { meterQuota: 100000, planVersion: 'v3', month: '2026-05' },
+        false,
+      );
     });
 
     test('returns null without fetching plan when no current week doc exists', async () => {

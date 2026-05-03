@@ -12,7 +12,6 @@ describe('Billing extras controller unit tests:', () => {
   let mockBillingService;
   let mockBillingExtraService;
   let mockBillingUsageService;
-  let mockBillingExtraBalanceRepository;
   let mockConfig;
   let req;
   let res;
@@ -38,16 +37,13 @@ describe('Billing extras controller unit tests:', () => {
 
     mockBillingExtraService = {
       listLedger: jest.fn(),
+      getOrgBalanceContext: jest.fn(),
     };
 
     mockBillingUsageService = {
       getMeter: jest.fn(),
       get: jest.fn(),
       currentWeekKey: jest.fn().mockReturnValue('2026-W18'),
-    };
-
-    mockBillingExtraBalanceRepository = {
-      getBalance: jest.fn(),
     };
 
     mockConfig = {
@@ -70,10 +66,6 @@ describe('Billing extras controller unit tests:', () => {
 
     jest.unstable_mockModule('../services/billing.usage.service.js', () => ({
       default: mockBillingUsageService,
-    }));
-
-    jest.unstable_mockModule('../repositories/billing.extraBalance.repository.js', () => ({
-      default: mockBillingExtraBalanceRepository,
     }));
 
     jest.unstable_mockModule('../../../config/index.js', () => ({
@@ -151,11 +143,11 @@ describe('Billing extras controller unit tests:', () => {
 
   describe('extrasBalance', () => {
     test('should return 200 with balance and packsAvailable', async () => {
-      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(150000);
+      mockBillingExtraService.getOrgBalanceContext.mockResolvedValue(150000);
 
       await BillingController.extrasBalance(req, res);
 
-      expect(mockBillingExtraBalanceRepository.getBalance).toHaveBeenCalledWith(orgId);
+      expect(mockBillingExtraService.getOrgBalanceContext).toHaveBeenCalledWith(orgId);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
         type: 'success',
@@ -167,7 +159,7 @@ describe('Billing extras controller unit tests:', () => {
     });
 
     test('should return 500 when repository throws', async () => {
-      mockBillingExtraBalanceRepository.getBalance.mockRejectedValue(new Error('DB error'));
+      mockBillingExtraService.getOrgBalanceContext.mockRejectedValue(new Error('DB error'));
 
       await BillingController.extrasBalance(req, res);
 
@@ -234,7 +226,7 @@ describe('Billing extras controller unit tests:', () => {
         meterQuota: 5000,
         meterBreakdown: { scrape: 1000, llm: 200 },
       });
-      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(2500);
+      mockBillingExtraService.getOrgBalanceContext.mockResolvedValue(2500);
 
       await BillingController.getUsage(req, res);
 
@@ -257,7 +249,7 @@ describe('Billing extras controller unit tests:', () => {
       mockConfig.billing.meterMode = true;
       mockBillingService.getSubscription.mockResolvedValue({ plan: 'free', status: 'active' });
       mockBillingUsageService.getMeter.mockResolvedValue(null);
-      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+      mockBillingExtraService.getOrgBalanceContext.mockResolvedValue(0);
 
       await BillingController.getUsage(req, res);
 

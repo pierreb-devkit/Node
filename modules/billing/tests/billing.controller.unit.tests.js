@@ -72,7 +72,11 @@ describe('Billing webhook controller unit tests:', () => {
     await BillingWebhookController.handleWebhook(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Stripe is not configured' });
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'error',
+      message: 'Bad Request',
+      description: 'Stripe is not configured',
+    }));
   });
 
   test('should return 400 when signature verification fails', async () => {
@@ -91,7 +95,11 @@ describe('Billing webhook controller unit tests:', () => {
     await BillingWebhookController.handleWebhook(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Webhook signature verification failed' });
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'error',
+      message: 'Bad Request',
+      description: 'Webhook signature verification failed',
+    }));
   });
 
   test('should handle checkout.session.completed event', async () => {
@@ -206,6 +214,10 @@ describe('Billing webhook controller unit tests:', () => {
 
     expect(loggerMod.default.error).toHaveBeenCalledWith('Stripe webhook handler error:', expect.any(Error));
     expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Webhook handler failed' });
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'error',
+      message: 'Internal Server Error',
+      description: 'Webhook handler failed',
+    }));
   });
 });

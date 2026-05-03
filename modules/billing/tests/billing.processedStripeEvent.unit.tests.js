@@ -1,23 +1,19 @@
 /**
  * Module dependencies.
  */
-import { describe, test, beforeEach, expect } from '@jest/globals';
-import { z } from 'zod';
-
-/**
- * Inline Zod schema for ProcessedStripeEvent validation tests.
- * Mirrors billing.processedStripeEvent.model.mongoose.js field requirements.
- */
-const ProcessedStripeEventSchema = z.object({
-  eventId: z.string().trim().min(1, 'eventId is required'),
-  type: z.string().trim().min(1, 'type is required'),
-  processedAt: z.coerce.date().default(() => new Date()),
-});
+import { describe, test, beforeEach, beforeAll, expect } from '@jest/globals';
 
 /**
  * Unit tests for ProcessedStripeEvent model
  */
 describe('ProcessedStripeEvent unit tests:', () => {
+  let ProcessedStripeEventSchema;
+
+  beforeAll(async () => {
+    const mod = await import('../models/billing.processedStripeEvent.schema.js');
+    ProcessedStripeEventSchema = mod.default.ProcessedStripeEvent;
+  });
+
   describe('Schema validation', () => {
     let event;
 

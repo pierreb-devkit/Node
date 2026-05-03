@@ -33,11 +33,9 @@ export function billingSubjectRegistration({ registerPathSubject }) {
  * @param {Object|null} membership - Optional organization membership
  * @param {Object} builder - CASL AbilityBuilder helpers
  * @param {Function} builder.can - Grant an ability
- * @param {Function} builder.cannot - Deny an ability
  * @returns {void}
  */
-// eslint-disable-next-line no-unused-vars
-export function billingAbilities(user, membership, { can, cannot }) {
+export function billingAbilities(user, membership, { can }) {
   if (Array.isArray(user?.roles) && user.roles.includes('admin')) {
     can('manage', 'all');
     return;

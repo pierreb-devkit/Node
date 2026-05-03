@@ -38,7 +38,6 @@ describe('billing.weeklyReset cron — BillingResetService.resetAllDue:', () => 
     };
 
     mockSubscriptionRepository = {
-      findAllDueForReset: jest.fn(),
       findAllDueForResetByLastReset: jest.fn(),
       findByOrganization: jest.fn().mockResolvedValue({ plan: 'pro' }),
       findPlan: jest.fn().mockResolvedValue({ plan: 'pro' }),

@@ -64,11 +64,14 @@ const config = {
      * Meter unit parameters — downstream projects must override with their
      * actual unit economics before enabling meterMode in production.
      *
-     * runBaseUnits: flat units charged per run (before per-feature ratios).
+     * runBase: flat units charged per run when no cost data is available.
+     * runBaseUnits: deprecated alias kept for downstream backward compatibility.
      * maxUnitsPerOperation: safety cap per single operation run.
      */
     meter: {
+      runBase: 1,
       runBaseUnits: 1,
+      fallbackPlanId: null,
       /**
        * Canonical version string emitted by billing.meter.service attribute() when writing
        * history.planVersion. Downstream projects MUST override this value and keep it
@@ -97,6 +100,22 @@ const config = {
        */
       dollarsToUnitRatio: 1000,
       maxUnitsPerOperation: 10000,
+    },
+    outbox: {
+      maxRetryAttempts: 5,
+      retryIntervalSec: 300,
+    },
+    crons: {
+      jitterMaxMs: 60_000,
+    },
+    planChange: {
+      preserveUsageDefault: true,
+    },
+    alerts: {
+      thresholdPercents: [80, 100],
+    },
+    events: {
+      extrasExhausted: 'billing.extras_debit.exhausted',
     },
     /**
      * Extra meter packs — downstream projects override with actual packs.

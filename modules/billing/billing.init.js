@@ -6,6 +6,7 @@ import config from '../../config/index.js';
 import AnalyticsService from '../../lib/services/analytics.js';
 import billingEvents from './lib/events.js';
 import BillingPlanService from './services/billing.plan.service.js';
+import BillingUsageRepository from './repositories/billing.usage.repository.js';
 
 /**
  * Billing module initialisation.
@@ -29,7 +30,9 @@ export default async (app) => {
   billingEvents.on('plan.changed', ({ organizationId, newPlan }) => {
     try {
       AnalyticsService.groupIdentify('company', String(organizationId), { plan: newPlan });
-    } catch (_) { /* analytics must not break billing flow */ }
+    } catch (err) {
+      console.warn('[billing] analytics groupIdentify failed (non-fatal):', err?.message ?? err);
+    }
   });
 
   try {
@@ -49,6 +52,13 @@ export default async (app) => {
   // Runs after ensureSeeded so the plan catalog is up to date.
   // Never crashes boot — wrapped in try/catch.
   if (config?.billing?.meterMode) {
+    const legacyUsageCount = await BillingUsageRepository.countLegacyConsumedHistoryIds();
+    if (legacyUsageCount > 0) {
+      throw new Error(
+        `[billing] legacy consumedHistoryIds field still present on ${legacyUsageCount} usage document(s); run migration 20260502100000-rename-consumed-history-ids-to-attribution-keys before enabling meterMode`,
+      );
+    }
+
     try {
       const Subscription = mongoose.model('Subscription');
       const knownPlans = new Set(config.billing.plans ?? []);
@@ -58,8 +68,8 @@ export default async (app) => {
           console.warn(`[billing] Subscription.plan value "${plan}" not in planDefinitions — orphaned plan, may resolve quota=0`);
         }
       }
-    } catch (_err) {
-      // Validator failure must NOT crash boot (e.g. model not yet registered at early init)
+    } catch (err) {
+      console.warn('[billing] Subscription.plan boot validator failed (non-fatal):', err?.message ?? err);
     }
   }
 };

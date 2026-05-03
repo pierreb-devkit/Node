@@ -48,6 +48,16 @@ const debit = (orgId, units, refId) =>
   BillingExtraBalanceRepository.debit(orgId, units, refId);
 
 /**
+ * @function getOrgBalanceContext
+ * @description Return the current extra balance for an organization.
+ * @param {string} orgId - The organization ObjectId (string).
+ * @returns {Promise<number>} Current cached extras balance.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const getOrgBalanceContext = (orgId) =>
+  BillingExtraBalanceRepository.getBalance(orgId);
+
+/**
  * @function expireOldEntries
  * @description Sweep expired topup entries for an organization and push
  *              corresponding expiration ledger entries to reduce the balance.
@@ -172,6 +182,7 @@ const listLedger = async (orgId, { page = 1, limit = 20 } = {}) => {
 export default {
   creditPack,
   debit,
+  getOrgBalanceContext,
   expireOldEntries,
   refundPartial,
   listLedger,

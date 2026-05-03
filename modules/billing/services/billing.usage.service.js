@@ -6,24 +6,10 @@ import UsageRepository from '../repositories/billing.usage.repository.js';
 import BillingSubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import BillingMeterOutboxRepository from '../repositories/billing.meter.outbox.repository.js';
 import BillingPlanService from './billing.plan.service.js';
-
-/**
- * @function getBillingEvents
- * @description Lazily import the billing events emitter to avoid circular dependency
- *              at module load time. Returns the emitter instance, or null if the
- *              import fails (e.g. events module not available in test env).
- * @async
- * @returns {Promise<import('node:events').EventEmitter|null>} The billing event emitter, or null.
- */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const getBillingEvents = async () => {
-  try {
-    const { default: billingEvents } = await import('../lib/events.js');
-    return billingEvents;
-  } catch {
-    return null;
-  }
-};
+import billingEvents from '../lib/events.js';
+import { currentWeekKey } from '../lib/billing.isoWeek.js';
+import { getAlertThresholdPercents } from '../lib/billing.constants.js';
+import { isDuplicateKeyError } from '../lib/billing.errors.js';
 
 /**
  * Compute the current month string in YYYY-MM format.
@@ -36,21 +22,9 @@ const currentMonth = () => {
   return `${year}-${month}`;
 };
 
-/**
- * @function currentWeekKey
- * @description Compute the current ISO 8601 week key in YYYY-Www format.
- *              ISO week starts on Monday; week 1 contains the first Thursday.
- * @returns {string} e.g. '2026-W18'
- */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const currentWeekKey = () => {
-  const now = new Date();
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  // Shift to nearest Thursday (ISO anchor)
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const weekNum = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
-  return `${d.getUTCFullYear()}-W${String(weekNum).padStart(2, '0')}`;
+const thresholdFields = {
+  80: 'alertedAt80',
+  100: 'alertedAt100',
 };
 
 /**
@@ -87,7 +61,7 @@ const reset = (organizationId) => UsageRepository.reset(organizationId, currentM
  *              2. Fetches the active plan snapshot (meterQuota + planVersion).
  *              3. Calls repo.incrementMeter atomically with replay protection.
  *              4. If quota is exceeded, overflows into extras balance.
- *              5. Detects 80%/100% threshold crossings (emits meter.threshold_crossed event, once per cycle).
+ *              5. Detects configured threshold crossings (emits meter.threshold_crossed event, once per cycle).
  *
  *              Returns applied=false when the idempotencyKey was already consumed (replay).
  *
@@ -154,54 +128,32 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
     extrasConsumed = newMeterUsed - overflowStart;
   }
 
-  // Threshold detection — emit event at 80% and 100%, deduplicated per cycle
+  // Threshold detection — emit configured thresholds, deduplicated per cycle
   let alertCrossed = null;
-  const billingEvents = await getBillingEvents();
 
   if (effectiveQuota > 0) {
-    const pct = newMeterUsed / effectiveQuota;
+    const pct = (newMeterUsed / effectiveQuota) * 100;
+    for (const threshold of getAlertThresholdPercents()) {
+      const field = thresholdFields[threshold];
+      if (!field || pct < threshold || updatedDoc[field]) continue;
 
-    if (pct >= 1.0 && !updatedDoc.alertedAt100) {
-      // Only emit when we win the dedup race (modifiedCount > 0).
-      // If another pod already set alertedAt100, markThreshold returns modifiedCount=0 — skip emit.
       let marked = false;
       try {
-        const markResult = await UsageRepository.markThreshold(updatedDoc._id, 'alertedAt100');
+        const markResult = await UsageRepository.markThreshold(updatedDoc._id, field);
         marked = markResult?.modifiedCount > 0;
-      } catch {
-        // Best-effort — if mark fails, skip emit to avoid double-fire
+      } catch (err) {
+        console.warn('[billing.usage] threshold mark failed, skipping emit:', err?.message ?? err);
       }
       if (marked) {
-        alertCrossed = '100';
-        if (billingEvents) {
-          billingEvents.emit('meter.threshold_crossed', {
-            organizationId,
-            weekKey,
-            threshold: 100,
-            meterUsed: newMeterUsed,
-            meterQuota: effectiveQuota,
-          });
-        }
-      }
-    } else if (pct >= 0.8 && !updatedDoc.alertedAt80) {
-      let marked = false;
-      try {
-        const markResult = await UsageRepository.markThreshold(updatedDoc._id, 'alertedAt80');
-        marked = markResult?.modifiedCount > 0;
-      } catch {
-        // Best-effort — if mark fails, skip emit to avoid double-fire
-      }
-      if (marked) {
-        alertCrossed = '80';
-        if (billingEvents) {
-          billingEvents.emit('meter.threshold_crossed', {
-            organizationId,
-            weekKey,
-            threshold: 80,
-            meterUsed: newMeterUsed,
-            meterQuota: effectiveQuota,
-          });
-        }
+        alertCrossed = String(threshold);
+        billingEvents.emit('meter.threshold_crossed', {
+          organizationId,
+          weekKey,
+          threshold,
+          meterUsed: newMeterUsed,
+          meterQuota: effectiveQuota,
+        });
+        break;
       }
     }
   }
@@ -234,11 +186,26 @@ const incrementMeterWithOutbox = async (organizationId, units, breakdown, idempo
   const result = await incrementMeter(organizationId, units, breakdown, idempotencyKey);
   if (!result.applied || result.extrasConsumed <= 0) return result;
 
-  const outbox = await BillingMeterOutboxRepository.create({
-    organizationId,
-    idempotencyKey,
-    extrasUnits: result.extrasConsumed,
-  });
+  let outbox;
+  try {
+    outbox = await BillingMeterOutboxRepository.create({
+      organizationId,
+      idempotencyKey,
+      extrasUnits: result.extrasConsumed,
+    });
+  } catch (err) {
+    if (isDuplicateKeyError(err)) {
+      outbox = await BillingMeterOutboxRepository.findByIdempotencyKey(idempotencyKey);
+      if (!outbox) {
+        throw new Error('[billing] outbox state desynced — meter incremented but outbox missing');
+      }
+    } else {
+      console.error('[billing] CRITICAL outbox create failed after meter increment', { idempotencyKey, err });
+      const wrapped = new Error(`[billing] outbox create failed after meter increment: ${err?.message ?? err}`);
+      wrapped.cause = err;
+      throw wrapped;
+    }
+  }
 
   return { ...result, outbox };
 };

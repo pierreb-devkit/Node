@@ -59,19 +59,21 @@ Repeat the manifest for `billing.extrasExpiration.js` and `billing.dunningSweep.
 
 Devkit-shipped crons run on identical UTC schedules across all consumer deployments. To avoid thundering-herd against a shared DB or external API:
 
-### Recommended pattern — startup jitter
+### Built-in startup jitter
 
-These scripts are invoked once per CronJob execution and exit immediately after. Add a random delay at the top of your entrypoint to spread load across deployments:
+`billing.extrasExpiration.js`, `billing.dunningSweep.js`, and `retry-pending-extras-debit.cron.js` call `applyJitter(config.billing.crons.jitterMaxMs ?? 60000)` before doing work. Override the window per project:
 
 ```js
-// Wrap in an async IIFE — cron entrypoints are CommonJS, so top-level await is not available.
-// Jitter is re-randomized on each CronJob invocation — this is intentional for K8s CronJobs.
-// For a stable per-pod offset, derive from process.env.HOSTNAME instead (see note below).
-(async () => {
-  const jitterMs = Math.floor(Math.random() * 60_000); // 0–60s window
-  await new Promise(r => setTimeout(r, jitterMs));
-  await BillingResetService.resetAllDue();
-})();
+export default {
+  billing: {
+    crons: {
+      jitterMaxMs: 30_000,
+    },
+    outbox: {
+      retryIntervalSec: 120,
+    },
+  },
+};
 ```
 
 > **Stable per-pod jitter (optional):** If you want the same pod to always fire at the same offset within the window, derive jitter from the pod hostname instead of `Math.random()`. Use a distinct variable name to avoid shadowing if both snippets appear in the same file:

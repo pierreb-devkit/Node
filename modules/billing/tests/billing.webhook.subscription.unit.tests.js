@@ -387,6 +387,41 @@ describe('Billing webhook subscription unit tests:', () => {
           },
         ),
       ).resolves.not.toThrow();
+      expect(mockResetService.resetWeek).not.toHaveBeenCalled();
+    });
+
+    test('forceRotateForPlanChange throw falls back to resetWeek once when period also changed', async () => {
+      const oldPeriodStart = 1700000000;
+      const newPeriodStart = 1700604800;
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockSubscriptionRepository.update.mockResolvedValue({});
+      mockResetService.forceRotateForPlanChange.mockRejectedValue(new Error('db unavailable'));
+
+      await BillingWebhookService.handleSubscriptionUpdated(
+        {
+          id: 'sub_456',
+          status: 'active',
+          current_period_end: newPeriodStart + 2592000,
+          current_period_start: newPeriodStart,
+          cancel_at_period_end: false,
+          items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
+        },
+        {
+          data: {
+            previous_attributes: {
+              current_period_start: oldPeriodStart,
+              items: {
+                data: [{ price: { metadata: { planId: 'starter' } } }],
+              },
+            },
+          },
+        },
+      );
+
+      expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledTimes(1);
+      expect(mockResetService.resetWeek).toHaveBeenCalledTimes(1);
+      expect(mockResetService.resetWeek).toHaveBeenCalledWith(orgId, new Date(newPeriodStart * 1000));
     });
 
     test('plan change with no newPeriodStart still force rotates', async () => {

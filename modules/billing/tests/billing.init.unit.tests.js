@@ -9,6 +9,7 @@ import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globa
 describe('billing.init unit tests:', () => {
   let billingInit;
   let mockBillingPlanService;
+  let mockBillingUsageRepository;
   let mockConfig;
   let mockDistinct;
   let mockMongoose;
@@ -29,6 +30,10 @@ describe('billing.init unit tests:', () => {
       ensureSeeded: jest.fn().mockResolvedValue({ seeded: 0, skipped: 0 }),
     };
 
+    mockBillingUsageRepository = {
+      countLegacyConsumedHistoryIds: jest.fn().mockResolvedValue(0),
+    };
+
     mockDistinct = jest.fn().mockResolvedValue([]);
     mockMongoose = {
       model: jest.fn().mockReturnValue({ distinct: mockDistinct }),
@@ -40,6 +45,10 @@ describe('billing.init unit tests:', () => {
 
     jest.unstable_mockModule('../services/billing.plan.service.js', () => ({
       default: mockBillingPlanService,
+    }));
+
+    jest.unstable_mockModule('../repositories/billing.usage.repository.js', () => ({
+      default: mockBillingUsageRepository,
     }));
 
     // Stub analytics and events to avoid side effects
@@ -111,6 +120,13 @@ describe('billing.init unit tests:', () => {
     // Known plan 'free' must NOT trigger a warning
     const warnings = warnSpy.mock.calls.map((c) => c[0]);
     expect(warnings.some((w) => w.includes('"free"'))).toBe(false);
+  });
+
+  test('meterMode=true aborts boot when legacy consumedHistoryIds fields remain', async () => {
+    mockConfig.billing.meterMode = true;
+    mockBillingUsageRepository.countLegacyConsumedHistoryIds.mockResolvedValue(2);
+
+    await expect(billingInit(mockApp)).rejects.toThrow('legacy consumedHistoryIds field still present');
   });
 
   test('boot validator failure does not crash boot', async () => {
