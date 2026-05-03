@@ -380,11 +380,10 @@ const handleInvoicePaymentSucceeded = async (invoice) => {
  *         })
  *       Without payment_intent_data.metadata, charge.metadata will be empty and refunds
  *       silently skip. Downstream (trawl_node) is responsible for setting these at session creation.
- *       Calls BillingExtraService.refundPartial which computes refundUnits from
- *       the original topup entry and config.billing.packs.
- *       Uses the latest refund's amount rather than charge.amount_refunded
- *       (cumulative total) to avoid over-debiting on multiple partial refunds.
- *       Skips if metadata is incomplete or the refund amount is zero.
+ *       Calls BillingExtraService.refundPartial for each entry in charge.refunds.data.
+ *       Each refund's rf_ id is used as the idempotency key, making webhook replay safe.
+ *       Individual entries are silently skipped when: metadata is incomplete, refund amount
+ *       is absent/zero, or the refund object has no id.
  * @param {Object} charge - Stripe charge object
  * @returns {Promise<void>}
  */
@@ -400,15 +399,15 @@ const handleChargeRefunded = async (charge) => {
   if (!organizationId || !mongoose.Types.ObjectId.isValid(organizationId)) return;
   if (!stripeSessionId) return;
 
-  // Use the latest refund delta, not the cumulative
-  // charge.amount_refunded — prevents over-debiting when multiple partial refunds occur.
+  // Process every refund in the list — each has a globally-unique rf_ id used as the idempotency
+  // key, so re-processing on webhook replay or redelivery is safe (duplicate calls are no-ops).
   const refunds = Array.isArray(charge.refunds?.data) ? charge.refunds.data : [];
-  const latestRefund = [...refunds].sort((a, b) => (b?.created ?? 0) - (a?.created ?? 0))[0];
-  const thisRefundAmount = latestRefund?.amount;
-  if (!thisRefundAmount || thisRefundAmount <= 0) return;
-
-  // Service layer computes proportional refundUnits from config.billing.packs.
-  await BillingExtraService.refundPartial(organizationId, stripeSessionId, thisRefundAmount, packId);
+  for (const refund of refunds) {
+    const { id: stripeRefundId, amount: refundAmount } = refund ?? {};
+    if (!stripeRefundId || !refundAmount || refundAmount <= 0) continue;
+    // Service layer computes proportional refundUnits from config.billing.packs.
+    await BillingExtraService.refundPartial(organizationId, stripeSessionId, refundAmount, packId, stripeRefundId);
+  }
 };
 
 export default {

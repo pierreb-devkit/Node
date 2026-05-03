@@ -7,7 +7,7 @@ import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.
 import BillingPlanService from '../services/billing.plan.service.js';
 
 import { activeStatuses } from '../lib/constants.js';
-import { getDefaultPlanId } from '../lib/billing.constants.js';
+import { getDefaultPlanId, getGracePeriodDays } from '../lib/billing.constants.js';
 import config from '../../../config/index.js';
 import responses from '../../../lib/helpers/responses.js';
 
@@ -21,10 +21,10 @@ import responses from '../../../lib/helpers/responses.js';
  *   When no quota is configured or limit is Infinity, the request is allowed.
  *
  * - When `config.billing.meterMode === true`: meter quota gate.
- *   First checks for past_due degraded mode:
- *     - past_due + pastDueSince set + within 7-day grace: sets res.locals.billingDegraded = true
+ *   First checks for past_due degraded mode (grace period = config.billing.gracePeriodDays, default 7):
+ *     - past_due + pastDueSince set + within grace period: sets res.locals.billingDegraded = true
  *       and falls through to the meter check (may still block on exhaustion).
- *     - past_due + pastDueSince set + grace elapsed (>=7d): returns 402 PAYMENT_PAST_DUE.
+ *     - past_due + pastDueSince set + grace elapsed: returns 402 PAYMENT_PAST_DUE.
  *   Then computes `(meterQuota - meterUsed) + extrasBalance`. Returns 402 METER_EXHAUSTED when <= 0.
  *
  * Expects `req.organization` to be set by resolveOrganization upstream.
@@ -58,7 +58,7 @@ function requireQuota(resource, action) {
         // ── Degraded-mode gate (past_due grace period) ─────────────────────
         const subscription = await SubscriptionRepository.findByOrganization(req.organization._id);
         if (subscription?.status === 'past_due' && subscription.pastDueSince != null) {
-          const gracePeriodMs = 7 * 24 * 60 * 60 * 1000;
+          const gracePeriodMs = getGracePeriodDays() * 24 * 60 * 60 * 1000;
           const elapsed = Date.now() - new Date(subscription.pastDueSince).getTime();
           if (elapsed >= gracePeriodMs) {
             return responses.error(res, 402, 'Payment Required', 'Subscription past due, please update payment')({

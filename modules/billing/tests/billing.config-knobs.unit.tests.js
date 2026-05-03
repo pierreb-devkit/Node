@@ -117,6 +117,54 @@ describe('billing config knob helpers:', () => {
     expect(constants.getAlertThresholdPercents()).toEqual([80]);
   });
 
+  test('getGracePeriodDays reads from config', () => {
+    mockConfig.billing.gracePeriodDays = 10;
+    expect(constants.getGracePeriodDays()).toBe(10);
+  });
+
+  test('getGracePeriodDays defaults to 7', () => {
+    mockConfig.billing = {};
+    expect(constants.getGracePeriodDays()).toBe(7);
+  });
+
+  test('getGracePeriodDays falls back to 7 on invalid config (0, negative, NaN, string)', () => {
+    mockConfig.billing.gracePeriodDays = 0;
+    expect(constants.getGracePeriodDays()).toBe(7);
+    mockConfig.billing.gracePeriodDays = -3;
+    expect(constants.getGracePeriodDays()).toBe(7);
+    mockConfig.billing.gracePeriodDays = 'not-a-number';
+    expect(constants.getGracePeriodDays()).toBe(7);
+  });
+
+  test('getGracePeriodDays coerces numeric string env override', () => {
+    mockConfig.billing.gracePeriodDays = '5';
+    expect(constants.getGracePeriodDays()).toBe(5);
+  });
+
+  test('getDunningThresholdDays reads from config', () => {
+    mockConfig.billing.dunningThresholdDays = 21;
+    expect(constants.getDunningThresholdDays()).toBe(21);
+  });
+
+  test('getDunningThresholdDays defaults to 14', () => {
+    mockConfig.billing = {};
+    expect(constants.getDunningThresholdDays()).toBe(14);
+  });
+
+  test('getDunningThresholdDays falls back to 14 on invalid config (0, negative, NaN, string)', () => {
+    mockConfig.billing.dunningThresholdDays = 0;
+    expect(constants.getDunningThresholdDays()).toBe(14);
+    mockConfig.billing.dunningThresholdDays = -7;
+    expect(constants.getDunningThresholdDays()).toBe(14);
+    mockConfig.billing.dunningThresholdDays = 'bad';
+    expect(constants.getDunningThresholdDays()).toBe(14);
+  });
+
+  test('getDunningThresholdDays coerces numeric string env override', () => {
+    mockConfig.billing.dunningThresholdDays = '21';
+    expect(constants.getDunningThresholdDays()).toBe(21);
+  });
+
   test('keeps backward-compatible defaults and runBaseUnits alias', async () => {
     mockConfig.billing = {
       plans: ['free'],
@@ -136,5 +184,7 @@ describe('billing config knob helpers:', () => {
     expect(constants.getDollarsToUnitRatio()).toBe(1000);
     expect(constants.getMaxUnitsPerOperation()).toBe(Infinity);
     expect(constants.getDefaultPlanId()).toBe('free');
+    expect(constants.getGracePeriodDays()).toBe(7);
+    expect(constants.getDunningThresholdDays()).toBe(14);
   });
 });
