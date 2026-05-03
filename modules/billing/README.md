@@ -125,7 +125,7 @@ billing: {
     preserveUsageDefault: true,
   },
   alerts: {
-    thresholdPercents: [80, 100],
+    thresholdPercents: [80, 100],  // only 80 and 100 are supported schema fields; other values warn and are skipped
   },
   events: {
     extrasExhausted: 'billing.extras_debit.exhausted',
@@ -155,7 +155,7 @@ export default {
       preserveUsageDefault: false,
     },
     alerts: {
-      thresholdPercents: [90, 100],
+      thresholdPercents: [80, 100],
     },
     events: {
       extrasExhausted: 'billing.extras_debit.exhausted',
