@@ -5,10 +5,12 @@ import { jest, describe, beforeEach, afterEach, test, expect } from '@jest/globa
 
 /**
  * Integration tests for billing admin endpoints.
+ * Tests the /api/admin/billing/refund endpoint with the inline refund logic
+ * (billing.refund.service.js was dropped in PR2; Stripe is called directly).
  */
 describe('Billing admin integration tests:', () => {
   let billingAdminRoutes;
-  let mockBillingRefundService;
+  let mockStripeInstance;
 
   /**
    * Create a lightweight route registry compatible with app.route().
@@ -73,13 +75,15 @@ describe('Billing admin integration tests:', () => {
   const buildRoutes = async () => {
     jest.resetModules();
 
-    mockBillingRefundService = {
-      refundCharge: jest.fn().mockResolvedValue({
-        id: 're_test_123',
-        charge: 'ch_test_123',
-        amount: 2500,
-        status: 'succeeded',
-      }),
+    mockStripeInstance = {
+      refunds: {
+        create: jest.fn().mockResolvedValue({
+          id: 're_test_123',
+          charge: 'ch_test_123',
+          amount: 2500,
+          status: 'succeeded',
+        }),
+      },
     };
 
     jest.unstable_mockModule('../../../config/index.js', () => ({
@@ -88,10 +92,17 @@ describe('Billing admin integration tests:', () => {
           plans: ['free', 'starter', 'pro'],
           statuses: ['active', 'canceled'],
         },
+        stripe: {
+          secretKey: 'sk_test_fake',
+        },
         validation: {
           supportedMethods: ['post', 'put', 'patch'],
         },
       },
+    }));
+
+    jest.unstable_mockModule('stripe', () => ({
+      default: jest.fn(() => mockStripeInstance),
     }));
 
     jest.unstable_mockModule('passport', () => ({
@@ -136,8 +147,13 @@ describe('Billing admin integration tests:', () => {
       },
     }));
 
-    jest.unstable_mockModule('../services/billing.refund.service.js', () => ({
-      default: mockBillingRefundService,
+    jest.unstable_mockModule('../../../lib/helpers/responses.js', () => ({
+      default: {
+        // eslint-disable-next-line no-unused-vars
+        success: jest.fn((res, msg) => (data) => res.status(200).json({ type: 'success', data })),
+        // eslint-disable-next-line no-unused-vars
+        error: jest.fn((res, status, title, desc) => (err) => res.status(status).json({ type: 'error' })),
+      },
     }));
 
     billingAdminRoutes = (await import('../routes/billing.admin.routes.js')).default;
@@ -186,8 +202,31 @@ describe('Billing admin integration tests:', () => {
       res,
     );
 
-    expect(mockBillingRefundService.refundCharge).toHaveBeenCalledWith('ch_test_123', 2500, { reason: 'duplicate' });
+    expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
+      { charge: 'ch_test_123', reason: 'duplicate', amount: 2500 },
+      { idempotencyKey: expect.stringMatching(/^refund_ch_test_123_2500_[0-9a-f-]{36}$/) },
+    );
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  test('two calls same charge same amount produce two separate idempotency keys', async () => {
+    const routes = await buildRoutes();
+    const refundRoute = routes.get('/api/admin/billing/refund');
+
+    const makeRes = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() });
+    const body = { chargeId: 'ch_test_dup', amountCents: 1000, reason: 'duplicate' };
+
+    await runHandlers([...refundRoute.all, ...refundRoute.post], { method: 'POST', headers: { 'x-role': 'admin' }, body }, makeRes());
+    await runHandlers([...refundRoute.all, ...refundRoute.post], { method: 'POST', headers: { 'x-role': 'admin' }, body }, makeRes());
+
+    const calls = mockStripeInstance.refunds.create.mock.calls;
+    expect(calls).toHaveLength(2);
+    const key1 = calls[0][1].idempotencyKey;
+    const key2 = calls[1][1].idempotencyKey;
+    expect(key1).toMatch(/^refund_ch_test_dup_1000_[0-9a-f-]{36}$/);
+    expect(key2).toMatch(/^refund_ch_test_dup_1000_[0-9a-f-]{36}$/);
+    // Keys are distinct — each call gets its own idempotency window
+    expect(key1).not.toBe(key2);
   });
 
   test('invalid body returns 422 from schema validation', async () => {
@@ -238,11 +277,14 @@ describe('Billing admin integration tests:', () => {
       res,
     );
 
-    expect(mockBillingRefundService.refundCharge).toHaveBeenCalledWith('ch_test_123', undefined, { reason: 'requested_by_customer' });
+    expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
+      { charge: 'ch_test_123', reason: 'requested_by_customer' },
+      { idempotencyKey: expect.stringMatching(/^refund_ch_test_123_full_[0-9a-f-]{36}$/) },
+    );
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
-  test('refund service upstream error returns 502', async () => {
+  test('Stripe upstream error returns 502', async () => {
     const routes = await buildRoutes();
     const refundRoute = routes.get('/api/admin/billing/refund');
     const res = {
@@ -250,7 +292,7 @@ describe('Billing admin integration tests:', () => {
       json: jest.fn().mockReturnThis(),
     };
 
-    mockBillingRefundService.refundCharge.mockRejectedValueOnce(new Error('upstream error'));
+    mockStripeInstance.refunds.create.mockRejectedValueOnce(new Error('upstream error'));
 
     await runHandlers(
       [...refundRoute.all, ...refundRoute.post],
@@ -261,7 +303,7 @@ describe('Billing admin integration tests:', () => {
     expect(res.status).toHaveBeenCalledWith(502);
   });
 
-  test('refund service invalid argument error returns 422', async () => {
+  test('Stripe invalid argument error returns 422', async () => {
     const routes = await buildRoutes();
     const refundRoute = routes.get('/api/admin/billing/refund');
     const res = {
@@ -269,7 +311,7 @@ describe('Billing admin integration tests:', () => {
       json: jest.fn().mockReturnThis(),
     };
 
-    mockBillingRefundService.refundCharge.mockRejectedValueOnce(new Error('invalid argument: amountCents must be > 0'));
+    mockStripeInstance.refunds.create.mockRejectedValueOnce(new Error('invalid argument: amountCents must be > 0'));
 
     await runHandlers(
       [...refundRoute.all, ...refundRoute.post],

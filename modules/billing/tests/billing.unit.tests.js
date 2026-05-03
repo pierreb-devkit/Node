@@ -38,13 +38,10 @@ describe('Billing unit tests:', () => {
     test('should be valid with all optional fields', (done) => {
       subscription.stripeCustomerId = 'cus_123';
       subscription.stripeSubscriptionId = 'sub_456';
-      subscription.currentPeriodEnd = '2026-12-31T00:00:00.000Z';
-      subscription.cancelAtPeriodEnd = true;
 
       const result = schema.Subscription.safeParse(subscription);
       expect(typeof result).toBe('object');
       expect(result.error).toBeFalsy();
-      expect(result.data.cancelAtPeriodEnd).toBe(true);
       done();
     });
 
@@ -100,10 +97,10 @@ describe('Billing unit tests:', () => {
       done();
     });
 
-    test('should default cancelAtPeriodEnd to false', (done) => {
+    test('should not expose cancelAtPeriodEnd (delegated to Stripe API)', (done) => {
       const result = schema.Subscription.safeParse(subscription);
       expect(result.error).toBeFalsy();
-      expect(result.data.cancelAtPeriodEnd).toBe(false);
+      expect(result.data.cancelAtPeriodEnd).toBeUndefined();
       done();
     });
 
@@ -181,7 +178,6 @@ describe('Billing unit tests:', () => {
       expect(result.error).toBeFalsy();
       expect(result.data.plan).toBe('pro');
       expect(result.data.status).toBeUndefined();
-      expect(result.data.cancelAtPeriodEnd).toBeUndefined();
       done();
     });
   });
@@ -242,6 +238,20 @@ describe('Billing unit tests:', () => {
       const result = schema.SubscriptionUpdate.safeParse(update);
       expect(result.error).toBeFalsy();
       expect(result.data.planVersion).toBe('v3');
+    });
+
+    test('should accept stripeEventId as optional string', () => {
+      subscription.stripeEventId = 'evt_1AbCdEf';
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+      expect(result.data.stripeEventId).toBe('evt_1AbCdEf');
+    });
+
+    test('should accept stripeEventId as null', () => {
+      subscription.stripeEventId = null;
+      const result = schema.Subscription.safeParse(subscription);
+      expect(result.error).toBeFalsy();
+      expect(result.data.stripeEventId).toBeNull();
     });
   });
 

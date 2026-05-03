@@ -157,15 +157,30 @@ describe('BillingSubscriptionRepository unit tests:', () => {
 
   describe('updateIfEventNewer', () => {
     test('updates when stripeEventCreatedAt is null (first event)', async () => {
-      const updated = { _id: subId, status: 'canceled', stripeEventCreatedAt: 1000 };
+      const updated = { _id: subId, status: 'canceled', stripeEventCreatedAt: 1000, stripeEventId: 'evt_abc' };
       const populateMock = jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(updated) });
       mockModel.findOneAndUpdate.mockReturnValue({ populate: populateMock });
 
-      const result = await BillingSubscriptionRepository.updateIfEventNewer(subId, 1000, { status: 'canceled' });
+      const result = await BillingSubscriptionRepository.updateIfEventNewer(subId, 1000, 'evt_abc', { status: 'canceled' });
 
       expect(mockModel.findOneAndUpdate).toHaveBeenCalledWith(
-        { _id: subId, $or: [{ stripeEventCreatedAt: null }, { stripeEventCreatedAt: { $lt: 1000 } }] },
-        { $set: { status: 'canceled', stripeEventCreatedAt: 1000 } },
+        {
+          _id: subId,
+          $or: [
+            { stripeEventCreatedAt: { $exists: false } },
+            { stripeEventCreatedAt: null },
+            { stripeEventCreatedAt: { $lt: 1000 } },
+            {
+              stripeEventCreatedAt: 1000,
+              $or: [
+                { stripeEventId: { $exists: false } },
+                { stripeEventId: null },
+                { stripeEventId: { $lt: 'evt_abc' } },
+              ],
+            },
+          ],
+        },
+        { $set: { status: 'canceled', stripeEventCreatedAt: 1000, stripeEventId: 'evt_abc' } },
         { returnDocument: 'after', runValidators: true },
       );
       expect(result).toEqual(updated);
@@ -175,15 +190,28 @@ describe('BillingSubscriptionRepository unit tests:', () => {
       const populateMock = jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(null) });
       mockModel.findOneAndUpdate.mockReturnValue({ populate: populateMock });
 
-      const result = await BillingSubscriptionRepository.updateIfEventNewer(subId, 500, { status: 'canceled' });
+      const result = await BillingSubscriptionRepository.updateIfEventNewer(subId, 500, 'evt_old', { status: 'canceled' });
 
       expect(result).toBeNull();
     });
 
     test('returns null for invalid id', async () => {
-      const result = await BillingSubscriptionRepository.updateIfEventNewer('not-valid', 1000, {});
+      const result = await BillingSubscriptionRepository.updateIfEventNewer('not-valid', 1000, 'evt_abc', {});
       expect(result).toBeNull();
       expect(mockModel.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    test('same-second events: lex-earlier eventId is rejected (tiebreaker guard)', async () => {
+      const populateMock = jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(null) });
+      mockModel.findOneAndUpdate.mockReturnValue({ populate: populateMock });
+
+      const result = await BillingSubscriptionRepository.updateIfEventNewer(subId, 1000, 'evt_aaaa', { status: 'active' });
+
+      expect(result).toBeNull();
+      const filter = mockModel.findOneAndUpdate.mock.calls[0][0];
+      const sameSecondBranch = filter.$or[3];
+      expect(sameSecondBranch.stripeEventCreatedAt).toBe(1000);
+      expect(sameSecondBranch.$or[2].stripeEventId.$lt).toBe('evt_aaaa');
     });
   });
 

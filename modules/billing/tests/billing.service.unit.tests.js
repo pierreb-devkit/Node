@@ -50,7 +50,7 @@ describe('Billing webhook service unit tests:', () => {
     }));
 
     jest.unstable_mockModule('../services/billing.reset.service.js', () => ({
-      default: { resetWeek: jest.fn(), resetAllDue: jest.fn() },
+      default: { resetWeek: jest.fn(), resetAllDue: jest.fn(), forceRotateForPlanChange: jest.fn().mockResolvedValue({}) },
     }));
 
     jest.unstable_mockModule('../lib/events.js', () => ({
@@ -202,7 +202,8 @@ describe('Billing webhook service unit tests:', () => {
       expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
         subId,
         1700000100,
-        expect.objectContaining({ plan: 'pro', status: 'active', cancelAtPeriodEnd: false }),
+        'evt_1',
+        expect.objectContaining({ plan: 'pro', status: 'active' }),
       );
       expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
     });
@@ -239,6 +240,7 @@ describe('Billing webhook service unit tests:', () => {
       expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
         subId,
         1700000100,
+        'evt_1',
         expect.objectContaining({ plan: 'starter' }),
       );
     });
@@ -264,6 +266,7 @@ describe('Billing webhook service unit tests:', () => {
       expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
         subId,
         1700000100,
+        'evt_1',
         expect.objectContaining({ plan: 'free' }),
       );
     });
@@ -272,21 +275,25 @@ describe('Billing webhook service unit tests:', () => {
   describe('handleSubscriptionDeleted', () => {
     const makeEvent = (overrides = {}) => ({ id: 'evt_del', created: 1700000200, ...overrides });
 
-    test('should cancel subscription and reset to free', async () => {
+    test('should cancel subscription, reset to free, and rotate meter', async () => {
       const existing = { _id: subId, organization: { _id: orgId } };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
 
       const mod = await import('../services/billing.webhook.service.js');
       BillingWebhookService = mod.default;
 
+      const resetService = (await import('../services/billing.reset.service.js')).default;
+
       await BillingWebhookService.handleSubscriptionDeleted({ id: 'sub_456' }, makeEvent());
 
       expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
         subId,
         1700000200,
+        'evt_del',
         { plan: 'free', status: 'canceled' },
       );
       expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'free');
+      expect(resetService.forceRotateForPlanChange).toHaveBeenCalledWith(orgId, { preserveUsage: false });
     });
 
     test('should return early when subscription not found', async () => {
@@ -316,6 +323,7 @@ describe('Billing webhook service unit tests:', () => {
       expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
         subId,
         1700000300,
+        'evt_fail',
         expect.objectContaining({ status: 'past_due', pastDueSince: expect.any(Date) }),
       );
     });

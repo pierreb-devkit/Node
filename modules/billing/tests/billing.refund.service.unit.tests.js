@@ -4,12 +4,22 @@
 import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globals';
 
 /**
- * Unit tests for billing.refund.service.js
+ * Unit tests for admin refund logic (inlined in billing.admin.controller.js after
+ * billing.refund.service.js was dropped in PR2 simplification).
+ * Validates that the controller correctly calls stripe.refunds.create with the
+ * right params and idempotency key, and handles error cases properly.
  */
-describe('BillingRefundService unit tests:', () => {
-  let BillingRefundService;
+describe('Admin refund controller unit tests:', () => {
+  let adminRefundCharge;
   let mockStripeInstance;
   let mockGetStripe;
+  let mockResponses;
+
+  const makeRes = () => {
+    const res = { status: jest.fn(), json: jest.fn() };
+    res.status.mockReturnValue(res);
+    return res;
+  };
 
   beforeEach(async () => {
     jest.resetModules();
@@ -26,108 +36,149 @@ describe('BillingRefundService unit tests:', () => {
 
     mockGetStripe = jest.fn(() => mockStripeInstance);
 
+    mockResponses = {
+      success: jest.fn(() => jest.fn()),
+      error: jest.fn(() => jest.fn()),
+    };
+
     jest.unstable_mockModule('../lib/stripe.js', () => ({
       default: mockGetStripe,
     }));
 
-    const mod = await import('../services/billing.refund.service.js');
-    BillingRefundService = mod.default;
+    jest.unstable_mockModule('../../../lib/helpers/responses.js', () => ({
+      default: mockResponses,
+    }));
+
+    const mod = await import('../controllers/billing.admin.controller.js');
+    adminRefundCharge = mod.default.adminRefundCharge;
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
-  describe('refundCharge', () => {
-    test('should call stripe.refunds.create with charge and reason', async () => {
-      const result = await BillingRefundService.refundCharge('ch_test_xyz');
+  test('should call stripe.refunds.create with charge and default reason', async () => {
+    const req = { body: { chargeId: 'ch_test_xyz' } };
+    const res = makeRes();
 
-      expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
-        { charge: 'ch_test_xyz', reason: 'requested_by_customer' },
-        { idempotencyKey: 'refund_ch_test_xyz_full' },
-      );
-      expect(result.id).toBe('re_test_abc');
-    });
+    await adminRefundCharge(req, res);
 
-    test('should include amount when amountCents is provided', async () => {
-      await BillingRefundService.refundCharge('ch_test_xyz', 2000);
+    expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
+      { charge: 'ch_test_xyz', reason: 'requested_by_customer' },
+      { idempotencyKey: expect.stringMatching(/^refund_ch_test_xyz_full_[0-9a-f-]{36}$/) },
+    );
+    expect(mockResponses.success).toHaveBeenCalledWith(res, 'billing refund created');
+  });
 
-      expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
-        { charge: 'ch_test_xyz', reason: 'requested_by_customer', amount: 2000 },
-        { idempotencyKey: 'refund_ch_test_xyz_2000' },
-      );
-    });
+  test('should include amount when amountCents is provided', async () => {
+    const req = { body: { chargeId: 'ch_test_xyz', amountCents: 2000 } };
+    const res = makeRes();
 
-    test('should forward an explicit reason when provided', async () => {
-      await BillingRefundService.refundCharge('ch_test_xyz', 2000, { reason: 'duplicate' });
+    await adminRefundCharge(req, res);
 
-      expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
-        { charge: 'ch_test_xyz', reason: 'duplicate', amount: 2000 },
-        { idempotencyKey: 'refund_ch_test_xyz_2000' },
-      );
-    });
+    expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
+      { charge: 'ch_test_xyz', reason: 'requested_by_customer', amount: 2000 },
+      { idempotencyKey: expect.stringMatching(/^refund_ch_test_xyz_2000_[0-9a-f-]{36}$/) },
+    );
+  });
 
-    test('idempotency key is "refund_{chargeId}_full" for full refund', async () => {
-      await BillingRefundService.refundCharge('ch_abc');
+  test('should forward an explicit reason when provided', async () => {
+    const req = { body: { chargeId: 'ch_test_xyz', amountCents: 2000, reason: 'duplicate' } };
+    const res = makeRes();
 
-      const call = mockStripeInstance.refunds.create.mock.calls[0];
-      expect(call[1].idempotencyKey).toBe('refund_ch_abc_full');
-    });
+    await adminRefundCharge(req, res);
 
-    test('idempotency key is "refund_{chargeId}_{amountCents}" for partial refund', async () => {
-      await BillingRefundService.refundCharge('ch_abc', 500);
+    expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
+      { charge: 'ch_test_xyz', reason: 'duplicate', amount: 2000 },
+      { idempotencyKey: expect.stringMatching(/^refund_ch_test_xyz_2000_[0-9a-f-]{36}$/) },
+    );
+  });
 
-      const call = mockStripeInstance.refunds.create.mock.calls[0];
-      expect(call[1].idempotencyKey).toBe('refund_ch_abc_500');
-    });
+  test('idempotency key is "refund_{chargeId}_full" for full refund', async () => {
+    const req = { body: { chargeId: 'ch_abc' } };
+    const res = makeRes();
 
-    test('different amountCents produces different idempotency keys', async () => {
-      await BillingRefundService.refundCharge('ch_same', 1000);
-      await BillingRefundService.refundCharge('ch_same', 2000);
+    await adminRefundCharge(req, res);
 
-      const keys = mockStripeInstance.refunds.create.mock.calls.map((c) => c[1].idempotencyKey);
-      expect(keys[0]).toBe('refund_ch_same_1000');
-      expect(keys[1]).toBe('refund_ch_same_2000');
-    });
+    const call = mockStripeInstance.refunds.create.mock.calls[0];
+    expect(call[1].idempotencyKey).toMatch(/^refund_ch_abc_full_[0-9a-f-]{36}$/);
+  });
 
-    test('should throw when Stripe is not configured', async () => {
-      mockGetStripe.mockReturnValue(null);
+  test('idempotency key is "refund_{chargeId}_{amountCents}_{uuid}" for partial refund', async () => {
+    const req = { body: { chargeId: 'ch_abc', amountCents: 500 } };
+    const res = makeRes();
 
-      await expect(BillingRefundService.refundCharge('ch_test')).rejects.toThrow('Stripe is not configured');
-    });
+    await adminRefundCharge(req, res);
 
-    test('should throw for empty stripeChargeId', async () => {
-      await expect(BillingRefundService.refundCharge('')).rejects.toThrow(
-        'invalid argument: stripeChargeId must be a non-empty string',
-      );
-    });
+    const call = mockStripeInstance.refunds.create.mock.calls[0];
+    expect(call[1].idempotencyKey).toMatch(/^refund_ch_abc_500_[0-9a-f-]{36}$/);
+  });
 
-    test('should throw for non-string stripeChargeId', async () => {
-      await expect(BillingRefundService.refundCharge(null)).rejects.toThrow(
-        'invalid argument: stripeChargeId must be a non-empty string',
-      );
-    });
+  test('should return 502 when Stripe is not configured', async () => {
+    mockGetStripe.mockReturnValue(null);
+    const req = { body: { chargeId: 'ch_test' } };
+    const res = makeRes();
 
-    test('should throw for zero amountCents', async () => {
-      await expect(BillingRefundService.refundCharge('ch_test', 0)).rejects.toThrow(
-        'invalid argument: amountCents must be a positive integer',
-      );
-    });
+    await adminRefundCharge(req, res);
 
-    test('should throw for negative amountCents', async () => {
-      await expect(BillingRefundService.refundCharge('ch_test', -100)).rejects.toThrow(
-        'invalid argument: amountCents must be a positive integer',
-      );
-    });
+    expect(mockResponses.error).toHaveBeenCalledWith(res, 502, 'Bad Gateway', 'Failed to refund charge');
+  });
 
-    test('should throw for non-integer amountCents', async () => {
-      await expect(BillingRefundService.refundCharge('ch_test', 9.99)).rejects.toThrow(
-        'invalid argument: amountCents must be a positive integer',
-      );
-    });
+  test('should return 422 for empty chargeId', async () => {
+    const req = { body: { chargeId: '' } };
+    const res = makeRes();
 
-    test('should accept undefined amountCents (full refund)', async () => {
-      await expect(BillingRefundService.refundCharge('ch_test', undefined)).resolves.toBeDefined();
-    });
+    await adminRefundCharge(req, res);
+
+    expect(mockResponses.error).toHaveBeenCalledWith(res, 422, 'Unprocessable Entity', 'Failed to refund charge');
+    expect(mockStripeInstance.refunds.create).not.toHaveBeenCalled();
+  });
+
+  test('should return 422 for non-string chargeId', async () => {
+    const req = { body: { chargeId: null } };
+    const res = makeRes();
+
+    await adminRefundCharge(req, res);
+
+    expect(mockResponses.error).toHaveBeenCalledWith(res, 422, 'Unprocessable Entity', 'Failed to refund charge');
+    expect(mockStripeInstance.refunds.create).not.toHaveBeenCalled();
+  });
+
+  test('should return 422 for zero amountCents', async () => {
+    const req = { body: { chargeId: 'ch_test', amountCents: 0 } };
+    const res = makeRes();
+
+    await adminRefundCharge(req, res);
+
+    expect(mockResponses.error).toHaveBeenCalledWith(res, 422, 'Unprocessable Entity', 'Failed to refund charge');
+    expect(mockStripeInstance.refunds.create).not.toHaveBeenCalled();
+  });
+
+  test('should return 422 for negative amountCents', async () => {
+    const req = { body: { chargeId: 'ch_test', amountCents: -100 } };
+    const res = makeRes();
+
+    await adminRefundCharge(req, res);
+
+    expect(mockResponses.error).toHaveBeenCalledWith(res, 422, 'Unprocessable Entity', 'Failed to refund charge');
+  });
+
+  test('should return 422 for non-integer amountCents', async () => {
+    const req = { body: { chargeId: 'ch_test', amountCents: 9.99 } };
+    const res = makeRes();
+
+    await adminRefundCharge(req, res);
+
+    expect(mockResponses.error).toHaveBeenCalledWith(res, 422, 'Unprocessable Entity', 'Failed to refund charge');
+  });
+
+  test('should succeed with undefined amountCents (full refund)', async () => {
+    const req = { body: { chargeId: 'ch_test', amountCents: undefined } };
+    const res = makeRes();
+
+    await adminRefundCharge(req, res);
+
+    expect(mockStripeInstance.refunds.create).toHaveBeenCalled();
+    expect(mockResponses.success).toHaveBeenCalled();
   });
 });

@@ -54,7 +54,7 @@ const handleWebhook = async (req, res) => {
         break;
       case 'invoice.payment_succeeded':
         await BillingWebhookService.withIdempotency(event, (e) =>
-          BillingWebhookService.handleInvoicePaymentSucceeded(e.data.object),
+          BillingWebhookService.handleInvoicePaymentSucceeded(e.data.object, e),
         );
         break;
       case 'charge.refunded':
