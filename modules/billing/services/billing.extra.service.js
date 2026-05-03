@@ -82,12 +82,13 @@ const expireOldEntries = (orgId) =>
  * @param {string} stripeSessionId - Stripe session ID of the original purchase (to find the pack).
  * @param {number} amountRefundedCents - Amount refunded in cents (integer).
  * @param {string|undefined} [packId] - Optional pack identifier from Stripe metadata for exact correlation.
+ * @param {string} stripeRefundId - Stripe refund object ID (e.g. rf_xxx) — used as primary idempotency key.
  * @returns {Promise<{doc: Object|null, applied: boolean, refundUnits: number, reason?: string}>}
  *          `reason` is present only when `applied === false`: 'meter_mode_disabled' | 'invalid_org' |
  *          'pack_not_found' | 'ambiguous_pack_match'.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const refundPartial = async (orgId, stripeSessionId, amountRefundedCents, packId) => {
+const refundPartial = async (orgId, stripeSessionId, amountRefundedCents, packId, stripeRefundId) => {
   if (!config?.billing?.meterMode) {
     return { doc: null, applied: false, reason: 'meter_mode_disabled', refundUnits: 0 };
   }
@@ -136,10 +137,11 @@ const refundPartial = async (orgId, stripeSessionId, amountRefundedCents, packId
 
   if (refundUnits <= 0) return { doc, applied: false, refundUnits: 0 };
 
-  // Include topup entry _id to make the key unique across distinct partial refunds
-  // for the same session+amount. Two partial refunds of identical cents on different
-  // topup entries (or a retry after a failed refund) will produce different keys.
-  const refundRefId = `refund-${stripeSessionId}-${amountRefundedCents}-${topupEntry._id ?? Date.now()}`;
+  // Use Stripe refund ID (globally unique per refund object) as the primary idempotency component.
+  // Fallback to session+amount+topup when stripeRefundId is absent (legacy callers / tests).
+  const refundRefId = stripeRefundId
+    ? `refund-${stripeRefundId}-${topupEntry._id}`
+    : `refund-${stripeSessionId}-${amountRefundedCents}-${topupEntry._id ?? Date.now()}`;
 
   // Delegate atomic write to repository — no mongoose import in service layer.
   const { doc: updatedDoc, applied } = await BillingExtraBalanceRepository.refundPartial(

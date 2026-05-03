@@ -246,18 +246,46 @@ describe('BillingExtraService unit tests:', () => {
       const updatedDoc = makeDoc({ cachedBalance: 0 });
       mockRepository.refundPartial.mockResolvedValue({ doc: updatedDoc, applied: true });
 
-      const result = await BillingExtraService.refundPartial(orgId, 'cs_refund_test', 4900, 'pack_500k');
+      const result = await BillingExtraService.refundPartial(orgId, 'cs_refund_test', 4900, 'pack_500k', 'rf_abc001');
 
       // $49 / $49 * 500000 = 500000 units
       expect(result.refundUnits).toBe(500000);
       expect(result.applied).toBe(true);
-      // Key includes topupEntry._id to prevent collision across partial refunds of same amount
+      // Key uses Stripe refund ID (globally unique) — prevents collision between two partial refunds of same amount
       expect(mockRepository.refundPartial).toHaveBeenCalledWith(
         orgId,
         'cs_refund_test',
         500000,
-        'refund-cs_refund_test-4900-507f1f77bcf86cd799439aaa',
+        'refund-rf_abc001-507f1f77bcf86cd799439aaa',
       );
+    });
+
+    test('two partial refunds of identical amount on same topup → distinct ledger keys', async () => {
+      // Bug scenario: before fix, both refunds would share key refund-cs-4900-topupId
+      // and only the first would be applied. After fix: rf_ IDs make them distinct.
+      const topupEntry = {
+        _id: '507f1f77bcf86cd799439aaa',
+        kind: 'topup',
+        amount: 500000,
+        stripeSessionId: 'cs_two_partials',
+      };
+      const doc = makeDoc({ ledger: [topupEntry], cachedBalance: 500000 });
+      mockRepository.getOrCreate.mockResolvedValue(doc);
+      mockRepository.refundPartial
+        .mockResolvedValueOnce({ doc: makeDoc({ cachedBalance: 250000 }), applied: true })
+        .mockResolvedValueOnce({ doc: makeDoc({ cachedBalance: 0 }), applied: true });
+
+      const r1 = await BillingExtraService.refundPartial(orgId, 'cs_two_partials', 2450, 'pack_500k', 'rf_first');
+      const r2 = await BillingExtraService.refundPartial(orgId, 'cs_two_partials', 2450, 'pack_500k', 'rf_second');
+
+      expect(r1.applied).toBe(true);
+      expect(r2.applied).toBe(true);
+
+      const [, , , key1] = mockRepository.refundPartial.mock.calls[0];
+      const [, , , key2] = mockRepository.refundPartial.mock.calls[1];
+      expect(key1).toBe('refund-rf_first-507f1f77bcf86cd799439aaa');
+      expect(key2).toBe('refund-rf_second-507f1f77bcf86cd799439aaa');
+      expect(key1).not.toBe(key2);
     });
 
     test('refundPartial with already-consumed balance still applies (economic reflection)', async () => {

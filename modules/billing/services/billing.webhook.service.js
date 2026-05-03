@@ -405,10 +405,12 @@ const handleChargeRefunded = async (charge) => {
   const refunds = Array.isArray(charge.refunds?.data) ? charge.refunds.data : [];
   const latestRefund = [...refunds].sort((a, b) => (b?.created ?? 0) - (a?.created ?? 0))[0];
   const thisRefundAmount = latestRefund?.amount;
+  const stripeRefundId = latestRefund?.id;
   if (!thisRefundAmount || thisRefundAmount <= 0) return;
+  if (!stripeRefundId) return;
 
   // Service layer computes proportional refundUnits from config.billing.packs.
-  await BillingExtraService.refundPartial(organizationId, stripeSessionId, thisRefundAmount, packId);
+  await BillingExtraService.refundPartial(organizationId, stripeSessionId, thisRefundAmount, packId, stripeRefundId);
 };
 
 export default {

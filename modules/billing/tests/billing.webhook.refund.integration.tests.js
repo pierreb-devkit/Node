@@ -99,7 +99,7 @@ describe('Billing webhook refund integration tests:', () => {
         makeCharge({ refunds: { data: [{ id: 'rf_001', amount: 4900, created: 1770000000 }] } }),
       );
 
-      expect(mockExtraService.refundPartial).toHaveBeenCalledWith(orgId, stripeSessionId, 4900, 'pack_500k');
+      expect(mockExtraService.refundPartial).toHaveBeenCalledWith(orgId, stripeSessionId, 4900, 'pack_500k', 'rf_001');
     });
 
     test('partial refund — calls refundPartial with delta amount (not cumulative total)', async () => {
@@ -112,7 +112,7 @@ describe('Billing webhook refund integration tests:', () => {
         }),
       );
 
-      expect(mockExtraService.refundPartial).toHaveBeenCalledWith(orgId, stripeSessionId, 2450, 'pack_500k');
+      expect(mockExtraService.refundPartial).toHaveBeenCalledWith(orgId, stripeSessionId, 2450, 'pack_500k', 'rf_002');
     });
 
     test('uses latest refund by created timestamp instead of array order', async () => {
@@ -128,7 +128,15 @@ describe('Billing webhook refund integration tests:', () => {
         }),
       );
 
-      expect(mockExtraService.refundPartial).toHaveBeenCalledWith(orgId, stripeSessionId, 5000, 'pack_500k');
+      expect(mockExtraService.refundPartial).toHaveBeenCalledWith(orgId, stripeSessionId, 5000, 'pack_500k', 'rf_latest');
+    });
+
+    test('should skip when latest refund has no id', async () => {
+      await BillingWebhookService.handleChargeRefunded(
+        makeCharge({ refunds: { data: [{ amount: 4900, created: 1770000000 }] } }),
+      );
+
+      expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
     });
 
     test('should skip when organizationId is missing', async () => {
