@@ -187,7 +187,7 @@ describe('BillingService.createExtrasCheckout unit tests:', () => {
     );
 
     const [, options] = mockStripeInstance.checkout.sessions.create.mock.calls[0];
-    expect(options.idempotencyKey).toMatch(/^extras_checkout_.*pack_2m_\d+_[a-z0-9]+$/);
+    expect(options.idempotencyKey).toMatch(/^extras_checkout_.*pack_2m_\d+_[0-9a-f]+$/);
   });
 
   test('should set stripeSessionId to __pending__ in metadata', async () => {

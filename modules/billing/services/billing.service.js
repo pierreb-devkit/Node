@@ -1,6 +1,7 @@
 /**
  * Module dependencies
  */
+import { randomBytes } from 'node:crypto';
 import config from '../../../config/index.js';
 import getStripe from '../lib/stripe.js';
 import BillingPlansService from './billing.plans.service.js';
@@ -193,9 +194,9 @@ const createExtrasCheckout = async (organization, packId, successUrl, cancelUrl)
 
   const subscription = await _ensureStripeCustomer(stripe, organization);
 
-  // Per-intent idempotency key: timestamp + random suffix reduces collision risk under concurrent clicks.
+  // Per-intent idempotency key: timestamp + crypto-random suffix reduces collision risk under concurrent clicks.
   // Full deduplication would require a caller-provided stable intent id — deferred to a future improvement.
-  const idempotencyKey = `extras_checkout_${String(organization._id)}_${packId}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const idempotencyKey = `extras_checkout_${String(organization._id)}_${packId}_${Date.now()}_${randomBytes(4).toString('hex')}`;
 
   const extrasCheckoutParams = {
     customer: subscription.stripeCustomerId,
