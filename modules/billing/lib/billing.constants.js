@@ -78,8 +78,11 @@ export const getPlanChangePreserveUsageDefault = () =>
  * @returns {number[]} Sorted threshold percentages.
  */
 export const getAlertThresholdPercents = () => {
-  const thresholds = config?.billing?.alerts?.thresholdPercents ?? DEFAULT_ALERT_THRESHOLD_PERCENTS;
+  const raw = config?.billing?.alerts?.thresholdPercents ?? DEFAULT_ALERT_THRESHOLD_PERCENTS;
+  // Guard against env-override delivering a string (e.g. DEVKIT_NODE_billing_alerts_thresholdPercents=80)
+  const thresholds = Array.isArray(raw) ? raw : [raw].map(Number).filter(Number.isFinite);
   return thresholds
+    .map(Number)
     .filter((threshold) => Number.isFinite(threshold) && threshold > 0)
     .sort((a, b) => b - a);
 };
@@ -87,26 +90,37 @@ export const getAlertThresholdPercents = () => {
 /**
  * @function getDollarsToUnitRatio
  * @description Resolve the configured conversion factor from dollar amounts to meter units.
+ * Returns the raw config value when valid; falls back to 1000.
  * @returns {number} Dollar-to-unit ratio (e.g. 1000 means $1 = 1000 units).
  */
-export const getDollarsToUnitRatio = () =>
-  config?.billing?.meter?.dollarsToUnitRatio ?? 1000;
+export const getDollarsToUnitRatio = () => {
+  const ratio = Number(config?.billing?.meter?.dollarsToUnitRatio);
+  return Number.isFinite(ratio) && ratio > 0 ? ratio : 1000;
+};
 
 /**
  * @function getMaxUnitsPerOperation
  * @description Resolve the configured per-operation unit cap. Infinity means no cap.
+ * Returns the raw config value when valid (positive finite or Infinity); falls back to Infinity.
  * @returns {number} Maximum units allowed for a single attribute call.
  */
-export const getMaxUnitsPerOperation = () =>
-  config?.billing?.meter?.maxUnitsPerOperation ?? Infinity;
+export const getMaxUnitsPerOperation = () => {
+  const raw = config?.billing?.meter?.maxUnitsPerOperation;
+  if (raw === undefined || raw === null) return Infinity;
+  const cap = Number(raw);
+  return Number.isFinite(cap) && cap > 0 ? cap : Infinity;
+};
 
 /**
  * @function getDefaultPlanId
  * @description Resolve the default plan ID used as a fallback when no active subscription exists.
+ * Returns the raw config value when non-empty string; falls back to 'free'.
  * @returns {string} Default plan identifier.
  */
-export const getDefaultPlanId = () =>
-  config?.billing?.defaultPlan ?? 'free';
+export const getDefaultPlanId = () => {
+  const planId = config?.billing?.defaultPlan;
+  return typeof planId === 'string' && planId.trim() ? planId : 'free';
+};
 
 /**
  * @function getExtrasExhaustedEventName

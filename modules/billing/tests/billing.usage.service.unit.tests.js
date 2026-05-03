@@ -13,6 +13,7 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
   let mockSubscriptionRepository;
   let mockMeterOutboxRepository;
   let mockConfig;
+  let mockBillingEventsEmit;
 
   const orgId = '507f1f77bcf86cd799439011';
 
@@ -85,6 +86,11 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       create: jest.fn(),
       findByIdempotencyKey: jest.fn(),
     };
+
+    mockBillingEventsEmit = jest.fn();
+    jest.unstable_mockModule('../lib/events.js', () => ({
+      default: { emit: mockBillingEventsEmit, on: jest.fn(), off: jest.fn() },
+    }));
 
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: mockConfig,
@@ -438,6 +444,18 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       expect(mockUsageRepository.markThreshold).toHaveBeenCalledTimes(2);
       expect(mockUsageRepository.markThreshold).toHaveBeenCalledWith(updatedDoc._id, 'alertedAt100');
       expect(mockUsageRepository.markThreshold).toHaveBeenCalledWith(updatedDoc._id, 'alertedAt80');
+      // Assert both meter.threshold_crossed events were emitted (100 first, then 80)
+      expect(mockBillingEventsEmit).toHaveBeenCalledTimes(2);
+      expect(mockBillingEventsEmit).toHaveBeenNthCalledWith(
+        1,
+        'meter.threshold_crossed',
+        expect.objectContaining({ threshold: 100 }),
+      );
+      expect(mockBillingEventsEmit).toHaveBeenNthCalledWith(
+        2,
+        'meter.threshold_crossed',
+        expect.objectContaining({ threshold: 80 }),
+      );
     });
 
     test('should NOT set alertCrossed when markThreshold returns modifiedCount=0 (another pod won)', async () => {

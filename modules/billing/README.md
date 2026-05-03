@@ -107,22 +107,22 @@ Consumers should NOT retry on `applied: true` — the outbox handles eventual co
 
 ### Configuration knobs
 
-| Knob | Type | Default | Notes |
-|------|------|---------|-------|
+| Knob | Type | Devkit default | Notes |
+|------|------|----------------|-------|
 | `billing.meter.runBase` | number | 1 | METER_RUN_BASE base unit cost |
 | `billing.meter.fallbackPlanId` | string \| null | null | Fallback plan when active not resolvable |
-| `billing.meter.dollarsToUnitRatio` | number | 1000 | Dollar amount → meter unit conversion |
-| `billing.meter.maxUnitsPerOperation` | number | Infinity | Cap per single attribute call |
-| `billing.meter.ratioVersion` | string \| null | null | DOWNSTREAM-OVERRIDE-REQUIRED — pricing version namespace |
+| `billing.meter.dollarsToUnitRatio` | number | 1000 | Dollar → unit conversion. DOWNSTREAM-OVERRIDE-REQUIRED. Constant fallback: `getDollarsToUnitRatio()` |
+| `billing.meter.maxUnitsPerOperation` | number | 10000 | Cap per single attribute call (dev config). Constant fallback: `Infinity` via `getMaxUnitsPerOperation()` |
+| `billing.meter.ratioVersion` | string \| null | '2026.05' | DOWNSTREAM-OVERRIDE-REQUIRED — pricing version namespace. Read directly from config, no constant wrapper |
 | `billing.outbox.maxRetryAttempts` | number | 5 | Outbox retry limit before exhausted |
 | `billing.outbox.retryIntervalSec` | number | 300 | Cron retry interval |
-| `billing.crons.jitterMaxMs` | number | 60000 | Cron startup jitter max |
+| `billing.crons.jitterMaxMs` | number | 60000 | Cron startup jitter max. Constant fallback: `getCronJitterMaxMs()` |
 | `billing.planChange.preserveUsageDefault` | boolean | true | forceRotateForPlanChange default |
-| `billing.alerts.thresholdPercents` | number[] | [80, 100] | Schema-supported only — others warn at boot, alert silently skipped |
+| `billing.alerts.thresholdPercents` | number[] | [80, 100] | Schema-supported only — others warn at boot, alert silently skipped. Constant fallback: `getAlertThresholdPercents()` |
 | `billing.events.extrasExhausted` | string | 'billing.extras_debit.exhausted' | Event name for downstream alerting |
-| `billing.defaultPlan` | string | 'free' | Default plan ID for fallback |
+| `billing.defaultPlan` | string | 'free' | Default plan ID for fallback. Constant fallback: `getDefaultPlanId()` |
 
-Defaults live in `modules/billing/config/billing.development.config.js` and can be overridden by downstream project config:
+Canonical constant fallbacks live in `modules/billing/lib/billing.constants.js`. Downstream project overrides go in `modules/billing/config/billing.development.config.js`:
 
 ```js
 billing: {

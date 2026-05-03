@@ -33,6 +33,7 @@ if (!config?.billing?.meterMode) {
 await applyJitter(getCronJitterMaxMs());
 
 try {
+  await mongooseService.loadModels();
   await mongooseService.connect();
 
   const { default: BillingResetService } = await import('../services/billing.reset.service.js');

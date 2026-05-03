@@ -11,16 +11,31 @@ import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globa
  * script file directly (which would require a live DB connection).
  */
 
-describe('billing.weeklyReset cron — applyJitter registration:', () => {
-  test('applyJitter is exported from billing.cron-utils (parity check with other crons)', async () => {
+describe('billing.weeklyReset cron — applyJitter contract:', () => {
+  test('applyJitter honours getCronJitterMaxMs bound: returns delay in [0, maxMs)', async () => {
+    // Contract test: weeklyReset calls applyJitter(getCronJitterMaxMs()).
+    // Verify the two helpers interoperate correctly (applyJitter respects the configured bound).
+    jest.resetModules();
+
+    const mockConfig = { billing: { meterMode: true, crons: { jitterMaxMs: 100 } } };
+    jest.unstable_mockModule('../../../config/index.js', () => ({ default: mockConfig }));
+
+    const { getCronJitterMaxMs } = await import('../lib/billing.constants.js');
     const { applyJitter } = await import('../lib/billing.cron-utils.js');
-    expect(typeof applyJitter).toBe('function');
+
+    const maxMs = getCronJitterMaxMs();
+    expect(maxMs).toBe(100);
+
+    const delay = await applyJitter(maxMs);
+    expect(delay).toBeGreaterThanOrEqual(0);
+    expect(delay).toBeLessThan(maxMs);
   });
 
-  test('getCronJitterMaxMs is exported from billing.constants (used in weeklyReset jitter call)', async () => {
-    const { getCronJitterMaxMs } = await import('../lib/billing.constants.js');
-    expect(typeof getCronJitterMaxMs).toBe('function');
-    expect(typeof getCronJitterMaxMs()).toBe('number');
+  test('applyJitter returns 0 for invalid (non-positive) jitter max — safe no-op', async () => {
+    const { applyJitter } = await import('../lib/billing.cron-utils.js');
+    expect(await applyJitter(0)).toBe(0);
+    expect(await applyJitter(-1)).toBe(0);
+    expect(await applyJitter(NaN)).toBe(0);
   });
 });
 

@@ -193,8 +193,9 @@ const createExtrasCheckout = async (organization, packId, successUrl, cancelUrl)
 
   const subscription = await _ensureStripeCustomer(stripe, organization);
 
-  // Use a timestamped idempotency key (~1ms granularity — insufficient for double-click protection, known design)
-  const idempotencyKey = `extras_checkout_${String(organization._id)}_${packId}_${Date.now()}`;
+  // Per-intent idempotency key: timestamp + random suffix reduces collision risk under concurrent clicks.
+  // Full deduplication would require a caller-provided stable intent id — deferred to a future improvement.
+  const idempotencyKey = `extras_checkout_${String(organization._id)}_${packId}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
   const extrasCheckoutParams = {
     customer: subscription.stripeCustomerId,
