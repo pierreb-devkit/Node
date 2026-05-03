@@ -244,15 +244,49 @@ const createExtrasCheckout = async (organization, packId, successUrl, cancelUrl)
 };
 
 /**
- * @desc Get subscription for the given organization
- * @param {String} organizationId - The organization ID
- * @returns {Promise<Object|null>} The subscription document or null
+ * @desc Fetch live subscription details from Stripe API on-demand.
+ *       Used by UI routes that need currentPeriodEnd, cancelAtPeriodEnd etc.
+ *       +50ms latency is acceptable on infrequent "My Subscription" page loads.
+ *       Not cached — callers can layer a short TTL if needed in the future.
+ * @param {String|null} stripeSubscriptionId - Stripe subscription ID (sub_xxx)
+ * @returns {Promise<Object|null>} Live fields or null when id is absent / Stripe not configured
  */
-const getSubscription = async (organizationId) => SubscriptionRepository.findByOrganization(organizationId);
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const fetchSubscriptionDetails = async (stripeSubscriptionId) => {
+  if (!stripeSubscriptionId) return null;
+  const stripe = getStripe();
+  if (!stripe) return null;
+  const stripeSub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+  const cancelAt = stripeSub.cancel_at ? new Date(stripeSub.cancel_at * 1000) : null;
+  return {
+    currentPeriodStart: new Date(stripeSub.current_period_start * 1000),
+    currentPeriodEnd: new Date(stripeSub.current_period_end * 1000),
+    cancelAtPeriodEnd: stripeSub.cancel_at_period_end,
+    status: stripeSub.status,
+    nextRenewalDate: cancelAt ?? new Date(stripeSub.current_period_end * 1000),
+  };
+};
+
+/**
+ * @desc Get subscription for the given organization.
+ *       Merges cached local fields with live Stripe details for UI consumers.
+ *       Falls back gracefully when Stripe is not configured or the subscription is free.
+ * @param {String} organizationId - The organization ID
+ * @returns {Promise<Object|null>} Merged subscription object or null
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const getSubscription = async (organizationId) => {
+  const sub = await SubscriptionRepository.findByOrganization(organizationId);
+  if (!sub) return null;
+  const details = await fetchSubscriptionDetails(sub.stripeSubscriptionId).catch(() => null);
+  if (!details) return sub;
+  return { ...sub.toJSON?.() ?? sub, ...details };
+};
 
 export default {
   createCheckout,
   createExtrasCheckout,
   createPortalSession,
+  fetchSubscriptionDetails,
   getSubscription,
 };
