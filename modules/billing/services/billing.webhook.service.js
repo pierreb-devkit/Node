@@ -212,12 +212,10 @@ const handleSubscriptionUpdated = async (subscription, event) => {
   const fields = {
     plan: newPlan,
     status: subscription.status,
-    currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-    cancelAtPeriodEnd: subscription.cancel_at_period_end,
   };
   if (newPeriodStart) fields.currentPeriodStart = newPeriodStart;
 
-  const updated = await SubscriptionRepository.updateIfEventNewer(String(existing._id), event.created, fields);
+  const updated = await SubscriptionRepository.updateIfEventNewer(String(existing._id), event.created, event.id, fields);
   if (!updated) {
     logger.info('[billing.webhook] skipped stale event', { eventId: event.id, type: event.type });
     return;
@@ -305,7 +303,7 @@ const handleSubscriptionDeleted = async (subscription, event) => {
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(subscription.id);
   if (!existing) return;
 
-  const updated = await SubscriptionRepository.updateIfEventNewer(String(existing._id), event.created, {
+  const updated = await SubscriptionRepository.updateIfEventNewer(String(existing._id), event.created, event.id, {
     plan: 'free',
     status: 'canceled',
   });
@@ -314,7 +312,16 @@ const handleSubscriptionDeleted = async (subscription, event) => {
     return;
   }
 
-  await syncOrganizationPlan(existing.organization?._id || existing.organization, 'free');
+  const organizationId = String(existing.organization?._id || existing.organization);
+  await syncOrganizationPlan(organizationId, 'free');
+
+  // Force reset meter to free quota — canceled sub must not retain paid-plan snapshot units.
+  try {
+    await BillingResetService.forceRotateForPlanChange(organizationId, { preserveUsage: false });
+  } catch (err) {
+    // Log for monitoring — not thrown so webhook processing continues
+    console.error('[billing.webhook] forceRotateForPlanChange on cancel failed (non-fatal):', err?.message ?? err);
+  }
 };
 
 /**
@@ -340,7 +347,7 @@ const handleInvoicePaymentFailed = async (invoice, event) => {
     fields.pastDueSince = new Date();
   }
 
-  const updated = await SubscriptionRepository.updateIfEventNewer(String(existing._id), event.created, fields);
+  const updated = await SubscriptionRepository.updateIfEventNewer(String(existing._id), event.created, event.id, fields);
   if (!updated) {
     logger.info('[billing.webhook] skipped stale event', { eventId: event.id, type: event.type });
     return;
@@ -359,11 +366,13 @@ const handleInvoicePaymentFailed = async (invoice, event) => {
  * @description Handle invoice.payment_succeeded event — clear degraded mode (pastDueSince).
  *       When a past-due invoice is finally paid, remove the pastDueSince marker so
  *       the subscription exits degraded mode on next request.
+ *       Uses updateIfEventNewer to guard against out-of-order webhook delivery (V5 P1 #1).
  * @param {Object} invoice - Stripe invoice object
+ * @param {Object} event - Full Stripe event (with event.created and event.id for ordering)
  * @returns {Promise<void>}
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const handleInvoicePaymentSucceeded = async (invoice) => {
+const handleInvoicePaymentSucceeded = async (invoice, event) => {
   const { subscription: stripeSubscriptionId } = invoice;
   if (!stripeSubscriptionId) return;
 
@@ -372,11 +381,15 @@ const handleInvoicePaymentSucceeded = async (invoice) => {
 
   // Only clear if currently past_due (avoid unnecessary writes on routine invoices)
   if (existing.pastDueSince !== null && existing.pastDueSince !== undefined) {
-    await SubscriptionRepository.update({
-      _id: existing._id,
-      pastDueSince: null,
-      status: 'active',
-    });
+    const updated = await SubscriptionRepository.updateIfEventNewer(
+      String(existing._id),
+      event.created,
+      event.id,
+      { pastDueSince: null, status: 'active' },
+    );
+    if (!updated) {
+      logger.info('[billing.webhook] skipped stale event', { eventId: event.id, type: event.type });
+    }
   }
 };
 
