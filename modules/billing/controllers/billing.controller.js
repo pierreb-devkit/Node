@@ -20,6 +20,9 @@ const checkout = async (req, res) => {
     const url = await BillingService.createCheckout(req.organization, priceId, successUrl, cancelUrl);
     responses.success(res, 'checkout session created')({ url });
   } catch (err) {
+    if (err.code === 'subscription_already_active') {
+      return res.status(409).json({ type: 'error', message: err.message, code: 'subscription_already_active', portalUrl: err.portalUrl });
+    }
     const status = err.message?.startsWith('Invalid') || err.message?.includes('not found') ? 422 : 502;
     const title = status === 422 ? 'Unprocessable Entity' : 'Bad Gateway';
     responses.error(res, status, title, 'Failed to create checkout session')(err);

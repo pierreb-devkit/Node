@@ -57,8 +57,11 @@ try {
 
   for (const sub of staleSubs) {
     try {
-      const subscription = await BillingSubscriptionRepository.markUnpaid(String(sub._id));
-      if (!subscription) continue; // markUnpaid returns null on invalid id
+      const subscription = await BillingSubscriptionRepository.markUnpaid(String(sub._id), threshold);
+      if (!subscription) {
+        console.log(`[billing.dunningSweep] sub ${sub._id} skipped — already recovered`);
+        continue;
+      }
 
       try {
         await OrganizationRepository.setPlan(String(sub.organization), 'free');

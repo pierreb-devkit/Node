@@ -167,8 +167,9 @@ describe('Billing service unit tests:', () => {
 
       const createdSub = { stripeCustomerId: 'cus_new123' };
       mockSubscriptionRepository.findByOrganization
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(createdSub);
+        .mockResolvedValueOnce(null)   // block guard: no active sub
+        .mockResolvedValueOnce(null)   // _ensureStripeCustomer: no existing sub → create customer
+        .mockResolvedValueOnce(createdSub); // _ensureStripeCustomer: final check
       mockSubscriptionRepository.create.mockResolvedValue(createdSub);
 
       const mod = await import('../services/billing.service.js');
@@ -195,8 +196,9 @@ describe('Billing service unit tests:', () => {
       const existingSub = { _id: 'sub_existing', stripeCustomerId: null };
       const updatedSub = { _id: 'sub_existing', stripeCustomerId: 'cus_new123' };
       mockSubscriptionRepository.findByOrganization
-        .mockResolvedValueOnce(existingSub)
-        .mockResolvedValueOnce(updatedSub);
+        .mockResolvedValueOnce(existingSub)  // block guard: no stripeSubscriptionId → no block
+        .mockResolvedValueOnce(existingSub)  // _ensureStripeCustomer: has no stripeCustomerId → create
+        .mockResolvedValueOnce(updatedSub);  // _ensureStripeCustomer: final check
       mockSubscriptionRepository.update.mockResolvedValue(updatedSub);
 
       const mod = await import('../services/billing.service.js');
@@ -298,6 +300,92 @@ describe('Billing service unit tests:', () => {
       const callArgs = mockStripeInstance.checkout.sessions.create.mock.calls[0][0];
       expect(callArgs.automatic_tax).toBeUndefined();
       expect(callArgs.customer_update).toBeUndefined();
+    });
+
+    test('should throw 409 with portalUrl when active subscription exists', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_block_active' } },
+      }));
+
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        stripeCustomerId: 'cus_active',
+        stripeSubscriptionId: 'sub_active',
+        status: 'active',
+      });
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      await expect(
+        BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel'),
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'subscription_already_active',
+        portalUrl: 'https://billing.stripe.com/portal_123',
+      });
+
+      expect(mockStripeInstance.checkout.sessions.create).not.toHaveBeenCalled();
+      expect(mockStripeInstance.billingPortal.sessions.create).toHaveBeenCalledWith({
+        customer: 'cus_active',
+      });
+    });
+
+    test('should throw 409 with portalUrl when past_due subscription exists', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_block_past_due' } },
+      }));
+
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        stripeCustomerId: 'cus_past_due',
+        stripeSubscriptionId: 'sub_past_due',
+        status: 'past_due',
+      });
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      await expect(
+        BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel'),
+      ).rejects.toMatchObject({ statusCode: 409, code: 'subscription_already_active' });
+    });
+
+    test('should allow checkout when subscription is canceled', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_allow_canceled' } },
+      }));
+
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        stripeCustomerId: 'cus_canceled',
+        stripeSubscriptionId: 'sub_old',
+        status: 'canceled',
+      });
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      const url = await BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel');
+
+      expect(url).toBe('https://checkout.stripe.com/session_123');
+      expect(mockStripeInstance.checkout.sessions.create).toHaveBeenCalled();
+    });
+
+    test('should allow checkout when no stripeSubscriptionId even if status is active', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_allow_no_sub_id' } },
+      }));
+
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        stripeCustomerId: 'cus_no_sub_id',
+        stripeSubscriptionId: null,
+        status: 'active',
+      });
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      const url = await BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel');
+
+      expect(url).toBe('https://checkout.stripe.com/session_123');
     });
   });
 

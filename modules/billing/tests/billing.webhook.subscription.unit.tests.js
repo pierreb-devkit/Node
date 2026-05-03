@@ -28,6 +28,7 @@ describe('Billing webhook subscription unit tests:', () => {
       findByStripeSubscriptionId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      updateIfEventNewer: jest.fn().mockResolvedValue({ _id: subId }),
     };
 
     mockOrganizationRepository = {
@@ -68,6 +69,10 @@ describe('Billing webhook subscription unit tests:', () => {
       default: mockEvents,
     }));
 
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
+    }));
+
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: {
         billing: {
@@ -98,7 +103,6 @@ describe('Billing webhook subscription unit tests:', () => {
       const newPeriodStart = 1700604800;
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
 
       await BillingWebhookService.handleSubscriptionUpdated(
         {
@@ -110,6 +114,7 @@ describe('Billing webhook subscription unit tests:', () => {
           items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
         },
         {
+          id: 'evt_1', created: 1700000100,
           data: {
             previous_attributes: {
               current_period_start: oldPeriodStart,
@@ -128,9 +133,7 @@ describe('Billing webhook subscription unit tests:', () => {
       const periodStart = 1700000000;
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
 
-      // previous_attributes.current_period_start equals current value → no period change
       await BillingWebhookService.handleSubscriptionUpdated(
         {
           id: 'sub_456',
@@ -140,7 +143,7 @@ describe('Billing webhook subscription unit tests:', () => {
           cancel_at_period_end: false,
           items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
         },
-        { data: { previous_attributes: { current_period_start: periodStart } } },
+        { id: 'evt_2', created: 1700000100, data: { previous_attributes: { current_period_start: periodStart } } },
       );
 
       expect(mockResetService.resetWeek).not.toHaveBeenCalled();
@@ -149,7 +152,6 @@ describe('Billing webhook subscription unit tests:', () => {
     test('should NOT call resetWeek when previous_attributes has no current_period_start', async () => {
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
 
       await BillingWebhookService.handleSubscriptionUpdated(
         {
@@ -160,7 +162,7 @@ describe('Billing webhook subscription unit tests:', () => {
           cancel_at_period_end: false,
           items: { data: [] },
         },
-        { data: { previous_attributes: { cancel_at_period_end: true } } },
+        { id: 'evt_3', created: 1700000100, data: { previous_attributes: { cancel_at_period_end: true } } },
       );
 
       expect(mockResetService.resetWeek).not.toHaveBeenCalled();
@@ -169,10 +171,8 @@ describe('Billing webhook subscription unit tests:', () => {
     test('resetWeek errors should not disrupt webhook processing (logged, not thrown)', async () => {
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
       mockResetService.resetWeek.mockRejectedValue(new Error('reset failed'));
 
-      // Should NOT throw
       await expect(
         BillingWebhookService.handleSubscriptionUpdated(
           {
@@ -183,7 +183,7 @@ describe('Billing webhook subscription unit tests:', () => {
             cancel_at_period_end: false,
             items: { data: [] },
           },
-          { data: { previous_attributes: { current_period_start: 1700000000 } } },
+          { id: 'evt_4', created: 1700000100, data: { previous_attributes: { current_period_start: 1700000000 } } },
         ),
       ).resolves.not.toThrow();
     });
@@ -194,7 +194,6 @@ describe('Billing webhook subscription unit tests:', () => {
       const periodStart = 1700000000;
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
 
       await BillingWebhookService.handleSubscriptionUpdated(
         {
@@ -206,34 +205,25 @@ describe('Billing webhook subscription unit tests:', () => {
           items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
         },
         {
+          id: 'evt_5', created: 1700000100,
           data: {
             previous_attributes: {
-              // Same period_start → only plan changed
-              items: {
-                data: [{ price: { metadata: { planId: 'starter' } } }],
-              },
+              items: { data: [{ price: { metadata: { planId: 'starter' } } }] },
             },
           },
         },
       );
 
       expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledTimes(1);
-      expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledWith(
-        orgId,
-        { preserveUsage: true },
-      );
+      expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledWith(orgId, { preserveUsage: true });
       expect(mockResetService.resetWeek).not.toHaveBeenCalled();
     });
 
     test('plan change AND period_start change — forceRotateForPlanChange AND resetWeek both called', async () => {
-      // Combined plan+period change (e.g. annual→monthly on renewal):
-      // forceRotateForPlanChange refreshes quota snapshot; resetWeek archives the old week.
-      // planChangeResetTriggered must NOT suppress resetWeek when period also changed.
       const oldPeriodStart = 1700000000;
       const newPeriodStart = 1700604800;
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
 
       await BillingWebhookService.handleSubscriptionUpdated(
         {
@@ -245,23 +235,18 @@ describe('Billing webhook subscription unit tests:', () => {
           items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
         },
         {
+          id: 'evt_6', created: 1700000100,
           data: {
             previous_attributes: {
               current_period_start: oldPeriodStart,
-              items: {
-                data: [{ price: { metadata: { planId: 'starter' } } }],
-              },
+              items: { data: [{ price: { metadata: { planId: 'starter' } } }] },
             },
           },
         },
       );
 
       expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledTimes(1);
-      expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledWith(
-        orgId,
-        { preserveUsage: true },
-      );
-      // resetWeek must also run to archive the old week on the period rollover
+      expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledWith(orgId, { preserveUsage: true });
       expect(mockResetService.resetWeek).toHaveBeenCalledTimes(1);
       expect(mockResetService.resetWeek).toHaveBeenCalledWith(orgId, new Date(newPeriodStart * 1000));
     });
@@ -270,7 +255,6 @@ describe('Billing webhook subscription unit tests:', () => {
       const periodStart = 1700000000;
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
 
       await BillingWebhookService.handleSubscriptionUpdated(
         {
@@ -282,12 +266,8 @@ describe('Billing webhook subscription unit tests:', () => {
           items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
         },
         {
-          data: {
-            previous_attributes: {
-              // cancel_at_period_end changed, plan did not change
-              cancel_at_period_end: true,
-            },
-          },
+          id: 'evt_7', created: 1700000100,
+          data: { previous_attributes: { cancel_at_period_end: true } },
         },
       );
 
@@ -298,7 +278,6 @@ describe('Billing webhook subscription unit tests:', () => {
       const periodStart = 1700000000;
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
 
       await BillingWebhookService.handleSubscriptionUpdated(
         {
@@ -310,13 +289,8 @@ describe('Billing webhook subscription unit tests:', () => {
           items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
         },
         {
-          data: {
-            previous_attributes: {
-              items: {
-                data: [{ price: { metadata: { planId: 'starter' } } }],
-              },
-            },
-          },
+          id: 'evt_8', created: 1700000100,
+          data: { previous_attributes: { items: { data: [{ price: { metadata: { planId: 'starter' } } }] } } },
         },
       );
 
@@ -330,7 +304,6 @@ describe('Billing webhook subscription unit tests:', () => {
       const periodStart = 1700000000;
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
 
       await BillingWebhookService.handleSubscriptionUpdated(
         {
@@ -342,28 +315,19 @@ describe('Billing webhook subscription unit tests:', () => {
           items: { data: [{ price: { metadata: { planId: 'starter' } } }] },
         },
         {
-          data: {
-            previous_attributes: {
-              items: {
-                data: [{ price: { metadata: { planId: 'pro' } } }],
-              },
-            },
-          },
+          id: 'evt_9', created: 1700000100,
+          data: { previous_attributes: { items: { data: [{ price: { metadata: { planId: 'pro' } } }] } } },
         },
       );
 
       expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledTimes(1);
-      expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledWith(
-        orgId,
-        { preserveUsage: true },
-      );
+      expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledWith(orgId, { preserveUsage: true });
     });
 
     test('forceRotateForPlanChange errors do not throw (non-fatal)', async () => {
       const periodStart = 1700000000;
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
       mockResetService.forceRotateForPlanChange.mockRejectedValue(new Error('db unavailable'));
 
       await expect(
@@ -377,13 +341,8 @@ describe('Billing webhook subscription unit tests:', () => {
             items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
           },
           {
-            data: {
-              previous_attributes: {
-                items: {
-                  data: [{ price: { metadata: { planId: 'starter' } } }],
-                },
-              },
-            },
+            id: 'evt_10', created: 1700000100,
+            data: { previous_attributes: { items: { data: [{ price: { metadata: { planId: 'starter' } } }] } } },
           },
         ),
       ).resolves.not.toThrow();
@@ -395,7 +354,6 @@ describe('Billing webhook subscription unit tests:', () => {
       const newPeriodStart = 1700604800;
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
       mockResetService.forceRotateForPlanChange.mockRejectedValue(new Error('db unavailable'));
 
       await BillingWebhookService.handleSubscriptionUpdated(
@@ -408,12 +366,11 @@ describe('Billing webhook subscription unit tests:', () => {
           items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
         },
         {
+          id: 'evt_11', created: 1700000100,
           data: {
             previous_attributes: {
               current_period_start: oldPeriodStart,
-              items: {
-                data: [{ price: { metadata: { planId: 'starter' } } }],
-              },
+              items: { data: [{ price: { metadata: { planId: 'starter' } } }] },
             },
           },
         },
@@ -427,40 +384,29 @@ describe('Billing webhook subscription unit tests:', () => {
     test('plan change with no newPeriodStart still force rotates', async () => {
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
 
       await BillingWebhookService.handleSubscriptionUpdated(
         {
           id: 'sub_456',
           status: 'active',
           current_period_end: 1700000000 + 2592000,
-          // No current_period_start field
           cancel_at_period_end: false,
           items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
         },
         {
-          data: {
-            previous_attributes: {
-              items: {
-                data: [{ price: { metadata: { planId: 'starter' } } }],
-              },
-            },
-          },
+          id: 'evt_12', created: 1700000100,
+          data: { previous_attributes: { items: { data: [{ price: { metadata: { planId: 'starter' } } }] } } },
         },
       );
 
       expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledTimes(1);
-      expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledWith(
-        orgId,
-        { preserveUsage: true },
-      );
+      expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledWith(orgId, { preserveUsage: true });
     });
 
     test('should update currentPeriodStart in subscription when period_start is present', async () => {
       const newPeriodStart = 1700604800;
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
 
       await BillingWebhookService.handleSubscriptionUpdated(
         {
@@ -471,13 +417,13 @@ describe('Billing webhook subscription unit tests:', () => {
           cancel_at_period_end: false,
           items: { data: [] },
         },
-        { data: { previous_attributes: {} } },
+        { id: 'evt_13', created: 1700000100, data: { previous_attributes: {} } },
       );
 
-      expect(mockSubscriptionRepository.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          currentPeriodStart: new Date(newPeriodStart * 1000),
-        }),
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
+        subId,
+        1700000100,
+        expect.objectContaining({ currentPeriodStart: new Date(newPeriodStart * 1000) }),
       );
     });
   });
@@ -530,28 +476,30 @@ describe('Billing webhook subscription unit tests:', () => {
   });
 
   describe('handleInvoicePaymentFailed', () => {
-    test('should set status to past_due', async () => {
+    const makeEvent = (overrides = {}) => ({ id: 'evt_failed', created: 1700000300, ...overrides });
+
+    test('should set status to past_due via updateIfEventNewer', async () => {
       const existing = { _id: subId, organization: orgId, pastDueSince: null };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
 
-      await BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_456' });
+      await BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_456' }, makeEvent());
 
-      expect(mockSubscriptionRepository.update).toHaveBeenCalledWith(
-        expect.objectContaining({ _id: subId, status: 'past_due' }),
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
+        subId,
+        1700000300,
+        expect.objectContaining({ status: 'past_due' }),
       );
     });
 
     test('should set pastDueSince on first failure (when currently null)', async () => {
       const existing = { _id: subId, organization: orgId, pastDueSince: null };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
 
       const before = new Date();
-      await BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_456' });
+      await BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_456' }, makeEvent());
       const after = new Date();
 
-      const callArg = mockSubscriptionRepository.update.mock.calls[0][0];
+      const callArg = mockSubscriptionRepository.updateIfEventNewer.mock.calls[0][2];
       expect(callArg.pastDueSince).toBeInstanceOf(Date);
       expect(callArg.pastDueSince.getTime()).toBeGreaterThanOrEqual(before.getTime());
       expect(callArg.pastDueSince.getTime()).toBeLessThanOrEqual(after.getTime());
@@ -561,21 +509,18 @@ describe('Billing webhook subscription unit tests:', () => {
       const originalDate = new Date('2026-04-01T00:00:00Z');
       const existing = { _id: subId, organization: orgId, pastDueSince: originalDate };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
 
-      await BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_456' });
+      await BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_456' }, makeEvent());
 
-      const callArg = mockSubscriptionRepository.update.mock.calls[0][0];
-      // pastDueSince must NOT be present in the update payload (preserves original date)
+      const callArg = mockSubscriptionRepository.updateIfEventNewer.mock.calls[0][2];
       expect(callArg.pastDueSince).toBeUndefined();
     });
 
     test('should emit payment.failed event with organizationId', async () => {
       const existing = { _id: subId, organization: orgId, pastDueSince: null };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
 
-      await BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_456' });
+      await BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_456' }, makeEvent());
 
       expect(mockEvents.emit).toHaveBeenCalledWith('payment.failed', { organizationId: orgId });
     });
@@ -583,16 +528,15 @@ describe('Billing webhook subscription unit tests:', () => {
     test('should not throw when event listener errors', async () => {
       const existing = { _id: subId, organization: orgId, pastDueSince: null };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
       mockEvents.emit.mockImplementation(() => { throw new Error('listener error'); });
 
       await expect(
-        BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_456' }),
+        BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_456' }, makeEvent()),
       ).resolves.not.toThrow();
     });
 
     test('should return early when no subscription ID in invoice', async () => {
-      await BillingWebhookService.handleInvoicePaymentFailed({ subscription: null });
+      await BillingWebhookService.handleInvoicePaymentFailed({ subscription: null }, makeEvent());
 
       expect(mockSubscriptionRepository.findByStripeSubscriptionId).not.toHaveBeenCalled();
     });
@@ -600,9 +544,9 @@ describe('Billing webhook subscription unit tests:', () => {
     test('should return early when subscription not found', async () => {
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(null);
 
-      await BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_unknown' });
+      await BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_unknown' }, makeEvent());
 
-      expect(mockSubscriptionRepository.update).not.toHaveBeenCalled();
+      expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();
     });
   });
 });

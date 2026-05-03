@@ -49,7 +49,12 @@ describe('Billing webhook idempotency unit tests:', () => {
         findByStripeSubscriptionId: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        updateIfEventNewer: jest.fn().mockResolvedValue(null),
       },
+    }));
+
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
     }));
 
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({

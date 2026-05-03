@@ -46,6 +46,7 @@ describe('Billing webhook refund integration tests:', () => {
       findByStripeSubscriptionId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      updateIfEventNewer: jest.fn().mockResolvedValue(null),
     };
 
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
@@ -82,6 +83,10 @@ describe('Billing webhook refund integration tests:', () => {
         Types: { ObjectId: { isValid: (id) => /^[a-f\d]{24}$/i.test(id) } },
         model: () => ({ findByIdAndUpdate: jest.fn().mockReturnValue({ exec: jest.fn() }) }),
       },
+    }));
+
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
     }));
 
     const mod = await import('../services/billing.webhook.service.js');
