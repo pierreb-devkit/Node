@@ -93,50 +93,48 @@ describe('Billing webhook refund integration tests:', () => {
   });
 
   describe('handleChargeRefunded', () => {
-    test('full refund — calls refundPartial with correct orgId, sessionId, delta amount and packId', async () => {
-      // latest refund amount = 4900 (this event's delta, same as total for single refund)
+    test('full refund — calls refundPartial with correct orgId, sessionId, amount, packId and refundId', async () => {
       await BillingWebhookService.handleChargeRefunded(
-        makeCharge({ refunds: { data: [{ id: 'rf_001', amount: 4900, created: 1770000000 }] } }),
+        makeCharge({ refunds: { data: [{ id: 'rf_001', amount: 4900, created: 1000 }] } }),
       );
 
+      expect(mockExtraService.refundPartial).toHaveBeenCalledTimes(1);
       expect(mockExtraService.refundPartial).toHaveBeenCalledWith(orgId, stripeSessionId, 4900, 'pack_500k', 'rf_001');
     });
 
-    test('partial refund — calls refundPartial with delta amount (not cumulative total)', async () => {
-      // Simulates 2nd of two 2450¢ partial refunds: amount_refunded=4900 (cumulative) but
-      // latest refund amount=2450 (this event's delta) — handler must use delta to avoid over-debit
+    test('two partial refunds in list — calls refundPartial once per entry with its own refund id', async () => {
+      // Both refunds are processed; rf_ ids make each call idempotent on replay
       await BillingWebhookService.handleChargeRefunded(
         makeCharge({
-          amount_refunded: 4900, // cumulative — should NOT be used
-          refunds: { data: [{ id: 'rf_002', amount: 2450, created: 1770000001 }] }, // delta — correct value
-        }),
-      );
-
-      expect(mockExtraService.refundPartial).toHaveBeenCalledWith(orgId, stripeSessionId, 2450, 'pack_500k', 'rf_002');
-    });
-
-    test('uses latest refund by created timestamp instead of array order', async () => {
-      await BillingWebhookService.handleChargeRefunded(
-        makeCharge({
-          amount_refunded: 6000,
           refunds: {
             data: [
-              { id: 'rf_old', amount: 1000, created: 1770000000 },
-              { id: 'rf_latest', amount: 5000, created: 1770000100 },
+              { id: 'rf_first', amount: 2450, created: 1000 },
+              { id: 'rf_second', amount: 2450, created: 2000 },
             ],
           },
         }),
       );
 
-      expect(mockExtraService.refundPartial).toHaveBeenCalledWith(orgId, stripeSessionId, 5000, 'pack_500k', 'rf_latest');
+      expect(mockExtraService.refundPartial).toHaveBeenCalledTimes(2);
+      expect(mockExtraService.refundPartial).toHaveBeenCalledWith(orgId, stripeSessionId, 2450, 'pack_500k', 'rf_first');
+      expect(mockExtraService.refundPartial).toHaveBeenCalledWith(orgId, stripeSessionId, 2450, 'pack_500k', 'rf_second');
     });
 
-    test('should skip when latest refund has no id', async () => {
+    test('skips individual refund entries that have no id or zero amount', async () => {
       await BillingWebhookService.handleChargeRefunded(
-        makeCharge({ refunds: { data: [{ amount: 4900, created: 1770000000 }] } }),
+        makeCharge({
+          refunds: {
+            data: [
+              { amount: 4900, created: 1000 }, // missing id → skipped
+              { id: 'rf_valid', amount: 2450, created: 2000 }, // valid → processed
+              { id: 'rf_zero', amount: 0, created: 3000 }, // zero amount → skipped
+            ],
+          },
+        }),
       );
 
-      expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
+      expect(mockExtraService.refundPartial).toHaveBeenCalledTimes(1);
+      expect(mockExtraService.refundPartial).toHaveBeenCalledWith(orgId, stripeSessionId, 2450, 'pack_500k', 'rf_valid');
     });
 
     test('should skip when organizationId is missing', async () => {
@@ -180,8 +178,7 @@ describe('Billing webhook refund integration tests:', () => {
       expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
     });
 
-    test('should skip when latest refund amount is absent or zero', async () => {
-      // refunds.data empty — no delta available
+    test('should skip when refunds list is empty', async () => {
       await BillingWebhookService.handleChargeRefunded(
         makeCharge({ refunds: { data: [] } }),
       );

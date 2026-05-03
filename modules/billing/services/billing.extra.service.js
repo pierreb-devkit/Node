@@ -141,7 +141,7 @@ const refundPartial = async (orgId, stripeSessionId, amountRefundedCents, packId
   // Fallback to session+amount+topup when stripeRefundId is absent (legacy callers / tests).
   const refundRefId = stripeRefundId
     ? `refund-${stripeRefundId}-${topupEntry._id}`
-    : `refund-${stripeSessionId}-${amountRefundedCents}-${topupEntry._id ?? Date.now()}`;
+    : `refund-${stripeSessionId}-${amountRefundedCents}-${topupEntry._id}`;
 
   // Delegate atomic write to repository — no mongoose import in service layer.
   const { doc: updatedDoc, applied } = await BillingExtraBalanceRepository.refundPartial(

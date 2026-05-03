@@ -396,5 +396,29 @@ describe('BillingExtraService unit tests:', () => {
         'refund-cs_legacy-7450-507f1f77bcf86cd799439eee',
       );
     });
+
+    test('legacy fallback key is stable across retries (no Date.now() jitter)', async () => {
+      // Without stripeRefundId, the key must be deterministic so webhook retries are idempotent
+      const topupEntry = {
+        _id: '507f1f77bcf86cd799439fff',
+        kind: 'topup',
+        amount: 500000,
+        stripeSessionId: 'cs_retry',
+      };
+      const doc = makeDoc({ ledger: [topupEntry], cachedBalance: 500000 });
+      mockRepository.getOrCreate.mockResolvedValue(doc);
+      mockRepository.refundPartial
+        .mockResolvedValueOnce({ doc: makeDoc({ cachedBalance: 0 }), applied: true })
+        .mockResolvedValueOnce({ doc: null, applied: false }); // second call: $ne filter blocks it
+
+      await BillingExtraService.refundPartial(orgId, 'cs_retry', 4900, 'pack_500k');
+      await BillingExtraService.refundPartial(orgId, 'cs_retry', 4900, 'pack_500k');
+
+      const [, , , key1] = mockRepository.refundPartial.mock.calls[0];
+      const [, , , key2] = mockRepository.refundPartial.mock.calls[1];
+      expect(key1).toBe('refund-cs_retry-4900-507f1f77bcf86cd799439fff');
+      expect(key2).toBe('refund-cs_retry-4900-507f1f77bcf86cd799439fff');
+      expect(key1).toBe(key2); // same key → idempotent
+    });
   });
 });

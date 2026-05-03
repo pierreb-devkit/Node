@@ -400,17 +400,15 @@ const handleChargeRefunded = async (charge) => {
   if (!organizationId || !mongoose.Types.ObjectId.isValid(organizationId)) return;
   if (!stripeSessionId) return;
 
-  // Use the latest refund delta, not the cumulative
-  // charge.amount_refunded — prevents over-debiting when multiple partial refunds occur.
+  // Process every refund in the list — each has a globally-unique rf_ id used as the idempotency
+  // key, so re-processing on webhook replay or redelivery is safe (duplicate calls are no-ops).
   const refunds = Array.isArray(charge.refunds?.data) ? charge.refunds.data : [];
-  const latestRefund = [...refunds].sort((a, b) => (b?.created ?? 0) - (a?.created ?? 0))[0];
-  const thisRefundAmount = latestRefund?.amount;
-  const stripeRefundId = latestRefund?.id;
-  if (!thisRefundAmount || thisRefundAmount <= 0) return;
-  if (!stripeRefundId) return;
-
-  // Service layer computes proportional refundUnits from config.billing.packs.
-  await BillingExtraService.refundPartial(organizationId, stripeSessionId, thisRefundAmount, packId, stripeRefundId);
+  for (const refund of refunds) {
+    const { id: stripeRefundId, amount: refundAmount } = refund ?? {};
+    if (!stripeRefundId || !refundAmount || refundAmount <= 0) continue;
+    // Service layer computes proportional refundUnits from config.billing.packs.
+    await BillingExtraService.refundPartial(organizationId, stripeSessionId, refundAmount, packId, stripeRefundId);
+  }
 };
 
 export default {
