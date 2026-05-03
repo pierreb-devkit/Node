@@ -65,7 +65,7 @@ describe('Admin refund controller unit tests:', () => {
 
     expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
       { charge: 'ch_test_xyz', reason: 'requested_by_customer' },
-      { idempotencyKey: 'refund_ch_test_xyz_full' },
+      { idempotencyKey: expect.stringMatching(/^refund_ch_test_xyz_full_[0-9a-f-]{36}$/) },
     );
     expect(mockResponses.success).toHaveBeenCalledWith(res, 'billing refund created');
   });
@@ -78,7 +78,7 @@ describe('Admin refund controller unit tests:', () => {
 
     expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
       { charge: 'ch_test_xyz', reason: 'requested_by_customer', amount: 2000 },
-      { idempotencyKey: 'refund_ch_test_xyz_2000' },
+      { idempotencyKey: expect.stringMatching(/^refund_ch_test_xyz_2000_[0-9a-f-]{36}$/) },
     );
   });
 
@@ -90,7 +90,7 @@ describe('Admin refund controller unit tests:', () => {
 
     expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
       { charge: 'ch_test_xyz', reason: 'duplicate', amount: 2000 },
-      { idempotencyKey: 'refund_ch_test_xyz_2000' },
+      { idempotencyKey: expect.stringMatching(/^refund_ch_test_xyz_2000_[0-9a-f-]{36}$/) },
     );
   });
 
@@ -101,17 +101,17 @@ describe('Admin refund controller unit tests:', () => {
     await adminRefundCharge(req, res);
 
     const call = mockStripeInstance.refunds.create.mock.calls[0];
-    expect(call[1].idempotencyKey).toBe('refund_ch_abc_full');
+    expect(call[1].idempotencyKey).toMatch(/^refund_ch_abc_full_[0-9a-f-]{36}$/);
   });
 
-  test('idempotency key is "refund_{chargeId}_{amountCents}" for partial refund', async () => {
+  test('idempotency key is "refund_{chargeId}_{amountCents}_{uuid}" for partial refund', async () => {
     const req = { body: { chargeId: 'ch_abc', amountCents: 500 } };
     const res = makeRes();
 
     await adminRefundCharge(req, res);
 
     const call = mockStripeInstance.refunds.create.mock.calls[0];
-    expect(call[1].idempotencyKey).toBe('refund_ch_abc_500');
+    expect(call[1].idempotencyKey).toMatch(/^refund_ch_abc_500_[0-9a-f-]{36}$/);
   });
 
   test('should return 502 when Stripe is not configured', async () => {

@@ -379,17 +379,20 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId);
   if (!existing) return;
 
-  // Only clear if currently past_due (avoid unnecessary writes on routine invoices)
-  if (existing.pastDueSince !== null && existing.pastDueSince !== undefined) {
-    const updated = await SubscriptionRepository.updateIfEventNewer(
-      String(existing._id),
-      event.created,
-      event.id,
-      { pastDueSince: null, status: 'active' },
-    );
-    if (!updated) {
-      logger.info('[billing.webhook] skipped stale event', { eventId: event.id, type: event.type });
-    }
+  // Always advance the event markers (stripeEventCreatedAt + stripeEventId) so out-of-order
+  // replays are correctly rejected even when the sub is already active (pastDueSince == null).
+  const fields = (existing.pastDueSince !== null && existing.pastDueSince !== undefined)
+    ? { pastDueSince: null, status: 'active' }
+    : {};
+
+  const updated = await SubscriptionRepository.updateIfEventNewer(
+    String(existing._id),
+    event.created,
+    event.id,
+    fields,
+  );
+  if (!updated) {
+    logger.info('[billing.webhook] skipped stale event', { eventId: event.id, type: event.type });
   }
 };
 

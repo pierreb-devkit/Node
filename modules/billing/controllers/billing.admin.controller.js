@@ -1,6 +1,8 @@
 /**
  * Module dependencies
  */
+import { randomUUID } from 'node:crypto';
+
 import responses from '../../../lib/helpers/responses.js';
 import getStripe from '../lib/stripe.js';
 
@@ -37,7 +39,7 @@ const adminRefundCharge = async (req, res) => {
       );
     }
 
-    const idempotencyKey = `refund_${chargeId}_${amountCents ?? 'full'}`;
+    const idempotencyKey = `refund_${chargeId}_${amountCents ?? 'full'}_${randomUUID()}`;
     const params = { charge: chargeId, reason: reason || 'requested_by_customer' };
     if (amountCents !== undefined) params.amount = amountCents;
 

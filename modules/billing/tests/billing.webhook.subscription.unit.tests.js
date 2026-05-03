@@ -451,7 +451,7 @@ describe('Billing webhook subscription unit tests:', () => {
       );
     });
 
-    test('should NOT update when pastDueSince is null (routine invoice)', async () => {
+    test('should advance event markers even when pastDueSince is null (routine invoice)', async () => {
       const existing = {
         _id: subId,
         organization: orgId,
@@ -462,7 +462,41 @@ describe('Billing webhook subscription unit tests:', () => {
 
       await BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_456' }, makeEvent());
 
-      expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();
+      // markers-only update (empty fields object) — ensures stale out-of-order replays are rejected
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
+        subId,
+        1700000400,
+        'evt_succeeded',
+        {},
+      );
+    });
+
+    test('stale payment_succeeded after recent payment_failed — markers reject replay', async () => {
+      const existing = {
+        _id: subId,
+        organization: orgId,
+        pastDueSince: null,
+        status: 'active',
+      };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      // Simulate stale event rejected by updateIfEventNewer
+      mockSubscriptionRepository.updateIfEventNewer.mockResolvedValue(null);
+
+      let mockLogger;
+      jest.unstable_mockModule('../../../lib/services/logger.js', () => {
+        mockLogger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
+        return { default: mockLogger };
+      });
+
+      // old event — should be a no-op (markers guard)
+      await BillingWebhookService.handleInvoicePaymentSucceeded(
+        { subscription: 'sub_456' },
+        makeEvent({ created: 10 }),
+      );
+
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
+        subId, 10, 'evt_succeeded', {},
+      );
     });
 
     test('should return early when no subscription ID in invoice', async () => {
