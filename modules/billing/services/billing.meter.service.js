@@ -4,8 +4,6 @@
 import config from '../../../config/index.js';
 import BillingPlanService from './billing.plan.service.js';
 import BillingUsageService from './billing.usage.service.js';
-import BillingExtraService from './billing.extra.service.js';
-import BillingMeterOutboxRepository from '../repositories/billing.meter.outbox.repository.js';
 import {
   getMeterFallbackPlanId,
   getMeterRunBase,
@@ -33,10 +31,10 @@ export { METER_RUN_BASE };
  * @param {Object} costs - Feature-keyed cost map: { featureKey: usdCost }.
  * @param {string} planId - Logical plan identifier (e.g. "pro").
  * @param {string} ratioVersion - Specific plan version for the ratio lookup.
- * @returns {Promise<{totalUnits: number, breakdown: Object}>} Computed units and per-feature breakdown.
+ * @returns {{totalUnits: number, breakdown: Object}} Computed units and per-feature breakdown.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const unitsFromCosts = async (costs, planId, ratioVersion) => {
+const unitsFromCosts = (costs, planId, ratioVersion) => {
   if (costs == null || typeof costs !== 'object') {
     return { totalUnits: getMeterRunBase(), breakdown: {} };
   }
@@ -58,14 +56,14 @@ const unitsFromCosts = async (costs, planId, ratioVersion) => {
     console.warn(message);
   }
 
-  // Fetch the frozen plan snapshot for the given version
-  const plan = ratioVersion ? await BillingPlanService.getPlanByVersion(planId, ratioVersion) : null;
+  // Fetch the frozen plan snapshot for the given version (config-static, no await needed)
+  const plan = ratioVersion ? BillingPlanService.getPlanByVersion(planId, ratioVersion) : null;
   if (!plan) {
     if (config?.billing?.meterMode && ratioVersion) {
       throw new Error(`[billing.meter] missing plan version snapshot for (${planId}, ${ratioVersion})`);
     }
 
-    // WARN: version mismatch likely — costs.config emits a version that has no matching BillingPlan.
+    // WARN: version mismatch likely — costs.config emits a version that has no matching plan definition.
     if (ratioVersion) {
       // Charges will use ratio=1 (flat) for all features. Align meter.ratioVersion + planDefinitions[].version
       // + downstream cost-config emitted version to resolve. See billing README — Version Namespace Contract.
@@ -140,11 +138,8 @@ const capBreakdown = (breakdown, cappedUnits, originalTotal) => {
 /**
  * @function attribute
  * @description Attribute meter units from a History-like input to a Usage document
- *              for the given organization. If the plan quota is exceeded, creates a
- *              pending BillingMeterOutbox row before attempting BillingExtraService.debit.
- *              The return is optimistic once usage is counted: debit failures leave the
- *              outbox pending for retry and still return extrasConsumed so callers do not
- *              retry an already-applied attribution.
+ *              for the given organization. Overflow into extras is handled atomically
+ *              inline in BillingUsageService.incrementMeter — no outbox needed.
  *
  *              Per-step idempotency: the idempotency key is `${history._id}:${stepKey}`.
  *              This allows multiple attributions on the same history at different processing
@@ -161,37 +156,18 @@ const capBreakdown = (breakdown, cappedUnits, originalTotal) => {
  * @param {string} organizationId - The organization ObjectId (string).
  * @param {Object} [options={}] - Optional per-step configuration.
  * @param {string|null|undefined} [options.stepKey='initial'] - Logical step name scoping this attribution.
- *   Use 'initial' for the first (and often only) charge per history.
- *   Use a distinct value (e.g. 'digest', 'fix:1', 'fix:2') for subsequent attributions on
- *   the same history after cost-impacting mutations (setDigest, setFixCost).
- *   Downstream callers must pass ONLY the incremental cost delta in history.costs for each step,
- *   or use options.costsOverride to pass the delta directly.
- *   Format: alphanumeric, colon, hyphen, underscore only, 1-64 chars (e.g. 'initial', 'digest', 'fix:1').
- *   null/undefined → defaults to 'initial'. Any other invalid value → throws Error.
- *   No-op when config.billing.meterMode is false (validation is skipped in that case).
  * @param {Object|null|undefined} [options.costsOverride=null] - Optional cost map to charge
- *   instead of history.costs. Use for delta charging:
- *   `attribute(history, orgId, { stepKey: 'digest', costsOverride: { digest: 0.5 } })`.
- *   Empty or zero-only overrides write the idempotency key with a zero-unit attribution,
- *   then return `{ applied: false, reason: 'zero_cost_skipped' }`.
+ *   instead of history.costs.
  * @param {Object|null|undefined} [options.costs=null] - Alias cost map used when
- *   options.costsOverride is not provided. Prefer costsOverride for new delta-charge callers.
- * @param {string|null|undefined} [options.planId=null] - Optional planId override for paths
- *   where the history plan should not be used:
- *   `attribute(history, orgId, { planId: 'override', ratioVersion: '2026.05' })`.
- * @param {string|null|undefined} [options.ratioVersion=null] - Optional ratio snapshot override
- *   paired with options.planId. Falls back to history.planVersion when omitted.
+ *   options.costsOverride is not provided.
+ * @param {string|null|undefined} [options.planId=null] - Optional planId override.
+ * @param {string|null|undefined} [options.ratioVersion=null] - Optional ratio snapshot override.
  * @returns {Promise<{applied: boolean, meterUsed: number, extrasConsumed: number, reason?: string}>}
- *   `reason` is present for zero-cost skips:
- *   `{ applied: false, meterUsed: 0, extrasConsumed: 0, reason: 'zero_cost_skipped' }`
- *   Extras debit failures after usage is applied are reconciled by the outbox cron;
- *   consumers should not retry when `applied: true`.
  * @throws {Error} If stepKey is non-null/undefined and does not match the expected format.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const attribute = async (history, organizationId, options = {}) => {
   // Fast-path: when metering is disabled, skip all validation and return immediately.
-  // This preserves the documented no-op behavior for callers passing any stepKey when meterMode=false.
   if (!config?.billing?.meterMode) {
     return { applied: false, meterUsed: 0, extrasConsumed: 0 };
   }
@@ -205,8 +181,6 @@ const attribute = async (history, organizationId, options = {}) => {
   } = options ?? {};
 
   // Validate stepKey: must be a non-empty alphanumeric+colon+hyphen+underscore string (1-64 chars).
-  // Silent fallback to 'initial' was removed — it collides with the actual initial attribution
-  // and silently drops subsequent step charges (e.g. 'digest', 'fix:1').
   // null/undefined → treated as absent → defaults to 'initial' (safe, intentional).
   // Any other non-conforming value → throws so callers can detect and fix bad inputs.
   if (
@@ -226,7 +200,7 @@ const attribute = async (history, organizationId, options = {}) => {
   let breakdown = {};
 
   if (costs != null) {
-    ({ totalUnits, breakdown } = await unitsFromCosts(costs, planId, ratioVersion));
+    ({ totalUnits, breakdown } = unitsFromCosts(costs, planId, ratioVersion));
   }
 
   const maxUnits = getMaxUnitsPerOperation();
@@ -244,10 +218,7 @@ const attribute = async (history, organizationId, options = {}) => {
     return { applied: false, meterUsed: 0, extrasConsumed: 0, reason: 'zero_cost_skipped' };
   }
 
-  // incrementMeterWithOutbox atomically creates the outbox row before returning so there
-  // is exactly one pending row per (idempotencyKey) when extras overflow. result.outbox is
-  // always present when extrasConsumed > 0.
-  const result = await BillingUsageService.incrementMeterWithOutbox(
+  const result = await BillingUsageService.incrementMeter(
     organizationId,
     cappedUnits,
     cappedBreakdown,
@@ -259,23 +230,7 @@ const attribute = async (history, organizationId, options = {}) => {
     return { applied: false, meterUsed: result.meterUsed ?? 0, extrasConsumed: 0 };
   }
 
-  let extrasConsumed = 0;
-  if (result.extrasConsumed > 0) {
-    extrasConsumed = result.extrasConsumed;
-    const outboxDoc = result.outbox;
-
-    try {
-      const debitResult = await BillingExtraService.debit(organizationId, extrasConsumed, idempotencyKey);
-      if (debitResult.applied && outboxDoc) {
-        await BillingMeterOutboxRepository.markCommitted(outboxDoc._id);
-      }
-    } catch (err) {
-      // Usage is already counted and the outbox row is pending. The retry cron owns reconciliation.
-      console.warn('[billing.meter] extras debit deferred to outbox:', err?.message ?? err);
-    }
-  }
-
-  return { applied: true, meterUsed: result.meterUsed, extrasConsumed };
+  return { applied: true, meterUsed: result.meterUsed, extrasConsumed: result.extrasConsumed };
 };
 
 export default {

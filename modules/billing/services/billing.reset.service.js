@@ -43,7 +43,7 @@ const resetWeek = async (orgId, periodStart) => {
   // Step 2 — Fetch the active plan to snapshot quota/planVersion — lean projection (plan only, no populate).
   const subscription = await BillingSubscriptionRepository.findPlan(orgId);
   const planId = subscription?.plan ?? getDefaultPlanId();
-  const activePlan = await BillingPlanService.getActivePlan(planId);
+  const activePlan = BillingPlanService.getActivePlan(planId);
   const meterQuota = activePlan?.meterQuota ?? 0;
   const planVersion = activePlan?.version ?? null;
 
@@ -103,7 +103,7 @@ const forceRotateForPlanChange = async (organizationId, options = {}) => {
 
   const subscription = await BillingSubscriptionRepository.findPlan(organizationId);
   const planId = subscription?.plan ?? getDefaultPlanId();
-  const activePlan = await BillingPlanService.getActivePlan(planId);
+  const activePlan = BillingPlanService.getActivePlan(planId);
   const newQuota = activePlan?.meterQuota ?? 0;
   const newVersion = activePlan?.version ?? null;
   const month = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;

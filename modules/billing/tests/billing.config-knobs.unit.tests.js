@@ -17,10 +17,6 @@ describe('billing config knob helpers:', () => {
           runBaseUnits: 3,
           fallbackPlanId: 'enterprise',
         },
-        outbox: {
-          maxRetryAttempts: 7,
-          retryIntervalSec: 42,
-        },
         crons: {
           jitterMaxMs: 1234,
         },
@@ -50,8 +46,6 @@ describe('billing config knob helpers:', () => {
   test('reads explicit billing hardening config overrides', () => {
     expect(constants.getMeterRunBase()).toBe(9);
     expect(constants.getMeterFallbackPlanId()).toBe('enterprise');
-    expect(constants.getOutboxMaxRetryAttempts()).toBe(7);
-    expect(constants.getOutboxRetryIntervalMs()).toBe(42_000);
     expect(constants.getCronJitterMaxMs()).toBe(1234);
     expect(constants.getPlanChangePreserveUsageDefault()).toBe(false);
     expect(constants.getAlertThresholdPercents()).toEqual([95, 50]);
@@ -175,8 +169,6 @@ describe('billing config knob helpers:', () => {
 
     expect(constants.getMeterRunBase()).toBe(4);
     expect(constants.getMeterFallbackPlanId()).toBe('free');
-    expect(constants.getOutboxMaxRetryAttempts()).toBe(5);
-    expect(constants.getOutboxRetryIntervalMs()).toBe(300_000);
     expect(constants.getCronJitterMaxMs()).toBe(60_000);
     expect(constants.getPlanChangePreserveUsageDefault()).toBe(true);
     expect(constants.getAlertThresholdPercents()).toEqual([100, 80]);

@@ -4,8 +4,6 @@
 import config from '../../../config/index.js';
 
 export const DEFAULT_METER_RUN_BASE = 1;
-export const DEFAULT_OUTBOX_MAX_RETRY_ATTEMPTS = 5;
-export const DEFAULT_OUTBOX_RETRY_INTERVAL_SEC = 300;
 export const DEFAULT_CRON_JITTER_MAX_MS = 60_000;
 export const DEFAULT_PLAN_CHANGE_PRESERVE_USAGE = true;
 export const DEFAULT_ALERT_THRESHOLD_PERCENTS = [80, 100];
@@ -41,22 +39,6 @@ export const getMeterFallbackPlanId = () =>
   config?.billing?.meter?.fallbackPlanId
   ?? config?.billing?.plans?.[0]
   ?? 'pro';
-
-/**
- * @function getOutboxMaxRetryAttempts
- * @description Resolve the maximum number of retry attempts before an outbox row fails.
- * @returns {number} Maximum retry attempts.
- */
-export const getOutboxMaxRetryAttempts = () =>
-  config?.billing?.outbox?.maxRetryAttempts ?? DEFAULT_OUTBOX_MAX_RETRY_ATTEMPTS;
-
-/**
- * @function getOutboxRetryIntervalMs
- * @description Resolve the outbox retry interval in milliseconds.
- * @returns {number} Retry interval in milliseconds.
- */
-export const getOutboxRetryIntervalMs = () =>
-  (config?.billing?.outbox?.retryIntervalSec ?? DEFAULT_OUTBOX_RETRY_INTERVAL_SEC) * 1000;
 
 /**
  * @function getCronJitterMaxMs

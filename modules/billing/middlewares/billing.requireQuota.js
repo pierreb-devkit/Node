@@ -83,7 +83,7 @@ function requireQuota(resource, action) {
           // Fall back to the plan quota so first-run requests are not blocked.
           // Reuse the `subscription` already fetched by the degraded-mode gate above.
           const planId = subscription?.plan ?? getDefaultPlanId();
-          const activePlan = await BillingPlanService.getActivePlan(planId);
+          const activePlan = BillingPlanService.getActivePlan(planId);
 
           // Plan missing (seeding / version bump in progress) → fail safe with 503
           // rather than defaulting to meterQuota=0 which would surface as 402 METER_EXHAUSTED.
