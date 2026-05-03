@@ -1,3 +1,5 @@
+// Extension point: add E_CAST, E_VALIDATION helpers here as needed
+
 /**
  * @function isDuplicateKeyError
  * @description Identify Mongo duplicate-key errors across driver and string-only shapes.

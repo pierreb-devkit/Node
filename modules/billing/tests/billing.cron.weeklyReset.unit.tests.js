@@ -10,6 +10,20 @@ import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globa
  * We test the underlying BillingResetService.resetAllDue integration path rather than the
  * script file directly (which would require a live DB connection).
  */
+
+describe('billing.weeklyReset cron — applyJitter registration:', () => {
+  test('applyJitter is exported from billing.cron-utils (parity check with other crons)', async () => {
+    const { applyJitter } = await import('../lib/billing.cron-utils.js');
+    expect(typeof applyJitter).toBe('function');
+  });
+
+  test('getCronJitterMaxMs is exported from billing.constants (used in weeklyReset jitter call)', async () => {
+    const { getCronJitterMaxMs } = await import('../lib/billing.constants.js');
+    expect(typeof getCronJitterMaxMs).toBe('function');
+    expect(typeof getCronJitterMaxMs()).toBe('number');
+  });
+});
+
 describe('billing.weeklyReset cron — BillingResetService.resetAllDue:', () => {
   let BillingResetService;
   let mockConfig;

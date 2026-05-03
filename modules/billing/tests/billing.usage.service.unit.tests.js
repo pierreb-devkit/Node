@@ -415,6 +415,31 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       expect(result.alertCrossed).toBeNull();
     });
 
+    test('should emit BOTH 80% and 100% when jumping from 0% to 150% in one attribution', async () => {
+      // Regression test: break was removing the 80% event when jump went past 100%.
+      // With the fix, the loop continues after marking 100% and also marks 80%.
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 500000 }));
+      // meterUsed = 750000 → 150% of 500000 → both 80 and 100 thresholds crossed
+      const updatedDoc = makeUsageDoc({
+        meterUsed: 750000,
+        meterQuota: 500000,
+        alertedAt80: null,
+        alertedAt100: null,
+      });
+      mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
+      // markThreshold called twice — both succeed
+      mockUsageRepository.markThreshold.mockResolvedValue({ modifiedCount: 1 });
+
+      const result = await BillingUsageService.incrementMeter(orgId, 750000, {}, 'hist_0to150pct');
+
+      // alertCrossed should be the last threshold set (80, since sort is DESC: 100 first, then 80)
+      expect(result.alertCrossed).toBe('80');
+      expect(mockUsageRepository.markThreshold).toHaveBeenCalledTimes(2);
+      expect(mockUsageRepository.markThreshold).toHaveBeenCalledWith(updatedDoc._id, 'alertedAt100');
+      expect(mockUsageRepository.markThreshold).toHaveBeenCalledWith(updatedDoc._id, 'alertedAt80');
+    });
+
     test('should NOT set alertCrossed when markThreshold returns modifiedCount=0 (another pod won)', async () => {
       // markThreshold returns modifiedCount=0 → we lost the race, must not emit
       mockUsageRepository.markThreshold.mockResolvedValue({ modifiedCount: 0 });

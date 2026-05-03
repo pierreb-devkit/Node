@@ -12,7 +12,7 @@ import { randomInt } from 'node:crypto';
 export const applyJitter = async (maxMs) => {
   if (!Number.isFinite(maxMs) || maxMs <= 0) return 0;
   const jitterMaxMs = Math.floor(maxMs);
-  if (jitterMaxMs <= 0) return 0;
+  if (jitterMaxMs <= 0) return 0; // guard fractional inputs (e.g. 0.4) — randomInt(0,0) throws
   const delayMs = randomInt(0, jitterMaxMs);
   await new Promise((resolve) => setTimeout(resolve, delayMs));
   return delayMs;

@@ -7,6 +7,7 @@ import AnalyticsService from '../../lib/services/analytics.js';
 import billingEvents from './lib/events.js';
 import BillingPlanService from './services/billing.plan.service.js';
 import BillingUsageRepository from './repositories/billing.usage.repository.js';
+import { getAlertThresholdPercents } from './lib/billing.constants.js';
 
 /**
  * Billing module initialisation.
@@ -22,6 +23,19 @@ export default async (app) => {
     for (const pack of config.billing.packs) {
       if (typeof pack.priceUsd !== 'number' || pack.priceUsd <= 0) {
         console.warn(`[billing] pack '${pack.packId}' missing valid priceUsd; refundPartial fallback will be inaccurate`);
+      }
+    }
+  }
+
+  // Validate alert threshold percents (meterMode only) — warn on configured values with no schema field.
+  // Only 80 and 100 have matching alertedAtN fields in BillingUsage; other values are silently skipped.
+  if (config?.billing?.meterMode) {
+    const SUPPORTED_THRESHOLD_PERCENTS = new Set([80, 100]);
+    for (const threshold of getAlertThresholdPercents()) {
+      if (!SUPPORTED_THRESHOLD_PERCENTS.has(threshold)) {
+        console.warn(
+          `[billing] Configured alert threshold ${threshold}% is not in schema-supported set [80, 100] — alert will be silently skipped`,
+        );
       }
     }
   }

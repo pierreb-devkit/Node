@@ -193,7 +193,7 @@ const createExtrasCheckout = async (organization, packId, successUrl, cancelUrl)
 
   const subscription = await _ensureStripeCustomer(stripe, organization);
 
-  // Use a timestamped idempotency key (debounce double-click within ~1s granularity)
+  // Use a timestamped idempotency key (~1ms granularity — insufficient for double-click protection, known design)
   const idempotencyKey = `extras_checkout_${String(organization._id)}_${packId}_${Date.now()}`;
 
   const extrasCheckoutParams = {

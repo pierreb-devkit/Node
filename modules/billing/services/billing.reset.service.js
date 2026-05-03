@@ -7,7 +7,7 @@ import BillingSubscriptionRepository from '../repositories/billing.subscription.
 import BillingPlanService from './billing.plan.service.js';
 import billingEvents from '../lib/events.js';
 import { isoWeekKey } from '../lib/billing.isoWeek.js';
-import { getPlanChangePreserveUsageDefault } from '../lib/billing.constants.js';
+import { getPlanChangePreserveUsageDefault, getDefaultPlanId } from '../lib/billing.constants.js';
 import { isDuplicateKeyError } from '../lib/billing.errors.js';
 
 /**
@@ -42,7 +42,7 @@ const resetWeek = async (orgId, periodStart) => {
 
   // Step 2 — Fetch the active plan to snapshot quota/planVersion — lean projection (plan only, no populate).
   const subscription = await BillingSubscriptionRepository.findPlan(orgId);
-  const planId = subscription?.plan ?? config?.billing?.defaultPlan ?? 'free';
+  const planId = subscription?.plan ?? getDefaultPlanId();
   const activePlan = await BillingPlanService.getActivePlan(planId);
   const meterQuota = activePlan?.meterQuota ?? 0;
   const planVersion = activePlan?.version ?? null;
@@ -102,7 +102,7 @@ const forceRotateForPlanChange = async (organizationId, options = {}) => {
   if (!existingDoc) return null;
 
   const subscription = await BillingSubscriptionRepository.findPlan(organizationId);
-  const planId = subscription?.plan ?? config?.billing?.defaultPlan ?? 'free';
+  const planId = subscription?.plan ?? getDefaultPlanId();
   const activePlan = await BillingPlanService.getActivePlan(planId);
   const newQuota = activePlan?.meterQuota ?? 0;
   const newVersion = activePlan?.version ?? null;
@@ -181,5 +181,4 @@ export default {
   resetWeek,
   forceRotateForPlanChange,
   resetAllDue,
-  isoWeekKey,
 };

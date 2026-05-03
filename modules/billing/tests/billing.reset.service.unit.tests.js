@@ -2,6 +2,7 @@
  * Module dependencies.
  */
 import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globals';
+import { isoWeekKey } from '../lib/billing.isoWeek.js';
 
 /**
  * Unit tests for billing.reset.service.js
@@ -115,19 +116,19 @@ describe('BillingResetService unit tests:', () => {
   describe('isoWeekKey', () => {
     test('should return correct week key for a known Monday', () => {
       // 2026-04-27 is a Monday, ISO week 18
-      const result = BillingResetService.isoWeekKey(new Date('2026-04-27'));
+      const result = isoWeekKey(new Date('2026-04-27'));
       expect(result).toBe('2026-W18');
     });
 
     test('should return correct week key for a Sunday (same ISO week as preceding Monday)', () => {
       // 2026-05-03 is Sunday, still ISO week 18
-      const result = BillingResetService.isoWeekKey(new Date('2026-05-03'));
+      const result = isoWeekKey(new Date('2026-05-03'));
       expect(result).toBe('2026-W18');
     });
 
     test('should compute week 1 for first week of year', () => {
       // 2026-01-01 is Thursday — ISO week 1 of 2026
-      const result = BillingResetService.isoWeekKey(new Date('2026-01-01'));
+      const result = isoWeekKey(new Date('2026-01-01'));
       expect(result).toBe('2026-W01');
     });
   });

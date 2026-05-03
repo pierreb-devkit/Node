@@ -8,7 +8,7 @@ import BillingMeterOutboxRepository from '../repositories/billing.meter.outbox.r
 import BillingPlanService from './billing.plan.service.js';
 import billingEvents from '../lib/events.js';
 import { currentWeekKey } from '../lib/billing.isoWeek.js';
-import { getAlertThresholdPercents } from '../lib/billing.constants.js';
+import { getAlertThresholdPercents, getDefaultPlanId } from '../lib/billing.constants.js';
 import { isDuplicateKeyError } from '../lib/billing.errors.js';
 
 /**
@@ -70,6 +70,8 @@ const reset = (organizationId) => UsageRepository.reset(organizationId, currentM
  * @param {Object} breakdown - Feature-keyed breakdown: { featureKey: units }.
  * @param {string} idempotencyKey - Unique key for replay protection (usually history._id).
  * @returns {Promise<{applied: boolean, meterUsed: number, meterQuota: number, extrasConsumed: number, alertCrossed: string|null}>}
+ *   `alertCrossed` is the last threshold emitted this call (lowest value when multiple thresholds crossed in one jump,
+ *   e.g. 0%→150% emits both 80 and 100 — alertCrossed='80'). Informational only; events are the authoritative signal.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) => {
@@ -82,7 +84,7 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
 
   // Fetch active plan for quota snapshot — lean projection (plan field only, no populate)
   const subscription = await BillingSubscriptionRepository.findPlan(organizationId);
-  const planId = subscription?.plan ?? config?.billing?.defaultPlan ?? 'free';
+  const planId = subscription?.plan ?? getDefaultPlanId();
   const activePlan = await BillingPlanService.getActivePlan(planId);
   const meterQuota = activePlan?.meterQuota ?? 0;
   const planVersion = activePlan?.version ?? null;
@@ -157,7 +159,6 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
           meterUsed: newMeterUsed,
           meterQuota: effectiveQuota,
         });
-        break;
       }
     }
   }

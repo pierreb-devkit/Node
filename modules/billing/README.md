@@ -105,6 +105,23 @@ Consumers should NOT retry on `applied: true` — the outbox handles eventual co
 
 ## Meter hardening configuration
 
+### Configuration knobs
+
+| Knob | Type | Default | Notes |
+|------|------|---------|-------|
+| `billing.meter.runBase` | number | 1 | METER_RUN_BASE base unit cost |
+| `billing.meter.fallbackPlanId` | string \| null | null | Fallback plan when active not resolvable |
+| `billing.meter.dollarsToUnitRatio` | number | 1000 | Dollar amount → meter unit conversion |
+| `billing.meter.maxUnitsPerOperation` | number | Infinity | Cap per single attribute call |
+| `billing.meter.ratioVersion` | string \| null | null | DOWNSTREAM-OVERRIDE-REQUIRED — pricing version namespace |
+| `billing.outbox.maxRetryAttempts` | number | 5 | Outbox retry limit before exhausted |
+| `billing.outbox.retryIntervalSec` | number | 300 | Cron retry interval |
+| `billing.crons.jitterMaxMs` | number | 60000 | Cron startup jitter max |
+| `billing.planChange.preserveUsageDefault` | boolean | true | forceRotateForPlanChange default |
+| `billing.alerts.thresholdPercents` | number[] | [80, 100] | Schema-supported only — see thresholdFields |
+| `billing.events.extrasExhausted` | string | 'billing.extras_debit.exhausted' | Event name for downstream alerting |
+| `billing.defaultPlan` | string | 'free' | Default plan ID for fallback |
+
 Defaults live in `modules/billing/config/billing.development.config.js` and can be overridden by downstream project config:
 
 ```js

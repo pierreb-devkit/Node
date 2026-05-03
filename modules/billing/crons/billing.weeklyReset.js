@@ -13,15 +13,24 @@
 
 process.env.NODE_ENV = process.env.NODE_ENV || 'development';
 
-const [{ default: config }, { default: mongooseService }] = await Promise.all([
+const [
+  { default: config },
+  { default: mongooseService },
+  { applyJitter },
+  { getCronJitterMaxMs },
+] = await Promise.all([
   import('../../../config/index.js'),
   import('../../../lib/services/mongoose.js'),
+  import('../lib/billing.cron-utils.js'),
+  import('../lib/billing.constants.js'),
 ]);
 
 if (!config?.billing?.meterMode) {
   console.log('[billing.weeklyReset] meterMode disabled — skipping.');
   process.exit(0);
 }
+
+await applyJitter(getCronJitterMaxMs());
 
 try {
   await mongooseService.connect();

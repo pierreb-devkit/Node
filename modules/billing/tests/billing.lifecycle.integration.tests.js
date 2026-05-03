@@ -6,6 +6,7 @@ import { describe, beforeAll, beforeEach, afterAll, afterEach, test, expect, jes
 
 import config from '../../../config/index.js';
 import mongooseService from '../../../lib/services/mongoose.js';
+import { isoWeekKey } from '../lib/billing.isoWeek.js';
 
 /**
  * Integration tests for meter lifecycle hardening.
@@ -17,7 +18,6 @@ describe('Billing meter lifecycle integration tests:', () => {
   let Organization;
   let BillingMeterOutbox;
   let BillingExtraBalance;
-  let BillingResetService;
   let BillingWebhookService;
   let BillingUsageService;
   let BillingMeterService;
@@ -57,7 +57,6 @@ describe('Billing meter lifecycle integration tests:', () => {
     BillingMeterOutbox = mongoose.model('BillingMeterOutbox');
     BillingExtraBalance = mongoose.model('BillingExtraBalance');
 
-    BillingResetService = (await import('../services/billing.reset.service.js')).default;
     BillingWebhookService = (await import('../services/billing.webhook.service.js')).default;
     BillingUsageService = (await import('../services/billing.usage.service.js')).default;
     BillingMeterService = (await import('../services/billing.meter.service.js')).default;
@@ -95,7 +94,7 @@ describe('Billing meter lifecycle integration tests:', () => {
 
   test('plan.changed webhook updates active week quota snapshot mid-week', async () => {
     const organizationId = new mongoose.Types.ObjectId();
-    const weekKey = BillingResetService.isoWeekKey(new Date());
+    const weekKey = isoWeekKey(new Date());
     await Organization.create({ _id: organizationId, name: 'Lifecycle Org', slug: 'lifecycle-org', plan: 'starter' });
     await createActivePlan('pro', 'pro-v2', 1000);
     await Subscription.create({

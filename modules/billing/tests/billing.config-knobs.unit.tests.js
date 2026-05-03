@@ -58,6 +58,36 @@ describe('billing config knob helpers:', () => {
     expect(constants.getExtrasExhaustedEventName()).toBe('billing.custom.exhausted');
   });
 
+  test('getDollarsToUnitRatio reads from config', () => {
+    mockConfig.billing.meter.dollarsToUnitRatio = 500;
+    expect(constants.getDollarsToUnitRatio()).toBe(500);
+  });
+
+  test('getDollarsToUnitRatio defaults to 1000', async () => {
+    mockConfig.billing = {};
+    expect(constants.getDollarsToUnitRatio()).toBe(1000);
+  });
+
+  test('getMaxUnitsPerOperation reads from config', () => {
+    mockConfig.billing.meter.maxUnitsPerOperation = 25000;
+    expect(constants.getMaxUnitsPerOperation()).toBe(25000);
+  });
+
+  test('getMaxUnitsPerOperation defaults to Infinity', async () => {
+    mockConfig.billing = {};
+    expect(constants.getMaxUnitsPerOperation()).toBe(Infinity);
+  });
+
+  test('getDefaultPlanId reads from config', () => {
+    mockConfig.billing.defaultPlan = 'starter';
+    expect(constants.getDefaultPlanId()).toBe('starter');
+  });
+
+  test('getDefaultPlanId defaults to free', async () => {
+    mockConfig.billing = {};
+    expect(constants.getDefaultPlanId()).toBe('free');
+  });
+
   test('keeps backward-compatible defaults and runBaseUnits alias', async () => {
     mockConfig.billing = {
       plans: ['free'],
@@ -74,5 +104,8 @@ describe('billing config knob helpers:', () => {
     expect(constants.getPlanChangePreserveUsageDefault()).toBe(true);
     expect(constants.getAlertThresholdPercents()).toEqual([100, 80]);
     expect(constants.getExtrasExhaustedEventName()).toBe('billing.extras_debit.exhausted');
+    expect(constants.getDollarsToUnitRatio()).toBe(1000);
+    expect(constants.getMaxUnitsPerOperation()).toBe(Infinity);
+    expect(constants.getDefaultPlanId()).toBe('free');
   });
 });

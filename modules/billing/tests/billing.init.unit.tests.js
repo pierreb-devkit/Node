@@ -129,6 +129,44 @@ describe('billing.init unit tests:', () => {
     await expect(billingInit(mockApp)).rejects.toThrow('legacy consumedHistoryIds field still present');
   });
 
+  test('warns at boot when thresholdPercents contains unsupported value (not 80/100)', async () => {
+    mockConfig.billing.meterMode = true;
+    mockConfig.billing.alerts = { thresholdPercents: [75] };
+    mockConfig.billing.plans = ['free'];
+
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await billingInit(mockApp);
+
+    const warnings = warnSpy.mock.calls.map((c) => c[0]);
+    expect(warnings.some((w) => w.includes('75%') && w.includes('silently skipped'))).toBe(true);
+  });
+
+  test('does not warn at boot when thresholdPercents contains only supported values', async () => {
+    mockConfig.billing.meterMode = true;
+    mockConfig.billing.alerts = { thresholdPercents: [80, 100] };
+    mockConfig.billing.plans = ['free'];
+
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await billingInit(mockApp);
+
+    const warnings = warnSpy.mock.calls.map((c) => c[0]);
+    expect(warnings.some((w) => w.includes('silently skipped'))).toBe(false);
+  });
+
+  test('does not warn at boot for threshold validation when meterMode=false', async () => {
+    mockConfig.billing.meterMode = false;
+    mockConfig.billing.alerts = { thresholdPercents: [75] }; // unsupported, but gate skips check
+
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await billingInit(mockApp);
+
+    const warnings = warnSpy.mock.calls.map((c) => c[0]);
+    expect(warnings.some((w) => w.includes('silently skipped'))).toBe(false);
+  });
+
   test('boot validator failure does not crash boot', async () => {
     mockConfig.billing.meterMode = true;
     mockConfig.billing.plans = ['free'];

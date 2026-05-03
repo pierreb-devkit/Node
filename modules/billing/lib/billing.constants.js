@@ -85,6 +85,30 @@ export const getAlertThresholdPercents = () => {
 };
 
 /**
+ * @function getDollarsToUnitRatio
+ * @description Resolve the configured conversion factor from dollar amounts to meter units.
+ * @returns {number} Dollar-to-unit ratio (e.g. 1000 means $1 = 1000 units).
+ */
+export const getDollarsToUnitRatio = () =>
+  config?.billing?.meter?.dollarsToUnitRatio ?? 1000;
+
+/**
+ * @function getMaxUnitsPerOperation
+ * @description Resolve the configured per-operation unit cap. Infinity means no cap.
+ * @returns {number} Maximum units allowed for a single attribute call.
+ */
+export const getMaxUnitsPerOperation = () =>
+  config?.billing?.meter?.maxUnitsPerOperation ?? Infinity;
+
+/**
+ * @function getDefaultPlanId
+ * @description Resolve the default plan ID used as a fallback when no active subscription exists.
+ * @returns {string} Default plan identifier.
+ */
+export const getDefaultPlanId = () =>
+  config?.billing?.defaultPlan ?? 'free';
+
+/**
  * @function getExtrasExhaustedEventName
  * @description Resolve the event name emitted when extras debit retries are exhausted.
  * @returns {string} Billing extras exhausted event name.
