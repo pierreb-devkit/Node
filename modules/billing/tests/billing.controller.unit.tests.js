@@ -154,7 +154,7 @@ describe('Billing webhook controller unit tests:', () => {
     const req = { headers: { 'stripe-signature': 'sig_ok' }, body: 'raw' };
     await BillingWebhookController.handleWebhook(req, res);
 
-    expect(mockBillingWebhookService.handleSubscriptionDeleted).toHaveBeenCalledWith({ id: 'sub_del' });
+    expect(mockBillingWebhookService.handleSubscriptionDeleted).toHaveBeenCalledWith({ id: 'sub_del' }, eventData);
     expect(mockBillingWebhookService.withIdempotency).toHaveBeenCalledWith(eventData, expect.any(Function));
     expect(res.status).toHaveBeenCalledWith(200);
   });
@@ -173,7 +173,7 @@ describe('Billing webhook controller unit tests:', () => {
     const req = { headers: { 'stripe-signature': 'sig_ok' }, body: 'raw' };
     await BillingWebhookController.handleWebhook(req, res);
 
-    expect(mockBillingWebhookService.handleInvoicePaymentFailed).toHaveBeenCalledWith({ id: 'inv_fail' });
+    expect(mockBillingWebhookService.handleInvoicePaymentFailed).toHaveBeenCalledWith({ id: 'inv_fail' }, eventData);
     expect(mockBillingWebhookService.withIdempotency).toHaveBeenCalledWith(eventData, expect.any(Function));
     expect(res.status).toHaveBeenCalledWith(200);
   });

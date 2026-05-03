@@ -23,6 +23,7 @@ describe('Billing plan.changed event unit tests:', () => {
       findByStripeCustomerId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      updateIfEventNewer: jest.fn().mockResolvedValue({ _id: subId }),
     };
 
     jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
@@ -46,6 +47,10 @@ describe('Billing plan.changed event unit tests:', () => {
       },
     }));
 
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
+    }));
+
     // Import service and events from the same module context
     const mod = await import('../services/billing.webhook.service.js');
     BillingWebhookService = mod.default;
@@ -61,7 +66,6 @@ describe('Billing plan.changed event unit tests:', () => {
   test('should emit plan.changed event when plan changes (downgrade)', async () => {
     const existing = { _id: subId, organization: { _id: orgId } };
     mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-    mockSubscriptionRepository.update.mockResolvedValue({});
 
     const handler = jest.fn();
     billingEvents.on('plan.changed', handler);
@@ -75,6 +79,7 @@ describe('Billing plan.changed event unit tests:', () => {
     };
 
     const event = {
+      id: 'evt_1', created: 1700000100,
       data: {
         object: subscription,
         previous_attributes: {
@@ -98,7 +103,6 @@ describe('Billing plan.changed event unit tests:', () => {
   test('should not emit plan.changed event when plan has not changed', async () => {
     const existing = { _id: subId, organization: { _id: orgId } };
     mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-    mockSubscriptionRepository.update.mockResolvedValue({});
 
     const handler = jest.fn();
     billingEvents.on('plan.changed', handler);
@@ -112,7 +116,7 @@ describe('Billing plan.changed event unit tests:', () => {
     };
 
     // No previous_attributes means no plan change
-    const event = { data: { object: subscription } };
+    const event = { id: 'evt_no_plan', created: 1700000100, data: { object: subscription } };
 
     await BillingWebhookService.handleSubscriptionUpdated(subscription, event);
 
@@ -122,7 +126,6 @@ describe('Billing plan.changed event unit tests:', () => {
   test('should detect upgrade (isDowngrade = false) when moving to higher plan', async () => {
     const existing = { _id: subId, organization: orgId };
     mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-    mockSubscriptionRepository.update.mockResolvedValue({});
 
     const handler = jest.fn();
     billingEvents.on('plan.changed', handler);
@@ -136,6 +139,7 @@ describe('Billing plan.changed event unit tests:', () => {
     };
 
     const event = {
+      id: 'evt_upgrade', created: 1700000100,
       data: {
         object: subscription,
         previous_attributes: {
@@ -159,7 +163,6 @@ describe('Billing plan.changed event unit tests:', () => {
   test('should detect downgrade from enterprise to free', async () => {
     const existing = { _id: subId, organization: orgId };
     mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-    mockSubscriptionRepository.update.mockResolvedValue({});
 
     const handler = jest.fn();
     billingEvents.on('plan.changed', handler);
@@ -173,6 +176,7 @@ describe('Billing plan.changed event unit tests:', () => {
     };
 
     const event = {
+      id: 'evt_downgrade', created: 1700000100,
       data: {
         object: subscription,
         previous_attributes: {
@@ -196,7 +200,6 @@ describe('Billing plan.changed event unit tests:', () => {
   test('should not emit when previous_attributes has items but same plan', async () => {
     const existing = { _id: subId, organization: orgId };
     mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-    mockSubscriptionRepository.update.mockResolvedValue({});
 
     const handler = jest.fn();
     billingEvents.on('plan.changed', handler);
@@ -210,6 +213,7 @@ describe('Billing plan.changed event unit tests:', () => {
     };
 
     const event = {
+      id: 'evt_same_plan', created: 1700000100,
       data: {
         object: subscription,
         previous_attributes: {

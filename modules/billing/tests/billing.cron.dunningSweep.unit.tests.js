@@ -35,6 +35,7 @@ describe('billing.dunningSweep cron — BillingSubscriptionRepository:', () => {
     mockModel = {
       find: jest.fn(),
       findByIdAndUpdate: jest.fn(),
+      findOneAndUpdate: jest.fn(),
     };
 
     mockOrganizationModel = {
@@ -94,14 +95,16 @@ describe('billing.dunningSweep cron — BillingSubscriptionRepository:', () => {
   });
 
   describe('markUnpaid', () => {
-    test('sets status to unpaid and plan to free', async () => {
+    const threshold = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+
+    test('sets status to unpaid and plan to free with conditional guard', async () => {
       const updated = { _id: subId, status: 'unpaid', plan: 'free' };
-      mockModel.findByIdAndUpdate.mockReturnValue({ exec: jest.fn().mockResolvedValue(updated) });
+      mockModel.findOneAndUpdate.mockReturnValue({ exec: jest.fn().mockResolvedValue(updated) });
 
-      const result = await BillingSubscriptionRepository.markUnpaid(subId);
+      const result = await BillingSubscriptionRepository.markUnpaid(subId, threshold);
 
-      expect(mockModel.findByIdAndUpdate).toHaveBeenCalledWith(
-        subId,
+      expect(mockModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { _id: subId, status: 'past_due', pastDueSince: { $lte: threshold } },
         { $set: { status: 'unpaid', plan: 'free' } },
         expect.objectContaining({ returnDocument: 'after' }),
       );
@@ -109,18 +112,28 @@ describe('billing.dunningSweep cron — BillingSubscriptionRepository:', () => {
     });
 
     test('returns null for invalid id', async () => {
-      const result = await BillingSubscriptionRepository.markUnpaid('not-valid');
+      const result = await BillingSubscriptionRepository.markUnpaid('not-valid', threshold);
       expect(result).toBeNull();
-      expect(mockModel.findByIdAndUpdate).not.toHaveBeenCalled();
+      expect(mockModel.findOneAndUpdate).not.toHaveBeenCalled();
     });
 
     test('returns null for missing id', async () => {
-      const result = await BillingSubscriptionRepository.markUnpaid(undefined);
+      const result = await BillingSubscriptionRepository.markUnpaid(undefined, threshold);
+      expect(result).toBeNull();
+    });
+
+    test('returns null when sub no longer matches condition (recovered)', async () => {
+      mockModel.findOneAndUpdate.mockReturnValue({ exec: jest.fn().mockResolvedValue(null) });
+
+      const result = await BillingSubscriptionRepository.markUnpaid(subId, threshold);
+
       expect(result).toBeNull();
     });
   });
 
   describe('dunning sweep logic (integration of findStaleDunning + markUnpaid + OrganizationRepository)', () => {
+    const threshold = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+
     test('processes multiple stale subscriptions', async () => {
       const staleSubs = [
         { _id: subId, organization: orgId },
@@ -128,15 +141,15 @@ describe('billing.dunningSweep cron — BillingSubscriptionRepository:', () => {
       ];
       const leanMock = jest.fn().mockResolvedValue(staleSubs);
       mockModel.find.mockReturnValue({ lean: leanMock });
-      mockModel.findByIdAndUpdate.mockReturnValue({ exec: jest.fn().mockResolvedValue({}) });
+      mockModel.findOneAndUpdate.mockReturnValue({ exec: jest.fn().mockResolvedValue({}) });
 
       const returned = await BillingSubscriptionRepository.findStaleDunning(new Date());
       let processed = 0;
       let errors = 0;
       for (const sub of returned) {
         try {
-          await BillingSubscriptionRepository.markUnpaid(String(sub._id));
-          processed += 1;
+          const result = await BillingSubscriptionRepository.markUnpaid(String(sub._id), threshold);
+          if (result) processed += 1;
         } catch {
           errors += 1;
         }
@@ -144,7 +157,7 @@ describe('billing.dunningSweep cron — BillingSubscriptionRepository:', () => {
 
       expect(processed).toBe(2);
       expect(errors).toBe(0);
-      expect(mockModel.findByIdAndUpdate).toHaveBeenCalledTimes(2);
+      expect(mockModel.findOneAndUpdate).toHaveBeenCalledTimes(2);
     });
 
     test('counts errors and continues when markUnpaid throws', async () => {
@@ -154,7 +167,7 @@ describe('billing.dunningSweep cron — BillingSubscriptionRepository:', () => {
       ];
       const leanMock = jest.fn().mockResolvedValue(staleSubs);
       mockModel.find.mockReturnValue({ lean: leanMock });
-      mockModel.findByIdAndUpdate
+      mockModel.findOneAndUpdate
         .mockReturnValueOnce({ exec: jest.fn().mockRejectedValue(new Error('DB error')) })
         .mockReturnValue({ exec: jest.fn().mockResolvedValue({}) });
 
@@ -163,8 +176,8 @@ describe('billing.dunningSweep cron — BillingSubscriptionRepository:', () => {
       let errors = 0;
       for (const sub of returned) {
         try {
-          await BillingSubscriptionRepository.markUnpaid(String(sub._id));
-          processed += 1;
+          const result = await BillingSubscriptionRepository.markUnpaid(String(sub._id), threshold);
+          if (result) processed += 1;
         } catch {
           errors += 1;
         }
@@ -175,19 +188,16 @@ describe('billing.dunningSweep cron — BillingSubscriptionRepository:', () => {
     });
 
     test('desync: markUnpaid succeeds but setPlan throws — increments desyncErrors', async () => {
-      // Simulate the cron compensation path: markUnpaid OK, OrganizationRepository.setPlan fails.
-      // Cron should not rethrow — it logs and increments desyncErrors, continues processing.
       const updatedSub = { _id: subId, organization: orgId, status: 'unpaid', plan: 'free' };
-      mockModel.findByIdAndUpdate.mockReturnValue({ exec: jest.fn().mockResolvedValue(updatedSub) });
+      mockModel.findOneAndUpdate.mockReturnValue({ exec: jest.fn().mockResolvedValue(updatedSub) });
 
       const setPlanMock = jest.fn().mockRejectedValue(new Error('org DB error'));
 
-      // Replicate cron loop logic inline (cron imports are not re-executed in unit context)
       let processed = 0;
       let desyncErrors = 0;
       const staleSubs = [{ _id: subId, organization: orgId }];
       for (const sub of staleSubs) {
-        const subscription = await BillingSubscriptionRepository.markUnpaid(String(sub._id));
+        const subscription = await BillingSubscriptionRepository.markUnpaid(String(sub._id), threshold);
         if (!subscription) continue;
         try {
           await setPlanMock(String(sub.organization), 'free');
@@ -203,12 +213,25 @@ describe('billing.dunningSweep cron — BillingSubscriptionRepository:', () => {
     });
 
     test('markUnpaid returns null for invalid sub id — cron skips (continue)', async () => {
-      // markUnpaid returns null for invalid ids; cron should continue without incrementing errors.
       const badSubId = 'not-a-valid-objectid';
-      const result = await BillingSubscriptionRepository.markUnpaid(badSubId);
+      const result = await BillingSubscriptionRepository.markUnpaid(badSubId, threshold);
 
       expect(result).toBeNull();
-      expect(mockModel.findByIdAndUpdate).not.toHaveBeenCalled();
+      expect(mockModel.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    test('markUnpaid returns null when sub recovered between find and update — cron skips gracefully', async () => {
+      mockModel.findOneAndUpdate.mockReturnValue({ exec: jest.fn().mockResolvedValue(null) });
+
+      let processed = 0;
+      const staleSubs = [{ _id: subId, organization: orgId }];
+      for (const sub of staleSubs) {
+        const subscription = await BillingSubscriptionRepository.markUnpaid(String(sub._id), threshold);
+        if (!subscription) continue;
+        processed += 1;
+      }
+
+      expect(processed).toBe(0);
     });
   });
 });

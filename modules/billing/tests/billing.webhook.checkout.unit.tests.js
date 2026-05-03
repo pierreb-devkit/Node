@@ -29,6 +29,7 @@ describe('Billing webhook checkout unit tests:', () => {
       findByStripeSubscriptionId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      updateIfEventNewer: jest.fn().mockResolvedValue({ _id: subId }),
     };
 
     mockOrganizationRepository = {
@@ -81,6 +82,10 @@ describe('Billing webhook checkout unit tests:', () => {
       default: {
         billing: { plans: ['free', 'starter', 'pro', 'enterprise'] },
       },
+    }));
+
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
     }));
 
     jest.unstable_mockModule('mongoose', () => ({

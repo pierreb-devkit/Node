@@ -95,14 +95,16 @@ describe('BillingSubscriptionRepository unit tests:', () => {
   // ── markUnpaid ────────────────────────────────────────────────────────────
 
   describe('markUnpaid', () => {
-    test('sets status to unpaid and plan to free atomically', async () => {
+    const threshold = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+
+    test('sets status to unpaid and plan to free with conditional guard', async () => {
       const updated = { _id: subId, status: 'unpaid', plan: 'free' };
-      mockModel.findByIdAndUpdate.mockReturnValue({ exec: jest.fn().mockResolvedValue(updated) });
+      mockModel.findOneAndUpdate.mockReturnValue({ exec: jest.fn().mockResolvedValue(updated) });
 
-      const result = await BillingSubscriptionRepository.markUnpaid(subId);
+      const result = await BillingSubscriptionRepository.markUnpaid(subId, threshold);
 
-      expect(mockModel.findByIdAndUpdate).toHaveBeenCalledWith(
-        subId,
+      expect(mockModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { _id: subId, status: 'past_due', pastDueSince: { $lte: threshold } },
         { $set: { status: 'unpaid', plan: 'free' } },
         { returnDocument: 'after', runValidators: true },
       );
@@ -110,41 +112,78 @@ describe('BillingSubscriptionRepository unit tests:', () => {
     });
 
     test('returns null for invalid ObjectId string', async () => {
-      const result = await BillingSubscriptionRepository.markUnpaid('not-a-valid-id');
+      const result = await BillingSubscriptionRepository.markUnpaid('not-a-valid-id', threshold);
       expect(result).toBeNull();
-      expect(mockModel.findByIdAndUpdate).not.toHaveBeenCalled();
+      expect(mockModel.findOneAndUpdate).not.toHaveBeenCalled();
     });
 
     test('returns null for undefined id', async () => {
-      const result = await BillingSubscriptionRepository.markUnpaid(undefined);
+      const result = await BillingSubscriptionRepository.markUnpaid(undefined, threshold);
       expect(result).toBeNull();
-      expect(mockModel.findByIdAndUpdate).not.toHaveBeenCalled();
+      expect(mockModel.findOneAndUpdate).not.toHaveBeenCalled();
     });
 
     test('returns null for null id', async () => {
-      const result = await BillingSubscriptionRepository.markUnpaid(null);
+      const result = await BillingSubscriptionRepository.markUnpaid(null, threshold);
       expect(result).toBeNull();
-      expect(mockModel.findByIdAndUpdate).not.toHaveBeenCalled();
+      expect(mockModel.findOneAndUpdate).not.toHaveBeenCalled();
     });
 
-    test('is idempotent — already-unpaid subscription can be called again without error', async () => {
-      const already = { _id: subId, status: 'unpaid', plan: 'free' };
-      mockModel.findByIdAndUpdate.mockReturnValue({ exec: jest.fn().mockResolvedValue(already) });
+    test('throws TypeError when threshold is not a Date', async () => {
+      expect(() => BillingSubscriptionRepository.markUnpaid(subId, '2026-01-01')).toThrow(TypeError);
+      expect(() => BillingSubscriptionRepository.markUnpaid(subId, null)).toThrow(TypeError);
+    });
 
-      const result = await BillingSubscriptionRepository.markUnpaid(subId);
+    test('returns null when sub no longer matches (recovered between find and update)', async () => {
+      mockModel.findOneAndUpdate.mockReturnValue({ exec: jest.fn().mockResolvedValue(null) });
 
-      expect(result.status).toBe('unpaid');
-      expect(result.plan).toBe('free');
+      const result = await BillingSubscriptionRepository.markUnpaid(subId, threshold);
+
+      expect(result).toBeNull();
     });
 
     test('uses returnDocument: after to return the updated document', async () => {
       const updated = { _id: subId, status: 'unpaid', plan: 'free' };
-      mockModel.findByIdAndUpdate.mockReturnValue({ exec: jest.fn().mockResolvedValue(updated) });
+      mockModel.findOneAndUpdate.mockReturnValue({ exec: jest.fn().mockResolvedValue(updated) });
 
-      await BillingSubscriptionRepository.markUnpaid(subId);
+      await BillingSubscriptionRepository.markUnpaid(subId, threshold);
 
-      const callArgs = mockModel.findByIdAndUpdate.mock.calls[0];
+      const callArgs = mockModel.findOneAndUpdate.mock.calls[0];
       expect(callArgs[2]).toMatchObject({ returnDocument: 'after' });
+    });
+  });
+
+  // ── updateIfEventNewer ────────────────────────────────────────────────────
+
+  describe('updateIfEventNewer', () => {
+    test('updates when stripeEventCreatedAt is null (first event)', async () => {
+      const updated = { _id: subId, status: 'canceled', stripeEventCreatedAt: 1000 };
+      const populateMock = jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(updated) });
+      mockModel.findOneAndUpdate.mockReturnValue({ populate: populateMock });
+
+      const result = await BillingSubscriptionRepository.updateIfEventNewer(subId, 1000, { status: 'canceled' });
+
+      expect(mockModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { _id: subId, $or: [{ stripeEventCreatedAt: null }, { stripeEventCreatedAt: { $lt: 1000 } }] },
+        { $set: { status: 'canceled', stripeEventCreatedAt: 1000 } },
+        { returnDocument: 'after', runValidators: true },
+      );
+      expect(result).toEqual(updated);
+    });
+
+    test('returns null when event is stale (older than stored)', async () => {
+      const populateMock = jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(null) });
+      mockModel.findOneAndUpdate.mockReturnValue({ populate: populateMock });
+
+      const result = await BillingSubscriptionRepository.updateIfEventNewer(subId, 500, { status: 'canceled' });
+
+      expect(result).toBeNull();
+    });
+
+    test('returns null for invalid id', async () => {
+      const result = await BillingSubscriptionRepository.updateIfEventNewer('not-valid', 1000, {});
+      expect(result).toBeNull();
+      expect(mockModel.findOneAndUpdate).not.toHaveBeenCalled();
     });
   });
 
