@@ -5,10 +5,12 @@ import { jest, describe, beforeEach, afterEach, test, expect } from '@jest/globa
 
 /**
  * Integration tests for billing admin endpoints.
+ * Tests the /api/admin/billing/refund endpoint with the inline refund logic
+ * (billing.refund.service.js was dropped in PR2; Stripe is called directly).
  */
 describe('Billing admin integration tests:', () => {
   let billingAdminRoutes;
-  let mockBillingRefundService;
+  let mockStripeInstance;
 
   /**
    * Create a lightweight route registry compatible with app.route().
@@ -73,13 +75,15 @@ describe('Billing admin integration tests:', () => {
   const buildRoutes = async () => {
     jest.resetModules();
 
-    mockBillingRefundService = {
-      refundCharge: jest.fn().mockResolvedValue({
-        id: 're_test_123',
-        charge: 'ch_test_123',
-        amount: 2500,
-        status: 'succeeded',
-      }),
+    mockStripeInstance = {
+      refunds: {
+        create: jest.fn().mockResolvedValue({
+          id: 're_test_123',
+          charge: 'ch_test_123',
+          amount: 2500,
+          status: 'succeeded',
+        }),
+      },
     };
 
     jest.unstable_mockModule('../../../config/index.js', () => ({
@@ -88,10 +92,17 @@ describe('Billing admin integration tests:', () => {
           plans: ['free', 'starter', 'pro'],
           statuses: ['active', 'canceled'],
         },
+        stripe: {
+          secretKey: 'sk_test_fake',
+        },
         validation: {
           supportedMethods: ['post', 'put', 'patch'],
         },
       },
+    }));
+
+    jest.unstable_mockModule('stripe', () => ({
+      default: jest.fn(() => mockStripeInstance),
     }));
 
     jest.unstable_mockModule('passport', () => ({
@@ -136,8 +147,13 @@ describe('Billing admin integration tests:', () => {
       },
     }));
 
-    jest.unstable_mockModule('../services/billing.refund.service.js', () => ({
-      default: mockBillingRefundService,
+    jest.unstable_mockModule('../../../lib/helpers/responses.js', () => ({
+      default: {
+        // eslint-disable-next-line no-unused-vars
+        success: jest.fn((res, msg) => (data) => res.status(200).json({ type: 'success', data })),
+        // eslint-disable-next-line no-unused-vars
+        error: jest.fn((res, status, title, desc) => (err) => res.status(status).json({ type: 'error' })),
+      },
     }));
 
     billingAdminRoutes = (await import('../routes/billing.admin.routes.js')).default;
@@ -186,7 +202,10 @@ describe('Billing admin integration tests:', () => {
       res,
     );
 
-    expect(mockBillingRefundService.refundCharge).toHaveBeenCalledWith('ch_test_123', 2500, { reason: 'duplicate' });
+    expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
+      { charge: 'ch_test_123', reason: 'duplicate', amount: 2500 },
+      { idempotencyKey: 'refund_ch_test_123_2500' },
+    );
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -238,11 +257,14 @@ describe('Billing admin integration tests:', () => {
       res,
     );
 
-    expect(mockBillingRefundService.refundCharge).toHaveBeenCalledWith('ch_test_123', undefined, { reason: 'requested_by_customer' });
+    expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
+      { charge: 'ch_test_123', reason: 'requested_by_customer' },
+      { idempotencyKey: 'refund_ch_test_123_full' },
+    );
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
-  test('refund service upstream error returns 502', async () => {
+  test('Stripe upstream error returns 502', async () => {
     const routes = await buildRoutes();
     const refundRoute = routes.get('/api/admin/billing/refund');
     const res = {
@@ -250,7 +272,7 @@ describe('Billing admin integration tests:', () => {
       json: jest.fn().mockReturnThis(),
     };
 
-    mockBillingRefundService.refundCharge.mockRejectedValueOnce(new Error('upstream error'));
+    mockStripeInstance.refunds.create.mockRejectedValueOnce(new Error('upstream error'));
 
     await runHandlers(
       [...refundRoute.all, ...refundRoute.post],
@@ -261,7 +283,7 @@ describe('Billing admin integration tests:', () => {
     expect(res.status).toHaveBeenCalledWith(502);
   });
 
-  test('refund service invalid argument error returns 422', async () => {
+  test('Stripe invalid argument error returns 422', async () => {
     const routes = await buildRoutes();
     const refundRoute = routes.get('/api/admin/billing/refund');
     const res = {
@@ -269,7 +291,7 @@ describe('Billing admin integration tests:', () => {
       json: jest.fn().mockReturnThis(),
     };
 
-    mockBillingRefundService.refundCharge.mockRejectedValueOnce(new Error('invalid argument: amountCents must be > 0'));
+    mockStripeInstance.refunds.create.mockRejectedValueOnce(new Error('invalid argument: amountCents must be > 0'));
 
     await runHandlers(
       [...refundRoute.all, ...refundRoute.post],

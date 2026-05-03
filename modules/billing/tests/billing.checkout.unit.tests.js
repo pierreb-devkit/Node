@@ -541,12 +541,43 @@ describe('Billing service unit tests:', () => {
   });
 
   describe('getSubscription', () => {
-    test('should return subscription for organization', async () => {
+    test('should return subscription merged with Stripe details when stripeSubscriptionId exists', async () => {
       jest.unstable_mockModule('../../../config/index.js', () => ({
         default: { stripe: { secretKey: 'sk_test_sub1' } },
       }));
 
-      const mockSub = { organization: orgId, plan: 'pro' };
+      const periodEnd = Math.floor(Date.now() / 1000) + 86400;
+      mockStripeInstance.subscriptions = {
+        retrieve: jest.fn().mockResolvedValue({
+          current_period_start: periodEnd - 2592000,
+          current_period_end: periodEnd,
+          cancel_at_period_end: false,
+          status: 'active',
+          cancel_at: null,
+        }),
+      };
+
+      const mockSub = { organization: orgId, plan: 'pro', stripeSubscriptionId: 'sub_456', toJSON: () => ({ organization: orgId, plan: 'pro', stripeSubscriptionId: 'sub_456' }) };
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue(mockSub);
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      const result = await BillingService.getSubscription(orgId);
+
+      expect(result).toMatchObject({ plan: 'pro', cancelAtPeriodEnd: false, status: 'active' });
+      expect(result.currentPeriodEnd).toBeInstanceOf(Date);
+      expect(mockStripeInstance.subscriptions.retrieve).toHaveBeenCalledWith('sub_456');
+    });
+
+    test('should return cached sub without Stripe fetch when no stripeSubscriptionId (free plan)', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_sub_free' } },
+      }));
+
+      mockStripeInstance.subscriptions = { retrieve: jest.fn() };
+
+      const mockSub = { organization: orgId, plan: 'free', stripeSubscriptionId: null };
       mockSubscriptionRepository.findByOrganization.mockResolvedValue(mockSub);
 
       const mod = await import('../services/billing.service.js');
@@ -555,7 +586,7 @@ describe('Billing service unit tests:', () => {
       const result = await BillingService.getSubscription(orgId);
 
       expect(result).toEqual(mockSub);
-      expect(mockSubscriptionRepository.findByOrganization).toHaveBeenCalledWith(orgId);
+      expect(mockStripeInstance.subscriptions.retrieve).not.toHaveBeenCalled();
     });
 
     test('should return null when no subscription exists', async () => {
@@ -571,6 +602,96 @@ describe('Billing service unit tests:', () => {
       const result = await BillingService.getSubscription(orgId);
 
       expect(result).toBeNull();
+    });
+
+    test('should return cached sub when Stripe fetch throws (graceful fallback)', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_sub_fallback' } },
+      }));
+
+      mockStripeInstance.subscriptions = {
+        retrieve: jest.fn().mockRejectedValue(new Error('Stripe unreachable')),
+      };
+
+      const mockSub = { organization: orgId, plan: 'pro', stripeSubscriptionId: 'sub_789', toJSON: () => ({ organization: orgId, plan: 'pro' }) };
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue(mockSub);
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      const result = await BillingService.getSubscription(orgId);
+
+      expect(result).toEqual(mockSub);
+    });
+  });
+
+  describe('fetchSubscriptionDetails', () => {
+    test('should return mapped Stripe fields', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_fetch1' } },
+      }));
+
+      const periodEnd = Math.floor(Date.now() / 1000) + 86400;
+      mockStripeInstance.subscriptions = {
+        retrieve: jest.fn().mockResolvedValue({
+          current_period_start: periodEnd - 2592000,
+          current_period_end: periodEnd,
+          cancel_at_period_end: true,
+          status: 'active',
+          cancel_at: null,
+        }),
+      };
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      const result = await BillingService.fetchSubscriptionDetails('sub_test');
+
+      expect(result).toMatchObject({
+        cancelAtPeriodEnd: true,
+        status: 'active',
+      });
+      expect(result.currentPeriodEnd).toBeInstanceOf(Date);
+      expect(result.currentPeriodStart).toBeInstanceOf(Date);
+      expect(result.nextRenewalDate).toBeInstanceOf(Date);
+    });
+
+    test('should return null when stripeSubscriptionId is null', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_fetch2' } },
+      }));
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      const result = await BillingService.fetchSubscriptionDetails(null);
+
+      expect(result).toBeNull();
+    });
+
+    test('should use cancel_at as nextRenewalDate when set', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_fetch3' } },
+      }));
+
+      const periodEnd = Math.floor(Date.now() / 1000) + 86400;
+      const cancelAt = periodEnd + 7200;
+      mockStripeInstance.subscriptions = {
+        retrieve: jest.fn().mockResolvedValue({
+          current_period_start: periodEnd - 2592000,
+          current_period_end: periodEnd,
+          cancel_at_period_end: true,
+          status: 'active',
+          cancel_at: cancelAt,
+        }),
+      };
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      const result = await BillingService.fetchSubscriptionDetails('sub_cancel');
+
+      expect(result.nextRenewalDate).toEqual(new Date(cancelAt * 1000));
     });
   });
 });

@@ -10,6 +10,7 @@ describe('Billing webhook integration tests:', () => {
   let WebhookService;
   let mockSubscriptionRepository;
   let mockOrganizationRepository;
+  let mockResetService;
 
   const orgId = '507f1f77bcf86cd799439011';
   const subId = '607f1f77bcf86cd799439022';
@@ -28,6 +29,11 @@ describe('Billing webhook integration tests:', () => {
 
     mockOrganizationRepository = {
       setPlan: jest.fn().mockResolvedValue({}),
+    };
+
+    mockResetService = {
+      resetWeek: jest.fn().mockResolvedValue({}),
+      forceRotateForPlanChange: jest.fn().mockResolvedValue({}),
     };
 
     jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
@@ -51,6 +57,14 @@ describe('Billing webhook integration tests:', () => {
           plans: ['free', 'starter', 'pro', 'enterprise'],
         },
       },
+    }));
+
+    jest.unstable_mockModule('../services/billing.reset.service.js', () => ({
+      default: mockResetService,
+    }));
+
+    jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
+      default: { creditPack: jest.fn(), refundPartial: jest.fn() },
     }));
 
     jest.unstable_mockModule('../lib/events.js', () => ({
@@ -180,17 +194,15 @@ describe('Billing webhook integration tests:', () => {
       ...overrides,
     });
 
-    test('should update plan, status, currentPeriodEnd, cancelAtPeriodEnd via updateIfEventNewer', async () => {
+    test('should update plan and status via updateIfEventNewer (period details fetched on-demand)', async () => {
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-
-      const periodEnd = Math.floor(Date.now() / 1000) + 86400;
 
       await WebhookService.handleSubscriptionUpdated(
         {
           id: 'sub_456',
           status: 'active',
-          current_period_end: periodEnd,
+          current_period_end: Math.floor(Date.now() / 1000) + 86400,
           cancel_at_period_end: true,
           items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
         },
@@ -200,12 +212,8 @@ describe('Billing webhook integration tests:', () => {
       expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
         subId,
         1700000100,
-        expect.objectContaining({
-          plan: 'pro',
-          status: 'active',
-          currentPeriodEnd: new Date(periodEnd * 1000),
-          cancelAtPeriodEnd: true,
-        }),
+        'evt_updated',
+        expect.objectContaining({ plan: 'pro', status: 'active' }),
       );
       expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
     });
@@ -258,6 +266,7 @@ describe('Billing webhook integration tests:', () => {
       expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
         subId,
         expect.any(Number),
+        expect.any(String),
         expect.objectContaining({ plan: 'free' }),
       );
     });
@@ -275,6 +284,7 @@ describe('Billing webhook integration tests:', () => {
       expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
         subId,
         1700000200,
+        'evt_deleted',
         { plan: 'free', status: 'canceled' },
       );
       expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'free');
@@ -297,6 +307,27 @@ describe('Billing webhook integration tests:', () => {
 
       expect(mockOrganizationRepository.setPlan).not.toHaveBeenCalled();
     });
+
+    test('V5 P1 #3: should force rotate meter to free quota on cancellation', async () => {
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+
+      await WebhookService.handleSubscriptionDeleted({ id: 'sub_456' }, makeEvent());
+
+      expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledWith(orgId, { preserveUsage: false });
+    });
+
+    test('V5 P1 #3: should not throw when forceRotateForPlanChange fails on cancel (non-fatal)', async () => {
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockResetService.forceRotateForPlanChange.mockRejectedValue(new Error('db error'));
+
+      await expect(
+        WebhookService.handleSubscriptionDeleted({ id: 'sub_456' }, makeEvent()),
+      ).resolves.not.toThrow();
+
+      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'free');
+    });
   });
 
   describe('handleInvoicePaymentFailed', () => {
@@ -311,6 +342,7 @@ describe('Billing webhook integration tests:', () => {
       expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
         subId,
         1700000300,
+        'evt_failed',
         expect.objectContaining({ status: 'past_due' }),
       );
     });
@@ -351,7 +383,7 @@ describe('Billing webhook integration tests:', () => {
         { id: 'sub_456', status: 'active', current_period_end: 9999999999, cancel_at_period_end: false, items: { data: [] } },
         { id: 'evt_1', created: 10, data: {} },
       );
-      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(subId, 10, expect.any(Object));
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(subId, 10, 'evt_1', expect.any(Object));
 
       // Second call (t=5, older) — repository returns null (guard rejected)
       mockSubscriptionRepository.updateIfEventNewer.mockResolvedValueOnce(null);
@@ -361,6 +393,29 @@ describe('Billing webhook integration tests:', () => {
       );
 
       // org plan was synced only once (for the first event)
+      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledTimes(1);
+    });
+
+    test('same-second events: lex-later event ID wins (V5 P1 #2 tiebreaker)', async () => {
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+
+      // First event at t=1000 succeeds
+      mockSubscriptionRepository.updateIfEventNewer.mockResolvedValueOnce({ _id: subId, stripeEventCreatedAt: 1000, stripeEventId: 'evt_aaaa' });
+      await WebhookService.handleSubscriptionUpdated(
+        { id: 'sub_456', status: 'active', current_period_end: 9999999999, cancel_at_period_end: false, items: { data: [] } },
+        { id: 'evt_aaaa', created: 1000, data: {} },
+      );
+
+      // Second event at same t=1000 with lex-earlier ID — repository returns null (tiebreaker rejected)
+      mockSubscriptionRepository.updateIfEventNewer.mockResolvedValueOnce(null);
+      await WebhookService.handleSubscriptionUpdated(
+        { id: 'sub_456', status: 'past_due', current_period_end: 9999999999, cancel_at_period_end: false, items: { data: [] } },
+        { id: 'evt_9999', created: 1000, data: {} },
+      );
+
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenNthCalledWith(1, subId, 1000, 'evt_aaaa', expect.any(Object));
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenNthCalledWith(2, subId, 1000, 'evt_9999', expect.any(Object));
       expect(mockOrganizationRepository.setPlan).toHaveBeenCalledTimes(1);
     });
   });

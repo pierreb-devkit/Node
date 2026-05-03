@@ -423,13 +423,16 @@ describe('Billing webhook subscription unit tests:', () => {
       expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
         subId,
         1700000100,
+        'evt_13',
         expect.objectContaining({ currentPeriodStart: new Date(newPeriodStart * 1000) }),
       );
     });
   });
 
   describe('handleInvoicePaymentSucceeded', () => {
-    test('should clear pastDueSince and restore active status when subscription is past_due', async () => {
+    const makeEvent = (overrides = {}) => ({ id: 'evt_succeeded', created: 1700000400, ...overrides });
+
+    test('should clear pastDueSince and restore active status via updateIfEventNewer', async () => {
       const existing = {
         _id: subId,
         organization: orgId,
@@ -437,12 +440,14 @@ describe('Billing webhook subscription unit tests:', () => {
         status: 'past_due',
       };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
 
-      await BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_456' });
+      await BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_456' }, makeEvent());
 
-      expect(mockSubscriptionRepository.update).toHaveBeenCalledWith(
-        expect.objectContaining({ _id: subId, pastDueSince: null, status: 'active' }),
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
+        subId,
+        1700000400,
+        'evt_succeeded',
+        { pastDueSince: null, status: 'active' },
       );
     });
 
@@ -455,13 +460,13 @@ describe('Billing webhook subscription unit tests:', () => {
       };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
 
-      await BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_456' });
+      await BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_456' }, makeEvent());
 
-      expect(mockSubscriptionRepository.update).not.toHaveBeenCalled();
+      expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();
     });
 
     test('should return early when no subscription ID in invoice', async () => {
-      await BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: null });
+      await BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: null }, makeEvent());
 
       expect(mockSubscriptionRepository.findByStripeSubscriptionId).not.toHaveBeenCalled();
     });
@@ -469,9 +474,30 @@ describe('Billing webhook subscription unit tests:', () => {
     test('should return early when subscription not found', async () => {
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(null);
 
-      await BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_unknown' });
+      await BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_unknown' }, makeEvent());
 
-      expect(mockSubscriptionRepository.update).not.toHaveBeenCalled();
+      expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();
+    });
+
+    test('should log info when event is stale (V5 P1 #1 ordering guard)', async () => {
+      const existing = {
+        _id: subId,
+        organization: orgId,
+        pastDueSince: new Date('2026-04-01'),
+        status: 'past_due',
+      };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockSubscriptionRepository.updateIfEventNewer.mockResolvedValue(null);
+
+      let mockLogger;
+      jest.unstable_mockModule('../../../lib/services/logger.js', () => {
+        mockLogger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
+        return { default: mockLogger };
+      });
+
+      await BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_456' }, makeEvent({ created: 50 }));
+
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalled();
     });
   });
 
@@ -487,6 +513,7 @@ describe('Billing webhook subscription unit tests:', () => {
       expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
         subId,
         1700000300,
+        'evt_failed',
         expect.objectContaining({ status: 'past_due' }),
       );
     });
@@ -499,7 +526,7 @@ describe('Billing webhook subscription unit tests:', () => {
       await BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_456' }, makeEvent());
       const after = new Date();
 
-      const callArg = mockSubscriptionRepository.updateIfEventNewer.mock.calls[0][2];
+      const callArg = mockSubscriptionRepository.updateIfEventNewer.mock.calls[0][3];
       expect(callArg.pastDueSince).toBeInstanceOf(Date);
       expect(callArg.pastDueSince.getTime()).toBeGreaterThanOrEqual(before.getTime());
       expect(callArg.pastDueSince.getTime()).toBeLessThanOrEqual(after.getTime());
@@ -512,7 +539,7 @@ describe('Billing webhook subscription unit tests:', () => {
 
       await BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_456' }, makeEvent());
 
-      const callArg = mockSubscriptionRepository.updateIfEventNewer.mock.calls[0][2];
+      const callArg = mockSubscriptionRepository.updateIfEventNewer.mock.calls[0][3];
       expect(callArg.pastDueSince).toBeUndefined();
     });
 
