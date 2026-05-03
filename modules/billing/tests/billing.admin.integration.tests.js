@@ -9,7 +9,6 @@ import { jest, describe, beforeEach, afterEach, test, expect } from '@jest/globa
 describe('Billing admin integration tests:', () => {
   let billingAdminRoutes;
   let mockBillingRefundService;
-  let mockBillingPlanService;
 
   /**
    * Create a lightweight route registry compatible with app.route().
@@ -83,17 +82,6 @@ describe('Billing admin integration tests:', () => {
       }),
     };
 
-    mockBillingPlanService = {
-      bumpVersionWithRetry: jest.fn().mockResolvedValue({
-        _id: '507f1f77bcf86cd799439011',
-        planId: 'pro',
-        version: 'v7',
-        meterQuota: 12345,
-        ratios: { llm: 2 },
-        active: true,
-      }),
-    };
-
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: {
         billing: {
@@ -152,10 +140,6 @@ describe('Billing admin integration tests:', () => {
       default: mockBillingRefundService,
     }));
 
-    jest.unstable_mockModule('../services/billing.plan.service.js', () => ({
-      default: mockBillingPlanService,
-    }));
-
     billingAdminRoutes = (await import('../routes/billing.admin.routes.js')).default;
 
     const { app, routes } = createRouteRegistry();
@@ -171,33 +155,21 @@ describe('Billing admin integration tests:', () => {
     jest.restoreAllMocks();
   });
 
-  test('non-admin user gets 403 on both admin endpoints', async () => {
+  test('non-admin user gets 403 on refund endpoint', async () => {
     const routes = await buildRoutes();
     const refundRoute = routes.get('/api/admin/billing/refund');
-    const bumpRoute = routes.get('/api/admin/billing/plans/bump');
 
-    const refundRes = {
+    const res = {
       status: jest.fn().mockReturnThis(),
       json: jest.fn().mockReturnThis(),
     };
     await runHandlers(
       [...refundRoute.all, ...refundRoute.post],
       { method: 'POST', headers: { 'x-role': 'user' }, body: { chargeId: 'ch_test_001', amountCents: 1000 } },
-      refundRes,
+      res,
     );
 
-    const bumpRes = {
-      status: jest.fn().mockReturnThis(),
-      json: jest.fn().mockReturnThis(),
-    };
-    await runHandlers(
-      [...bumpRoute.all, ...bumpRoute.post],
-      { method: 'POST', headers: { 'x-role': 'user' }, body: { planId: 'pro', meterQuota: 1000 } },
-      bumpRes,
-    );
-
-    expect(refundRes.status).toHaveBeenCalledWith(403);
-    expect(bumpRes.status).toHaveBeenCalledWith(403);
+    expect(res.status).toHaveBeenCalledWith(403);
   });
 
   test('admin user can POST refund with valid body', async () => {
@@ -215,24 +187,6 @@ describe('Billing admin integration tests:', () => {
     );
 
     expect(mockBillingRefundService.refundCharge).toHaveBeenCalledWith('ch_test_123', 2500, { reason: 'duplicate' });
-    expect(res.status).toHaveBeenCalledWith(200);
-  });
-
-  test('admin user can POST plan bump with valid body', async () => {
-    const routes = await buildRoutes();
-    const bumpRoute = routes.get('/api/admin/billing/plans/bump');
-    const res = {
-      status: jest.fn().mockReturnThis(),
-      json: jest.fn().mockReturnThis(),
-    };
-
-    await runHandlers(
-      [...bumpRoute.all, ...bumpRoute.post],
-      { method: 'POST', headers: { 'x-role': 'admin' }, body: { planId: 'pro', meterQuota: 12345, ratios: { llm: 2 } } },
-      res,
-    );
-
-    expect(mockBillingPlanService.bumpVersionWithRetry).toHaveBeenCalledWith('pro', { meterQuota: 12345, ratios: { llm: 2 } });
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -288,23 +242,6 @@ describe('Billing admin integration tests:', () => {
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
-  test('bump plan without meterQuota returns 422 from schema validation', async () => {
-    const routes = await buildRoutes();
-    const bumpRoute = routes.get('/api/admin/billing/plans/bump');
-    const res = {
-      status: jest.fn().mockReturnThis(),
-      json: jest.fn().mockReturnThis(),
-    };
-
-    await runHandlers(
-      [...bumpRoute.all, ...bumpRoute.post],
-      { method: 'POST', headers: { 'x-role': 'admin' }, body: { planId: 'pro' } },
-      res,
-    );
-
-    expect(res.status).toHaveBeenCalledWith(422);
-  });
-
   test('refund service upstream error returns 502', async () => {
     const routes = await buildRoutes();
     const refundRoute = routes.get('/api/admin/billing/refund');
@@ -343,41 +280,8 @@ describe('Billing admin integration tests:', () => {
     expect(res.status).toHaveBeenCalledWith(422);
   });
 
-  test('bump plan service upstream error returns 502', async () => {
+  test('/api/admin/billing/plans/bump route no longer registered (endpoint removed)', async () => {
     const routes = await buildRoutes();
-    const bumpRoute = routes.get('/api/admin/billing/plans/bump');
-    const res = {
-      status: jest.fn().mockReturnThis(),
-      json: jest.fn().mockReturnThis(),
-    };
-
-    mockBillingPlanService.bumpVersionWithRetry.mockRejectedValueOnce(new Error('E11000 duplicate key'));
-
-    await runHandlers(
-      [...bumpRoute.all, ...bumpRoute.post],
-      { method: 'POST', headers: { 'x-role': 'admin' }, body: { planId: 'pro', meterQuota: 12345 } },
-      res,
-    );
-
-    expect(res.status).toHaveBeenCalledWith(502);
-  });
-
-  test('bump plan service invalid argument error returns 422', async () => {
-    const routes = await buildRoutes();
-    const bumpRoute = routes.get('/api/admin/billing/plans/bump');
-    const res = {
-      status: jest.fn().mockReturnThis(),
-      json: jest.fn().mockReturnThis(),
-    };
-
-    mockBillingPlanService.bumpVersionWithRetry.mockRejectedValueOnce(new Error('invalid argument: meterQuota must be >= 0'));
-
-    await runHandlers(
-      [...bumpRoute.all, ...bumpRoute.post],
-      { method: 'POST', headers: { 'x-role': 'admin' }, body: { planId: 'pro', meterQuota: 12345 } },
-      res,
-    );
-
-    expect(res.status).toHaveBeenCalledWith(422);
+    expect(routes.has('/api/admin/billing/plans/bump')).toBe(false);
   });
 });

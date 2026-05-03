@@ -360,7 +360,7 @@ describe('requireQuota middleware:', () => {
       mockBillingUsageService.getMeter.mockResolvedValue(null);
       mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
       mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'free', status: 'active' });
-      mockBillingPlanService.getActivePlan.mockResolvedValue({ meterQuota: 0, version: 'v1' });
+      mockBillingPlanService.getActivePlan.mockReturnValue({ meterQuota: 0, version: 'v1' });
 
       await requireQuota('scraps', 'create')(req, res, next);
 
@@ -376,7 +376,7 @@ describe('requireQuota middleware:', () => {
       mockBillingUsageService.getMeter.mockResolvedValue(null);
       mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
       mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'free', status: 'active' });
-      mockBillingPlanService.getActivePlan.mockResolvedValue(null);
+      mockBillingPlanService.getActivePlan.mockReturnValue(null);
 
       await requireQuota('scraps', 'create')(req, res, next);
 
@@ -393,7 +393,7 @@ describe('requireQuota middleware:', () => {
       mockBillingUsageService.getMeter.mockResolvedValue(null);
       mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
       mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'free', status: 'active' });
-      mockBillingPlanService.getActivePlan.mockResolvedValue({ meterQuota: 10, version: 'v1' });
+      mockBillingPlanService.getActivePlan.mockReturnValue({ meterQuota: 10, version: 'v1' });
 
       await requireQuota('scraps', 'create')(req, res, next);
 
@@ -406,7 +406,7 @@ describe('requireQuota middleware:', () => {
       mockBillingUsageService.getMeter.mockResolvedValue(null);
       mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
       mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro', status: 'active' });
-      mockBillingPlanService.getActivePlan.mockResolvedValue({ meterQuota: 200000, version: 'v1' });
+      mockBillingPlanService.getActivePlan.mockReturnValue({ meterQuota: 200000, version: 'v1' });
 
       await requireQuota('scraps', 'create')(req, res, next);
 
@@ -419,7 +419,7 @@ describe('requireQuota middleware:', () => {
       mockBillingUsageService.getMeter.mockResolvedValue(null);
       mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
       mockSubscriptionRepository.findByOrganization.mockResolvedValue(null);
-      mockBillingPlanService.getActivePlan.mockResolvedValue({ meterQuota: 5, version: 'v1' });
+      mockBillingPlanService.getActivePlan.mockReturnValue({ meterQuota: 5, version: 'v1' });
 
       await requireQuota('scraps', 'create')(req, res, next);
 
@@ -433,7 +433,7 @@ describe('requireQuota middleware:', () => {
       mockBillingUsageService.getMeter.mockResolvedValue(null);
       mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
       mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro', status: 'active' });
-      mockBillingPlanService.getActivePlan.mockResolvedValue({ meterQuota: 200000, version: 'v1' });
+      mockBillingPlanService.getActivePlan.mockReturnValue({ meterQuota: 200000, version: 'v1' });
 
       await requireQuota('scraps', 'create')(req, res, next);
 
