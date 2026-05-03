@@ -19,20 +19,19 @@ const baseShape = {
   organization: z.string().trim().regex(objectIdRegex, 'organization must be a valid ObjectId'),
   stripeCustomerId: optionalStripeId,
   stripeSubscriptionId: optionalStripeId,
-  currentPeriodEnd: z.coerce.date().nullable().optional(),
   // ── Meter fields (optional — backward-compatible) ────────────────────────
   planVersion: z.string().trim().optional(),
   currentPeriodStart: z.coerce.date().nullable().optional(),
   pastDueSince: z.coerce.date().nullable().optional(),
   lastResetAt: z.coerce.date().nullable().optional(),
   stripeEventCreatedAt: z.number().int().nullable().optional(),
+  stripeEventId: z.string().nullable().optional(),
 };
 
 const Subscription = z.object({
   ...baseShape,
   plan: z.enum(config.billing.plans).default('free'),
   status: z.enum(config.billing.statuses).default('active'),
-  cancelAtPeriodEnd: z.boolean().default(false),
 });
 
 /**
@@ -42,7 +41,6 @@ const SubscriptionCore = z.object({
   ...baseShape,
   plan: z.enum(config.billing.plans),
   status: z.enum(config.billing.statuses),
-  cancelAtPeriodEnd: z.boolean(),
 });
 
 const SubscriptionUpdate = SubscriptionCore.partial();

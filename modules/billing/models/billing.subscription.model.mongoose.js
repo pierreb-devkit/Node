@@ -37,13 +37,6 @@ const SubscriptionMongoose = new Schema(
       enum: config.billing.statuses,
       default: 'active',
     },
-    currentPeriodEnd: {
-      type: Date,
-    },
-    cancelAtPeriodEnd: {
-      type: Boolean,
-      default: false,
-    },
 
     // ── Meter fields (sparse — backward-compatible additions) ────────────────
 
@@ -85,6 +78,14 @@ const SubscriptionMongoose = new Schema(
      */
     stripeEventCreatedAt: {
       type: Number,
+      default: null,
+    },
+    /**
+     * Stripe event.id of the last processed subscription event.
+     * Tiebreaker for same-second events (lex string ordering on evt_ IDs).
+     */
+    stripeEventId: {
+      type: String,
       default: null,
     },
   },
