@@ -101,10 +101,6 @@ const config = {
       dollarsToUnitRatio: 1000,
       maxUnitsPerOperation: 10000,
     },
-    outbox: {
-      maxRetryAttempts: 5,
-      retryIntervalSec: 300,
-    },
     crons: {
       jitterMaxMs: 60_000,
     },

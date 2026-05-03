@@ -4,12 +4,11 @@
 import config from '../../../config/index.js';
 import UsageRepository from '../repositories/billing.usage.repository.js';
 import BillingSubscriptionRepository from '../repositories/billing.subscription.repository.js';
-import BillingMeterOutboxRepository from '../repositories/billing.meter.outbox.repository.js';
 import BillingPlanService from './billing.plan.service.js';
+import BillingExtraService from './billing.extra.service.js';
 import billingEvents from '../lib/events.js';
 import { currentWeekKey } from '../lib/billing.isoWeek.js';
 import { getAlertThresholdPercents, getDefaultPlanId } from '../lib/billing.constants.js';
-import { isDuplicateKeyError } from '../lib/billing.errors.js';
 
 /**
  * Compute the current month string in YYYY-MM format.
@@ -58,9 +57,10 @@ const reset = (organizationId) => UsageRepository.reset(organizationId, currentM
  * @function incrementMeter
  * @description Full meter attribution flow for a given organization.
  *              1. Computes the current ISO weekKey.
- *              2. Fetches the active plan snapshot (meterQuota + planVersion).
+ *              2. Fetches the active plan snapshot (meterQuota + planVersion) from config.
  *              3. Calls repo.incrementMeter atomically with replay protection.
- *              4. If quota is exceeded, overflows into extras balance.
+ *              4. If quota is exceeded, debits extras balance directly (atomic single-doc).
+ *                 On debit failure, logs a warning — usage is already counted.
  *              5. Detects configured threshold crossings (emits meter.threshold_crossed event, once per cycle).
  *
  *              Returns applied=false when the idempotencyKey was already consumed (replay).
@@ -82,10 +82,10 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
   const weekKey = currentWeekKey();
   const monthKey = currentMonth();
 
-  // Fetch active plan for quota snapshot — lean projection (plan field only, no populate)
+  // Fetch active plan for quota snapshot — config-static, no DB read
   const subscription = await BillingSubscriptionRepository.findPlan(organizationId);
   const planId = subscription?.plan ?? getDefaultPlanId();
-  const activePlan = await BillingPlanService.getActivePlan(planId);
+  const activePlan = BillingPlanService.getActivePlan(planId);
   const meterQuota = activePlan?.meterQuota ?? 0;
   const planVersion = activePlan?.version ?? null;
 
@@ -128,6 +128,17 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
     const previousUsed = newMeterUsed - units;
     const overflowStart = Math.max(previousUsed, effectiveQuota);
     extrasConsumed = newMeterUsed - overflowStart;
+  }
+
+  // Atomic extras debit — best-effort on the hot path; log and continue on failure
+  if (extrasConsumed > 0) {
+    try {
+      await BillingExtraService.debit(organizationId, extrasConsumed, idempotencyKey);
+    } catch (err) {
+      // Usage is already counted. Log for monitoring — a retry cron or manual backfill
+      // can reconcile if needed. Never let a debit failure block the usage write.
+      console.warn('[billing.usage] extras debit failed (usage already counted):', err?.message ?? err);
+    }
   }
 
   // Threshold detection — emit configured thresholds, deduplicated per cycle
@@ -175,49 +186,6 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
 };
 
 /**
- * @function incrementMeterWithOutbox
- * @description Increment meter usage and, when the increment overflows into
- *              extras, create the pending extras-debit outbox row before
- *              returning to the caller. This keeps usage idempotency and the
- *              reconciliation record coupled on the hot path. If Mongo
- *              transactions are unavailable in the deployment, this is the
- *              immediate-after fallback described by the billing lifecycle docs.
- * @param {string} organizationId - The organization ObjectId (string).
- * @param {number} units - Meter units to attribute.
- * @param {Object} breakdown - Feature-keyed breakdown: { featureKey: units }.
- * @param {string} idempotencyKey - Unique key for replay protection.
- * @returns {Promise<{applied: boolean, meterUsed: number, meterQuota: number, extrasConsumed: number, alertCrossed: string|null, outbox?: Object}>}
- */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const incrementMeterWithOutbox = async (organizationId, units, breakdown, idempotencyKey) => {
-  const result = await incrementMeter(organizationId, units, breakdown, idempotencyKey);
-  if (!result.applied || result.extrasConsumed <= 0) return result;
-
-  let outbox;
-  try {
-    outbox = await BillingMeterOutboxRepository.create({
-      organizationId,
-      idempotencyKey,
-      extrasUnits: result.extrasConsumed,
-    });
-  } catch (err) {
-    if (isDuplicateKeyError(err)) {
-      outbox = await BillingMeterOutboxRepository.findByIdempotencyKey(idempotencyKey);
-      if (!outbox) {
-        throw new Error('[billing] outbox state desynced — meter incremented but outbox missing');
-      }
-    } else {
-      console.error('[billing] CRITICAL outbox create failed after meter increment', { idempotencyKey, err });
-      const wrapped = new Error(`[billing] outbox create failed after meter increment: ${err?.message ?? err}`);
-      wrapped.cause = err;
-      throw wrapped;
-    }
-  }
-
-  return { ...result, outbox };
-};
-
-/**
  * @function getMeter
  * @description Return the current week's meter document for an organization,
  *              including the plan quota snapshot.
@@ -237,6 +205,5 @@ export default {
   reset,
   currentWeekKey,
   incrementMeter,
-  incrementMeterWithOutbox,
   getMeter,
 };
