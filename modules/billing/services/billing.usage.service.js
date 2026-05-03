@@ -135,7 +135,11 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
     const pct = (newMeterUsed / effectiveQuota) * 100;
     for (const threshold of getAlertThresholdPercents()) {
       const field = thresholdFields[threshold];
-      if (!field || pct < threshold || updatedDoc[field]) continue;
+      if (!field) {
+        console.warn(`[billing.usage] threshold ${threshold}% has no schema field (only 80/100 are supported) — skipping`);
+        continue;
+      }
+      if (pct < threshold || updatedDoc[field]) continue;
 
       let marked = false;
       try {

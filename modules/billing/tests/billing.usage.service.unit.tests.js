@@ -351,6 +351,22 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       expect(mockUsageRepository.markThreshold).not.toHaveBeenCalled();
     });
 
+    test('warns and skips when thresholdPercents contains unsupported value (not 80/100)', async () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      mockConfig.billing.alerts.thresholdPercents = [90];
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 500000 }));
+      const updatedDoc = makeUsageDoc({ meterUsed: 460000, meterQuota: 500000, alertedAt80: null, alertedAt100: null });
+      mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
+
+      const result = await BillingUsageService.incrementMeter(orgId, 1, {}, 'hist_threshold_unsupported');
+
+      expect(result.alertCrossed).toBeNull();
+      expect(mockUsageRepository.markThreshold).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('threshold 90% has no schema field'));
+      warnSpy.mockRestore();
+    });
+
     test('should NOT re-emit threshold 80 when already alerted (alertedAt80 set)', async () => {
       mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockResolvedValue(makePlan({ meterQuota: 500000 }));
