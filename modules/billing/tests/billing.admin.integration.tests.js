@@ -188,7 +188,7 @@ describe('Billing admin integration tests:', () => {
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
-  test('admin user can POST refund with valid body', async () => {
+  test('admin user can POST refund with valid body (fallback minute-resolution key)', async () => {
     const routes = await buildRoutes();
     const refundRoute = routes.get('/api/admin/billing/refund');
     const res = {
@@ -204,17 +204,17 @@ describe('Billing admin integration tests:', () => {
 
     expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
       { charge: 'ch_test_123', reason: 'duplicate', amount: 2500 },
-      { idempotencyKey: expect.stringMatching(/^refund_ch_test_123_2500_[0-9a-f-]{36}$/) },
+      { idempotencyKey: expect.stringMatching(/^refund_ch_test_123_2500_\d+$/) },
     );
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
-  test('two calls same charge same amount produce two separate idempotency keys', async () => {
+  test('two calls with same refundRequestId use identical idempotency key (double-click protection)', async () => {
     const routes = await buildRoutes();
     const refundRoute = routes.get('/api/admin/billing/refund');
 
     const makeRes = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() });
-    const body = { chargeId: 'ch_test_dup', amountCents: 1000, reason: 'duplicate' };
+    const body = { chargeId: 'ch_test_dup', amountCents: 1000, reason: 'duplicate', refundRequestId: 'req-abc12345' };
 
     await runHandlers([...refundRoute.all, ...refundRoute.post], { method: 'POST', headers: { 'x-role': 'admin' }, body }, makeRes());
     await runHandlers([...refundRoute.all, ...refundRoute.post], { method: 'POST', headers: { 'x-role': 'admin' }, body }, makeRes());
@@ -223,10 +223,28 @@ describe('Billing admin integration tests:', () => {
     expect(calls).toHaveLength(2);
     const key1 = calls[0][1].idempotencyKey;
     const key2 = calls[1][1].idempotencyKey;
-    expect(key1).toMatch(/^refund_ch_test_dup_1000_[0-9a-f-]{36}$/);
-    expect(key2).toMatch(/^refund_ch_test_dup_1000_[0-9a-f-]{36}$/);
-    // Keys are distinct — each call gets its own idempotency window
-    expect(key1).not.toBe(key2);
+    // Both calls share the same key → Stripe deduplicates → 1 effective refund
+    expect(key1).toBe('refund_admin_req-abc12345');
+    expect(key2).toBe('refund_admin_req-abc12345');
+  });
+
+  test('two calls without refundRequestId in the same minute use the same minute-resolution key', async () => {
+    const routes = await buildRoutes();
+    const refundRoute = routes.get('/api/admin/billing/refund');
+
+    const makeRes = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() });
+    const body = { chargeId: 'ch_test_dup2', amountCents: 500, reason: 'duplicate' };
+
+    await runHandlers([...refundRoute.all, ...refundRoute.post], { method: 'POST', headers: { 'x-role': 'admin' }, body }, makeRes());
+    await runHandlers([...refundRoute.all, ...refundRoute.post], { method: 'POST', headers: { 'x-role': 'admin' }, body }, makeRes());
+
+    const calls = mockStripeInstance.refunds.create.mock.calls;
+    expect(calls).toHaveLength(2);
+    const key1 = calls[0][1].idempotencyKey;
+    const key2 = calls[1][1].idempotencyKey;
+    expect(key1).toMatch(/^refund_ch_test_dup2_500_\d+$/);
+    // Within a test (same millisecond) both calls land in the same minute → same key
+    expect(key1).toBe(key2);
   });
 
   test('invalid body returns 422 from schema validation', async () => {
@@ -279,7 +297,7 @@ describe('Billing admin integration tests:', () => {
 
     expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
       { charge: 'ch_test_123', reason: 'requested_by_customer' },
-      { idempotencyKey: expect.stringMatching(/^refund_ch_test_123_full_[0-9a-f-]{36}$/) },
+      { idempotencyKey: expect.stringMatching(/^refund_ch_test_123_full_\d+$/) },
     );
     expect(res.status).toHaveBeenCalledWith(200);
   });

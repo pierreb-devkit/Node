@@ -82,6 +82,8 @@ const AdminRefundRequest = z
     amountCents: z.number().int().positive().optional(),
     // Stripe refund reason: https://stripe.com/docs/api/refunds/create#create_refund-reason
     reason: z.enum(['duplicate', 'fraudulent', 'requested_by_customer']).optional(),
+    // Caller-provided stable key for Stripe idempotency (prevents admin double-click double-refund).
+    refundRequestId: z.string().min(8).max(128).optional(),
   })
   .strict();
 
