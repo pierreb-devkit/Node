@@ -17,7 +17,7 @@ let stripeClient = null;
 const getStripe = () => {
   if (stripeClient) return stripeClient;
   if (!config.stripe?.secretKey) return null;
-  stripeClient = new Stripe(config.stripe.secretKey);
+  stripeClient = new Stripe(config.stripe.secretKey, { apiVersion: '2026-04-22.dahlia' });
   return stripeClient;
 };
 

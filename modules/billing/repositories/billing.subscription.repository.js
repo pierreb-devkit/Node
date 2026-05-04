@@ -214,38 +214,59 @@ const markUnpaid = (id, threshold) => {
 /**
  * @function updateIfEventNewer
  * @description Atomically update a subscription only when the incoming Stripe event is newer
- *              than the last processed event. Prevents out-of-order webhook delivery from
- *              overwriting more-recent state.
+ *              than the last processed event for the given family.
+ *              Prevents out-of-order webhook delivery from overwriting more-recent state.
  *              Same-second events are ordered by lex-string comparison of event IDs (evt_ prefix
  *              makes these globally deterministic within a second) — V5 P1 #2 tiebreaker.
+ *
+ *              The `family` parameter scopes the event-ordering guard to either the
+ *              'subscription' family (customer.subscription.*) or the 'invoice' family
+ *              (invoice.*).  Same-second cross-family deliveries no longer cancel each other.
+ *              Falls back to legacy stripeEventCreatedAt/stripeEventId for back-compat when
+ *              per-family fields are not yet populated (gradual migration — no down-time).
+ *
  *              Returns null when the guard prevents the write (stale event).
  * @param {string} id - The subscription ObjectId (string).
  * @param {number} eventCreatedAt - Stripe event.created Unix timestamp (seconds).
  * @param {string} eventId - Stripe event.id (e.g. evt_xxx) — tiebreaker for same-second delivery.
  * @param {Object} fields - Fields to $set on the document.
+ * @param {'subscription'|'invoice'} [family='subscription'] - Event family to scope the ordering guard.
  * @returns {Promise<Object|null>} Updated doc, or null if id invalid or event is stale.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
-const updateIfEventNewer = (id, eventCreatedAt, eventId, fields) => {
+const updateIfEventNewer = (id, eventCreatedAt, eventId, fields, family = 'subscription') => {
   if (!id || !mongoose.Types.ObjectId.isValid(id)) return null;
+
+  const createdAtField = family === 'invoice' ? 'lastInvoiceEventCreatedAt' : 'lastSubscriptionEventCreatedAt';
+  const eventIdField = family === 'invoice' ? 'lastInvoiceEventId' : 'lastSubscriptionEventId';
+
   return Subscription.findOneAndUpdate(
     {
       _id: id,
       $or: [
-        { stripeEventCreatedAt: { $exists: false } },
-        { stripeEventCreatedAt: null },
-        { stripeEventCreatedAt: { $lt: eventCreatedAt } },
+        { [createdAtField]: { $exists: false } },
+        { [createdAtField]: null },
+        { [createdAtField]: { $lt: eventCreatedAt } },
         {
-          stripeEventCreatedAt: eventCreatedAt,
+          [createdAtField]: eventCreatedAt,
           $or: [
-            { stripeEventId: { $exists: false } },
-            { stripeEventId: null },
-            { stripeEventId: { $lt: eventId } },
+            { [eventIdField]: { $exists: false } },
+            { [eventIdField]: null },
+            { [eventIdField]: { $lt: eventId } },
           ],
         },
       ],
     },
-    { $set: { ...fields, stripeEventCreatedAt: eventCreatedAt, stripeEventId: eventId } },
+    {
+      $set: {
+        ...fields,
+        [createdAtField]: eventCreatedAt,
+        [eventIdField]: eventId,
+        // Keep legacy fields in sync for back-compat with existing queries / reports
+        stripeEventCreatedAt: eventCreatedAt,
+        stripeEventId: eventId,
+      },
+    },
     { returnDocument: 'after', runValidators: true },
   )
     .populate(defaultPopulate)

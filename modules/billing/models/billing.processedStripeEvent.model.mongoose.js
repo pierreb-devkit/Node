@@ -30,6 +30,36 @@ const ProcessedStripeEventMongoose = new Schema(
       required: true,
       default: () => new Date(),
     },
+    /**
+     * Number of handler execution attempts (including failed ones).
+     * Incremented on each handler exception before deciding to rollback or dead-letter.
+     */
+    attempts: {
+      type: Number,
+      default: 0,
+    },
+    /**
+     * Last handler error message — set when the handler throws.
+     */
+    lastError: {
+      type: String,
+      default: null,
+    },
+    /**
+     * Timestamp of the last handler error.
+     */
+    lastErrorAt: {
+      type: Date,
+      default: null,
+    },
+    /**
+     * When true, the event has exceeded max retry attempts.
+     * The claim is kept permanently so Stripe stops retrying.
+     */
+    deadLetter: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: false,

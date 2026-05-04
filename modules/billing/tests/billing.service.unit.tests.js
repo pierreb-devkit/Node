@@ -204,6 +204,7 @@ describe('Billing webhook service unit tests:', () => {
         1700000100,
         'evt_1',
         expect.objectContaining({ plan: 'pro', status: 'active' }),
+        'subscription',
       );
       expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
     });
@@ -242,6 +243,7 @@ describe('Billing webhook service unit tests:', () => {
         1700000100,
         'evt_1',
         expect.objectContaining({ plan: 'starter' }),
+        'subscription',
       );
     });
 
@@ -268,6 +270,7 @@ describe('Billing webhook service unit tests:', () => {
         1700000100,
         'evt_1',
         expect.objectContaining({ plan: 'free' }),
+        'subscription',
       );
     });
   });
@@ -291,6 +294,7 @@ describe('Billing webhook service unit tests:', () => {
         1700000200,
         'evt_del',
         { plan: 'free', status: 'canceled' },
+        'subscription',
       );
       expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'free');
       expect(resetService.forceRotateForPlanChange).toHaveBeenCalledWith(orgId, { preserveUsage: false });
@@ -325,6 +329,7 @@ describe('Billing webhook service unit tests:', () => {
         1700000300,
         'evt_fail',
         expect.objectContaining({ status: 'past_due', pastDueSince: expect.any(Date) }),
+        'invoice',
       );
     });
 

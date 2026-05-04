@@ -15,6 +15,9 @@ import { EventEmitter } from 'events';
  *     Payload: { organizationId, idempotencyKey, extrasUnits, attempts, lastError }
  *   - `payment.failed`  — emitted when an invoice payment fails (pastDueSince set on first failure)
  *     Payload: { organizationId }
+ *   - `billing.refund.unresolved` — emitted when a charge.refunded event cannot be correlated
+ *     to a known session/org (missing metadata on charge AND PaymentIntent, or ambiguous pack).
+ *     Payload: { chargeId, paymentIntentId, refundAmount } | { reason, orgId, stripeSessionId, amountRefundedCents }
  */
 const billingEvents = new EventEmitter();
 

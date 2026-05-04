@@ -14,6 +14,12 @@ import BillingResetService from './billing.reset.service.js';
 import billingEvents from '../lib/events.js';
 
 /**
+ * Maximum number of handler execution attempts before an event is dead-lettered.
+ * After this many failures the claim is kept permanently so Stripe stops retrying.
+ */
+const BILLING_WEBHOOK_MAX_ATTEMPTS = 5;
+
+/**
  * Valid plan names from config (immutable set for O(1) lookups).
  */
 const validPlans = new Set(config.billing?.plans || ['free', 'starter', 'pro', 'enterprise']);
@@ -73,19 +79,47 @@ const syncOrganizationPlan = async (organizationId, plan) => {
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const withIdempotency = async (event, handler) => {
+  const eventId = event.id;
+  const eventType = event.type;
+
   // Atomically claim the event — only the first delivery wins
-  const { recorded } = await ProcessedStripeEventRepository.tryRecord(event.id, event.type);
+  const { recorded } = await ProcessedStripeEventRepository.tryRecord(eventId, eventType);
   if (!recorded) {
     return { skipped: true, reason: 'duplicate_event' };
   }
   try {
     return await handler(event);
   } catch (err) {
+    // Increment attempt counter and record error details before deciding fate.
+    let attempts = 1;
+    try {
+      const updated = await ProcessedStripeEventRepository.incrementAttempts(eventId, err?.message ?? String(err));
+      attempts = updated?.attempts ?? 1;
+    } catch (counterErr) {
+      logger.error('[billing] webhook attempts increment failed', { eventId, eventType, error: counterErr?.message });
+    }
+
+    if (attempts >= BILLING_WEBHOOK_MAX_ATTEMPTS) {
+      // Dead-letter: keep claim permanently so Stripe stops retrying after 3-day window.
+      try {
+        await ProcessedStripeEventRepository.markDeadLetter(eventId);
+      } catch (dlErr) {
+        logger.error('[billing] webhook markDeadLetter failed', { eventId, eventType, error: dlErr?.message });
+      }
+      logger.error('[billing] webhook dead-letter', { eventId, eventType, attempts, error: err?.message ?? String(err) });
+      // Return success to Stripe so it stops retrying
+      return { deadLettered: true, eventId, eventType, attempts };
+    }
+
     // Rollback claim so Stripe can retry on a fresh delivery.
-    // Swallow rollback errors so the original handler error is always propagated.
-    await ProcessedStripeEventRepository.deleteByEventId(event.id).catch((rollbackErr) => {
-      console.error('[billing.webhook] rollback deleteByEventId failed — event may be stuck:', rollbackErr);
-    });
+    try {
+      await ProcessedStripeEventRepository.deleteByEventId(eventId);
+    } catch (rollbackErr) {
+      logger.error('[billing.webhook] rollback deleteByEventId failed — event may be stuck', {
+        eventId,
+        error: rollbackErr?.message ?? rollbackErr,
+      });
+    }
     throw err;
   }
 };
@@ -205,8 +239,11 @@ const handleSubscriptionUpdated = async (subscription, event) => {
   if (!existing) return;
 
   const newPlan = resolvePlan(subscription);
-  const newPeriodStart = subscription.current_period_start
-    ? new Date(subscription.current_period_start * 1000)
+  // Stripe API ≥ 2025-08-27 moved current_period_start/end to items.data[0].
+  // Read from items first, fall back to top-level for older API versions.
+  const rawPeriodStart = subscription.items?.data?.[0]?.current_period_start ?? subscription.current_period_start;
+  const newPeriodStart = rawPeriodStart
+    ? new Date(rawPeriodStart * 1000)
     : undefined;
 
   const fields = {
@@ -215,7 +252,7 @@ const handleSubscriptionUpdated = async (subscription, event) => {
   };
   if (newPeriodStart) fields.currentPeriodStart = newPeriodStart;
 
-  const updated = await SubscriptionRepository.updateIfEventNewer(String(existing._id), event.created, event.id, fields);
+  const updated = await SubscriptionRepository.updateIfEventNewer(String(existing._id), event.created, event.id, fields, 'subscription');
   if (!updated) {
     logger.info('[billing.webhook] skipped stale event', { eventId: event.id, type: event.type });
     return;
@@ -226,7 +263,10 @@ const handleSubscriptionUpdated = async (subscription, event) => {
 
   // Hoist previousPeriodStart so it is accessible both in the plan-change block
   // (anchor computation) and in the standalone period-start-change block below.
-  const previousPeriodStart = event?.data?.previous_attributes?.current_period_start;
+  // Stripe API ≥ 2025-08-27 moved current_period_start to items.data[0]; fall back to top-level.
+  const previousPeriodStart =
+    event?.data?.previous_attributes?.items?.data?.[0]?.current_period_start
+    ?? event?.data?.previous_attributes?.current_period_start;
 
   // Detect plan change from previous_attributes and emit event + trigger meter reset
   const previousItems = event?.data?.previous_attributes?.items?.data;
@@ -260,7 +300,7 @@ const handleSubscriptionUpdated = async (subscription, event) => {
       // resetWeek(newPeriodStart) must still run to archive the old week.
       const periodAlsoChanged =
         previousPeriodStart !== undefined &&
-        subscription.current_period_start !== previousPeriodStart &&
+        rawPeriodStart !== previousPeriodStart &&
         newPeriodStart;
       planChangeResetTriggered = !periodAlsoChanged;
       try {
@@ -281,7 +321,7 @@ const handleSubscriptionUpdated = async (subscription, event) => {
   if (
     !planChangeResetTriggered &&
     previousPeriodStart !== undefined &&
-    subscription.current_period_start !== previousPeriodStart &&
+    rawPeriodStart !== previousPeriodStart &&
     newPeriodStart
   ) {
     try {
@@ -306,7 +346,7 @@ const handleSubscriptionDeleted = async (subscription, event) => {
   const updated = await SubscriptionRepository.updateIfEventNewer(String(existing._id), event.created, event.id, {
     plan: 'free',
     status: 'canceled',
-  });
+  }, 'subscription');
   if (!updated) {
     logger.info('[billing.webhook] skipped stale event', { eventId: event.id, type: event.type });
     return;
@@ -347,7 +387,7 @@ const handleInvoicePaymentFailed = async (invoice, event) => {
     fields.pastDueSince = new Date();
   }
 
-  const updated = await SubscriptionRepository.updateIfEventNewer(String(existing._id), event.created, event.id, fields);
+  const updated = await SubscriptionRepository.updateIfEventNewer(String(existing._id), event.created, event.id, fields, 'invoice');
   if (!updated) {
     logger.info('[billing.webhook] skipped stale event', { eventId: event.id, type: event.type });
     return;
@@ -390,6 +430,7 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
     event.created,
     event.id,
     fields,
+    'invoice',
   );
   if (!updated) {
     logger.info('[billing.webhook] skipped stale event', { eventId: event.id, type: event.type });
@@ -416,15 +457,52 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleChargeRefunded = async (charge) => {
-  const { metadata } = charge;
+  const { metadata, payment_intent: paymentIntentId } = charge;
 
   // The session ID and organizationId must have been stamped on charge metadata
   // via payment_intent_data.metadata at session creation (not automatic — caller must set both
   // session.metadata and payment_intent_data.metadata explicitly).
-  const { organizationId, stripeSessionId, packId } = metadata ?? {};
+  let { organizationId, stripeSessionId, packId } = metadata ?? {};
 
   if (!organizationId || !mongoose.Types.ObjectId.isValid(organizationId)) return;
-  if (!stripeSessionId) return;
+
+  // Backfill resolver: if stripeSessionId is missing, fetch the PaymentIntent to find it.
+  if (!stripeSessionId && paymentIntentId) {
+    const stripe = getStripe();
+    if (stripe) {
+      try {
+        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+        stripeSessionId = paymentIntent.metadata?.stripeSessionId;
+        // Also pick up packId from PI metadata if not in charge metadata
+        if (!packId) packId = paymentIntent.metadata?.packId;
+        if (!organizationId || !mongoose.Types.ObjectId.isValid(organizationId)) {
+          const piOrgId = paymentIntent.metadata?.organizationId;
+          if (piOrgId && mongoose.Types.ObjectId.isValid(piOrgId)) {
+            organizationId = piOrgId;
+          }
+        }
+      } catch (err) {
+        logger.error('[billing] refund PI fetch failed', { chargeId: charge.id, paymentIntentId, error: err?.message });
+      }
+    }
+  }
+
+  if (!stripeSessionId) {
+    // Could not resolve stripeSessionId from charge or PaymentIntent metadata.
+    // Emit alert event and log for manual reconciliation.
+    const refundAmount = charge.refunds?.data?.reduce((sum, r) => sum + (r.amount ?? 0), 0) ?? 0;
+    logger.error('[billing] refund unresolved — manual reconciliation required', {
+      chargeId: charge.id,
+      paymentIntentId,
+      refundAmount,
+    });
+    try {
+      billingEvents.emit('billing.refund.unresolved', { chargeId: charge.id, paymentIntentId, refundAmount });
+    } catch (evtErr) {
+      console.error('[billing.webhook] billing.refund.unresolved listener error (non-fatal):', evtErr?.message ?? evtErr);
+    }
+    return;
+  }
 
   // Process every refund in the list — each has a globally-unique rf_ id used as the idempotency
   // key, so re-processing on webhook replay or redelivery is safe (duplicate calls are no-ops).

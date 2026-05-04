@@ -74,8 +74,52 @@ const deleteByEventId = async (eventId) => {
   return { deleted: result.deletedCount > 0 };
 };
 
+/**
+ * @function incrementAttempts
+ * @description Atomically increment the attempts counter and record the last error details
+ *              on the processed event document. Used by withIdempotency to track retry depth.
+ * @param {string} eventId - Stripe event ID.
+ * @param {string} errorMessage - Error message from the last failed handler execution.
+ * @returns {Promise<Object|null>} Updated document or null if not found.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const incrementAttempts = async (eventId, errorMessage) => {
+  if (typeof eventId !== 'string' || eventId.trim() === '') {
+    throw new Error('invalid argument: eventId must be a non-empty string');
+  }
+  return ProcessedStripeEvent().findOneAndUpdate(
+    { eventId },
+    {
+      $inc: { attempts: 1 },
+      $set: { lastError: String(errorMessage ?? ''), lastErrorAt: new Date() },
+    },
+    { returnDocument: 'after' },
+  ).exec();
+};
+
+/**
+ * @function markDeadLetter
+ * @description Mark a processed event as dead-lettered — keeps the claim permanently so
+ *              Stripe stops retrying, and sets deadLetter=true for ops visibility.
+ * @param {string} eventId - Stripe event ID.
+ * @returns {Promise<Object|null>} Updated document or null if not found.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const markDeadLetter = async (eventId) => {
+  if (typeof eventId !== 'string' || eventId.trim() === '') {
+    throw new Error('invalid argument: eventId must be a non-empty string');
+  }
+  return ProcessedStripeEvent().findOneAndUpdate(
+    { eventId },
+    { $set: { deadLetter: true } },
+    { returnDocument: 'after' },
+  ).exec();
+};
+
 export default {
   tryRecord,
   wasProcessed,
   deleteByEventId,
+  incrementAttempts,
+  markDeadLetter,
 };

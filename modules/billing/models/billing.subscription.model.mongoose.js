@@ -83,8 +83,42 @@ const SubscriptionMongoose = new Schema(
     /**
      * Stripe event.id of the last processed subscription event.
      * Tiebreaker for same-second events (lex string ordering on evt_ IDs).
+     * @deprecated use lastSubscriptionEventCreatedAt / lastInvoiceEventCreatedAt per-family fields.
      */
     stripeEventId: {
+      type: String,
+      default: null,
+    },
+
+    // ── Per-family event ordering guards ─────────────────────────────────────
+    // Separate trackers for 'subscription' vs 'invoice' event families prevent
+    // same-second cross-family deliveries from cancelling each other's state.
+
+    /**
+     * Stripe event.created (Unix seconds) of the last processed customer.subscription.* event.
+     */
+    lastSubscriptionEventCreatedAt: {
+      type: Number,
+      default: null,
+    },
+    /**
+     * Stripe event.id of the last processed customer.subscription.* event (same-second tiebreaker).
+     */
+    lastSubscriptionEventId: {
+      type: String,
+      default: null,
+    },
+    /**
+     * Stripe event.created (Unix seconds) of the last processed invoice.* event.
+     */
+    lastInvoiceEventCreatedAt: {
+      type: Number,
+      default: null,
+    },
+    /**
+     * Stripe event.id of the last processed invoice.* event (same-second tiebreaker).
+     */
+    lastInvoiceEventId: {
       type: String,
       default: null,
     },

@@ -26,6 +26,11 @@ const baseShape = {
   lastResetAt: z.coerce.date().nullable().optional(),
   stripeEventCreatedAt: z.number().int().nullable().optional(),
   stripeEventId: z.string().nullable().optional(),
+  // Per-family event ordering guards
+  lastSubscriptionEventCreatedAt: z.number().int().nullable().optional(),
+  lastSubscriptionEventId: z.string().nullable().optional(),
+  lastInvoiceEventCreatedAt: z.number().int().nullable().optional(),
+  lastInvoiceEventId: z.string().nullable().optional(),
 };
 
 const Subscription = z.object({
@@ -73,6 +78,9 @@ const ExtrasCheckoutRequest = z
     packId: z.string().trim().min(1, 'packId is required'),
     successUrl: z.string().url('successUrl must be a valid URL'),
     cancelUrl: z.string().url('cancelUrl must be a valid URL'),
+    // Caller-provided stable intent ID for idempotency (prevents double-click double-charge).
+    // When absent, a soft-stable minute-bucketed key is used as fallback.
+    intentId: z.string().min(1).optional(),
   })
   .strict();
 

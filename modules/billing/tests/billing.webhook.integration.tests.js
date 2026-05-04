@@ -214,6 +214,7 @@ describe('Billing webhook integration tests:', () => {
         1700000100,
         'evt_updated',
         expect.objectContaining({ plan: 'pro', status: 'active' }),
+        'subscription',
       );
       expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
     });
@@ -268,6 +269,7 @@ describe('Billing webhook integration tests:', () => {
         expect.any(Number),
         expect.any(String),
         expect.objectContaining({ plan: 'free' }),
+        'subscription',
       );
     });
   });
@@ -286,6 +288,7 @@ describe('Billing webhook integration tests:', () => {
         1700000200,
         'evt_deleted',
         { plan: 'free', status: 'canceled' },
+        'subscription',
       );
       expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'free');
     });
@@ -344,6 +347,7 @@ describe('Billing webhook integration tests:', () => {
         1700000300,
         'evt_failed',
         expect.objectContaining({ status: 'past_due' }),
+        'invoice',
       );
     });
 
@@ -383,7 +387,7 @@ describe('Billing webhook integration tests:', () => {
         { id: 'sub_456', status: 'active', current_period_end: 9999999999, cancel_at_period_end: false, items: { data: [] } },
         { id: 'evt_1', created: 10, data: {} },
       );
-      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(subId, 10, 'evt_1', expect.any(Object));
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(subId, 10, 'evt_1', expect.any(Object), expect.any(String));
 
       // Second call (t=5, older) — repository returns null (guard rejected)
       mockSubscriptionRepository.updateIfEventNewer.mockResolvedValueOnce(null);
@@ -414,8 +418,8 @@ describe('Billing webhook integration tests:', () => {
         { id: 'evt_9999', created: 1000, data: {} },
       );
 
-      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenNthCalledWith(1, subId, 1000, 'evt_aaaa', expect.any(Object));
-      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenNthCalledWith(2, subId, 1000, 'evt_9999', expect.any(Object));
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenNthCalledWith(1, subId, 1000, 'evt_aaaa', expect.any(Object), expect.any(String));
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenNthCalledWith(2, subId, 1000, 'evt_9999', expect.any(Object), expect.any(String));
       expect(mockOrganizationRepository.setPlan).toHaveBeenCalledTimes(1);
     });
   });

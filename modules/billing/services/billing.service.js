@@ -1,7 +1,6 @@
 /**
  * Module dependencies
  */
-import { randomBytes } from 'node:crypto';
 import config from '../../../config/index.js';
 import getStripe from '../lib/stripe.js';
 import BillingPlansService from './billing.plans.service.js';
@@ -147,6 +146,25 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
 
   const subscription = await _ensureStripeCustomer(stripe, organization);
 
+  // Server-side active subscription guard — closes race window between local-DB check and
+  // stripe.checkout.sessions.create (webhook may have arrived mid-flight).
+  // +1 Stripe API call cost; acceptable given infrequent checkout entry point.
+  if (subscription.stripeCustomerId) {
+    const liveActiveSubs = await stripe.subscriptions.list({
+      customer: subscription.stripeCustomerId,
+      status: 'active',
+      limit: 1,
+    });
+    if (liveActiveSubs.data.length > 0) {
+      const portalUrl = await createPortalSession(organization);
+      const err = new Error('Subscription already active');
+      err.statusCode = 409;
+      err.code = 'subscription_already_active';
+      err.portalUrl = portalUrl;
+      throw err;
+    }
+  }
+
   const checkoutParams = {
     customer: subscription.stripeCustomerId,
     mode: 'subscription',
@@ -184,10 +202,14 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
  * @param {String} packId - Pack identifier (must exist in config.billing.packs)
  * @param {String} successUrl - URL to redirect on payment success
  * @param {String} cancelUrl - URL to redirect on cancel
+ * @param {String} [intentId] - Optional stable caller-provided intent ID for idempotency.
+ *        When provided: key = `extras_checkout_{orgId}_{packId}_{intentId}` (fully stable).
+ *        When absent: key bucketed to the minute — prevents instant double-click but not
+ *        cross-minute replay. Callers should pass a UUID generated on button click.
  * @returns {Promise<{url: String}>} Object with the Checkout session URL
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const createExtrasCheckout = async (organization, packId, successUrl, cancelUrl) => {
+const createExtrasCheckout = async (organization, packId, successUrl, cancelUrl, intentId) => {
   const stripe = getStripe();
   if (!stripe) throw new Error('Stripe is not configured');
 
@@ -206,9 +228,14 @@ const createExtrasCheckout = async (organization, packId, successUrl, cancelUrl)
 
   const subscription = await _ensureStripeCustomer(stripe, organization);
 
-  // Per-intent idempotency key: timestamp + crypto-random suffix reduces collision risk under concurrent clicks.
-  // Full deduplication would require a caller-provided stable intent id — deferred to a future improvement.
-  const idempotencyKey = `extras_checkout_${String(organization._id)}_${packId}_${Date.now()}_${randomBytes(4).toString('hex')}`;
+  // Idempotency key strategy:
+  // - If intentId is provided by the caller (e.g. UUID generated on button click): fully stable key.
+  // - Otherwise: minute-bucketed key — prevents double-click within the same minute window.
+  //   This is strictly better than Date.now()+random (which disabled idempotency entirely).
+  const orgId = String(organization._id);
+  const idempotencyKey = intentId
+    ? `extras_checkout_${orgId}_${packId}_${intentId}`
+    : `extras_checkout_${orgId}_${packId}_${Math.floor(Date.now() / 60000)}`;
 
   const extrasCheckoutParams = {
     customer: subscription.stripeCustomerId,
@@ -258,12 +285,16 @@ const fetchSubscriptionDetails = async (stripeSubscriptionId) => {
   if (!stripe) return null;
   const stripeSub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
   const cancelAt = stripeSub.cancel_at ? new Date(stripeSub.cancel_at * 1000) : null;
+  // Stripe API ≥ 2025-08-27 moved current_period_start/end to items.data[0].
+  // Fall back to top-level for older API versions.
+  const rawPeriodStart = stripeSub.items?.data?.[0]?.current_period_start ?? stripeSub.current_period_start;
+  const rawPeriodEnd = stripeSub.items?.data?.[0]?.current_period_end ?? stripeSub.current_period_end;
   return {
-    currentPeriodStart: new Date(stripeSub.current_period_start * 1000),
-    currentPeriodEnd: new Date(stripeSub.current_period_end * 1000),
+    currentPeriodStart: new Date(rawPeriodStart * 1000),
+    currentPeriodEnd: new Date(rawPeriodEnd * 1000),
     cancelAtPeriodEnd: stripeSub.cancel_at_period_end,
     status: stripeSub.status,
-    nextRenewalDate: cancelAt ?? new Date(stripeSub.current_period_end * 1000),
+    nextRenewalDate: cancelAt ?? new Date(rawPeriodEnd * 1000),
   };
 };
 

@@ -56,6 +56,15 @@ describe('BillingExtraService unit tests:', () => {
       default: mockRepository,
     }));
 
+    // billing.extra.service.js imports logger and billingEvents at module load time —
+    // mock them to prevent logger from trying to read config files during test setup.
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
+    }));
+    jest.unstable_mockModule('../lib/events.js', () => ({
+      default: { emit: jest.fn() },
+    }));
+
     const mod = await import('../services/billing.extra.service.js');
     BillingExtraService = mod.default;
   });

@@ -102,8 +102,9 @@ describe('Billing extras controller unit tests:', () => {
 
       await BillingController.extrasCheckout(req, res);
 
+      // intentId is undefined when not provided in the request body
       expect(mockBillingService.createExtrasCheckout).toHaveBeenCalledWith(
-        req.organization, 'pack_500k', 'http://ok', 'http://cancel',
+        req.organization, 'pack_500k', 'http://ok', 'http://cancel', undefined,
       );
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({

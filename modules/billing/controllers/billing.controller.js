@@ -133,8 +133,8 @@ const getUsage = async (req, res) => {
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const extrasCheckout = async (req, res) => {
   try {
-    const { packId, successUrl, cancelUrl } = req.body;
-    const result = await BillingService.createExtrasCheckout(req.organization, packId, successUrl, cancelUrl);
+    const { packId, successUrl, cancelUrl, intentId } = req.body;
+    const result = await BillingService.createExtrasCheckout(req.organization, packId, successUrl, cancelUrl, intentId);
     responses.success(res, 'extras checkout session created')(result);
   } catch (err) {
     const status = err.message?.startsWith('Invalid') || err.message?.includes('not found') ? 422 : 502;
