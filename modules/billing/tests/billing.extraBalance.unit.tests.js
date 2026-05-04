@@ -210,34 +210,75 @@ describe('BillingExtraBalance unit tests:', () => {
     describe('creditPack — idempotency', () => {
       test('should apply credit when stripeSessionId is new', async () => {
         const updatedDoc = makeDoc({ cachedBalance: 500000, ledger: [{ kind: 'topup', amount: 500000, stripeSessionId: 'cs_abc' }] });
-        mockModel.findOneAndUpdate.mockResolvedValue(updatedDoc);
+        // Step 1: getOrCreate (no-op on existing); Step 2: actual credit
+        mockModel.findOneAndUpdate
+          .mockResolvedValueOnce(makeDoc())
+          .mockResolvedValueOnce(updatedDoc);
 
         const result = await BillingExtraBalanceRepository.creditPack(orgId, 500000, 'cs_abc', null);
 
         expect(result.applied).toBe(true);
         expect(result.doc.cachedBalance).toBe(500000);
+        expect(mockModel.findOneAndUpdate).toHaveBeenCalledTimes(2);
       });
 
-      test('should return applied=false when stripeSessionId already exists (idempotency)', async () => {
-        // First findOneAndUpdate returns null (filter excluded — session already present)
-        mockModel.findOneAndUpdate.mockResolvedValue(null);
-        // creditPack fallback uses findOne().lean() to fetch existing doc
-        const existingDoc = makeDoc({ cachedBalance: 500000, ledger: [{ kind: 'topup', amount: 500000, stripeSessionId: 'cs_abc' }] });
-        mockModel.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(existingDoc) });
+      test('should return applied=false with reason duplicate_session when stripeSessionId already exists', async () => {
+        // Step 1: getOrCreate succeeds; Step 2: idempotency filter excludes → null
+        mockModel.findOneAndUpdate
+          .mockResolvedValueOnce(makeDoc())
+          .mockResolvedValueOnce(null);
 
         const result = await BillingExtraBalanceRepository.creditPack(orgId, 500000, 'cs_abc', null);
 
         expect(result.applied).toBe(false);
-        expect(result.doc).toBe(existingDoc);
+        expect(result.reason).toBe('duplicate_session');
+        expect(result.doc).toBeNull();
+      });
+
+      test('step 1 issues upsert getOrCreate with $setOnInsert (fresh org support)', async () => {
+        let step1Filter;
+        let step1Update;
+        let step1Options;
+        const updatedDoc = makeDoc({ cachedBalance: 500000 });
+        mockModel.findOneAndUpdate.mockImplementation((filter, update, options) => {
+          if (!step1Filter) {
+            step1Filter = filter;
+            step1Update = update;
+            step1Options = options;
+            return Promise.resolve(null); // fresh org — no doc yet
+          }
+          return Promise.resolve(updatedDoc);
+        });
+
+        await BillingExtraBalanceRepository.creditPack(orgId, 500000, 'cs_fresh', null);
+
+        expect(step1Options?.upsert).toBe(true);
+        expect(step1Update.$setOnInsert).toMatchObject({ organization: orgId, ledger: [], cachedBalance: 0 });
+      });
+
+      test('step 2 does NOT include upsert (doc guaranteed by step 1)', async () => {
+        let step2Options;
+        mockModel.findOneAndUpdate
+          .mockResolvedValueOnce(makeDoc())
+          .mockImplementation((filter, update, options) => {
+            step2Options = options;
+            return Promise.resolve(makeDoc({ cachedBalance: 1000 }));
+          });
+
+        await BillingExtraBalanceRepository.creditPack(orgId, 1000, 'cs_no_upsert', null);
+
+        expect(step2Options?.upsert).toBeFalsy();
       });
 
       test('should set expiresAt on topup entry when provided', async () => {
         const expiresAt = new Date('2027-01-01');
         let capturedUpdate;
-        mockModel.findOneAndUpdate.mockImplementation((filter, update) => {
-          capturedUpdate = update;
-          return Promise.resolve(makeDoc({ cachedBalance: 1000, ledger: [{ kind: 'topup', amount: 1000, stripeSessionId: 'cs_xyz', expiresAt }] }));
-        });
+        mockModel.findOneAndUpdate
+          .mockResolvedValueOnce(makeDoc())
+          .mockImplementation((filter, update) => {
+            capturedUpdate = update;
+            return Promise.resolve(makeDoc({ cachedBalance: 1000, ledger: [{ kind: 'topup', amount: 1000, stripeSessionId: 'cs_xyz', expiresAt }] }));
+          });
 
         await BillingExtraBalanceRepository.creditPack(orgId, 1000, 'cs_xyz', expiresAt);
 

@@ -157,3 +157,86 @@ describe('BillingUsage concurrent attribution integration tests:', () => {
     expect(debits).toHaveLength(1);
   });
 });
+
+/**
+ * Integration tests for creditPack idempotency (V8 P2).
+ *
+ * Validates that creditPack using the 2-step pattern:
+ * - Credits correctly on first call (fresh org, no pre-existing doc).
+ * - Is idempotent on replay of the same stripeSessionId (applied=false, balance unchanged).
+ */
+describe('BillingExtraBalance creditPack idempotency integration tests:', () => {
+  let BillingExtraBalance;
+  let BillingExtraBalanceRepository;
+  let originalMeterMode;
+
+  beforeAll(async () => {
+    originalMeterMode = config.billing.meterMode;
+    config.billing.meterMode = true;
+    await mongooseService.loadModels();
+    await mongooseService.connect();
+
+    BillingExtraBalance = mongoose.model('BillingExtraBalance');
+    BillingExtraBalanceRepository = (await import('../repositories/billing.extraBalance.repository.js')).default;
+  });
+
+  beforeEach(async () => {
+    await BillingExtraBalance.deleteMany({});
+  });
+
+  afterAll(async () => {
+    config.billing.meterMode = originalMeterMode;
+    await mongooseService.disconnect();
+  });
+
+  test('creditPack on fresh org creates doc and credits balance', async () => {
+    const organizationId = new mongoose.Types.ObjectId();
+
+    const result = await BillingExtraBalanceRepository.creditPack(
+      organizationId.toString(),
+      500000,
+      'cs_fresh_org_v8',
+      null,
+    );
+
+    expect(result.applied).toBe(true);
+    expect(result.doc).not.toBeNull();
+    expect(result.doc.cachedBalance).toBe(500000);
+
+    const persisted = await BillingExtraBalance.findOne({ organization: organizationId }).lean();
+    expect(persisted).not.toBeNull();
+    expect(persisted.cachedBalance).toBe(500000);
+    expect(persisted.ledger).toHaveLength(1);
+    expect(persisted.ledger[0].kind).toBe('topup');
+    expect(persisted.ledger[0].stripeSessionId).toBe('cs_fresh_org_v8');
+  });
+
+  test('creditPack replay with same stripeSessionId is idempotent (applied=false, balance unchanged)', async () => {
+    const organizationId = new mongoose.Types.ObjectId();
+    const stripeSessionId = 'cs_replay_v8_p2';
+
+    // First call — should credit
+    const first = await BillingExtraBalanceRepository.creditPack(
+      organizationId.toString(),
+      500000,
+      stripeSessionId,
+      null,
+    );
+    expect(first.applied).toBe(true);
+
+    // Second call with same sessionId — must be a no-op
+    const second = await BillingExtraBalanceRepository.creditPack(
+      organizationId.toString(),
+      500000,
+      stripeSessionId,
+      null,
+    );
+    expect(second.applied).toBe(false);
+    expect(second.reason).toBe('duplicate_session');
+
+    // Balance must not have changed
+    const persisted = await BillingExtraBalance.findOne({ organization: organizationId }).lean();
+    expect(persisted.cachedBalance).toBe(500000);
+    expect(persisted.ledger.filter((e) => e.kind === 'topup')).toHaveLength(1);
+  });
+});

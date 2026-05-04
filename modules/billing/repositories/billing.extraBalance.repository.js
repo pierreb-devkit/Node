@@ -44,13 +44,15 @@ const getOrCreate = (orgId) => {
  * @description Atomically credit extra meter units from a Stripe pack purchase.
  *              Idempotent: if a ledger entry with the same stripeSessionId already
  *              exists, the update is a no-op and applied=false is returned.
- *              Uses a native-Mongo filter `ledger.stripeSessionId: { $ne: stripeSessionId }`
- *              so the idempotency check is part of the atomic update, not a separate read.
+ *              2-step pattern (aligned with debit):
+ *                Step 1 — ensure doc exists (atomic getOrCreate, no-op on replay).
+ *                Step 2 — idempotency-guarded credit (no upsert, returns null on replay).
+ *              Eliminates E11000 duplicate-key risk on direct replay outside withIdempotency.
  * @param {string} orgId - The organization ObjectId (string).
  * @param {number} amount - Meter units to credit (must be > 0).
  * @param {string} stripeSessionId - Stripe checkout session ID (idempotency key).
  * @param {Date|null} [expiresAt=null] - Optional expiry date for the topup entry.
- * @returns {Promise<{doc: Object, applied: boolean}>} Updated doc and whether the credit was applied.
+ * @returns {Promise<{doc: Object|null, applied: boolean, reason?: string}>} Updated doc and whether the credit was applied.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const creditPack = async (orgId, amount, stripeSessionId, expiresAt = null) => {
@@ -65,6 +67,10 @@ const creditPack = async (orgId, amount, stripeSessionId, expiresAt = null) => {
     ...(expiresAt ? { expiresAt } : {}),
   };
 
+  // Step 1: ensure the document exists (atomic getOrCreate, no-op if already present).
+  await getOrCreate(orgId);
+
+  // Step 2: idempotency-guarded credit (no upsert — doc is guaranteed to exist after step 1).
   const doc = await BillingExtraBalance().findOneAndUpdate(
     {
       organization: orgId,
@@ -75,14 +81,11 @@ const creditPack = async (orgId, amount, stripeSessionId, expiresAt = null) => {
       $inc: { cachedBalance: amount },
       $set: { cachedBalanceAt: new Date() },
     },
-    { upsert: true, returnDocument: 'after', runValidators: true },
+    { returnDocument: 'after' },
   );
 
   if (doc) return { doc, applied: true };
-
-  // No doc returned — the stripeSessionId already exists (idempotency hit).
-  const existing = await BillingExtraBalance().findOne({ organization: orgId }).lean();
-  return { doc: existing, applied: false };
+  return { doc: null, applied: false, reason: 'duplicate_session' };
 };
 
 /**
