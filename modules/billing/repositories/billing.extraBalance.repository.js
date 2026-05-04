@@ -68,11 +68,7 @@ const creditPack = async (orgId, amount, stripeSessionId, expiresAt = null) => {
   };
 
   // Step 1: ensure the document exists (atomic getOrCreate, no-op if already present).
-  await BillingExtraBalance().findOneAndUpdate(
-    { organization: orgId },
-    { $setOnInsert: { organization: orgId, ledger: [], cachedBalance: 0, cachedBalanceAt: new Date() } },
-    { upsert: true },
-  );
+  await getOrCreate(orgId);
 
   // Step 2: idempotency-guarded credit (no upsert — doc is guaranteed to exist after step 1).
   const doc = await BillingExtraBalance().findOneAndUpdate(
