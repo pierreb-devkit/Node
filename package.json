@@ -52,7 +52,7 @@
     "@casl/ability": "^6.8.1",
     "@jest/globals": "^30.3.0",
     "@sentry/node": "^10.51.0",
-    "axios": "^1.15.2",
+    "axios": "^1.16.0",
     "bcrypt": "^6.0.0",
     "bson": "^7.2.0",
     "chalk": "^5.6.2",
