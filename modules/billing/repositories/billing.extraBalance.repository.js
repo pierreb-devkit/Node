@@ -88,9 +88,11 @@ const creditPack = async (orgId, amount, stripeSessionId, expiresAt = null) => {
 /**
  * @function debit
  * @description Atomically debit meter units from the extra balance.
- *              Guards: (1) cachedBalance >= amount, (2) no existing ledger entry with refId.
- *              Both checks are in the atomic filter — no TOCTOU.
- *              Returns applied=false if balance is insufficient OR refId already used.
+ *              Guard: no existing ledger entry with refId (idempotency).
+ *              Negative cachedBalance is allowed — the requireQuota middleware gates entry
+ *              at scrap-start (remaining > 0); mid-operation overages may push the balance
+ *              below zero, which correctly reflects economic debt (same pattern as refundPartial).
+ *              Returns applied=false only when refId is already present (replay).
  * @param {string} orgId - The organization ObjectId (string).
  * @param {number} amount - Meter units to debit (must be > 0).
  * @param {string} refId - Unique reference for this debit (idempotency key).
@@ -111,7 +113,6 @@ const debit = async (orgId, amount, refId) => {
   const doc = await BillingExtraBalance().findOneAndUpdate(
     {
       organization: orgId,
-      cachedBalance: { $gte: amount },
       'ledger.refId': { $ne: refId },
     },
     {
