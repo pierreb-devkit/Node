@@ -625,6 +625,43 @@ describe('Billing service unit tests:', () => {
     });
   });
 
+  describe('getLocalSubscription', () => {
+    test('should return local subscription without calling Stripe', async () => {
+      // V6 P2: getLocalSubscription is a lightweight DB-only read, no Stripe fetch.
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_local_sub' } },
+      }));
+
+      mockStripeInstance.subscriptions = { retrieve: jest.fn() };
+
+      const mockSub = { organization: orgId, plan: 'pro', stripeSubscriptionId: 'sub_local_999' };
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue(mockSub);
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      const result = await BillingService.getLocalSubscription(orgId);
+
+      expect(result).toBe(mockSub);
+      expect(mockStripeInstance.subscriptions.retrieve).not.toHaveBeenCalled();
+    });
+
+    test('should return null when no subscription exists', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_local_sub_null' } },
+      }));
+
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue(null);
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      const result = await BillingService.getLocalSubscription(orgId);
+
+      expect(result).toBeNull();
+    });
+  });
+
   describe('fetchSubscriptionDetails', () => {
     test('should return mapped Stripe fields', async () => {
       jest.unstable_mockModule('../../../config/index.js', () => ({

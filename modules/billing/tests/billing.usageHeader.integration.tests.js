@@ -78,6 +78,7 @@ describe('Billing usage header integration tests:', () => {
     jest.resetModules();
 
     mockBillingService = {
+      getLocalSubscription: jest.fn().mockResolvedValue({ plan: 'pro', status: 'active' }),
       getSubscription: jest.fn().mockResolvedValue({ plan: 'pro', status: 'active' }),
     };
     mockBillingUsageService = {

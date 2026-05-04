@@ -73,8 +73,8 @@ const getSubscription = async (req, res) => {
  */
 const getUsage = async (req, res) => {
   try {
-    // Determine current plan via service layer
-    const subscription = await BillingService.getSubscription(req.organization._id);
+    // Local DB read only — no Stripe fetch needed for plan/status on the usage page.
+    const subscription = await BillingService.getLocalSubscription(req.organization._id);
     const plan = (!subscription || !activeStatuses.includes(subscription.status)) ? 'free' : (subscription.plan || 'free');
 
     if (config.billing?.meterMode) {
