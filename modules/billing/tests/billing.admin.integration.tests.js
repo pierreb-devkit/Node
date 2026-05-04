@@ -188,7 +188,7 @@ describe('Billing admin integration tests:', () => {
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
-  test('admin user can POST refund with valid body (fallback minute-resolution key)', async () => {
+  test('admin user can POST refund with valid body and stable idempotency key', async () => {
     const routes = await buildRoutes();
     const refundRoute = routes.get('/api/admin/billing/refund');
     const res = {
@@ -198,13 +198,13 @@ describe('Billing admin integration tests:', () => {
 
     await runHandlers(
       [...refundRoute.all, ...refundRoute.post],
-      { method: 'POST', headers: { 'x-role': 'admin' }, body: { chargeId: 'ch_test_123', amountCents: 2500, reason: 'duplicate' } },
+      { method: 'POST', headers: { 'x-role': 'admin' }, body: { chargeId: 'ch_test_123', amountCents: 2500, reason: 'duplicate', refundRequestId: 'req-int-test001' } },
       res,
     );
 
     expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
       { charge: 'ch_test_123', reason: 'duplicate', amount: 2500 },
-      { idempotencyKey: expect.stringMatching(/^refund_ch_test_123_2500_\d+$/) },
+      { idempotencyKey: 'refund_admin_req-int-test001' },
     );
     expect(res.status).toHaveBeenCalledWith(200);
   });
@@ -228,23 +228,17 @@ describe('Billing admin integration tests:', () => {
     expect(key2).toBe('refund_admin_req-abc12345');
   });
 
-  test('two calls without refundRequestId in the same minute use the same minute-resolution key', async () => {
+  test('missing refundRequestId returns 422 from schema validation (BREAKING — required field)', async () => {
     const routes = await buildRoutes();
     const refundRoute = routes.get('/api/admin/billing/refund');
 
-    const makeRes = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() });
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() };
     const body = { chargeId: 'ch_test_dup2', amountCents: 500, reason: 'duplicate' };
 
-    await runHandlers([...refundRoute.all, ...refundRoute.post], { method: 'POST', headers: { 'x-role': 'admin' }, body }, makeRes());
-    await runHandlers([...refundRoute.all, ...refundRoute.post], { method: 'POST', headers: { 'x-role': 'admin' }, body }, makeRes());
+    await runHandlers([...refundRoute.all, ...refundRoute.post], { method: 'POST', headers: { 'x-role': 'admin' }, body }, res);
 
-    const calls = mockStripeInstance.refunds.create.mock.calls;
-    expect(calls).toHaveLength(2);
-    const key1 = calls[0][1].idempotencyKey;
-    const key2 = calls[1][1].idempotencyKey;
-    expect(key1).toMatch(/^refund_ch_test_dup2_500_\d+$/);
-    // Within a test (same millisecond) both calls land in the same minute → same key
-    expect(key1).toBe(key2);
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(mockStripeInstance.refunds.create).not.toHaveBeenCalled();
   });
 
   test('invalid body returns 422 from schema validation', async () => {
@@ -291,13 +285,13 @@ describe('Billing admin integration tests:', () => {
 
     await runHandlers(
       [...refundRoute.all, ...refundRoute.post],
-      { method: 'POST', headers: { 'x-role': 'admin' }, body: { chargeId: 'ch_test_123', reason: 'requested_by_customer' } },
+      { method: 'POST', headers: { 'x-role': 'admin' }, body: { chargeId: 'ch_test_123', reason: 'requested_by_customer', refundRequestId: 'req-int-full001' } },
       res,
     );
 
     expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
       { charge: 'ch_test_123', reason: 'requested_by_customer' },
-      { idempotencyKey: expect.stringMatching(/^refund_ch_test_123_full_\d+$/) },
+      { idempotencyKey: 'refund_admin_req-int-full001' },
     );
     expect(res.status).toHaveBeenCalledWith(200);
   });
@@ -314,7 +308,7 @@ describe('Billing admin integration tests:', () => {
 
     await runHandlers(
       [...refundRoute.all, ...refundRoute.post],
-      { method: 'POST', headers: { 'x-role': 'admin' }, body: { chargeId: 'ch_test_123', amountCents: 2500 } },
+      { method: 'POST', headers: { 'x-role': 'admin' }, body: { chargeId: 'ch_test_123', amountCents: 2500, refundRequestId: 'req-int-err001' } },
       res,
     );
 
@@ -333,7 +327,7 @@ describe('Billing admin integration tests:', () => {
 
     await runHandlers(
       [...refundRoute.all, ...refundRoute.post],
-      { method: 'POST', headers: { 'x-role': 'admin' }, body: { chargeId: 'ch_test_123', amountCents: 2500 } },
+      { method: 'POST', headers: { 'x-role': 'admin' }, body: { chargeId: 'ch_test_123', amountCents: 2500, refundRequestId: 'req-int-arg001' } },
       res,
     );
 

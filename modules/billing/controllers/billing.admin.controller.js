@@ -8,9 +8,8 @@ import getStripe from '../lib/stripe.js';
  * @desc Admin endpoint to trigger a Stripe refund for a charge.
  *       Initiates the Stripe refund; actual ledger debit happens via the
  *       `charge.refunded` webhook (single source of truth).
- *       Idempotency: uses caller-provided refundRequestId when present to prevent
- *       double-refund on admin double-click. Falls back to minute-resolution key
- *       when refundRequestId is absent — 2 clicks within the same minute → 1 refund.
+ *       Idempotency: refundRequestId is required (frontend generates a UUID per click)
+ *       to prevent double-refund on admin double-click at any time interval.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  * @returns {Promise<void>}
@@ -33,6 +32,12 @@ const adminRefundCharge = async (req, res) => {
       }
     }
 
+    if (typeof refundRequestId !== 'string' || refundRequestId.trim().length < 8) {
+      return responses.error(res, 422, 'Unprocessable Entity', 'Failed to refund charge')(
+        new Error('invalid argument: refundRequestId must be a string of at least 8 characters'),
+      );
+    }
+
     const stripe = getStripe();
     if (!stripe) {
       return responses.error(res, 502, 'Bad Gateway', 'Failed to refund charge')(
@@ -40,11 +45,7 @@ const adminRefundCharge = async (req, res) => {
       );
     }
 
-    // Prefer caller-supplied stable key; fall back to minute-resolution to bound double-click window.
-    const idempotencyKey = refundRequestId
-      ? `refund_admin_${refundRequestId}`
-      : `refund_${chargeId}_${amountCents ?? 'full'}_${Math.floor(Date.now() / 60000)}`;
-
+    const idempotencyKey = `refund_admin_${refundRequestId}`;
     const params = { charge: chargeId, reason: reason || 'requested_by_customer' };
     if (amountCents !== undefined) params.amount = amountCents;
 

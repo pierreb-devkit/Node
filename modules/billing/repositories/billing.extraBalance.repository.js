@@ -92,11 +92,13 @@ const creditPack = async (orgId, amount, stripeSessionId, expiresAt = null) => {
  *              Negative cachedBalance is allowed — the requireQuota middleware gates entry
  *              at scrap-start (remaining > 0); mid-operation overages may push the balance
  *              below zero, which correctly reflects economic debt (same pattern as refundPartial).
+ *              Upserts the document when none exists yet (org paying without prior pack purchase)
+ *              so overage debt is never silently lost on the next weekly meter reset.
  *              Returns applied=false only when refId is already present (replay).
  * @param {string} orgId - The organization ObjectId (string).
  * @param {number} amount - Meter units to debit (must be > 0).
  * @param {string} refId - Unique reference for this debit (idempotency key).
- * @returns {Promise<{doc: Object|null, applied: boolean}>} Updated doc and whether debit was applied.
+ * @returns {Promise<{doc: Object|null, applied: boolean, reason?: string}>} Updated doc and whether debit was applied.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const debit = async (orgId, amount, refId) => {
@@ -110,6 +112,14 @@ const debit = async (orgId, amount, refId) => {
     at: new Date(),
   };
 
+  // Step 1: ensure the document exists (atomic getOrCreate, no-op if already present).
+  await BillingExtraBalance().findOneAndUpdate(
+    { organization: orgId },
+    { $setOnInsert: { organization: orgId, ledger: [], cachedBalance: 0, cachedBalanceAt: new Date() } },
+    { upsert: true },
+  );
+
+  // Step 2: apply the debit with idempotency guard.
   const doc = await BillingExtraBalance().findOneAndUpdate(
     {
       organization: orgId,
@@ -124,7 +134,7 @@ const debit = async (orgId, amount, refId) => {
   );
 
   if (doc) return { doc, applied: true };
-  return { doc: null, applied: false };
+  return { doc: null, applied: false, reason: 'duplicate_step' };
 };
 
 /**

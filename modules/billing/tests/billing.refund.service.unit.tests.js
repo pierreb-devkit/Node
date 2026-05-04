@@ -57,61 +57,61 @@ describe('Admin refund controller unit tests:', () => {
     jest.restoreAllMocks();
   });
 
-  test('should call stripe.refunds.create with charge and default reason', async () => {
-    const req = { body: { chargeId: 'ch_test_xyz' } };
+  test('should call stripe.refunds.create with charge, default reason and stable idempotency key', async () => {
+    const req = { body: { chargeId: 'ch_test_xyz', refundRequestId: 'req-stable-xyz00' } };
     const res = makeRes();
 
     await adminRefundCharge(req, res);
 
     expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
       { charge: 'ch_test_xyz', reason: 'requested_by_customer' },
-      { idempotencyKey: expect.stringMatching(/^refund_ch_test_xyz_full_\d+$/) },
+      { idempotencyKey: 'refund_admin_req-stable-xyz00' },
     );
     expect(mockResponses.success).toHaveBeenCalledWith(res, 'billing refund created');
   });
 
   test('should include amount when amountCents is provided', async () => {
-    const req = { body: { chargeId: 'ch_test_xyz', amountCents: 2000 } };
+    const req = { body: { chargeId: 'ch_test_xyz', amountCents: 2000, refundRequestId: 'req-stable-xyz01' } };
     const res = makeRes();
 
     await adminRefundCharge(req, res);
 
     expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
       { charge: 'ch_test_xyz', reason: 'requested_by_customer', amount: 2000 },
-      { idempotencyKey: expect.stringMatching(/^refund_ch_test_xyz_2000_\d+$/) },
+      { idempotencyKey: 'refund_admin_req-stable-xyz01' },
     );
   });
 
   test('should forward an explicit reason when provided', async () => {
-    const req = { body: { chargeId: 'ch_test_xyz', amountCents: 2000, reason: 'duplicate' } };
+    const req = { body: { chargeId: 'ch_test_xyz', amountCents: 2000, reason: 'duplicate', refundRequestId: 'req-stable-xyz02' } };
     const res = makeRes();
 
     await adminRefundCharge(req, res);
 
     expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
       { charge: 'ch_test_xyz', reason: 'duplicate', amount: 2000 },
-      { idempotencyKey: expect.stringMatching(/^refund_ch_test_xyz_2000_\d+$/) },
+      { idempotencyKey: 'refund_admin_req-stable-xyz02' },
     );
   });
 
-  test('idempotency key uses minute-resolution fallback for full refund (no refundRequestId)', async () => {
+  test('missing refundRequestId returns 422 (BREAKING — required field)', async () => {
     const req = { body: { chargeId: 'ch_abc' } };
     const res = makeRes();
 
     await adminRefundCharge(req, res);
 
-    const call = mockStripeInstance.refunds.create.mock.calls[0];
-    expect(call[1].idempotencyKey).toMatch(/^refund_ch_abc_full_\d+$/);
+    expect(mockResponses.error).toHaveBeenCalledWith(res, 422, 'Unprocessable Entity', 'Failed to refund charge');
+    expect(mockStripeInstance.refunds.create).not.toHaveBeenCalled();
   });
 
-  test('idempotency key uses minute-resolution fallback for partial refund (no refundRequestId)', async () => {
-    const req = { body: { chargeId: 'ch_abc', amountCents: 500 } };
+  test('refundRequestId shorter than 8 chars returns 422', async () => {
+    const req = { body: { chargeId: 'ch_abc', amountCents: 500, refundRequestId: 'short' } };
     const res = makeRes();
 
     await adminRefundCharge(req, res);
 
-    const call = mockStripeInstance.refunds.create.mock.calls[0];
-    expect(call[1].idempotencyKey).toMatch(/^refund_ch_abc_500_\d+$/);
+    expect(mockResponses.error).toHaveBeenCalledWith(res, 422, 'Unprocessable Entity', 'Failed to refund charge');
+    expect(mockStripeInstance.refunds.create).not.toHaveBeenCalled();
   });
 
   test('refundRequestId generates stable "refund_admin_{id}" key (double-click protection)', async () => {
@@ -137,7 +137,7 @@ describe('Admin refund controller unit tests:', () => {
 
   test('should return 502 when Stripe is not configured', async () => {
     mockGetStripe.mockReturnValue(null);
-    const req = { body: { chargeId: 'ch_test' } };
+    const req = { body: { chargeId: 'ch_test', refundRequestId: 'req-no-stripe0' } };
     const res = makeRes();
 
     await adminRefundCharge(req, res);
@@ -194,7 +194,7 @@ describe('Admin refund controller unit tests:', () => {
   });
 
   test('should succeed with undefined amountCents (full refund)', async () => {
-    const req = { body: { chargeId: 'ch_test', amountCents: undefined } };
+    const req = { body: { chargeId: 'ch_test', amountCents: undefined, refundRequestId: 'req-full-test0' } };
     const res = makeRes();
 
     await adminRefundCharge(req, res);

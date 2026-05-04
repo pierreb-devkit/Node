@@ -247,19 +247,27 @@ describe('BillingExtraBalance unit tests:', () => {
 
     describe('debit', () => {
       test('should apply debit when balance is sufficient and refId is new', async () => {
+        const existingDoc = makeDoc();
         const updatedDoc = makeDoc({ cachedBalance: 400000, ledger: [{ kind: 'debit', amount: -100000, refId: 'ref_1' }] });
-        mockModel.findOneAndUpdate.mockResolvedValue(updatedDoc);
+        // Step 1: getOrCreate (no-op on existing); Step 2: actual debit
+        mockModel.findOneAndUpdate
+          .mockResolvedValueOnce(existingDoc)
+          .mockResolvedValueOnce(updatedDoc);
 
         const result = await BillingExtraBalanceRepository.debit(orgId, 100000, 'ref_1');
 
         expect(result.applied).toBe(true);
         expect(result.doc).toBe(updatedDoc);
+        expect(mockModel.findOneAndUpdate).toHaveBeenCalledTimes(2);
       });
 
       test('should apply debit and allow negative balance when amount exceeds cachedBalance (overage)', async () => {
         // cachedBalance=10, amount=15 → balance becomes -5; applied=true (no balance guard)
+        const existingDoc = makeDoc({ cachedBalance: 10 });
         const updatedDoc = makeDoc({ cachedBalance: -5, ledger: [{ kind: 'debit', amount: -15, refId: 'ref_overage' }] });
-        mockModel.findOneAndUpdate.mockResolvedValue(updatedDoc);
+        mockModel.findOneAndUpdate
+          .mockResolvedValueOnce(existingDoc)
+          .mockResolvedValueOnce(updatedDoc);
 
         const result = await BillingExtraBalanceRepository.debit(orgId, 15, 'ref_overage');
 
@@ -267,39 +275,69 @@ describe('BillingExtraBalance unit tests:', () => {
         expect(result.doc.cachedBalance).toBe(-5);
       });
 
-      test('filter does NOT include cachedBalance guard (allows negative balance)', async () => {
-        let capturedFilter;
-        mockModel.findOneAndUpdate.mockImplementation((filter) => {
-          capturedFilter = filter;
-          return Promise.resolve(makeDoc({ cachedBalance: -5 }));
+      test('step 1 issues upsert getOrCreate with $setOnInsert (fresh org support)', async () => {
+        let step1Filter;
+        let step1Update;
+        let step1Options;
+        const updatedDoc = makeDoc({ cachedBalance: -50 });
+        mockModel.findOneAndUpdate.mockImplementation((filter, update, options) => {
+          if (!step1Filter) {
+            step1Filter = filter;
+            step1Update = update;
+            step1Options = options;
+            return Promise.resolve(null); // fresh org — no doc yet
+          }
+          return Promise.resolve(updatedDoc);
         });
+
+        await BillingExtraBalanceRepository.debit(orgId, 50, 'ref_fresh');
+
+        expect(step1Options?.upsert).toBe(true);
+        expect(step1Update.$setOnInsert).toMatchObject({ organization: orgId, ledger: [], cachedBalance: 0 });
+      });
+
+      test('filter does NOT include cachedBalance guard (allows negative balance)', async () => {
+        const existingDoc = makeDoc();
+        let step2Filter;
+        mockModel.findOneAndUpdate
+          .mockResolvedValueOnce(existingDoc)
+          .mockImplementation((filter) => {
+            step2Filter = filter;
+            return Promise.resolve(makeDoc({ cachedBalance: -5 }));
+          });
 
         await BillingExtraBalanceRepository.debit(orgId, 15, 'ref_no_balance_guard');
 
-        expect(capturedFilter).not.toHaveProperty('cachedBalance');
+        expect(step2Filter).not.toHaveProperty('cachedBalance');
       });
 
-      test('should return applied=false when refId already used (replay protection)', async () => {
-        // The filter `ledger.refId: { $ne: refId }` won't match if refId exists
-        mockModel.findOneAndUpdate.mockResolvedValue(null);
+      test('should return applied=false with reason duplicate_step when refId already used (replay protection)', async () => {
+        // Step 1: getOrCreate succeeds; Step 2: idempotency filter excludes → null
+        mockModel.findOneAndUpdate
+          .mockResolvedValueOnce(makeDoc())
+          .mockResolvedValueOnce(null);
 
         const result = await BillingExtraBalanceRepository.debit(orgId, 100, 'ref_duplicate');
 
         expect(result.applied).toBe(false);
+        expect(result.reason).toBe('duplicate_step');
       });
 
       test('should push a negative amount entry to the ledger', async () => {
-        let capturedUpdate;
-        mockModel.findOneAndUpdate.mockImplementation((filter, update) => {
-          capturedUpdate = update;
-          return Promise.resolve(makeDoc({ cachedBalance: 0 }));
-        });
+        const existingDoc = makeDoc();
+        let step2Update;
+        mockModel.findOneAndUpdate
+          .mockResolvedValueOnce(existingDoc)
+          .mockImplementation((filter, update) => {
+            step2Update = update;
+            return Promise.resolve(makeDoc({ cachedBalance: 0 }));
+          });
 
         await BillingExtraBalanceRepository.debit(orgId, 500, 'ref_check');
 
-        expect(capturedUpdate.$push.ledger.amount).toBe(-500);
-        expect(capturedUpdate.$push.ledger.kind).toBe('debit');
-        expect(capturedUpdate.$inc.cachedBalance).toBe(-500);
+        expect(step2Update.$push.ledger.amount).toBe(-500);
+        expect(step2Update.$push.ledger.kind).toBe('debit');
+        expect(step2Update.$inc.cachedBalance).toBe(-500);
       });
     });
 
