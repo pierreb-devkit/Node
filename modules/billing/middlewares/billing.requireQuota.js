@@ -57,6 +57,36 @@ function requireQuota(resource, action) {
 
         // ── Degraded-mode gate (past_due grace period) ─────────────────────
         const subscription = await SubscriptionRepository.findByOrganization(req.organization._id);
+
+        // Fail-closed statuses: paused, unpaid, incomplete_expired → always route to free quota.
+        // These statuses fire as customer.subscription.updated (status field changes), so they
+        // arrive here while the subscription doc may still hold a paid-tier meterQuota.
+        // Resetting to zero prevents paid-quota bleed-through on lapsed subscriptions.
+        const failClosedStatuses = ['paused', 'unpaid', 'incomplete_expired'];
+        if (subscription && failClosedStatuses.includes(subscription.status)) {
+          const planId = getDefaultPlanId();
+          const freePlan = BillingPlanService.getActivePlan(planId);
+          if (!freePlan) {
+            return responses.error(res, 503, 'Service Unavailable', 'Billing plan configuration is temporarily unavailable')({
+              type: 'PLAN_NOT_CONFIGURED',
+              planId,
+            });
+          }
+          const extrasBalance = await BillingExtraBalanceRepository.getBalance(orgId);
+          const remaining = (freePlan.meterQuota ?? 0) + extrasBalance;
+          if (remaining <= 0) {
+            return responses.error(res, 402, 'Payment Required', 'Meter exhausted')({
+              type: 'METER_EXHAUSTED',
+              meterUsed: 0,
+              meterQuota: freePlan.meterQuota ?? 0,
+              extrasRemaining: extrasBalance,
+              packsAvailable: config.billing?.packs ?? [],
+              upgradeUrl: config.billing?.upgradeUrl ?? '/billing/plans',
+            });
+          }
+          return next();
+        }
+
         if (subscription?.status === 'past_due' && subscription.pastDueSince != null) {
           const gracePeriodMs = getGracePeriodDays() * 24 * 60 * 60 * 1000;
           const elapsed = Date.now() - new Date(subscription.pastDueSince).getTime();

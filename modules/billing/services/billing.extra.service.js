@@ -2,6 +2,8 @@
  * Module dependencies
  */
 import config from '../../../config/index.js';
+import logger from '../../../lib/services/logger.js';
+import billingEvents from '../lib/events.js';
 import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
 
 /**
@@ -121,6 +123,24 @@ const refundPartial = async (orgId, stripeSessionId, amountRefundedCents, packId
 
     if (matchingPacks.length !== 1) {
       // Ambiguous or unknown pack — cannot compute proportional refund safely.
+      // Log a critical alert and emit event for ops visibility / manual reconciliation.
+      logger.error('[billing] refund ambiguous pack match — manual reconciliation required', {
+        orgId,
+        stripeSessionId,
+        amountRefundedCents,
+        topupAmount: topupEntry.amount,
+        matchCount: matchingPacks.length,
+      });
+      try {
+        billingEvents.emit('billing.refund.unresolved', {
+          reason: 'ambiguous_pack_match',
+          orgId,
+          stripeSessionId,
+          amountRefundedCents,
+        });
+      } catch (evtErr) {
+        console.error('[billing.extra] billing.refund.unresolved listener error (non-fatal):', evtErr?.message ?? evtErr);
+      }
       return { doc, applied: false, reason: 'ambiguous_pack_match', refundUnits: 0 };
     }
 
@@ -130,7 +150,10 @@ const refundPartial = async (orgId, stripeSessionId, amountRefundedCents, packId
   let refundUnits;
   if (matchingPack.priceUsd && matchingPack.priceUsd > 0) {
     const packUnits = matchingPack.meterUnits ?? matchingPack.computeUnits;
-    refundUnits = Math.round((amountRefundedCents / 100 / matchingPack.priceUsd) * packUnits);
+    // Integer-cents math: avoids floating-point drift from dividing by 100 first.
+    // Formula: round((refundCents * packUnits) / packPriceCents)
+    // where packPriceCents = round(priceUsd * 100) to avoid double float imprecision.
+    refundUnits = Math.round((amountRefundedCents * packUnits) / Math.round(matchingPack.priceUsd * 100));
   } else {
     // Fallback: proportional to topup amount (assume full refund if no priceUsd)
     refundUnits = topupEntry.amount;

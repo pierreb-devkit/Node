@@ -425,6 +425,7 @@ describe('Billing webhook subscription unit tests:', () => {
         1700000100,
         'evt_13',
         expect.objectContaining({ currentPeriodStart: new Date(newPeriodStart * 1000) }),
+        'subscription',
       );
     });
   });
@@ -448,6 +449,7 @@ describe('Billing webhook subscription unit tests:', () => {
         1700000400,
         'evt_succeeded',
         { pastDueSince: null, status: 'active' },
+        'invoice',
       );
     });
 
@@ -468,6 +470,7 @@ describe('Billing webhook subscription unit tests:', () => {
         1700000400,
         'evt_succeeded',
         {},
+        'invoice',
       );
     });
 
@@ -495,7 +498,7 @@ describe('Billing webhook subscription unit tests:', () => {
       );
 
       expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
-        subId, 10, 'evt_succeeded', {},
+        subId, 10, 'evt_succeeded', {}, 'invoice',
       );
     });
 
@@ -549,6 +552,7 @@ describe('Billing webhook subscription unit tests:', () => {
         1700000300,
         'evt_failed',
         expect.objectContaining({ status: 'past_due' }),
+        'invoice',
       );
     });
 

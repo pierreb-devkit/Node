@@ -36,6 +36,10 @@ describe('Billing service unit tests:', () => {
           create: jest.fn().mockResolvedValue({ url: 'https://billing.stripe.com/portal_123' }),
         },
       },
+      subscriptions: {
+        // Server-side active-sub guard (Item 9): returns no active subs by default
+        list: jest.fn().mockResolvedValue({ data: [] }),
+      },
     };
 
     jest.unstable_mockModule('stripe', () => ({

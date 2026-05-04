@@ -157,30 +157,40 @@ describe('BillingSubscriptionRepository unit tests:', () => {
 
   describe('updateIfEventNewer', () => {
     test('updates when stripeEventCreatedAt is null (first event)', async () => {
-      const updated = { _id: subId, status: 'canceled', stripeEventCreatedAt: 1000, stripeEventId: 'evt_abc' };
+      const updated = { _id: subId, status: 'canceled', lastSubscriptionEventCreatedAt: 1000, lastSubscriptionEventId: 'evt_abc' };
       const populateMock = jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(updated) });
       mockModel.findOneAndUpdate.mockReturnValue({ populate: populateMock });
 
       const result = await BillingSubscriptionRepository.updateIfEventNewer(subId, 1000, 'evt_abc', { status: 'canceled' });
 
+      // Default family is 'subscription' — guard + write use lastSubscriptionEvent* fields
       expect(mockModel.findOneAndUpdate).toHaveBeenCalledWith(
         {
           _id: subId,
           $or: [
-            { stripeEventCreatedAt: { $exists: false } },
-            { stripeEventCreatedAt: null },
-            { stripeEventCreatedAt: { $lt: 1000 } },
+            { lastSubscriptionEventCreatedAt: { $exists: false } },
+            { lastSubscriptionEventCreatedAt: null },
+            { lastSubscriptionEventCreatedAt: { $lt: 1000 } },
             {
-              stripeEventCreatedAt: 1000,
+              lastSubscriptionEventCreatedAt: 1000,
               $or: [
-                { stripeEventId: { $exists: false } },
-                { stripeEventId: null },
-                { stripeEventId: { $lt: 'evt_abc' } },
+                { lastSubscriptionEventId: { $exists: false } },
+                { lastSubscriptionEventId: null },
+                { lastSubscriptionEventId: { $lt: 'evt_abc' } },
               ],
             },
           ],
         },
-        { $set: { status: 'canceled', stripeEventCreatedAt: 1000, stripeEventId: 'evt_abc' } },
+        {
+          $set: {
+            status: 'canceled',
+            lastSubscriptionEventCreatedAt: 1000,
+            lastSubscriptionEventId: 'evt_abc',
+            // Legacy fields kept in sync for back-compat
+            stripeEventCreatedAt: 1000,
+            stripeEventId: 'evt_abc',
+          },
+        },
         { returnDocument: 'after', runValidators: true },
       );
       expect(result).toEqual(updated);
@@ -210,8 +220,9 @@ describe('BillingSubscriptionRepository unit tests:', () => {
       expect(result).toBeNull();
       const filter = mockModel.findOneAndUpdate.mock.calls[0][0];
       const sameSecondBranch = filter.$or[3];
-      expect(sameSecondBranch.stripeEventCreatedAt).toBe(1000);
-      expect(sameSecondBranch.$or[2].stripeEventId.$lt).toBe('evt_aaaa');
+      // Default family is 'subscription' — same-second branch uses per-family fields
+      expect(sameSecondBranch.lastSubscriptionEventCreatedAt).toBe(1000);
+      expect(sameSecondBranch.$or[2].lastSubscriptionEventId.$lt).toBe('evt_aaaa');
     });
   });
 

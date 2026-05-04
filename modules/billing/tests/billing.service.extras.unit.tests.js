@@ -187,7 +187,8 @@ describe('BillingService.createExtrasCheckout unit tests:', () => {
     );
 
     const [, options] = mockStripeInstance.checkout.sessions.create.mock.calls[0];
-    expect(options.idempotencyKey).toMatch(/^extras_checkout_.*pack_2m_\d+_[0-9a-f]+$/);
+    // No intentId passed → minute-bucketed key (no random hex suffix)
+    expect(options.idempotencyKey).toMatch(/^extras_checkout_.*pack_2m_\d+$/);
   });
 
   test('should set stripeSessionId to __pending__ in metadata', async () => {

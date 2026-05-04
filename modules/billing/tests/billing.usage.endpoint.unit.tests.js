@@ -49,6 +49,14 @@ describe('Billing usage endpoint unit tests:', () => {
       default: mockConfig,
     }));
 
+    // billing.extra.service.js has top-level logger/events imports — mock to prevent config read
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
+    }));
+    jest.unstable_mockModule('../lib/events.js', () => ({
+      default: { emit: jest.fn() },
+    }));
+
     const mod = await import('../controllers/billing.controller.js');
     billingController = mod.default;
 
