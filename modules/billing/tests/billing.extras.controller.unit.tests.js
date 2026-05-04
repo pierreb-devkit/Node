@@ -32,6 +32,7 @@ describe('Billing extras controller unit tests:', () => {
 
     mockBillingService = {
       createExtrasCheckout: jest.fn(),
+      getLocalSubscription: jest.fn(),
       getSubscription: jest.fn(),
     };
 
@@ -217,7 +218,7 @@ describe('Billing extras controller unit tests:', () => {
   describe('getUsage (meter mode)', () => {
     test('should return meter fields when meterMode=true', async () => {
       mockConfig.billing.meterMode = true;
-      mockBillingService.getSubscription.mockResolvedValue({ plan: 'pro', status: 'active' });
+      mockBillingService.getLocalSubscription.mockResolvedValue({ plan: 'pro', status: 'active' });
       mockBillingUsageService.getMeter.mockResolvedValue({
         weekKey: '2026-W18',
         planVersion: 'v2',
@@ -247,7 +248,7 @@ describe('Billing extras controller unit tests:', () => {
 
     test('should return zeroed meter fields when meter doc is null', async () => {
       mockConfig.billing.meterMode = true;
-      mockBillingService.getSubscription.mockResolvedValue({ plan: 'free', status: 'active' });
+      mockBillingService.getLocalSubscription.mockResolvedValue({ plan: 'free', status: 'active' });
       mockBillingUsageService.getMeter.mockResolvedValue(null);
       mockBillingExtraService.getOrgBalanceContext.mockResolvedValue(0);
 
@@ -266,7 +267,7 @@ describe('Billing extras controller unit tests:', () => {
 
     test('should return legacy usage shape when meterMode=false', async () => {
       mockConfig.billing.meterMode = false;
-      mockBillingService.getSubscription.mockResolvedValue({ plan: 'free', status: 'active' });
+      mockBillingService.getLocalSubscription.mockResolvedValue({ plan: 'free', status: 'active' });
       mockBillingUsageService.get.mockResolvedValue({ month: '2026-04', counters: { scraps_create: 1 } });
 
       await BillingController.getUsage(req, res);

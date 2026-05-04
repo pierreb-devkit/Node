@@ -256,13 +256,27 @@ describe('BillingExtraBalance unit tests:', () => {
         expect(result.doc).toBe(updatedDoc);
       });
 
-      test('should return applied=false when balance is insufficient', async () => {
-        mockModel.findOneAndUpdate.mockResolvedValue(null);
+      test('should apply debit and allow negative balance when amount exceeds cachedBalance (overage)', async () => {
+        // cachedBalance=10, amount=15 → balance becomes -5; applied=true (no balance guard)
+        const updatedDoc = makeDoc({ cachedBalance: -5, ledger: [{ kind: 'debit', amount: -15, refId: 'ref_overage' }] });
+        mockModel.findOneAndUpdate.mockResolvedValue(updatedDoc);
 
-        const result = await BillingExtraBalanceRepository.debit(orgId, 999999, 'ref_big');
+        const result = await BillingExtraBalanceRepository.debit(orgId, 15, 'ref_overage');
 
-        expect(result.applied).toBe(false);
-        expect(result.doc).toBeNull();
+        expect(result.applied).toBe(true);
+        expect(result.doc.cachedBalance).toBe(-5);
+      });
+
+      test('filter does NOT include cachedBalance guard (allows negative balance)', async () => {
+        let capturedFilter;
+        mockModel.findOneAndUpdate.mockImplementation((filter) => {
+          capturedFilter = filter;
+          return Promise.resolve(makeDoc({ cachedBalance: -5 }));
+        });
+
+        await BillingExtraBalanceRepository.debit(orgId, 15, 'ref_no_balance_guard');
+
+        expect(capturedFilter).not.toHaveProperty('cachedBalance');
       });
 
       test('should return applied=false when refId already used (replay protection)', async () => {

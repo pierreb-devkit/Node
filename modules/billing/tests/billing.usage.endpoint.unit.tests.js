@@ -19,6 +19,7 @@ describe('Billing usage endpoint unit tests:', () => {
     jest.resetModules();
 
     mockBillingService = {
+      getLocalSubscription: jest.fn(),
       getSubscription: jest.fn(),
     };
 
@@ -62,7 +63,7 @@ describe('Billing usage endpoint unit tests:', () => {
   });
 
   test('should return usage and limits for active subscription', async () => {
-    mockBillingService.getSubscription.mockResolvedValue({ plan: 'starter', status: 'active' });
+    mockBillingService.getLocalSubscription.mockResolvedValue({ plan: 'starter', status: 'active' });
     mockBillingUsageService.get.mockResolvedValue({ month: '2026-03', counters: { 'documents_create': 5, 'requests_execute': 42 } });
 
     const req = { organization: { _id: orgId } };
@@ -81,7 +82,7 @@ describe('Billing usage endpoint unit tests:', () => {
   });
 
   test('should return free plan when no subscription', async () => {
-    mockBillingService.getSubscription.mockResolvedValue(null);
+    mockBillingService.getLocalSubscription.mockResolvedValue(null);
     mockBillingUsageService.get.mockResolvedValue({ month: '2026-03', counters: {} });
 
     const req = { organization: { _id: orgId } };
@@ -105,7 +106,7 @@ describe('Billing usage endpoint unit tests:', () => {
     'incomplete_expired',
     'paused',
   ])('should return free plan when subscription status is %s', async (status) => {
-    mockBillingService.getSubscription.mockResolvedValue({ plan: 'starter', status });
+    mockBillingService.getLocalSubscription.mockResolvedValue({ plan: 'starter', status });
     mockBillingUsageService.get.mockResolvedValue({ month: '2026-03', counters: { 'documents_create': 2 } });
 
     const req = { organization: { _id: orgId } };
@@ -121,7 +122,7 @@ describe('Billing usage endpoint unit tests:', () => {
   });
 
   test('should return paid plan when subscription status is trialing', async () => {
-    mockBillingService.getSubscription.mockResolvedValue({ plan: 'starter', status: 'trialing' });
+    mockBillingService.getLocalSubscription.mockResolvedValue({ plan: 'starter', status: 'trialing' });
     mockBillingUsageService.get.mockResolvedValue({ month: '2026-03', counters: {} });
 
     const req = { organization: { _id: orgId } };
@@ -137,7 +138,7 @@ describe('Billing usage endpoint unit tests:', () => {
   });
 
   test('should return empty limits when plan has no quota config', async () => {
-    mockBillingService.getSubscription.mockResolvedValue({ plan: 'enterprise', status: 'active' });
+    mockBillingService.getLocalSubscription.mockResolvedValue({ plan: 'enterprise', status: 'active' });
     mockBillingUsageService.get.mockResolvedValue({ month: '2026-03', counters: {} });
 
     const req = { organization: { _id: orgId } };
@@ -153,7 +154,7 @@ describe('Billing usage endpoint unit tests:', () => {
   });
 
   test('should return correct flattened limits format', async () => {
-    mockBillingService.getSubscription.mockResolvedValue({ plan: 'pro', status: 'active' });
+    mockBillingService.getLocalSubscription.mockResolvedValue({ plan: 'pro', status: 'active' });
     mockBillingUsageService.get.mockResolvedValue({ month: '2026-03', counters: {} });
 
     const req = { organization: { _id: orgId } };
@@ -169,7 +170,7 @@ describe('Billing usage endpoint unit tests:', () => {
   });
 
   test('should return empty counters for new org (no usage yet)', async () => {
-    mockBillingService.getSubscription.mockResolvedValue({ plan: 'starter', status: 'active' });
+    mockBillingService.getLocalSubscription.mockResolvedValue({ plan: 'starter', status: 'active' });
     mockBillingUsageService.get.mockResolvedValue({ month: '2026-03', counters: {} });
 
     const req = { organization: { _id: orgId } };
@@ -184,7 +185,7 @@ describe('Billing usage endpoint unit tests:', () => {
   });
 
   test('should return period from usage month field', async () => {
-    mockBillingService.getSubscription.mockResolvedValue({ plan: 'free', status: 'active' });
+    mockBillingService.getLocalSubscription.mockResolvedValue({ plan: 'free', status: 'active' });
     mockBillingUsageService.get.mockResolvedValue({ month: '2026-03', counters: {} });
 
     const req = { organization: { _id: orgId } };
@@ -195,8 +196,20 @@ describe('Billing usage endpoint unit tests:', () => {
     expect(data.period).toBe('2026-03');
   });
 
+  test('should NOT call getSubscription (no Stripe fetch) on usage endpoint', async () => {
+    // V6 P2: /usage uses getLocalSubscription, not getSubscription, to avoid +50ms Stripe call.
+    mockBillingService.getLocalSubscription.mockResolvedValue({ plan: 'starter', status: 'active' });
+    mockBillingUsageService.get.mockResolvedValue({ month: '2026-03', counters: {} });
+
+    const req = { organization: { _id: orgId } };
+    await billingController.getUsage(req, res);
+
+    expect(mockBillingService.getLocalSubscription).toHaveBeenCalledWith(orgId);
+    expect(mockBillingService.getSubscription).not.toHaveBeenCalled();
+  });
+
   test('should return 500 when an error occurs', async () => {
-    mockBillingService.getSubscription.mockRejectedValue(new Error('DB error'));
+    mockBillingService.getLocalSubscription.mockRejectedValue(new Error('DB error'));
 
     const req = { organization: { _id: orgId } };
     await billingController.getUsage(req, res);

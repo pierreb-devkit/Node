@@ -268,6 +268,16 @@ const fetchSubscriptionDetails = async (stripeSubscriptionId) => {
 };
 
 /**
+ * @desc Get subscription for the given organization — local DB only, no Stripe fetch.
+ *       Use for lightweight reads (e.g. /usage endpoint) that only need plan/status fields.
+ *       Does NOT include currentPeriodEnd, cancelAtPeriodEnd or other live Stripe fields.
+ * @param {String} organizationId - The organization ID
+ * @returns {Promise<Object|null>} Local subscription document or null
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const getLocalSubscription = (organizationId) => SubscriptionRepository.findByOrganization(organizationId);
+
+/**
  * @desc Get subscription for the given organization.
  *       Merges cached local fields with live Stripe details for UI consumers.
  *       Falls back gracefully when Stripe is not configured or the subscription is free.
@@ -288,5 +298,6 @@ export default {
   createExtrasCheckout,
   createPortalSession,
   fetchSubscriptionDetails,
+  getLocalSubscription,
   getSubscription,
 };

@@ -217,7 +217,7 @@ const markUnpaid = (id, threshold) => {
  *              than the last processed event. Prevents out-of-order webhook delivery from
  *              overwriting more-recent state.
  *              Same-second events are ordered by lex-string comparison of event IDs (evt_ prefix
- *              makes these globally monotonic within a second) — V5 P1 #2 tiebreaker.
+ *              makes these globally deterministic within a second) — V5 P1 #2 tiebreaker.
  *              Returns null when the guard prevents the write (stale event).
  * @param {string} id - The subscription ObjectId (string).
  * @param {number} eventCreatedAt - Stripe event.created Unix timestamp (seconds).

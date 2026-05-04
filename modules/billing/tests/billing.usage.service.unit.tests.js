@@ -241,6 +241,23 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       expect(mockExtraService.debit).toHaveBeenCalledWith(orgId, 10000, 'hist_overflow');
     });
 
+    test('debit is called even when extras balance would go negative (overage allowed)', async () => {
+      // Validates V6 P1 #1 fix: debit repo no longer gates on balance >= amount.
+      // The service always calls debit on overflow; repo allows negative balance.
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan({ meterQuota: 500000 }));
+      const updatedDoc = makeUsageDoc({ meterUsed: 510000, meterQuota: 500000 });
+      mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
+      // Simulate repo returning applied=true with negative balance (new behaviour)
+      mockExtraService.debit.mockResolvedValue({ applied: true, doc: { cachedBalance: -5 } });
+
+      const result = await BillingUsageService.incrementMeter(orgId, 50000, {}, 'hist_overage_negative');
+
+      expect(result.applied).toBe(true);
+      expect(result.extrasConsumed).toBe(10000);
+      expect(mockExtraService.debit).toHaveBeenCalledWith(orgId, 10000, 'hist_overage_negative');
+    });
+
     test('should return extrasConsumed=0 and not call debit when within quota', async () => {
       mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockReturnValue(makePlan({ meterQuota: 500000 }));

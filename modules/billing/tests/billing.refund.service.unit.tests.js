@@ -65,7 +65,7 @@ describe('Admin refund controller unit tests:', () => {
 
     expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
       { charge: 'ch_test_xyz', reason: 'requested_by_customer' },
-      { idempotencyKey: expect.stringMatching(/^refund_ch_test_xyz_full_[0-9a-f-]{36}$/) },
+      { idempotencyKey: expect.stringMatching(/^refund_ch_test_xyz_full_\d+$/) },
     );
     expect(mockResponses.success).toHaveBeenCalledWith(res, 'billing refund created');
   });
@@ -78,7 +78,7 @@ describe('Admin refund controller unit tests:', () => {
 
     expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
       { charge: 'ch_test_xyz', reason: 'requested_by_customer', amount: 2000 },
-      { idempotencyKey: expect.stringMatching(/^refund_ch_test_xyz_2000_[0-9a-f-]{36}$/) },
+      { idempotencyKey: expect.stringMatching(/^refund_ch_test_xyz_2000_\d+$/) },
     );
   });
 
@@ -90,28 +90,49 @@ describe('Admin refund controller unit tests:', () => {
 
     expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
       { charge: 'ch_test_xyz', reason: 'duplicate', amount: 2000 },
-      { idempotencyKey: expect.stringMatching(/^refund_ch_test_xyz_2000_[0-9a-f-]{36}$/) },
+      { idempotencyKey: expect.stringMatching(/^refund_ch_test_xyz_2000_\d+$/) },
     );
   });
 
-  test('idempotency key is "refund_{chargeId}_full" for full refund', async () => {
+  test('idempotency key uses minute-resolution fallback for full refund (no refundRequestId)', async () => {
     const req = { body: { chargeId: 'ch_abc' } };
     const res = makeRes();
 
     await adminRefundCharge(req, res);
 
     const call = mockStripeInstance.refunds.create.mock.calls[0];
-    expect(call[1].idempotencyKey).toMatch(/^refund_ch_abc_full_[0-9a-f-]{36}$/);
+    expect(call[1].idempotencyKey).toMatch(/^refund_ch_abc_full_\d+$/);
   });
 
-  test('idempotency key is "refund_{chargeId}_{amountCents}_{uuid}" for partial refund', async () => {
+  test('idempotency key uses minute-resolution fallback for partial refund (no refundRequestId)', async () => {
     const req = { body: { chargeId: 'ch_abc', amountCents: 500 } };
     const res = makeRes();
 
     await adminRefundCharge(req, res);
 
     const call = mockStripeInstance.refunds.create.mock.calls[0];
-    expect(call[1].idempotencyKey).toMatch(/^refund_ch_abc_500_[0-9a-f-]{36}$/);
+    expect(call[1].idempotencyKey).toMatch(/^refund_ch_abc_500_\d+$/);
+  });
+
+  test('refundRequestId generates stable "refund_admin_{id}" key (double-click protection)', async () => {
+    const req = { body: { chargeId: 'ch_abc', amountCents: 500, refundRequestId: 'req-stable12345' } };
+    const res = makeRes();
+
+    await adminRefundCharge(req, res);
+
+    const call = mockStripeInstance.refunds.create.mock.calls[0];
+    expect(call[1].idempotencyKey).toBe('refund_admin_req-stable12345');
+  });
+
+  test('two calls with same refundRequestId use identical idempotency key', async () => {
+    const body = { chargeId: 'ch_dup', amountCents: 1000, refundRequestId: 'req-dup12345' };
+
+    await adminRefundCharge({ body }, makeRes());
+    await adminRefundCharge({ body }, makeRes());
+
+    const calls = mockStripeInstance.refunds.create.mock.calls;
+    expect(calls[0][1].idempotencyKey).toBe('refund_admin_req-dup12345');
+    expect(calls[1][1].idempotencyKey).toBe('refund_admin_req-dup12345');
   });
 
   test('should return 502 when Stripe is not configured', async () => {
