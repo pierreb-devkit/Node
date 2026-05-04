@@ -133,7 +133,16 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
   // Atomic extras debit — best-effort on the hot path; log and continue on failure
   if (extrasConsumed > 0) {
     try {
-      await BillingExtraService.debit(organizationId, extrasConsumed, idempotencyKey);
+      const debitResult = await BillingExtraService.debit(organizationId, extrasConsumed, idempotencyKey);
+      if (debitResult.applied === false && debitResult.reason !== 'duplicate_step') {
+        // Debit unexpectedly silenced — not a replay. Log for monitoring.
+        console.error('[billing.usage] extras debit unexpectedly not applied', {
+          organizationId,
+          extrasConsumed,
+          idempotencyKey,
+          reason: debitResult.reason,
+        });
+      }
     } catch (err) {
       // Usage is already counted. Log for monitoring — a retry cron or manual backfill
       // can reconcile if needed. Never let a debit failure block the usage write.
