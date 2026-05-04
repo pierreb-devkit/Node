@@ -83,7 +83,9 @@ const AdminRefundRequest = z
     // Stripe refund reason: https://stripe.com/docs/api/refunds/create#create_refund-reason
     reason: z.enum(['duplicate', 'fraudulent', 'requested_by_customer']).optional(),
     // Caller-provided stable key for Stripe idempotency (prevents admin double-click double-refund).
-    refundRequestId: z.string().min(8).max(128).optional(),
+    // Required — frontend MUST generate a UUID per click and send it. Without this, two clicks
+    // separated by >1 minute could produce two separate Stripe refunds.
+    refundRequestId: z.string().min(8).max(128),
   })
   .strict();
 
