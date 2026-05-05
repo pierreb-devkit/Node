@@ -37,7 +37,7 @@ describe('Billing service unit tests:', () => {
         },
       },
       subscriptions: {
-        // Server-side active-sub guard (Item 9): returns no active subs by default
+        // Default: no live active/trialing subs — checkout proceeds
         list: jest.fn().mockResolvedValue({ data: [] }),
       },
     };
@@ -390,6 +390,101 @@ describe('Billing service unit tests:', () => {
       const url = await BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel');
 
       expect(url).toBe('https://checkout.stripe.com/session_123');
+    });
+
+    // ── Stripe-side live guard (trialing race window) ──────────────────────────────────────────
+
+    test('should throw 409 subscription_already_active when Stripe lists a trialing sub but DB shows none', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_live_trialing' } },
+      }));
+
+      // DB shows no active sub locally — only the Stripe live check should catch this
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        organization: orgId,
+        stripeCustomerId: 'cus_x',
+        stripeSubscriptionId: null,
+        plan: 'free',
+        status: 'canceled',
+      });
+
+      // Stripe live check returns a trialing sub
+      mockStripeInstance.subscriptions.list.mockResolvedValue({
+        data: [{ id: 'sub_trial_x', status: 'trialing' }],
+      });
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      await expect(
+        BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel'),
+      ).rejects.toMatchObject({ code: 'subscription_already_active', statusCode: 409 });
+
+      // Verify the live Stripe check was called with the correct params
+      expect(mockStripeInstance.subscriptions.list).toHaveBeenCalledWith(
+        expect.objectContaining({ customer: 'cus_x', status: 'all', limit: 10 }),
+      );
+      expect(mockStripeInstance.checkout.sessions.create).not.toHaveBeenCalled();
+    });
+
+    test('should throw 409 subscription_already_active when Stripe lists an active sub but DB shows none', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_live_active' } },
+      }));
+
+      // DB shows no active sub locally — only the Stripe live check should catch this
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        organization: orgId,
+        stripeCustomerId: 'cus_x',
+        stripeSubscriptionId: null,
+        plan: 'free',
+        status: 'canceled',
+      });
+
+      // Stripe live check returns an active sub
+      mockStripeInstance.subscriptions.list.mockResolvedValue({
+        data: [{ id: 'sub_active_x', status: 'active' }],
+      });
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      await expect(
+        BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel'),
+      ).rejects.toMatchObject({ code: 'subscription_already_active', statusCode: 409 });
+
+      expect(mockStripeInstance.subscriptions.list).toHaveBeenCalledWith(
+        expect.objectContaining({ customer: 'cus_x', status: 'all', limit: 10 }),
+      );
+      expect(mockStripeInstance.checkout.sessions.create).not.toHaveBeenCalled();
+    });
+
+    test('should NOT block checkout when Stripe lists an incomplete sub (incomplete is not in block list)', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_live_incomplete' } },
+      }));
+
+      // DB shows no active sub locally
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        organization: orgId,
+        stripeCustomerId: 'cus_x',
+        stripeSubscriptionId: null,
+        plan: 'free',
+        status: 'canceled',
+      });
+
+      // Stripe returns only an incomplete sub — should NOT block (deliberate asymmetry vs DB guard)
+      mockStripeInstance.subscriptions.list.mockResolvedValue({
+        data: [{ id: 'sub_incomplete_x', status: 'incomplete' }],
+      });
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      const url = await BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel');
+
+      expect(url).toBe('https://checkout.stripe.com/session_123');
+      expect(mockStripeInstance.checkout.sessions.create).toHaveBeenCalled();
     });
   });
 

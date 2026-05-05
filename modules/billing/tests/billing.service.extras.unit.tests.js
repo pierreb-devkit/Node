@@ -172,7 +172,7 @@ describe('BillingService.createExtrasCheckout unit tests:', () => {
     );
   });
 
-  test('should include idempotencyKey in Stripe call', async () => {
+  test('should include idempotencyKey in Stripe call (minute-bucketed when no intentId)', async () => {
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: makeConfig(),
     }));
@@ -187,7 +187,7 @@ describe('BillingService.createExtrasCheckout unit tests:', () => {
     );
 
     const [, options] = mockStripeInstance.checkout.sessions.create.mock.calls[0];
-    // No intentId passed → minute-bucketed key (no random hex suffix)
+    // Minute-bucketed key: extras_checkout_{orgId}_{packId}_{minuteBucket}
     expect(options.idempotencyKey).toMatch(/^extras_checkout_.*pack_2m_\d+$/);
   });
 
@@ -277,6 +277,75 @@ describe('BillingService.createExtrasCheckout unit tests:', () => {
     const [params] = mockStripeInstance.checkout.sessions.create.mock.calls[0];
     expect(params.customer_update).toEqual({ address: 'auto', name: 'auto' });
     expect(params.automatic_tax).toEqual({ enabled: true });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // H2 — intentId stable idempotency key
+  // ─────────────────────────────────────────────────────────────────────────────
+  test('H2: intentId provided → stable idempotency key (same intentId = same key)', async () => {
+    jest.unstable_mockModule('../../../config/index.js', () => ({
+      default: makeConfig(),
+    }));
+
+    const mod = await import('../services/billing.service.js');
+    BillingService = mod.default;
+
+    mockSubscriptionRepository.findByOrganization.mockResolvedValue({ stripeCustomerId: 'cus_existing' });
+
+    await BillingService.createExtrasCheckout(mockOrganization, 'pack_500k', 'http://success', 'http://cancel', 'my-uuid-001');
+    await BillingService.createExtrasCheckout(mockOrganization, 'pack_500k', 'http://success', 'http://cancel', 'my-uuid-001');
+
+    const key1 = mockStripeInstance.checkout.sessions.create.mock.calls[0][1].idempotencyKey;
+    const key2 = mockStripeInstance.checkout.sessions.create.mock.calls[1][1].idempotencyKey;
+
+    expect(key1).toBe(key2);
+    expect(key1).toMatch(/^extras_checkout_507f1f77bcf86cd799439011_pack_500k_my-uuid-001$/);
+  });
+
+  test('H2: different intentIds produce different keys', async () => {
+    jest.unstable_mockModule('../../../config/index.js', () => ({
+      default: makeConfig(),
+    }));
+
+    const mod = await import('../services/billing.service.js');
+    BillingService = mod.default;
+
+    mockSubscriptionRepository.findByOrganization.mockResolvedValue({ stripeCustomerId: 'cus_existing' });
+
+    await BillingService.createExtrasCheckout(mockOrganization, 'pack_500k', 'http://success', 'http://cancel', 'intent-A');
+    await BillingService.createExtrasCheckout(mockOrganization, 'pack_500k', 'http://success', 'http://cancel', 'intent-B');
+
+    const keyA = mockStripeInstance.checkout.sessions.create.mock.calls[0][1].idempotencyKey;
+    const keyB = mockStripeInstance.checkout.sessions.create.mock.calls[1][1].idempotencyKey;
+
+    expect(keyA).not.toBe(keyB);
+    expect(keyA).toContain('intent-A');
+    expect(keyB).toContain('intent-B');
+  });
+
+  test('H2: no intentId → minute-bucketed key (not random — double-click safe within same minute)', async () => {
+    jest.unstable_mockModule('../../../config/index.js', () => ({
+      default: makeConfig(),
+    }));
+
+    const mod = await import('../services/billing.service.js');
+    BillingService = mod.default;
+
+    mockSubscriptionRepository.findByOrganization.mockResolvedValue({ stripeCustomerId: 'cus_existing' });
+
+    const minuteBefore = Math.floor(Date.now() / 60000);
+    await BillingService.createExtrasCheckout(mockOrganization, 'pack_500k', 'http://success', 'http://cancel');
+    await BillingService.createExtrasCheckout(mockOrganization, 'pack_500k', 'http://success', 'http://cancel');
+    const minuteAfter = Math.floor(Date.now() / 60000);
+
+    const key1 = mockStripeInstance.checkout.sessions.create.mock.calls[0][1].idempotencyKey;
+    const key2 = mockStripeInstance.checkout.sessions.create.mock.calls[1][1].idempotencyKey;
+
+    // Key is a numeric minute bucket (not random hex)
+    expect(key1).toMatch(/^extras_checkout_.*pack_500k_\d+$/);
+    if (minuteBefore === minuteAfter) {
+      expect(key1).toBe(key2);
+    }
   });
 
   test('should handle 11000 duplicate key on subscription create gracefully', async () => {

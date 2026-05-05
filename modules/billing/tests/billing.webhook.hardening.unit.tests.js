@@ -777,7 +777,7 @@ describe('BillingService.createCheckout — server-side active-sub guard:', () =
     jest.restoreAllMocks();
   });
 
-  test('no live active sub → stripe.subscriptions.list called with active status, checkout proceeds', async () => {
+  test('no live active/trialing sub → stripe.subscriptions.list called with status:all, checkout proceeds', async () => {
     mockStripeInstance.subscriptions.list.mockResolvedValue({ data: [] });
 
     await BillingService.createCheckout(
@@ -787,8 +787,9 @@ describe('BillingService.createCheckout — server-side active-sub guard:', () =
       'https://test.example.com/cancel',
     );
 
+    // Guard upgraded to status:'all' + local filter to catch both 'active' and 'trialing' in one call
     expect(mockStripeInstance.subscriptions.list).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'active', limit: 1 }),
+      expect.objectContaining({ status: 'all', limit: 10 }),
     );
     expect(mockStripeInstance.checkout.sessions.create).toHaveBeenCalled();
   });
@@ -838,5 +839,177 @@ describe('BillingService.createCheckout — server-side active-sub guard:', () =
         // Any other error is acceptable in this edge-case path
       }
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Listener-error swallow paths — logger.error called but no propagation
+// (covers webhook lines 314 plan.changed listener catch + 549 refund.unresolved listener catch)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('handleSubscriptionUpdated — plan.changed listener error swallow:', () => {
+  let BillingWebhookService;
+  let mockLogger;
+  let mockEvents;
+
+  const orgId = '507f1f77bcf86cd799439011';
+  const subId = '607f1f77bcf86cd799439022';
+
+  beforeEach(async () => {
+    jest.resetModules();
+
+    mockLogger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
+    mockEvents = {
+      emit: jest.fn((evtName) => {
+        if (evtName === 'plan.changed') throw new Error('plan listener blew');
+      }),
+    };
+
+    jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
+      default: {
+        findByOrganization: jest.fn(),
+        findByStripeCustomerId: jest.fn(),
+        findByStripeSubscriptionId: jest.fn().mockResolvedValue({ _id: subId, organization: orgId }),
+        create: jest.fn(),
+        update: jest.fn(),
+        updateIfEventNewer: jest.fn().mockResolvedValue({ _id: subId }),
+      },
+    }));
+    jest.unstable_mockModule('../repositories/billing.processedStripeEvent.repository.js', () => ({
+      default: { tryRecord: jest.fn().mockResolvedValue({ recorded: true }), incrementAttempts: jest.fn(), markDeadLetter: jest.fn(), deleteByEventId: jest.fn() },
+    }));
+    jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
+      default: { setPlan: jest.fn().mockResolvedValue({}) },
+    }));
+    jest.unstable_mockModule('../services/billing.extra.service.js', () => ({ default: { creditPack: jest.fn(), refundPartial: jest.fn() } }));
+    jest.unstable_mockModule('../services/billing.reset.service.js', () => ({
+      default: { resetWeek: jest.fn().mockResolvedValue({}), forceRotateForPlanChange: jest.fn().mockResolvedValue({}) },
+    }));
+    jest.unstable_mockModule('../lib/events.js', () => ({ default: mockEvents }));
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mockLogger }));
+    jest.unstable_mockModule('../../../config/index.js', () => ({
+      default: { billing: { plans: ['free', 'starter', 'pro', 'enterprise'], meterMode: true } },
+    }));
+    jest.unstable_mockModule('mongoose', () => ({
+      default: {
+        Types: { ObjectId: { isValid: (id) => /^[a-f\d]{24}$/i.test(id) } },
+        model: () => ({}),
+      },
+    }));
+
+    const mod = await import('../services/billing.webhook.service.js');
+    BillingWebhookService = mod.default;
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  test('plan.changed listener throws → logger.error called, webhook does NOT propagate', async () => {
+    const newPeriodStart = 1700604800;
+
+    await expect(
+      BillingWebhookService.handleSubscriptionUpdated(
+        {
+          id: 'sub_listener_err',
+          status: 'active',
+          items: {
+            data: [{
+              price: { metadata: { planId: 'pro' } },
+              current_period_start: newPeriodStart,
+              current_period_end: newPeriodStart + 2592000,
+            }],
+          },
+        },
+        {
+          id: 'evt_plan_listener_err', created: 1700000100,
+          data: {
+            previous_attributes: {
+              items: { data: [{ price: { metadata: { planId: 'starter' } }, current_period_start: 1700000000 }] },
+            },
+          },
+        },
+      ),
+    ).resolves.not.toThrow();
+
+    expect(mockEvents.emit).toHaveBeenCalledWith('plan.changed', expect.any(Object));
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing.webhook] plan.changed listener error (non-fatal)',
+      expect.objectContaining({ error: 'plan listener blew' }),
+    );
+  });
+});
+
+describe('handleChargeRefunded — billing.refund.unresolved listener error swallow:', () => {
+  let BillingWebhookService;
+  let mockLogger;
+  let mockEvents;
+
+  const orgId = '507f1f77bcf86cd799439011';
+
+  beforeEach(async () => {
+    jest.resetModules();
+
+    mockLogger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
+    mockEvents = {
+      emit: jest.fn((evtName) => {
+        if (evtName === 'billing.refund.unresolved') throw new Error('refund listener blew');
+      }),
+    };
+
+    jest.unstable_mockModule('../lib/stripe.js', () => ({ default: jest.fn().mockReturnValue(null) }));
+    jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
+      default: { creditPack: jest.fn(), refundPartial: jest.fn() },
+    }));
+    jest.unstable_mockModule('../services/billing.reset.service.js', () => ({ default: { resetWeek: jest.fn() } }));
+    jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
+      default: {
+        findByOrganization: jest.fn(), findByStripeCustomerId: jest.fn(),
+        findByStripeSubscriptionId: jest.fn(), create: jest.fn(), update: jest.fn(),
+        updateIfEventNewer: jest.fn().mockResolvedValue(null),
+      },
+    }));
+    jest.unstable_mockModule('../repositories/billing.processedStripeEvent.repository.js', () => ({
+      default: {
+        tryRecord: jest.fn().mockResolvedValue({ recorded: true }),
+        incrementAttempts: jest.fn().mockResolvedValue({ attempts: 1 }),
+        deleteByEventId: jest.fn().mockResolvedValue({ deleted: true }),
+        markDeadLetter: jest.fn(),
+      },
+    }));
+    jest.unstable_mockModule('../lib/events.js', () => ({ default: mockEvents }));
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mockLogger }));
+    jest.unstable_mockModule('../../../config/index.js', () => ({
+      default: { billing: { plans: ['free', 'starter', 'pro', 'enterprise'] } },
+    }));
+    jest.unstable_mockModule('mongoose', () => ({
+      default: {
+        Types: { ObjectId: { isValid: (id) => /^[a-f\d]{24}$/i.test(id) } },
+        model: () => ({}),
+      },
+    }));
+
+    const mod = await import('../services/billing.webhook.service.js');
+    BillingWebhookService = mod.default;
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  test('emit throws on unresolved branch → logger.error called, no propagation', async () => {
+    // No payment_intent → skips PI fetch → falls into isUnresolved() final branch
+    await expect(
+      BillingWebhookService.handleChargeRefunded({
+        id: 'ch_listener_err',
+        payment_intent: null,
+        metadata: { organizationId: orgId },
+        refunds: { data: [{ id: 'rf_listener_err', amount: 4900 }] },
+      }),
+    ).resolves.not.toThrow();
+
+    expect(mockEvents.emit).toHaveBeenCalledWith(
+      'billing.refund.unresolved',
+      expect.objectContaining({ chargeId: 'ch_listener_err' }),
+    );
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing.webhook] billing.refund.unresolved listener error (non-fatal)',
+      expect.objectContaining({ error: 'refund listener blew' }),
+    );
   });
 });

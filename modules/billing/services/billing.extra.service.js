@@ -5,6 +5,7 @@ import config from '../../../config/index.js';
 import logger from '../../../lib/services/logger.js';
 import billingEvents from '../lib/events.js';
 import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
+import { SENTINEL_PENDING } from '../lib/billing.constants.js';
 
 /**
  * @function creditPack
@@ -80,6 +81,11 @@ const expireOldEntries = (orgId) =>
  *              original units were already consumed — this is the correct economic reflection
  *              (the debt persists until the next creditPack replenishes it).
  *
+ *              Defensive sentinel guard: if called with stripeSessionId === SENTINEL_PENDING,
+ *              it means the upstream caller failed to resolve the real session ID before calling.
+ *              Immediately return sentinel_unresolved to prevent a ledger lookup against a
+ *              placeholder value that will never match any topup entry.
+ *
  * @param {string} orgId - The organization ObjectId (string).
  * @param {string} stripeSessionId - Stripe session ID of the original purchase (to find the pack).
  * @param {number} amountRefundedCents - Amount refunded in cents (integer).
@@ -87,13 +93,39 @@ const expireOldEntries = (orgId) =>
  * @param {string|undefined} [stripeRefundId] - Stripe refund object ID (e.g. rf_xxx). When present, used as
  *        primary idempotency key. When absent (legacy callers), falls back to session+amount+topupId composite.
  * @returns {Promise<{doc: Object|null, applied: boolean, refundUnits: number, reason?: string}>}
- *          `reason` is present only when `applied === false`: 'meter_mode_disabled' | 'invalid_org' |
- *          'pack_not_found' | 'ambiguous_pack_match'.
+ *          `reason` is present only when `applied === false`: 'meter_mode_disabled' | 'sentinel_unresolved' |
+ *          'invalid_org' | 'pack_not_found' | 'ambiguous_pack_match'.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const refundPartial = async (orgId, stripeSessionId, amountRefundedCents, packId, stripeRefundId) => {
   if (!config?.billing?.meterMode) {
     return { doc: null, applied: false, reason: 'meter_mode_disabled', refundUnits: 0 };
+  }
+
+  // Defensive sentinel guard — belt-and-suspenders in case the upstream caller missed
+  // the isUnresolved() check in handleChargeRefunded. A sentinel stripeSessionId can
+  // never match any topup ledger entry, so skip immediately rather than silently no-op.
+  if (stripeSessionId === SENTINEL_PENDING) {
+    logger.error('[billing.extra] refundPartial called with sentinel stripeSessionId — upstream missed isUnresolved() check', {
+      orgId,
+      amountRefundedCents,
+      packId,
+      stripeRefundId,
+    });
+    try {
+      billingEvents.emit('billing.refund.unresolved', {
+        reason: 'sentinel_unresolved',
+        orgId,
+        amountRefundedCents,
+        stripeRefundId,
+      });
+    } catch (evtErr) {
+      logger.error('[billing.extra] billing.refund.unresolved listener error (non-fatal)', {
+        error: evtErr?.message ?? String(evtErr),
+        stack: evtErr?.stack,
+      });
+    }
+    return { doc: null, applied: false, reason: 'sentinel_unresolved', refundUnits: 0 };
   }
 
   // Find the topup ledger entry for this session to identify the pack

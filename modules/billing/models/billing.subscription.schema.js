@@ -80,7 +80,9 @@ const ExtrasCheckoutRequest = z
     cancelUrl: z.string().url('cancelUrl must be a valid URL'),
     // Caller-provided stable intent ID for idempotency (prevents double-click double-charge).
     // When absent, a soft-stable minute-bucketed key is used as fallback.
-    intentId: z.string().min(1).optional(),
+    // Max 180 chars: Stripe idempotency key limit is 255; the prefix
+    // `extras_checkout_{orgId}_{packId}_` consumes ~64 chars, leaving ~10 chars margin.
+    intentId: z.string().min(1).max(180).optional(),
   })
   .strict();
 

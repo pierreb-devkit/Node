@@ -56,11 +56,11 @@ describe('BillingExtraService unit tests:', () => {
       default: mockRepository,
     }));
 
-    // billing.extra.service.js imports logger and billingEvents at module load time —
-    // mock them to prevent logger from trying to read config files during test setup.
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
       default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
     }));
+
+
     jest.unstable_mockModule('../lib/events.js', () => ({
       default: { emit: jest.fn() },
     }));
@@ -429,5 +429,105 @@ describe('BillingExtraService unit tests:', () => {
       expect(key2).toBe('refund-cs_retry-4900-507f1f77bcf86cd799439fff');
       expect(key1).toBe(key2); // same key → idempotent
     });
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // C1 — Defensive sentinel guard in refundPartial
+    // ─────────────────────────────────────────────────────────────────────────────
+    test('C1: refundPartial called with __pending__ sentinel → returns sentinel_unresolved without ledger lookup', async () => {
+      // Belt-and-suspenders: even if handleChargeRefunded missed the isUnresolved() check,
+      // refundPartial protects itself from running a ledger lookup against the sentinel placeholder.
+      const result = await BillingExtraService.refundPartial(orgId, '__pending__', 4900, 'pack_500k', 'rf_sentinel_test');
+
+      expect(result.applied).toBe(false);
+      expect(result.reason).toBe('sentinel_unresolved');
+      expect(result.refundUnits).toBe(0);
+      expect(result.doc).toBeNull();
+      // Must NOT reach the repository (no ledger lookup)
+      expect(mockRepository.getOrCreate).not.toHaveBeenCalled();
+    });
+
+    test('C1: refundPartial returns sentinel_unresolved even when meterMode is enabled', async () => {
+      // Confirm meterMode check is NOT what triggers the early return — sentinel check comes first
+      mockConfig.billing.meterMode = true;
+
+      const result = await BillingExtraService.refundPartial(orgId, '__pending__', 4900, 'pack_500k');
+
+      expect(result.reason).toBe('sentinel_unresolved');
+      expect(mockRepository.getOrCreate).not.toHaveBeenCalled();
+    });
+
+    test('C1: refundPartial with real session id proceeds normally (sentinel guard is opt-in path only)', async () => {
+      const topupEntry = {
+        _id: '507f1f77bcf86cd799439ccc',
+        kind: 'topup',
+        amount: 500000,
+        stripeSessionId: 'cs_real_session',
+      };
+      const doc = makeDoc({ ledger: [topupEntry], cachedBalance: 500000 });
+      mockRepository.getOrCreate.mockResolvedValue(doc);
+      mockRepository.refundPartial.mockResolvedValue({ doc: makeDoc({ cachedBalance: 0 }), applied: true });
+
+      const result = await BillingExtraService.refundPartial(orgId, 'cs_real_session', 4900, 'pack_500k', 'rf_real');
+
+      expect(result.reason).toBeUndefined();
+      expect(result.applied).toBe(true);
+      expect(mockRepository.getOrCreate).toHaveBeenCalled();
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sentinel guard — listener-error catch (covers logger.error swallow path)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('BillingExtraService refundPartial — sentinel listener-error swallow:', () => {
+  let BillingExtraService;
+  let mockLogger;
+  let mockEvents;
+
+  const orgId = '507f1f77bcf86cd799439011';
+
+  beforeEach(async () => {
+    jest.resetModules();
+
+    mockLogger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
+    mockEvents = {
+      emit: jest.fn(() => {
+        throw new Error('listener blew');
+      }),
+    };
+
+    jest.unstable_mockModule('../../../config/index.js', () => ({
+      default: { billing: { meterMode: true, plans: ['pro'], packs: [] } },
+    }));
+    jest.unstable_mockModule('../repositories/billing.extraBalance.repository.js', () => ({
+      default: {
+        creditPack: jest.fn(),
+        debit: jest.fn(),
+        addExpirationEntries: jest.fn(),
+        getOrCreate: jest.fn(),
+        getBalance: jest.fn(),
+        refundPartial: jest.fn(),
+      },
+    }));
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mockLogger }));
+    jest.unstable_mockModule('../lib/events.js', () => ({ default: mockEvents }));
+
+    const mod = await import('../services/billing.extra.service.js');
+    BillingExtraService = mod.default;
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  test('sentinel session id + emit throws → logger.error is called and result still returned', async () => {
+    const result = await BillingExtraService.refundPartial(orgId, '__pending__', 4900, 'pack_500k', 'rf_x');
+
+    // Listener error must NOT propagate — sentinel return shape preserved
+    expect(result).toEqual({ doc: null, applied: false, reason: 'sentinel_unresolved', refundUnits: 0 });
+
+    // Inner catch must have logged the listener error (non-fatal)
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing.extra] billing.refund.unresolved listener error (non-fatal)',
+      expect.objectContaining({ error: 'listener blew' }),
+    );
   });
 });
