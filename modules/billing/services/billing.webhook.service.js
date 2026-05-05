@@ -78,32 +78,45 @@ const syncOrganizationPlan = async (organizationId, plan) => {
 /**
  * @description Wrap a webhook handler with idempotency using ProcessedStripeEvent.
  *
- * Atomic-claim semantics (closes TOCTOU race):
+ * Atomic-claim semantics (closes TOCTOU race) + persistent retry counter:
  * 1. tryRecord atomically inserts the event record BEFORE running the handler.
- *    The unique index on eventId means only the first concurrent delivery succeeds;
- *    all others get E11000 → { recorded: false } → skip.
- * 2. If the handler throws, deleteByEventId rolls back the claim so Stripe can retry.
- * 3. On handler success the record stays permanently — subsequent Stripe retries are
- *    skipped via tryRecord returning { recorded: false }.
+ *    The unique index on eventId means only the first concurrent delivery succeeds.
+ * 2. tryRecord uses 3-state semantics so attempts persists across Stripe redeliveries:
+ *      - First delivery → { recorded: true, retry: false }              → handler runs
+ *      - In-flight retry (attempts > 0, !deadLetter) → { recorded: true, retry: true } → handler runs again
+ *      - Already succeeded (attempts === 0) → { recorded: false, reason: 'already_processed' } → skip
+ *      - Dead-letter (deadLetter: true)     → { recorded: false, reason: 'dead_letter' }       → skip
+ * 3. On handler exception we DO NOT delete the doc (the previous design did, which reset
+ *    attempts to 0 on every Stripe redelivery and made BILLING_WEBHOOK_MAX_ATTEMPTS unreachable).
+ *    Instead we increment attempts, then either:
+ *      - attempts >= MAX → markDeadLetter, log critical, return success to Stripe (no throw)
+ *      - attempts <  MAX → throw → Stripe gets 5xx → redelivers ~24h later → tryRecord returns
+ *        { recorded: true, retry: true } → handler runs again, attempts persists.
+ * 4. On handler success the record stays with attempts === 0 (we never increment on success),
+ *    which is the terminal-success signal for tryRecord on subsequent redeliveries.
  *
  * @param {Object} event - Full Stripe event object (must have event.id and event.type).
- * @param {Function} handler - Async function (event) => result called when event is new.
- * @returns {Promise<Object>} Handler result or skip sentinel { skipped: true, reason: 'duplicate_event' }.
+ * @param {Function} handler - Async function (event) => result called when event is new or retrying.
+ * @returns {Promise<Object>} Handler result, or skip sentinel
+ *          { skipped: true, reason: 'duplicate_event_or_dead_letter' }, or
+ *          dead-letter sentinel { deadLettered: true, eventId, eventType, attempts }.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const withIdempotency = async (event, handler) => {
   const eventId = event.id;
   const eventType = event.type;
 
-  // Atomically claim the event — only the first delivery wins
-  const { recorded } = await ProcessedStripeEventRepository.tryRecord(eventId, eventType);
-  if (!recorded) {
-    return { skipped: true, reason: 'duplicate_event' };
+  // Atomically claim or re-enter — see tryRecord for 3-state semantics.
+  const claim = await ProcessedStripeEventRepository.tryRecord(eventId, eventType);
+  if (!claim.recorded) {
+    return { skipped: true, reason: 'duplicate_event_or_dead_letter', detail: claim.reason };
   }
   try {
     return await handler(event);
   } catch (err) {
     // Increment attempt counter and record error details before deciding fate.
+    // We MUST NOT delete the doc on failure — attempts must persist across Stripe redeliveries
+    // for BILLING_WEBHOOK_MAX_ATTEMPTS to be reachable.
     let attempts = 1;
     try {
       const updated = await ProcessedStripeEventRepository.incrementAttempts(eventId, err?.message ?? String(err));
@@ -113,26 +126,19 @@ const withIdempotency = async (event, handler) => {
     }
 
     if (attempts >= BILLING_WEBHOOK_MAX_ATTEMPTS) {
-      // Dead-letter: keep claim permanently so Stripe stops retrying after 3-day window.
+      // Dead-letter: keep claim permanently with deadLetter=true so subsequent redeliveries skip.
       try {
         await ProcessedStripeEventRepository.markDeadLetter(eventId);
       } catch (dlErr) {
         logger.error('[billing] webhook markDeadLetter failed', { eventId, eventType, error: dlErr?.message });
       }
       logger.error('[billing] webhook dead-letter', { eventId, eventType, attempts, error: err?.message ?? String(err) });
-      // Return success to Stripe so it stops retrying
+      // Return success to Stripe so it stops retrying.
       return { deadLettered: true, eventId, eventType, attempts };
     }
 
-    // Rollback claim so Stripe can retry on a fresh delivery.
-    // Swallow rollback errors so the original handler error is always propagated.
-    await ProcessedStripeEventRepository.deleteByEventId(event.id).catch((rollbackErr) => {
-      logger.error('[billing.webhook] rollback deleteByEventId failed — event may be stuck', {
-        eventId: event.id,
-        error: rollbackErr?.message ?? String(rollbackErr),
-        stack: rollbackErr?.stack,
-      });
-    });
+    // Below MAX: keep the doc (attempts persists), throw so Stripe retries on next delivery.
+    // The next delivery will hit tryRecord → { recorded: true, retry: true } and re-enter here.
     throw err;
   }
 };
@@ -714,6 +720,177 @@ const handleChargeDisputeCreated = async (dispute, event) => {
   }
 };
 
+/**
+ * @description Handle charge.dispute.funds_withdrawn event — debit ledger (dispute lost).
+ *       Triggered by Stripe when funds are actually withdrawn from the merchant bank account
+ *       because the dispute was lost (or accepted). At this point the customer kept their
+ *       meter units but Stripe has reclaimed the cash, so we MUST debit the ledger or we
+ *       lose money.
+ *
+ *       Resolution path mirrors handleChargeRefunded:
+ *         1. Retrieve the charge by `dispute.charge`.
+ *         2. Read organizationId / stripeSessionId / packId from charge.metadata.
+ *         3. If stripeSessionId is unresolved (absent or SENTINEL_PENDING), backfill via the
+ *            PaymentIntent (charge.metadata is a one-time snapshot taken at charge creation).
+ *         4. Debit the ledger via BillingExtraService.refundPartial with a stable refId
+ *            'dispute_<dispute.id>' — refundPartial's own idempotency on the refId guarantees
+ *            this is a no-op on Stripe redelivery, even outside the per-family event guard
+ *            (disputes do not fit the subscription/invoice ordering families, so we rely on
+ *            the ledger-layer idempotency exclusively).
+ *
+ *       When organizationId / charge / pack cannot be resolved, emits
+ *       'billing.refund.unresolved' for ops + logs a critical alert (mirrors handleChargeRefunded).
+ * @param {Object} dispute - Stripe dispute object (data.object of charge.dispute.funds_withdrawn).
+ * @param {Object} event - Full Stripe event (for traceability).
+ * @returns {Promise<void>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const handleChargeDisputeFundsWithdrawn = async (dispute, event) => {
+  const chargeId = dispute?.charge;
+  const disputeId = dispute?.id;
+  const amount = dispute?.amount ?? 0;
+
+  if (!chargeId || !disputeId || amount <= 0) {
+    logger.error('[billing.webhook] dispute.funds_withdrawn missing required fields', {
+      disputeId,
+      chargeId,
+      amount,
+      eventId: event?.id,
+    });
+    try {
+      billingEvents.emit('billing.refund.unresolved', { reason: 'dispute_missing_fields', disputeId, chargeId, amount });
+    } catch (evtErr) {
+      logger.error('[billing.webhook] billing.refund.unresolved listener error (non-fatal)', {
+        error: evtErr?.message ?? String(evtErr),
+        stack: evtErr?.stack,
+      });
+    }
+    return;
+  }
+
+  const stripe = getStripe();
+  if (!stripe) {
+    logger.error('[billing.webhook] dispute.funds_withdrawn — Stripe client unavailable, cannot resolve charge', {
+      disputeId,
+      chargeId,
+    });
+    return;
+  }
+
+  let organizationId = null;
+  let stripeSessionId = null;
+  let packId = null;
+  let paymentIntentId = null;
+
+  try {
+    const charge = await stripe.charges.retrieve(chargeId);
+    const meta = charge?.metadata ?? {};
+    organizationId = meta.organizationId ?? null;
+    stripeSessionId = meta.stripeSessionId ?? null;
+    packId = meta.packId ?? null;
+    paymentIntentId = charge?.payment_intent ?? null;
+  } catch (err) {
+    logger.error('[billing.webhook] dispute.funds_withdrawn charge fetch failed', {
+      chargeId,
+      disputeId,
+      error: err?.message ?? String(err),
+      stack: err?.stack,
+    });
+    // Surface to ops; do NOT throw — withIdempotency would dead-letter after 5 retries on a
+    // permanently-broken Stripe lookup, but Stripe transient failures should still go through
+    // the retry machinery, so we re-throw to let it count.
+    throw err;
+  }
+
+  // Backfill via PaymentIntent when charge metadata is missing or carries the sentinel.
+  if ((isUnresolved(stripeSessionId) || !organizationId || !packId) && paymentIntentId) {
+    try {
+      const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+      const piMeta = paymentIntent?.metadata ?? {};
+      if (isUnresolved(stripeSessionId)) stripeSessionId = piMeta.stripeSessionId ?? stripeSessionId;
+      if (!packId) packId = piMeta.packId ?? null;
+      if (!organizationId || !mongoose.Types.ObjectId.isValid(organizationId)) {
+        const piOrgId = piMeta.organizationId;
+        if (piOrgId && mongoose.Types.ObjectId.isValid(piOrgId)) {
+          organizationId = piOrgId;
+        }
+      }
+    } catch (err) {
+      logger.error('[billing.webhook] dispute.funds_withdrawn PI fetch failed', {
+        paymentIntentId,
+        disputeId,
+        chargeId,
+        error: err?.message ?? String(err),
+        stack: err?.stack,
+      });
+      // PI fetch failure is non-fatal — we may still have what we need from charge.metadata.
+    }
+  }
+
+  // Could not resolve org / session — this charge is unrelated to billing extras (or metadata
+  // was never propagated). Emit alert for manual reconciliation, do NOT crash.
+  if (
+    !organizationId ||
+    !mongoose.Types.ObjectId.isValid(organizationId) ||
+    isUnresolved(stripeSessionId)
+  ) {
+    logger.error('[billing] dispute.funds_withdrawn unresolved — manual reconciliation required', {
+      disputeId,
+      chargeId,
+      paymentIntentId,
+      organizationId,
+      stripeSessionId,
+      amount,
+    });
+    try {
+      billingEvents.emit('billing.refund.unresolved', {
+        reason: 'dispute_unresolved',
+        disputeId,
+        chargeId,
+        paymentIntentId,
+        amount,
+      });
+    } catch (evtErr) {
+      logger.error('[billing.webhook] billing.refund.unresolved listener error (non-fatal)', {
+        error: evtErr?.message ?? String(evtErr),
+        stack: evtErr?.stack,
+      });
+    }
+    return;
+  }
+
+  // Stable refId per dispute — refundPartial's ledger idempotency makes redelivery a no-op.
+  // Disputes are independent of subscription/invoice cycles, so we deliberately skip the
+  // per-family event-newer guard and rely on ledger-layer refId idempotency exclusively.
+  const refId = `dispute_${disputeId}`;
+  await BillingExtraService.refundPartial(organizationId, stripeSessionId, amount, packId, refId);
+
+  // Critical alert — money has actually left the account.
+  logger.error('[billing] dispute lost — funds withdrawn, ledger debited', {
+    disputeId,
+    chargeId,
+    organizationId,
+    stripeSessionId,
+    amount,
+    eventId: event?.id,
+  });
+
+  try {
+    billingEvents.emit('billing.dispute.lost', {
+      disputeId,
+      chargeId,
+      organizationId,
+      stripeSessionId,
+      amount,
+    });
+  } catch (evtErr) {
+    logger.error('[billing.webhook] billing.dispute.lost listener error (non-fatal)', {
+      error: evtErr?.message ?? String(evtErr),
+      stack: evtErr?.stack,
+    });
+  }
+};
+
 export default {
   withIdempotency,
   handleCheckoutSessionCompleted,
@@ -726,4 +903,5 @@ export default {
   handleChargeRefunded,
   handleCustomerDeleted,
   handleChargeDisputeCreated,
+  handleChargeDisputeFundsWithdrawn,
 };
