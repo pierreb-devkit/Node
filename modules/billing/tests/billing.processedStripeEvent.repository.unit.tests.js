@@ -23,6 +23,7 @@ describe('ProcessedStripeEventRepository unit tests:', () => {
       create: jest.fn(),
       findOne: jest.fn(),
       deleteOne: jest.fn(),
+      findOneAndUpdate: jest.fn(),
     };
 
     jest.unstable_mockModule('mongoose', () => ({
@@ -40,35 +41,66 @@ describe('ProcessedStripeEventRepository unit tests:', () => {
   });
 
   describe('tryRecord', () => {
-    test('should return { recorded: true } on first insert', async () => {
+    /** Helper: stub findOne().lean() to return the given existing doc. */
+    const stubExisting = (existing) => {
+      mockModel.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(existing) });
+    };
+
+    test('should return { recorded: true, retry: false } on first insert', async () => {
       mockModel.create.mockResolvedValue({ eventId: 'evt_abc', type: 'checkout.session.completed' });
 
       const result = await ProcessedStripeEventRepository.tryRecord('evt_abc', 'checkout.session.completed');
 
-      expect(result).toEqual({ recorded: true });
+      expect(result).toEqual({ recorded: true, retry: false });
       expect(mockModel.create).toHaveBeenCalledWith(
         expect.objectContaining({ eventId: 'evt_abc', type: 'checkout.session.completed' }),
       );
     });
 
-    test('should return { recorded: false } on duplicate eventId (E11000)', async () => {
+    test('duplicate + existing.deadLetter=true → { recorded: false, reason: dead_letter }', async () => {
       mockModel.create.mockRejectedValueOnce(makeE11000());
+      stubExisting({ eventId: 'evt_dl', attempts: 5, deadLetter: true });
 
-      const result = await ProcessedStripeEventRepository.tryRecord('evt_abc', 'checkout.session.completed');
+      const result = await ProcessedStripeEventRepository.tryRecord('evt_dl', 'checkout.session.completed');
 
-      expect(result).toEqual({ recorded: false });
+      expect(result).toEqual({ recorded: false, reason: 'dead_letter' });
     });
 
-    test('same eventId twice — second returns { recorded: false }', async () => {
-      mockModel.create
-        .mockResolvedValueOnce({ eventId: 'evt_dup', type: 'charge.refunded' })
-        .mockRejectedValueOnce(makeE11000());
+    test('duplicate + attempts>0 + !deadLetter → { recorded: true, retry: true } (in-flight retry)', async () => {
+      mockModel.create.mockRejectedValueOnce(makeE11000());
+      stubExisting({ eventId: 'evt_retry', attempts: 2, deadLetter: false });
 
-      const first = await ProcessedStripeEventRepository.tryRecord('evt_dup', 'charge.refunded');
-      const second = await ProcessedStripeEventRepository.tryRecord('evt_dup', 'charge.refunded');
+      const result = await ProcessedStripeEventRepository.tryRecord('evt_retry', 'charge.refunded');
 
-      expect(first).toEqual({ recorded: true });
-      expect(second).toEqual({ recorded: false });
+      expect(result).toEqual({ recorded: true, retry: true });
+    });
+
+    test('duplicate + attempts===0 + !deadLetter → { recorded: false, reason: already_processed } (terminal success)', async () => {
+      mockModel.create.mockRejectedValueOnce(makeE11000());
+      stubExisting({ eventId: 'evt_done', attempts: 0, deadLetter: false });
+
+      const result = await ProcessedStripeEventRepository.tryRecord('evt_done', 'charge.refunded');
+
+      expect(result).toEqual({ recorded: false, reason: 'already_processed' });
+    });
+
+    test('duplicate + missing-attempts field treated as 0 → already_processed', async () => {
+      mockModel.create.mockRejectedValueOnce(makeE11000());
+      // Legacy doc with no attempts field at all
+      stubExisting({ eventId: 'evt_legacy', deadLetter: false });
+
+      const result = await ProcessedStripeEventRepository.tryRecord('evt_legacy', 'charge.refunded');
+
+      expect(result).toEqual({ recorded: false, reason: 'already_processed' });
+    });
+
+    test('duplicate + lookup returns null (race window) → already_processed', async () => {
+      mockModel.create.mockRejectedValueOnce(makeE11000());
+      stubExisting(null);
+
+      const result = await ProcessedStripeEventRepository.tryRecord('evt_gone', 'charge.refunded');
+
+      expect(result).toEqual({ recorded: false, reason: 'already_processed' });
     });
 
     test('should throw for non-duplicate errors', async () => {

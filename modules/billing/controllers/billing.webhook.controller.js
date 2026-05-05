@@ -72,6 +72,11 @@ const handleWebhook = async (req, res) => {
           BillingWebhookService.handleChargeDisputeCreated(e.data.object, e),
         );
         break;
+      case 'charge.dispute.funds_withdrawn':
+        await BillingWebhookService.withIdempotency(event, (e) =>
+          BillingWebhookService.handleChargeDisputeFundsWithdrawn(e.data.object, e),
+        );
+        break;
       default:
         break;
     }

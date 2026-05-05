@@ -14,13 +14,24 @@ const ProcessedStripeEvent = () => mongoose.model('ProcessedStripeEvent');
 
 /**
  * @function tryRecord
- * @description Atomically insert a new processed event document.
- *              If a document with the same eventId already exists (E11000 duplicate key),
- *              returns `{ recorded: false }` instead of throwing — idempotency by design.
- *              On success, returns `{ recorded: true }`.
+ * @description Atomically claim a Stripe event for processing using the unique index on eventId.
+ *              Returns 3-state semantics so withIdempotency can persist `attempts` across Stripe
+ *              redeliveries (the previous design deleted the doc on rollback, which reset attempts
+ *              and made the dead-letter branch unreachable):
+ *                - New doc inserted → `{ recorded: true, retry: false }` (first delivery)
+ *                - Existing doc, `deadLetter: true` → `{ recorded: false, reason: 'dead_letter' }`
+ *                  (we already gave up — return success to Stripe so it stops retrying)
+ *                - Existing doc, `attempts > 0 && !deadLetter` → `{ recorded: true, retry: true }`
+ *                  (a previous run failed and was kept on disk; allow re-entry so attempts persists)
+ *                - Existing doc, `attempts === 0 && !deadLetter` → `{ recorded: false,
+ *                  reason: 'already_processed' }` (handler succeeded last time; never increment on
+ *                  success, so attempts === 0 is the terminal-success signal)
+ *
+ *              No `pendingRetry` field is added — the (attempts, deadLetter) pair already encodes
+ *              the four states unambiguously.
  * @param {string} eventId - Stripe event ID (unique idempotency key).
  * @param {string} type - Stripe event type (e.g. 'checkout.session.completed').
- * @returns {Promise<{recorded: boolean}>}
+ * @returns {Promise<{recorded: boolean, retry?: boolean, reason?: string}>}
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const tryRecord = async (eventId, type) => {
@@ -33,12 +44,27 @@ const tryRecord = async (eventId, type) => {
 
   try {
     await ProcessedStripeEvent().create({ eventId, type, processedAt: new Date() });
-    return { recorded: true };
+    return { recorded: true, retry: false };
   } catch (err) {
-    if (isDuplicateKeyError(err)) {
-      return { recorded: false };
+    if (!isDuplicateKeyError(err)) {
+      throw err;
     }
-    throw err;
+    // Existing doc — inspect state to decide whether to allow re-entry.
+    const existing = await ProcessedStripeEvent().findOne({ eventId }).lean();
+    if (!existing) {
+      // Race window: doc was deleted between insert-fail and lookup. Treat as already_processed
+      // (TTL or admin cleanup) — safest is to skip and keep Stripe quiet.
+      return { recorded: false, reason: 'already_processed' };
+    }
+    if (existing.deadLetter) {
+      return { recorded: false, reason: 'dead_letter' };
+    }
+    if ((existing.attempts ?? 0) > 0) {
+      // Pending retry — previous run failed, attempts persisted. Allow handler re-entry.
+      return { recorded: true, retry: true };
+    }
+    // attempts === 0 && !deadLetter → handler succeeded on first delivery (we never increment on success).
+    return { recorded: false, reason: 'already_processed' };
   }
 };
 

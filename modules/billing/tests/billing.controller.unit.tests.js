@@ -25,6 +25,9 @@ describe('Billing webhook controller unit tests:', () => {
       handleInvoicePaymentFailed: jest.fn().mockResolvedValue(),
       handleInvoicePaymentSucceeded: jest.fn().mockResolvedValue(),
       handleChargeRefunded: jest.fn().mockResolvedValue(),
+      handleCustomerDeleted: jest.fn().mockResolvedValue(),
+      handleChargeDisputeCreated: jest.fn().mockResolvedValue(),
+      handleChargeDisputeFundsWithdrawn: jest.fn().mockResolvedValue(),
     };
 
     jest.unstable_mockModule('../services/billing.webhook.service.js', () => ({
@@ -174,6 +177,28 @@ describe('Billing webhook controller unit tests:', () => {
     await BillingWebhookController.handleWebhook(req, res);
 
     expect(mockBillingWebhookService.handleInvoicePaymentFailed).toHaveBeenCalledWith({ id: 'inv_fail' }, eventData);
+    expect(mockBillingWebhookService.withIdempotency).toHaveBeenCalledWith(eventData, expect.any(Function));
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  test('should handle charge.dispute.funds_withdrawn event', async () => {
+    jest.unstable_mockModule('../../../config/index.js', () => ({
+      default: { stripe: { secretKey: 'sk_test_fw', webhookSecret: 'whsec_fw' } },
+    }));
+
+    const eventData = { type: 'charge.dispute.funds_withdrawn', data: { object: { id: 'dp_fw_1', charge: 'ch_1', amount: 2900 } } };
+    mockStripeInstance.webhooks.constructEvent.mockReturnValue(eventData);
+
+    const mod = await import('../controllers/billing.webhook.controller.js');
+    BillingWebhookController = mod.default;
+
+    const req = { headers: { 'stripe-signature': 'sig_ok' }, body: 'raw' };
+    await BillingWebhookController.handleWebhook(req, res);
+
+    expect(mockBillingWebhookService.handleChargeDisputeFundsWithdrawn).toHaveBeenCalledWith(
+      { id: 'dp_fw_1', charge: 'ch_1', amount: 2900 },
+      eventData,
+    );
     expect(mockBillingWebhookService.withIdempotency).toHaveBeenCalledWith(eventData, expect.any(Function));
     expect(res.status).toHaveBeenCalledWith(200);
   });

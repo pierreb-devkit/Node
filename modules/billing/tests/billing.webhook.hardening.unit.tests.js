@@ -396,8 +396,8 @@ describe('withIdempotency — replay-storm dead-letter protection:', () => {
     jest.restoreAllMocks();
   });
 
-  test('first failure (attempts=1 < 5): rollback called, error re-thrown', async () => {
-    mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: true });
+  test('first failure (attempts=1 < 5): doc persists (no rollback), error re-thrown', async () => {
+    mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: true, retry: false });
     mockProcessedStripeEventRepository.incrementAttempts.mockResolvedValue({ attempts: 1 });
     const handler = jest.fn().mockRejectedValue(new Error('transient'));
     const event = makeEvent();
@@ -405,19 +405,21 @@ describe('withIdempotency — replay-storm dead-letter protection:', () => {
     await expect(BillingWebhookService.withIdempotency(event, handler)).rejects.toThrow('transient');
 
     expect(mockProcessedStripeEventRepository.incrementAttempts).toHaveBeenCalledWith('evt_rl_001', 'transient');
-    expect(mockProcessedStripeEventRepository.deleteByEventId).toHaveBeenCalledWith('evt_rl_001');
+    // Doc must NOT be deleted — attempts must persist across Stripe redeliveries
+    // so MAX_ATTEMPTS (5) is reachable. Deleting on rollback was the original bug.
+    expect(mockProcessedStripeEventRepository.deleteByEventId).not.toHaveBeenCalled();
     expect(mockProcessedStripeEventRepository.markDeadLetter).not.toHaveBeenCalled();
   });
 
-  test('fifth failure (attempts=5 >= 5): dead-letter — no rollback, success sentinel returned, logger.error called', async () => {
-    mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: true });
+  test('fifth failure (attempts=5 >= 5): dead-letter — markDeadLetter called, success sentinel returned, logger.error called', async () => {
+    mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: true, retry: true });
     mockProcessedStripeEventRepository.incrementAttempts.mockResolvedValue({ attempts: 5 });
     const handler = jest.fn().mockRejectedValue(new Error('persistent'));
     const event = makeEvent('evt_dead_001');
 
     const result = await BillingWebhookService.withIdempotency(event, handler);
 
-    // No rollback — dead-letter kept
+    // Doc kept; markDeadLetter sets the terminal flag.
     expect(mockProcessedStripeEventRepository.deleteByEventId).not.toHaveBeenCalled();
     expect(mockProcessedStripeEventRepository.markDeadLetter).toHaveBeenCalledWith('evt_dead_001');
     expect(mockLogger.error).toHaveBeenCalledWith(
@@ -427,20 +429,20 @@ describe('withIdempotency — replay-storm dead-letter protection:', () => {
     expect(result).toEqual(expect.objectContaining({ deadLettered: true, eventId: 'evt_dead_001', attempts: 5 }));
   });
 
-  test('attempts=4 < 5: rollback still runs (not yet dead-letter)', async () => {
-    mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: true });
+  test('attempts=4 < 5: doc persists, no rollback, no dead-letter, error re-thrown', async () => {
+    mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: true, retry: true });
     mockProcessedStripeEventRepository.incrementAttempts.mockResolvedValue({ attempts: 4 });
     const handler = jest.fn().mockRejectedValue(new Error('still failing'));
     const event = makeEvent('evt_retry_04');
 
     await expect(BillingWebhookService.withIdempotency(event, handler)).rejects.toThrow('still failing');
 
-    expect(mockProcessedStripeEventRepository.deleteByEventId).toHaveBeenCalledWith('evt_retry_04');
+    expect(mockProcessedStripeEventRepository.deleteByEventId).not.toHaveBeenCalled();
     expect(mockProcessedStripeEventRepository.markDeadLetter).not.toHaveBeenCalled();
   });
 
-  test('incrementAttempts failure: original error still propagated, rollback attempted', async () => {
-    mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: true });
+  test('incrementAttempts failure: original error propagated, doc not deleted', async () => {
+    mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: true, retry: false });
     mockProcessedStripeEventRepository.incrementAttempts.mockRejectedValue(new Error('counter DB down'));
     const handler = jest.fn().mockRejectedValue(new Error('handler error'));
     const event = makeEvent('evt_counter_fail');
@@ -451,10 +453,11 @@ describe('withIdempotency — replay-storm dead-letter protection:', () => {
       '[billing] webhook attempts increment failed',
       expect.objectContaining({ eventId: 'evt_counter_fail' }),
     );
+    expect(mockProcessedStripeEventRepository.deleteByEventId).not.toHaveBeenCalled();
   });
 
   test('markDeadLetter failure: logger.error called, success sentinel still returned', async () => {
-    mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: true });
+    mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: true, retry: true });
     mockProcessedStripeEventRepository.incrementAttempts.mockResolvedValue({ attempts: 5 });
     mockProcessedStripeEventRepository.markDeadLetter.mockRejectedValue(new Error('DL DB down'));
     const handler = jest.fn().mockRejectedValue(new Error('persistent again'));
@@ -468,6 +471,42 @@ describe('withIdempotency — replay-storm dead-letter protection:', () => {
     );
     // Still returns dead-letter sentinel (Stripe gets 200)
     expect(result.deadLettered).toBe(true);
+  });
+
+  test('successful first call: handler runs, no incrementAttempts (attempts stays 0)', async () => {
+    mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: true, retry: false });
+    const handler = jest.fn().mockResolvedValue({ ok: true });
+    const event = makeEvent('evt_success_001');
+
+    const result = await BillingWebhookService.withIdempotency(event, handler);
+
+    expect(result).toEqual({ ok: true });
+    // attempts stays 0 on success — that is the terminal-success signal for tryRecord.
+    expect(mockProcessedStripeEventRepository.incrementAttempts).not.toHaveBeenCalled();
+    expect(mockProcessedStripeEventRepository.markDeadLetter).not.toHaveBeenCalled();
+    expect(mockProcessedStripeEventRepository.deleteByEventId).not.toHaveBeenCalled();
+  });
+
+  test('redelivery after success: tryRecord={recorded:false, reason:already_processed} → skip', async () => {
+    mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: false, reason: 'already_processed' });
+    const handler = jest.fn();
+    const event = makeEvent('evt_already_processed');
+
+    const result = await BillingWebhookService.withIdempotency(event, handler);
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(result).toEqual({ skipped: true, reason: 'duplicate_event_or_dead_letter', detail: 'already_processed' });
+  });
+
+  test('redelivery after dead-letter: tryRecord={recorded:false, reason:dead_letter} → skip', async () => {
+    mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: false, reason: 'dead_letter' });
+    const handler = jest.fn();
+    const event = makeEvent('evt_dl_replay');
+
+    const result = await BillingWebhookService.withIdempotency(event, handler);
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(result).toEqual({ skipped: true, reason: 'duplicate_event_or_dead_letter', detail: 'dead_letter' });
   });
 });
 
@@ -1382,6 +1421,345 @@ describe('handleChargeDisputeCreated — log + emit, no auto-debit:', () => {
     expect(mockLogger.error).toHaveBeenCalledWith(
       '[billing.webhook] billing.dispute.opened listener error (non-fatal)',
       expect.objectContaining({ error: 'dispute listener blew' }),
+    );
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pre-LIVE — charge.dispute.funds_withdrawn (dispute lost — debit ledger)
+// ─────────────────────────────────────────────────────────────────────────────
+describe('handleChargeDisputeFundsWithdrawn — dispute lost, debit ledger:', () => {
+  let BillingWebhookService;
+  let mockExtraService;
+  let mockEvents;
+  let mockLogger;
+  let mockStripeInstance;
+  let mockGetStripe;
+
+  const orgId = '507f1f77bcf86cd799439011';
+  const stripeSessionId = 'cs_test_dispute_fw_001';
+  const packId = 'pack_500k';
+
+  beforeEach(async () => {
+    jest.resetModules();
+
+    mockLogger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
+    mockEvents = { emit: jest.fn() };
+    mockExtraService = {
+      creditPack: jest.fn(),
+      refundPartial: jest.fn().mockResolvedValue({ doc: {}, applied: true, refundUnits: 100000 }),
+    };
+
+    mockStripeInstance = {
+      charges: {
+        retrieve: jest.fn().mockResolvedValue({
+          id: 'ch_fw_001',
+          payment_intent: 'pi_fw_001',
+          metadata: { organizationId: orgId, stripeSessionId, packId },
+        }),
+      },
+      paymentIntents: {
+        retrieve: jest.fn().mockResolvedValue({
+          id: 'pi_fw_001',
+          metadata: { organizationId: orgId, stripeSessionId, packId },
+        }),
+      },
+    };
+    mockGetStripe = jest.fn().mockReturnValue(mockStripeInstance);
+
+    jest.unstable_mockModule('../lib/stripe.js', () => ({ default: mockGetStripe }));
+    jest.unstable_mockModule('../services/billing.extra.service.js', () => ({ default: mockExtraService }));
+    jest.unstable_mockModule('../services/billing.reset.service.js', () => ({ default: { resetWeek: jest.fn() } }));
+    jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
+      default: {
+        findByOrganization: jest.fn(), findByStripeCustomerId: jest.fn(),
+        findByStripeSubscriptionId: jest.fn(), create: jest.fn(), update: jest.fn(),
+        updateIfEventNewer: jest.fn(),
+      },
+    }));
+    jest.unstable_mockModule('../repositories/billing.processedStripeEvent.repository.js', () => ({
+      default: {
+        tryRecord: jest.fn().mockResolvedValue({ recorded: true, retry: false }),
+        incrementAttempts: jest.fn(),
+        deleteByEventId: jest.fn(),
+        markDeadLetter: jest.fn(),
+      },
+    }));
+    jest.unstable_mockModule('../lib/events.js', () => ({ default: mockEvents }));
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mockLogger }));
+    jest.unstable_mockModule('../../../config/index.js', () => ({
+      default: { billing: { plans: ['free', 'starter', 'pro', 'enterprise'] } },
+    }));
+    jest.unstable_mockModule('mongoose', () => ({
+      default: {
+        Types: { ObjectId: { isValid: (id) => /^[a-f\d]{24}$/i.test(id) } },
+        model: () => ({}),
+      },
+    }));
+
+    const mod = await import('../services/billing.webhook.service.js');
+    BillingWebhookService = mod.default;
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  test('fully resolved: ledger debited via refundPartial(refId="dispute_<id>"), event emitted, log called', async () => {
+    await BillingWebhookService.handleChargeDisputeFundsWithdrawn(
+      { id: 'dp_fw_001', charge: 'ch_fw_001', amount: 2900 },
+      { id: 'evt_fw_001', type: 'charge.dispute.funds_withdrawn', created: 1714000000 },
+    );
+
+    expect(mockExtraService.refundPartial).toHaveBeenCalledWith(
+      orgId,
+      stripeSessionId,
+      2900,
+      packId,
+      'dispute_dp_fw_001',
+    );
+    expect(mockEvents.emit).toHaveBeenCalledWith(
+      'billing.dispute.lost',
+      expect.objectContaining({
+        disputeId: 'dp_fw_001',
+        chargeId: 'ch_fw_001',
+        organizationId: orgId,
+        stripeSessionId,
+        amount: 2900,
+      }),
+    );
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing] dispute lost — funds withdrawn, ledger debited',
+      expect.objectContaining({ disputeId: 'dp_fw_001', amount: 2900 }),
+    );
+  });
+
+  test('SENTINEL_PENDING in charge.metadata → backfill via PaymentIntent → debit succeeds', async () => {
+    mockStripeInstance.charges.retrieve.mockResolvedValueOnce({
+      id: 'ch_fw_002',
+      payment_intent: 'pi_fw_002',
+      metadata: { organizationId: orgId, stripeSessionId: '__pending__', packId: undefined },
+    });
+    mockStripeInstance.paymentIntents.retrieve.mockResolvedValueOnce({
+      id: 'pi_fw_002',
+      metadata: { organizationId: orgId, stripeSessionId: 'cs_test_real', packId },
+    });
+
+    await BillingWebhookService.handleChargeDisputeFundsWithdrawn(
+      { id: 'dp_fw_002', charge: 'ch_fw_002', amount: 1500 },
+      { id: 'evt_fw_002', type: 'charge.dispute.funds_withdrawn', created: 1714000000 },
+    );
+
+    expect(mockStripeInstance.paymentIntents.retrieve).toHaveBeenCalledWith('pi_fw_002');
+    expect(mockExtraService.refundPartial).toHaveBeenCalledWith(
+      orgId,
+      'cs_test_real',
+      1500,
+      packId,
+      'dispute_dp_fw_002',
+    );
+  });
+
+  test('charge unrelated to billing (no org / no session) → emit billing.refund.unresolved, no debit, no crash', async () => {
+    mockStripeInstance.charges.retrieve.mockResolvedValueOnce({
+      id: 'ch_unrelated',
+      payment_intent: null,
+      metadata: {}, // no org/session/pack — not a billing extras charge
+    });
+
+    await BillingWebhookService.handleChargeDisputeFundsWithdrawn(
+      { id: 'dp_unrelated', charge: 'ch_unrelated', amount: 4500 },
+      { id: 'evt_unrelated', type: 'charge.dispute.funds_withdrawn', created: 1714000000 },
+    );
+
+    expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
+    expect(mockEvents.emit).toHaveBeenCalledWith(
+      'billing.refund.unresolved',
+      expect.objectContaining({ reason: 'dispute_unresolved', disputeId: 'dp_unrelated' }),
+    );
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing] dispute.funds_withdrawn unresolved — manual reconciliation required',
+      expect.objectContaining({ disputeId: 'dp_unrelated' }),
+    );
+  });
+
+  test('idempotent re-delivery: refId is stable per dispute (downstream refundPartial enforces no-op)', async () => {
+    const dispute = { id: 'dp_idem', charge: 'ch_fw_001', amount: 2900 };
+    const evt = { id: 'evt_idem', type: 'charge.dispute.funds_withdrawn', created: 1714000000 };
+
+    await BillingWebhookService.handleChargeDisputeFundsWithdrawn(dispute, evt);
+    await BillingWebhookService.handleChargeDisputeFundsWithdrawn(dispute, evt);
+
+    expect(mockExtraService.refundPartial).toHaveBeenCalledTimes(2);
+    // Both calls use the SAME refId — refundPartial's ledger-layer idempotency makes the second a no-op.
+    expect(mockExtraService.refundPartial.mock.calls[0][4]).toBe('dispute_dp_idem');
+    expect(mockExtraService.refundPartial.mock.calls[1][4]).toBe('dispute_dp_idem');
+  });
+
+  test('missing required fields (no chargeId): emit billing.refund.unresolved with reason=dispute_missing_fields, no debit', async () => {
+    await BillingWebhookService.handleChargeDisputeFundsWithdrawn(
+      { id: 'dp_bad', charge: null, amount: 2900 },
+      { id: 'evt_bad', type: 'charge.dispute.funds_withdrawn', created: 1714000000 },
+    );
+
+    expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
+    expect(mockEvents.emit).toHaveBeenCalledWith(
+      'billing.refund.unresolved',
+      expect.objectContaining({ reason: 'dispute_missing_fields' }),
+    );
+  });
+
+  test('zero amount: skipped via missing-fields branch, no debit', async () => {
+    await BillingWebhookService.handleChargeDisputeFundsWithdrawn(
+      { id: 'dp_zero', charge: 'ch_fw_001', amount: 0 },
+      { id: 'evt_zero', type: 'charge.dispute.funds_withdrawn', created: 1714000000 },
+    );
+
+    expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
+  });
+
+  test('missing-fields emit throws → listener error logged as non-fatal, no propagation', async () => {
+    mockEvents.emit.mockImplementationOnce((evtName) => {
+      if (evtName === 'billing.refund.unresolved') throw new Error('listener_blew_missing');
+    });
+
+    await BillingWebhookService.handleChargeDisputeFundsWithdrawn(
+      { id: 'dp_emit_miss', charge: null, amount: 2900 },
+      { id: 'evt_emit_miss', type: 'charge.dispute.funds_withdrawn', created: 1714000000 },
+    );
+
+    expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing.webhook] billing.refund.unresolved listener error (non-fatal)',
+      expect.objectContaining({ error: 'listener_blew_missing' }),
+    );
+  });
+
+  test('Stripe client unavailable (getStripe → null) → log critical, return early without debit', async () => {
+    mockGetStripe.mockReturnValueOnce(null);
+
+    await BillingWebhookService.handleChargeDisputeFundsWithdrawn(
+      { id: 'dp_no_stripe', charge: 'ch_fw_001', amount: 2900 },
+      { id: 'evt_no_stripe', type: 'charge.dispute.funds_withdrawn', created: 1714000000 },
+    );
+
+    expect(mockStripeInstance.charges.retrieve).not.toHaveBeenCalled();
+    expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing.webhook] dispute.funds_withdrawn — Stripe client unavailable, cannot resolve charge',
+      expect.objectContaining({ disputeId: 'dp_no_stripe', chargeId: 'ch_fw_001' }),
+    );
+  });
+
+  test('charge fetch failure → log error then re-throw (transient failures count toward dead-letter)', async () => {
+    mockStripeInstance.charges.retrieve.mockRejectedValueOnce(new Error('stripe_5xx'));
+
+    await expect(
+      BillingWebhookService.handleChargeDisputeFundsWithdrawn(
+        { id: 'dp_charge_err', charge: 'ch_broken', amount: 2900 },
+        { id: 'evt_charge_err', type: 'charge.dispute.funds_withdrawn', created: 1714000000 },
+      ),
+    ).rejects.toThrow('stripe_5xx');
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing.webhook] dispute.funds_withdrawn charge fetch failed',
+      expect.objectContaining({ chargeId: 'ch_broken', disputeId: 'dp_charge_err', error: 'stripe_5xx' }),
+    );
+    expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
+  });
+
+  test('PI fetch fails → log non-fatal, fall through with charge.metadata only (still resolves when sufficient)', async () => {
+    // charge has full metadata but session is the sentinel → triggers PI backfill, which throws.
+    mockStripeInstance.charges.retrieve.mockResolvedValueOnce({
+      id: 'ch_fw_pi_err',
+      payment_intent: 'pi_fw_pi_err',
+      metadata: { organizationId: orgId, stripeSessionId: '__pending__', packId },
+    });
+    mockStripeInstance.paymentIntents.retrieve.mockRejectedValueOnce(new Error('pi_fetch_5xx'));
+
+    await BillingWebhookService.handleChargeDisputeFundsWithdrawn(
+      { id: 'dp_pi_err', charge: 'ch_fw_pi_err', amount: 2900 },
+      { id: 'evt_pi_err', type: 'charge.dispute.funds_withdrawn', created: 1714000000 },
+    );
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing.webhook] dispute.funds_withdrawn PI fetch failed',
+      expect.objectContaining({ paymentIntentId: 'pi_fw_pi_err', disputeId: 'dp_pi_err', error: 'pi_fetch_5xx' }),
+    );
+    // session still unresolved → unresolved branch fires, no debit.
+    expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
+    expect(mockEvents.emit).toHaveBeenCalledWith(
+      'billing.refund.unresolved',
+      expect.objectContaining({ reason: 'dispute_unresolved', disputeId: 'dp_pi_err' }),
+    );
+  });
+
+  test('PI metadata backfills organizationId when charge has none (or invalid)', async () => {
+    mockStripeInstance.charges.retrieve.mockResolvedValueOnce({
+      id: 'ch_fw_org_backfill',
+      payment_intent: 'pi_fw_org_backfill',
+      metadata: { organizationId: 'not-a-valid-objectid', stripeSessionId: '__pending__', packId: undefined },
+    });
+    mockStripeInstance.paymentIntents.retrieve.mockResolvedValueOnce({
+      id: 'pi_fw_org_backfill',
+      metadata: { organizationId: orgId, stripeSessionId: 'cs_test_pi_real', packId },
+    });
+
+    await BillingWebhookService.handleChargeDisputeFundsWithdrawn(
+      { id: 'dp_org_backfill', charge: 'ch_fw_org_backfill', amount: 1500 },
+      { id: 'evt_org_backfill', type: 'charge.dispute.funds_withdrawn', created: 1714000000 },
+    );
+
+    expect(mockExtraService.refundPartial).toHaveBeenCalledWith(
+      orgId,
+      'cs_test_pi_real',
+      1500,
+      packId,
+      'dispute_dp_org_backfill',
+    );
+  });
+
+  test('unresolved emit throws → listener error logged, no propagation', async () => {
+    mockStripeInstance.charges.retrieve.mockResolvedValueOnce({
+      id: 'ch_unres_emit',
+      payment_intent: null,
+      metadata: {},
+    });
+    mockEvents.emit.mockImplementationOnce((evtName) => {
+      if (evtName === 'billing.refund.unresolved') throw new Error('listener_blew_unresolved');
+    });
+
+    await BillingWebhookService.handleChargeDisputeFundsWithdrawn(
+      { id: 'dp_unres_emit', charge: 'ch_unres_emit', amount: 2900 },
+      { id: 'evt_unres_emit', type: 'charge.dispute.funds_withdrawn', created: 1714000000 },
+    );
+
+    expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing.webhook] billing.refund.unresolved listener error (non-fatal)',
+      expect.objectContaining({ error: 'listener_blew_unresolved' }),
+    );
+  });
+
+  test('billing.dispute.lost listener error → logged as non-fatal, debit still completes', async () => {
+    mockEvents.emit.mockImplementationOnce((evtName) => {
+      if (evtName === 'billing.dispute.lost') throw new Error('listener_blew_lost');
+    });
+
+    await BillingWebhookService.handleChargeDisputeFundsWithdrawn(
+      { id: 'dp_lost_emit', charge: 'ch_fw_001', amount: 2900 },
+      { id: 'evt_lost_emit', type: 'charge.dispute.funds_withdrawn', created: 1714000000 },
+    );
+
+    // Debit still happened (listener error must not interrupt the flow).
+    expect(mockExtraService.refundPartial).toHaveBeenCalledWith(
+      orgId,
+      stripeSessionId,
+      2900,
+      packId,
+      'dispute_dp_lost_emit',
+    );
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing.webhook] billing.dispute.lost listener error (non-fatal)',
+      expect.objectContaining({ error: 'listener_blew_lost' }),
     );
   });
 });
