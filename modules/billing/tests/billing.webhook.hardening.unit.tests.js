@@ -1615,4 +1615,151 @@ describe('handleChargeDisputeFundsWithdrawn — dispute lost, debit ledger:', ()
 
     expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
   });
+
+  test('missing-fields emit throws → listener error logged as non-fatal, no propagation', async () => {
+    mockEvents.emit.mockImplementationOnce((evtName) => {
+      if (evtName === 'billing.refund.unresolved') throw new Error('listener_blew_missing');
+    });
+
+    await BillingWebhookService.handleChargeDisputeFundsWithdrawn(
+      { id: 'dp_emit_miss', charge: null, amount: 2900 },
+      { id: 'evt_emit_miss', type: 'charge.dispute.funds_withdrawn', created: 1714000000 },
+    );
+
+    expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing.webhook] billing.refund.unresolved listener error (non-fatal)',
+      expect.objectContaining({ error: 'listener_blew_missing' }),
+    );
+  });
+
+  test('Stripe client unavailable (getStripe → null) → log critical, return early without debit', async () => {
+    mockGetStripe.mockReturnValueOnce(null);
+
+    await BillingWebhookService.handleChargeDisputeFundsWithdrawn(
+      { id: 'dp_no_stripe', charge: 'ch_fw_001', amount: 2900 },
+      { id: 'evt_no_stripe', type: 'charge.dispute.funds_withdrawn', created: 1714000000 },
+    );
+
+    expect(mockStripeInstance.charges.retrieve).not.toHaveBeenCalled();
+    expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing.webhook] dispute.funds_withdrawn — Stripe client unavailable, cannot resolve charge',
+      expect.objectContaining({ disputeId: 'dp_no_stripe', chargeId: 'ch_fw_001' }),
+    );
+  });
+
+  test('charge fetch failure → log error then re-throw (transient failures count toward dead-letter)', async () => {
+    mockStripeInstance.charges.retrieve.mockRejectedValueOnce(new Error('stripe_5xx'));
+
+    await expect(
+      BillingWebhookService.handleChargeDisputeFundsWithdrawn(
+        { id: 'dp_charge_err', charge: 'ch_broken', amount: 2900 },
+        { id: 'evt_charge_err', type: 'charge.dispute.funds_withdrawn', created: 1714000000 },
+      ),
+    ).rejects.toThrow('stripe_5xx');
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing.webhook] dispute.funds_withdrawn charge fetch failed',
+      expect.objectContaining({ chargeId: 'ch_broken', disputeId: 'dp_charge_err', error: 'stripe_5xx' }),
+    );
+    expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
+  });
+
+  test('PI fetch fails → log non-fatal, fall through with charge.metadata only (still resolves when sufficient)', async () => {
+    // charge has full metadata but session is the sentinel → triggers PI backfill, which throws.
+    mockStripeInstance.charges.retrieve.mockResolvedValueOnce({
+      id: 'ch_fw_pi_err',
+      payment_intent: 'pi_fw_pi_err',
+      metadata: { organizationId: orgId, stripeSessionId: '__pending__', packId },
+    });
+    mockStripeInstance.paymentIntents.retrieve.mockRejectedValueOnce(new Error('pi_fetch_5xx'));
+
+    await BillingWebhookService.handleChargeDisputeFundsWithdrawn(
+      { id: 'dp_pi_err', charge: 'ch_fw_pi_err', amount: 2900 },
+      { id: 'evt_pi_err', type: 'charge.dispute.funds_withdrawn', created: 1714000000 },
+    );
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing.webhook] dispute.funds_withdrawn PI fetch failed',
+      expect.objectContaining({ paymentIntentId: 'pi_fw_pi_err', disputeId: 'dp_pi_err', error: 'pi_fetch_5xx' }),
+    );
+    // session still unresolved → unresolved branch fires, no debit.
+    expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
+    expect(mockEvents.emit).toHaveBeenCalledWith(
+      'billing.refund.unresolved',
+      expect.objectContaining({ reason: 'dispute_unresolved', disputeId: 'dp_pi_err' }),
+    );
+  });
+
+  test('PI metadata backfills organizationId when charge has none (or invalid)', async () => {
+    mockStripeInstance.charges.retrieve.mockResolvedValueOnce({
+      id: 'ch_fw_org_backfill',
+      payment_intent: 'pi_fw_org_backfill',
+      metadata: { organizationId: 'not-a-valid-objectid', stripeSessionId: '__pending__', packId: undefined },
+    });
+    mockStripeInstance.paymentIntents.retrieve.mockResolvedValueOnce({
+      id: 'pi_fw_org_backfill',
+      metadata: { organizationId: orgId, stripeSessionId: 'cs_test_pi_real', packId },
+    });
+
+    await BillingWebhookService.handleChargeDisputeFundsWithdrawn(
+      { id: 'dp_org_backfill', charge: 'ch_fw_org_backfill', amount: 1500 },
+      { id: 'evt_org_backfill', type: 'charge.dispute.funds_withdrawn', created: 1714000000 },
+    );
+
+    expect(mockExtraService.refundPartial).toHaveBeenCalledWith(
+      orgId,
+      'cs_test_pi_real',
+      1500,
+      packId,
+      'dispute_dp_org_backfill',
+    );
+  });
+
+  test('unresolved emit throws → listener error logged, no propagation', async () => {
+    mockStripeInstance.charges.retrieve.mockResolvedValueOnce({
+      id: 'ch_unres_emit',
+      payment_intent: null,
+      metadata: {},
+    });
+    mockEvents.emit.mockImplementationOnce((evtName) => {
+      if (evtName === 'billing.refund.unresolved') throw new Error('listener_blew_unresolved');
+    });
+
+    await BillingWebhookService.handleChargeDisputeFundsWithdrawn(
+      { id: 'dp_unres_emit', charge: 'ch_unres_emit', amount: 2900 },
+      { id: 'evt_unres_emit', type: 'charge.dispute.funds_withdrawn', created: 1714000000 },
+    );
+
+    expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing.webhook] billing.refund.unresolved listener error (non-fatal)',
+      expect.objectContaining({ error: 'listener_blew_unresolved' }),
+    );
+  });
+
+  test('billing.dispute.lost listener error → logged as non-fatal, debit still completes', async () => {
+    mockEvents.emit.mockImplementationOnce((evtName) => {
+      if (evtName === 'billing.dispute.lost') throw new Error('listener_blew_lost');
+    });
+
+    await BillingWebhookService.handleChargeDisputeFundsWithdrawn(
+      { id: 'dp_lost_emit', charge: 'ch_fw_001', amount: 2900 },
+      { id: 'evt_lost_emit', type: 'charge.dispute.funds_withdrawn', created: 1714000000 },
+    );
+
+    // Debit still happened (listener error must not interrupt the flow).
+    expect(mockExtraService.refundPartial).toHaveBeenCalledWith(
+      orgId,
+      stripeSessionId,
+      2900,
+      packId,
+      'dispute_dp_lost_emit',
+    );
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing.webhook] billing.dispute.lost listener error (non-fatal)',
+      expect.objectContaining({ error: 'listener_blew_lost' }),
+    );
+  });
 });
