@@ -777,7 +777,7 @@ describe('BillingService.createCheckout — server-side active-sub guard:', () =
     jest.restoreAllMocks();
   });
 
-  test('no live active sub → stripe.subscriptions.list called with active status, checkout proceeds', async () => {
+  test('no live active/trialing sub → stripe.subscriptions.list called with status:all, checkout proceeds', async () => {
     mockStripeInstance.subscriptions.list.mockResolvedValue({ data: [] });
 
     await BillingService.createCheckout(
@@ -787,8 +787,9 @@ describe('BillingService.createCheckout — server-side active-sub guard:', () =
       'https://test.example.com/cancel',
     );
 
+    // Guard upgraded to status:'all' + local filter to catch both 'active' and 'trialing' in one call
     expect(mockStripeInstance.subscriptions.list).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'active', limit: 1 }),
+      expect.objectContaining({ status: 'all', limit: 10 }),
     );
     expect(mockStripeInstance.checkout.sessions.create).toHaveBeenCalled();
   });
