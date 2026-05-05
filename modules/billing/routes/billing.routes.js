@@ -4,6 +4,7 @@
 import config from '../../../config/index.js';
 import passport from 'passport';
 
+import limiters from '../../../lib/middlewares/rateLimiter.js';
 import model from '../../../lib/middlewares/model.js';
 import policy from '../../../lib/middlewares/policy.js';
 import organization from '../../organizations/middlewares/organizations.middleware.js';
@@ -28,7 +29,11 @@ export default (app) => {
   ];
 
   // plans (public)
-  app.route('/api/billing/plans').get(billingPlans.getPlans);
+  // Rate-limited at the edge: this route fans out to Stripe products+prices on cache miss,
+  // so an unauthenticated flood would drain the Stripe API quota and break LIVE checkout +
+  // webhook signature verification. Service layer also dedups concurrent in-flight fetches.
+  // Falls back to a passthrough middleware when `billingPlans` profile is not configured.
+  app.route('/api/billing/plans').get(limiters.billingPlans, billingPlans.getPlans);
 
   // checkout
   app

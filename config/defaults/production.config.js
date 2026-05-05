@@ -38,6 +38,15 @@ const config = {
       standardHeaders: true,
       legacyHeaders: false,
     },
+    // Public, unauthenticated route that fans out to Stripe on cache miss.
+    // Tighter window than `api` to harden against Stripe-API-quota DoS.
+    billingPlans: {
+      windowMs: 60 * 1000,
+      max: 30,
+      message: { message: 'Too many requests, please try again later.' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    },
   },
   log: {
     format: 'custom',

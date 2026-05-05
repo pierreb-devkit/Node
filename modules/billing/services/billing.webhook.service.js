@@ -565,6 +565,155 @@ const handleChargeRefunded = async (charge) => {
   }
 };
 
+/**
+ * @description Handle customer.deleted event — null out Stripe customer/subscription refs.
+ *       Triggered when an admin deletes a customer in the Stripe dashboard. If we keep the
+ *       stale stripeCustomerId in our DB, the next _ensureStripeCustomer / checkout call
+ *       will hit "No such customer" and crash the user's checkout flow.
+ *
+ *       Conservative recovery:
+ *         1. Find the subscription by Stripe customer id.
+ *         2. Null out stripeCustomerId + stripeSubscriptionId, force plan='free' / status='canceled'.
+ *         3. Sync organization plan to free.
+ *         4. Force meter rotation so the org no longer carries the paid quota snapshot.
+ *
+ *       No-op when no matching subscription exists in our DB (deletion of a customer we never
+ *       provisioned, or already cleaned up).
+ * @param {Object} customer - Stripe customer object (data.object of customer.deleted event).
+ * @param {Object} event - Full Stripe event (for ordering / event-newer guard).
+ * @returns {Promise<void>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const handleCustomerDeleted = async (customer, event) => {
+  const stripeCustomerId = customer?.id;
+  if (!stripeCustomerId) return;
+
+  const existing = await SubscriptionRepository.findByStripeCustomerId(stripeCustomerId);
+  if (!existing) return;
+
+  const updated = await SubscriptionRepository.updateIfEventNewer(
+    String(existing._id),
+    event.created,
+    event.id,
+    {
+      stripeCustomerId: null,
+      stripeSubscriptionId: null,
+      plan: 'free',
+      status: 'canceled',
+    },
+    'subscription',
+  );
+  if (!updated) {
+    logger.info('[billing.webhook] skipped stale event', { eventId: event.id, type: event.type });
+    return;
+  }
+
+  const organizationId = String(existing.organization?._id || existing.organization);
+  await syncOrganizationPlan(organizationId, 'free');
+
+  // Force meter reset so the cancelled org no longer retains a paid-plan snapshot.
+  try {
+    await BillingResetService.forceRotateForPlanChange(organizationId, { preserveUsage: false });
+  } catch (err) {
+    logger.error('[billing.webhook] forceRotateForPlanChange on customer.deleted failed (non-fatal)', {
+      organizationId,
+      error: err?.message ?? String(err),
+      stack: err?.stack,
+    });
+  }
+};
+
+/**
+ * @description Handle charge.dispute.created event — log + emit (no auto-debit).
+ *       Triggered when a cardholder files a chargeback. Stripe will eventually debit the
+ *       merchant bank account, but disputes are often won by the merchant (~50% are user
+ *       error / "I don't recognise this charge"). Aggressive auto-debit on dispute opening
+ *       would punish customers who are filing legitimate disputes that we eventually win.
+ *
+ *       Conservative policy: emit a `billing.dispute.opened` event for downstream listeners
+ *       (admin notifications) and log a critical alert. Real claw-back happens later via
+ *       `charge.dispute.funds_withdrawn` (when the dispute is lost) or `charge.refunded`
+ *       (when we choose to refund), both of which already debit the ledger via
+ *       handleChargeRefunded / refundPartial.
+ *
+ *       Resolves organizationId via charge metadata first, then falls back to the
+ *       PaymentIntent metadata patched by handleCheckoutPaymentCompleted.
+ * @param {Object} dispute - Stripe dispute object (data.object of charge.dispute.created).
+ * @param {Object} event - Full Stripe event.
+ * @returns {Promise<void>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const handleChargeDisputeCreated = async (dispute, event) => {
+  const chargeId = dispute?.charge;
+  const disputeId = dispute?.id;
+  const amount = dispute?.amount ?? 0;
+  const reason = dispute?.reason ?? null;
+
+  let organizationId = null;
+  let stripeSessionId = null;
+  let paymentIntentId = null;
+
+  // Best-effort: fetch charge → resolve org via charge or PaymentIntent metadata
+  // (mirrors the resolver pattern in handleChargeRefunded).
+  if (chargeId) {
+    const stripe = getStripe();
+    if (stripe) {
+      try {
+        const charge = await stripe.charges.retrieve(chargeId);
+        const meta = charge?.metadata ?? {};
+        organizationId = meta.organizationId ?? null;
+        stripeSessionId = meta.stripeSessionId ?? null;
+        paymentIntentId = charge?.payment_intent ?? null;
+
+        if ((!organizationId || !mongoose.Types.ObjectId.isValid(organizationId)) && paymentIntentId) {
+          const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+          const piMeta = paymentIntent?.metadata ?? {};
+          if (!organizationId && piMeta.organizationId && mongoose.Types.ObjectId.isValid(piMeta.organizationId)) {
+            organizationId = piMeta.organizationId;
+          }
+          if (!stripeSessionId) stripeSessionId = piMeta.stripeSessionId ?? null;
+        }
+      } catch (err) {
+        logger.error('[billing.webhook] dispute charge/PI fetch failed', {
+          chargeId,
+          disputeId,
+          error: err?.message ?? String(err),
+          stack: err?.stack,
+        });
+      }
+    }
+  }
+
+  // Critical alert — ops MUST react manually (decide to fight or accept the dispute).
+  // No auto-debit: real claw-back happens on charge.dispute.funds_withdrawn / charge.refunded.
+  logger.error('[billing] dispute opened — manual review required', {
+    disputeId,
+    chargeId,
+    organizationId,
+    stripeSessionId,
+    amount,
+    reason,
+    eventId: event?.id,
+  });
+
+  try {
+    billingEvents.emit('billing.dispute.opened', {
+      disputeId,
+      chargeId,
+      organizationId,
+      stripeSessionId,
+      amount,
+      reason,
+    });
+  } catch (evtErr) {
+    // Listener errors must not break webhook processing — log for traceability.
+    logger.error('[billing.webhook] billing.dispute.opened listener error (non-fatal)', {
+      error: evtErr?.message ?? String(evtErr),
+      stack: evtErr?.stack,
+    });
+  }
+};
+
 export default {
   withIdempotency,
   handleCheckoutSessionCompleted,
@@ -575,4 +724,6 @@ export default {
   handleInvoicePaymentFailed,
   handleInvoicePaymentSucceeded,
   handleChargeRefunded,
+  handleCustomerDeleted,
+  handleChargeDisputeCreated,
 };

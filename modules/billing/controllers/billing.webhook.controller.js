@@ -62,6 +62,16 @@ const handleWebhook = async (req, res) => {
           BillingWebhookService.handleChargeRefunded(e.data.object),
         );
         break;
+      case 'customer.deleted':
+        await BillingWebhookService.withIdempotency(event, (e) =>
+          BillingWebhookService.handleCustomerDeleted(e.data.object, e),
+        );
+        break;
+      case 'charge.dispute.created':
+        await BillingWebhookService.withIdempotency(event, (e) =>
+          BillingWebhookService.handleChargeDisputeCreated(e.data.object, e),
+        );
+        break;
       default:
         break;
     }

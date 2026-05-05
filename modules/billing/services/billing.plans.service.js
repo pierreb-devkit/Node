@@ -11,6 +11,17 @@ let cacheTimestamp = 0;
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
 /**
+ * In-flight fetch promise — used to deduplicate concurrent cache-miss callers.
+ * The /api/billing/plans route is public, so a thundering herd on cache miss
+ * (e.g. cache expiry under traffic, or a small DoS) would otherwise fire N
+ * parallel `stripe.products.list().autoPagingToArray()` + `stripe.prices.list()`
+ * calls and exhaust the Stripe API quota — breaking live checkouts and webhook
+ * signature verification. With this dedup, only one Stripe round-trip happens
+ * per cache-miss window regardless of concurrency.
+ */
+let inFlightFetch = null;
+
+/**
  * Default free plan returned when Stripe is not configured
  */
 const DEFAULT_FREE_PLAN = {
@@ -83,10 +94,24 @@ const getPlans = async () => {
   const now = Date.now();
   if (cachedPlans && now - cacheTimestamp < CACHE_TTL) return cachedPlans;
 
-  const plans = await fetchPlansFromStripe(stripe);
-  cachedPlans = plans;
-  cacheTimestamp = Date.now();
-  return plans;
+  // In-flight dedup: if another caller is already fetching, await its result
+  // instead of issuing parallel Stripe API calls. Reset on completion so the
+  // next cache miss can issue a fresh fetch (success OR failure — failures must
+  // not poison the slot, otherwise the next call retries cleanly).
+  if (inFlightFetch) return inFlightFetch;
+
+  inFlightFetch = (async () => {
+    try {
+      const plans = await fetchPlansFromStripe(stripe);
+      cachedPlans = plans;
+      cacheTimestamp = Date.now();
+      return plans;
+    } finally {
+      inFlightFetch = null;
+    }
+  })();
+
+  return inFlightFetch;
 };
 
 export default {
