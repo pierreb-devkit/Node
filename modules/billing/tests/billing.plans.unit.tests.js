@@ -226,6 +226,91 @@ describe('Billing plans service unit tests:', () => {
     expect(mod.default.fetchPlansFromStripe).toBeUndefined();
   });
 
+  // ── In-flight dedup — Stripe-API-quota DoS hardening ────────────────────
+  // The /api/billing/plans route is public, so a thundering herd on cache miss
+  // (or a small DoS) would otherwise fire N parallel `stripe.products.list +
+  // stripe.prices.list` calls and exhaust the Stripe API quota — breaking live
+  // checkouts and webhook signature verification. The service layer dedups
+  // concurrent in-flight fetches into a single Stripe round-trip.
+
+  test('100 concurrent getPlans() calls during cache miss → exactly ONE Stripe products.list call', async () => {
+    const mod = await import('../services/billing.plans.service.js');
+    BillingPlansService = mod.default;
+
+    // Resolve manually so all 100 callers race the same in-flight promise.
+    let resolveProducts;
+    mockStripeInstance.products.list.mockReturnValue({
+      autoPagingToArray: jest.fn().mockReturnValue(
+        new Promise((resolve) => {
+          resolveProducts = () => resolve(productsData);
+        }),
+      ),
+    });
+
+    const inflight = Array.from({ length: 100 }, () => BillingPlansService.getPlans());
+
+    // Resolve the underlying Stripe call once — all 100 callers should share its result.
+    resolveProducts();
+    const results = await Promise.all(inflight);
+
+    expect(mockStripeInstance.products.list).toHaveBeenCalledTimes(1);
+    expect(mockStripeInstance.prices.list).toHaveBeenCalledTimes(1);
+    // Every caller gets the same plan list.
+    for (const plans of results) expect(plans).toHaveLength(2);
+  });
+
+  test('after cache TTL expires, a fresh thundering herd still triggers ONE fetch', async () => {
+    const mod = await import('../services/billing.plans.service.js');
+    BillingPlansService = mod.default;
+
+    // First call populates the cache.
+    await BillingPlansService.getPlans();
+    expect(mockStripeInstance.products.list).toHaveBeenCalledTimes(1);
+
+    // Advance time past TTL.
+    const originalDateNow = Date.now;
+    Date.now = jest.fn().mockReturnValue(originalDateNow() + 61 * 60 * 1000);
+
+    // 50 concurrent callers after TTL expires.
+    let resolveProducts;
+    mockStripeInstance.products.list.mockReturnValue({
+      autoPagingToArray: jest.fn().mockReturnValue(
+        new Promise((resolve) => {
+          resolveProducts = () => resolve(productsData);
+        }),
+      ),
+    });
+
+    const inflight = Array.from({ length: 50 }, () => BillingPlansService.getPlans());
+    resolveProducts();
+    await Promise.all(inflight);
+
+    // Total: 1 (initial) + 1 (after TTL) — not 1 + 50.
+    expect(mockStripeInstance.products.list).toHaveBeenCalledTimes(2);
+
+    Date.now = originalDateNow;
+  });
+
+  test('in-flight slot resets after fetch failure → next call retries cleanly', async () => {
+    const mod = await import('../services/billing.plans.service.js');
+    BillingPlansService = mod.default;
+
+    // First fetch fails — slot must reset, otherwise the next call hangs forever.
+    mockStripeInstance.products.list.mockReturnValueOnce({
+      autoPagingToArray: jest.fn().mockRejectedValue(new Error('Stripe API down')),
+    });
+
+    await expect(BillingPlansService.getPlans()).rejects.toThrow('Stripe API down');
+
+    // Second call should issue a NEW Stripe round-trip (slot was cleared in finally).
+    mockStripeInstance.products.list.mockReturnValueOnce(mockListResult(productsData));
+    mockStripeInstance.prices.list.mockReturnValueOnce(mockListResult(pricesData));
+
+    const plans = await BillingPlansService.getPlans();
+    expect(plans).toHaveLength(2);
+    expect(mockStripeInstance.products.list).toHaveBeenCalledTimes(2);
+  });
+
   test('facade: getPlans returns array of plan objects', async () => {
     const mod = await import('../services/billing.plans.service.js');
     BillingPlansService = mod.default;

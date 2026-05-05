@@ -437,6 +437,59 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
     });
   });
 
+  describe('incrementMeter — free plan (meterQuota=0) extras debit', () => {
+    test('every unit goes to extras when meterQuota=0 (extras pack credits balance)', async () => {
+      // Free plan has meterQuota=0 — middleware (requireQuota) lets the request through
+      // because extrasBalance > 0. Without this branch the extras balance would never
+      // decrease (infinite usage from a single $5 pack — money leak).
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'free' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan({ planId: 'free', meterQuota: 0 }));
+      // After increment: meterUsed=5, quota=0. Old code computed extrasConsumed=0; new code = units.
+      const updatedDoc = makeUsageDoc({ meterUsed: 5, meterQuota: 0 });
+      mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
+      mockExtraService.debit.mockResolvedValue({ applied: true, doc: { cachedBalance: 995 } });
+
+      const result = await BillingUsageService.incrementMeter(orgId, 5, { scrap: 5 }, 'hist_free_5');
+
+      expect(result.applied).toBe(true);
+      expect(result.extrasConsumed).toBe(5);
+      expect(mockExtraService.debit).toHaveBeenCalledWith(orgId, 5, 'hist_free_5');
+    });
+
+    test('free plan with no extras: debit is still called and may go negative (debt persists)', async () => {
+      // Middleware should block this case before we reach incrementMeter, but if it
+      // somehow leaks through (race / misconfig), the math must still attribute correctly.
+      // BillingExtraService.debit allows negative balance — the debt persists until next pack.
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'free' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan({ planId: 'free', meterQuota: 0 }));
+      const updatedDoc = makeUsageDoc({ meterUsed: 10, meterQuota: 0 });
+      mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
+      // Simulate repo returning applied=true with a negative cachedBalance (debt).
+      mockExtraService.debit.mockResolvedValue({ applied: true, doc: { cachedBalance: -10 } });
+
+      const result = await BillingUsageService.incrementMeter(orgId, 10, {}, 'hist_free_no_extras');
+
+      expect(result.applied).toBe(true);
+      expect(result.extrasConsumed).toBe(10);
+      expect(mockExtraService.debit).toHaveBeenCalledWith(orgId, 10, 'hist_free_no_extras');
+    });
+
+    test('regression: paid plan over quota still debits only the overflow portion', async () => {
+      // Existing behaviour preserved: when meterQuota>0 and we cross it, only the
+      // portion above the quota goes to extras (not the entire `units` amount).
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan({ meterQuota: 1000 }));
+      // previousUsed = 950, after increment meterUsed = 1050, quota = 1000 → overflow = 50.
+      const updatedDoc = makeUsageDoc({ meterUsed: 1050, meterQuota: 1000 });
+      mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
+
+      const result = await BillingUsageService.incrementMeter(orgId, 100, {}, 'hist_paid_overflow');
+
+      expect(result.extrasConsumed).toBe(50);
+      expect(mockExtraService.debit).toHaveBeenCalledWith(orgId, 50, 'hist_paid_overflow');
+    });
+  });
+
   describe('getMeter', () => {
     test('should return null when meterMode is disabled', async () => {
       mockConfig.billing.meterMode = false;

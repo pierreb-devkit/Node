@@ -122,10 +122,17 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
   const newMeterUsed = updatedDoc.meterUsed ?? 0;
   const effectiveQuota = updatedDoc.meterQuota ?? meterQuota;
 
-  // Overflow detection: units consumed beyond the plan quota go to extras
+  // Overflow detection: units consumed beyond the plan quota go to extras.
+  // Free plan (effectiveQuota === 0): every unit must be debited from extras —
+  // requireQuota middleware lets the request through only when extrasBalance > 0,
+  // so reaching this branch means the org pays for usage from its extras pack.
+  // Without this branch the extras balance would never decrease on free plans
+  // (infinite usage from a $5 pack — money leak).
   let extrasConsumed = 0;
-  if (effectiveQuota > 0 && newMeterUsed > effectiveQuota) {
-    const previousUsed = newMeterUsed - units;
+  if (effectiveQuota === 0) {
+    extrasConsumed = units;
+  } else if (newMeterUsed > effectiveQuota) {
+    const previousUsed = Math.max(0, newMeterUsed - units);
     const overflowStart = Math.max(previousUsed, effectiveQuota);
     extrasConsumed = newMeterUsed - overflowStart;
   }
