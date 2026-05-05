@@ -135,14 +135,24 @@ const get = async (id) => {
 
 /**
  * @function update
- * @description Service to update an existing organization.
- * @param {Object} organization - The existing organization object.
- * @param {Object} body - The object containing updated organization details.
+ * @description Service to update an existing organization using a sparse $set patch.
+ *   The patch is constructed via an explicit allow-list so billing-owned fields (plan)
+ *   are never included — they are written exclusively by the Stripe webhook path
+ *   (setPlan / billing crons) and must never flow through this settings endpoint.
+ * @param {Object} organization - The existing organization Mongoose document (for slug validation).
+ * @param {Object} body - Zod-validated request body (already parsed by model.isValid middleware).
  * @returns {Promise<Object>} A promise resolving to the updated organization.
  */
 const update = async (organization, body) => {
-  if (body.name !== undefined) organization.name = body.name;
-  if (body.description !== undefined) organization.description = body.description;
+  // Build sparse patch from validated body via explicit allow-list.
+  // Billing-owned fields (plan) are intentionally absent — they are written exclusively
+  // by the Stripe webhook path (setPlan / billing crons).
+  const patch = {};
+  if (body.name !== undefined) patch.name = body.name;
+  if (body.description !== undefined) patch.description = body.description;
+  if (body.domain !== undefined) patch.domain = normalizeDomain(body.domain);
+
+  // Slug: validate uniqueness before adding to patch.
   if (body.slug !== undefined) {
     if (body.slug !== organization.slug) {
       const existing = await OrganizationsRepository.findOne({ slug: body.slug });
@@ -150,12 +160,11 @@ const update = async (organization, body) => {
         throw new AppError('An organization with this slug already exists.', { code: 'CONFLICT' });
       }
     }
-    organization.slug = body.slug;
+    patch.slug = body.slug;
   }
-  if (body.domain !== undefined) organization.domain = normalizeDomain(body.domain);
-  if (body.plan !== undefined) organization.plan = body.plan;
 
-  const result = await OrganizationsRepository.update(organization);
+  const orgId = organization._id || organization.id;
+  const result = await OrganizationsRepository.updateById(String(orgId), patch);
   return result;
 };
 

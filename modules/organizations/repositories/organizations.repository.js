@@ -44,12 +44,20 @@ const get = (id) => {
 };
 
 /**
- * @function update
- * @description Data access operation to update an existing organization in the database.
- * @param {Object} organization - The organization object containing the updated details.
- * @returns {Promise<Object>} The updated organization.
+ * @function updateById
+ * @description Atomically update an organization by ID using a sparse field patch ($set).
+ *   Replaces the old full-document `save()` path to eliminate the race window where a
+ *   concurrent `setPlan` write (Stripe webhook) could be silently overwritten.
+ * @param {String} orgId - The organization ObjectId (string).
+ * @param {Object} fields - Sparse patch object with only the fields to update.
+ * @returns {Promise<Object|null>} The updated organization with defaultPopulate, or null.
  */
-const update = (organization) => organization.save().then((doc) => doc.populate(defaultPopulate));
+const updateById = (orgId, fields) => {
+  if (!mongoose.Types.ObjectId.isValid(orgId)) return Promise.resolve(null);
+  return Organization.findByIdAndUpdate(orgId, { $set: fields }, { returnDocument: 'after', runValidators: true })
+    .populate(defaultPopulate)
+    .exec();
+};
 
 /**
  * @function remove
@@ -103,7 +111,7 @@ export default {
   list,
   create,
   get,
-  update,
+  updateById,
   remove,
   deleteMany,
   findOne,
