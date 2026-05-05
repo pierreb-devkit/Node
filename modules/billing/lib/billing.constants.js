@@ -3,6 +3,17 @@
  */
 import config from '../../../config/index.js';
 
+/**
+ * Sentinel value written to stripeSessionId during extras checkout session creation.
+ * Stripe forbids a session from self-referencing its own id at creation time, so this
+ * placeholder is used in both session.metadata and payment_intent_data.metadata.
+ * After checkout.session.completed fires, the real cs_* id is patched onto the
+ * PaymentIntent metadata — but Stripe Charge metadata is a one-time snapshot copied
+ * at charge creation, so charge.metadata.stripeSessionId may still carry this sentinel
+ * on refunds. Treat it as "unresolved" and trigger the PI backfill path.
+ */
+export const SENTINEL_PENDING = '__pending__';
+
 export const DEFAULT_METER_RUN_BASE = 1;
 export const DEFAULT_CRON_JITTER_MAX_MS = 60_000;
 export const DEFAULT_PLAN_CHANGE_PRESERVE_USAGE = true;

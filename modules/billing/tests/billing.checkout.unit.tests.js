@@ -37,7 +37,7 @@ describe('Billing service unit tests:', () => {
         },
       },
       subscriptions: {
-        // Server-side active-sub guard (Item 9): returns no active subs by default
+        // Default: no live active/trialing subs — checkout proceeds
         list: jest.fn().mockResolvedValue({ data: [] }),
       },
     };

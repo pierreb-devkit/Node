@@ -45,6 +45,10 @@ describe('Billing usage endpoint unit tests:', () => {
       default: mockBillingUsageService,
     }));
 
+    jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
+      default: { getOrgBalanceContext: jest.fn().mockResolvedValue(0) },
+    }));
+
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: mockConfig,
     }));

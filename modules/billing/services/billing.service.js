@@ -6,6 +6,7 @@ import getStripe from '../lib/stripe.js';
 import BillingPlansService from './billing.plans.service.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import { isDuplicateKeyError } from '../lib/billing.errors.js';
+import { SENTINEL_PENDING } from '../lib/billing.constants.js';
 
 /**
  * Validate that a redirect URL is safe for the current environment.
@@ -148,14 +149,17 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
 
   // Server-side active subscription guard — closes race window between local-DB check and
   // stripe.checkout.sessions.create (webhook may have arrived mid-flight).
+  // Fetches status:'all' and filters locally to cover both 'active' AND 'trialing' in one call
+  // (Stripe's status filter accepts only a single string, not an array).
   // +1 Stripe API call cost; acceptable given infrequent checkout entry point.
   if (subscription.stripeCustomerId) {
-    const liveActiveSubs = await stripe.subscriptions.list({
+    const liveSubs = await stripe.subscriptions.list({
       customer: subscription.stripeCustomerId,
-      status: 'active',
-      limit: 1,
+      status: 'all',
+      limit: 10,
     });
-    if (liveActiveSubs.data.length > 0) {
+    const blockingSub = liveSubs.data.find((s) => ['active', 'trialing'].includes(s.status));
+    if (blockingSub) {
       const portalUrl = await createPortalSession(organization);
       const err = new Error('Subscription already active');
       err.statusCode = 409;
@@ -206,6 +210,7 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
  *        When provided: key = `extras_checkout_{orgId}_{packId}_{intentId}` (fully stable).
  *        When absent: key bucketed to the minute — prevents instant double-click but not
  *        cross-minute replay. Callers should pass a UUID generated on button click.
+ *        Max 180 chars (Stripe idempotency key limit is 255; prefix consumes ~64 chars).
  * @returns {Promise<{url: String}>} Object with the Checkout session URL
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
@@ -244,17 +249,17 @@ const createExtrasCheckout = async (organization, packId, successUrl, cancelUrl,
     success_url: successUrl,
     cancel_url: cancelUrl,
     metadata: {
-      organizationId: String(organization._id),
+      organizationId: orgId,
       packId,
       kind: 'extras',
-      stripeSessionId: '__pending__',
+      stripeSessionId: SENTINEL_PENDING,
     },
     payment_intent_data: {
       metadata: {
-        organizationId: String(organization._id),
+        organizationId: orgId,
         packId,
         kind: 'extras',
-        stripeSessionId: '__pending__',
+        stripeSessionId: SENTINEL_PENDING,
       },
     },
   };

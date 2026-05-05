@@ -5,11 +5,23 @@ import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globa
 
 /**
  * Integration tests for handleChargeRefunded webhook handler
+ * Covers:
+ *   - Normal path: stripeSessionId present in charge metadata
+ *   - C1: SENTINEL_PENDING ('__pending__') in charge metadata triggers PI backfill
+ *   - C1: Missing stripeSessionId triggers PI backfill
+ *   - C1: PI backfill succeeds → refundPartial called with real session ID
+ *   - C1: PI backfill returns sentinel too → unresolved alert, refundPartial NOT called
+ *   - C1: PI fetch fails → unresolved alert, refundPartial NOT called
+ *   - No paymentIntent → unresolved alert immediately
  */
 describe('Billing webhook refund integration tests:', () => {
   let BillingWebhookService;
   let mockExtraService;
   let mockSubscriptionRepository;
+  let mockStripeInstance;
+  let mockGetStripe;
+  let mockLogger;
+  let mockEvents;
 
   const orgId = '507f1f77bcf86cd799439011';
   const stripeSessionId = 'cs_test_session_abc';
@@ -23,6 +35,7 @@ describe('Billing webhook refund integration tests:', () => {
     id: 'ch_test_001',
     amount: 4900,
     amount_refunded: 4900,
+    payment_intent: 'pi_test_001',
     refunds: { data: [{ id: 'rf_test_001', amount: 4900, created: Math.floor(Date.now() / 1000) }] },
     metadata: {
       organizationId: orgId,
@@ -35,10 +48,23 @@ describe('Billing webhook refund integration tests:', () => {
   beforeEach(async () => {
     jest.resetModules();
 
+    mockLogger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
+    mockEvents = { emit: jest.fn() };
+
     mockExtraService = {
       creditPack: jest.fn(),
       refundPartial: jest.fn().mockResolvedValue({ doc: {}, applied: true, refundUnits: 500000 }),
     };
+
+    mockStripeInstance = {
+      paymentIntents: {
+        retrieve: jest.fn().mockResolvedValue({
+          id: 'pi_test_001',
+          metadata: { stripeSessionId, organizationId: orgId, packId: 'pack_500k', kind: 'extras' },
+        }),
+      },
+    };
+    mockGetStripe = jest.fn().mockReturnValue(mockStripeInstance);
 
     mockSubscriptionRepository = {
       findByOrganization: jest.fn(),
@@ -48,6 +74,8 @@ describe('Billing webhook refund integration tests:', () => {
       update: jest.fn(),
       updateIfEventNewer: jest.fn().mockResolvedValue(null),
     };
+
+    jest.unstable_mockModule('../lib/stripe.js', () => ({ default: mockGetStripe }));
 
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
       default: mockExtraService,
@@ -69,7 +97,7 @@ describe('Billing webhook refund integration tests:', () => {
     }));
 
     jest.unstable_mockModule('../lib/events.js', () => ({
-      default: { emit: jest.fn() },
+      default: mockEvents,
     }));
 
     jest.unstable_mockModule('../../../config/index.js', () => ({
@@ -86,7 +114,7 @@ describe('Billing webhook refund integration tests:', () => {
     }));
 
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
-      default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
+      default: mockLogger,
     }));
 
     const mod = await import('../services/billing.webhook.service.js');
@@ -97,7 +125,7 @@ describe('Billing webhook refund integration tests:', () => {
     jest.restoreAllMocks();
   });
 
-  describe('handleChargeRefunded', () => {
+  describe('handleChargeRefunded — normal path', () => {
     test('full refund — calls refundPartial with correct orgId, sessionId, amount, packId and refundId', async () => {
       await BillingWebhookService.handleChargeRefunded(
         makeCharge({ refunds: { data: [{ id: 'rf_001', amount: 4900, created: 1000 }] } }),
@@ -159,30 +187,6 @@ describe('Billing webhook refund integration tests:', () => {
       expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
     });
 
-    test('should skip when stripeSessionId is missing', async () => {
-      const charge = makeCharge();
-      delete charge.metadata.stripeSessionId;
-
-      await BillingWebhookService.handleChargeRefunded(charge);
-
-      expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
-    });
-
-    /**
-     * MEDIUM 4: explicit verification of the silent skip on missing stripeSessionId.
-     * Documents the upstream contract: charge.metadata.stripeSessionId is only present
-     * when the upstream session creation sets payment_intent_data.metadata explicitly.
-     * Without it, refunds silently skip — no service call, no error logged.
-     */
-    test('skips silently when charge.metadata lacks stripeSessionId (upstream contract)', async () => {
-      // Simulate a charge where payment_intent_data.metadata was NOT set at session creation
-      await BillingWebhookService.handleChargeRefunded(
-        makeCharge({ metadata: { organizationId: orgId } }), // stripeSessionId absent
-      );
-
-      expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
-    });
-
     test('should skip when refunds list is empty', async () => {
       await BillingWebhookService.handleChargeRefunded(
         makeCharge({ refunds: { data: [] } }),
@@ -203,6 +207,116 @@ describe('Billing webhook refund integration tests:', () => {
       await BillingWebhookService.handleChargeRefunded(makeCharge({ metadata: undefined }));
 
       expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // C1 — Sentinel '__pending__' handling
+  // ─────────────────────────────────────────────────────────────────────────────
+  describe('handleChargeRefunded — C1 sentinel + PI backfill resolver', () => {
+    test('C1: stripeSessionId === __pending__ triggers PI backfill, finds real session id, calls refundPartial', async () => {
+      // Charge metadata has sentinel — this is the production failure path
+      await BillingWebhookService.handleChargeRefunded(
+        makeCharge({
+          metadata: { organizationId: orgId, stripeSessionId: '__pending__', packId: 'pack_500k' },
+          refunds: { data: [{ id: 'rf_sentinel_001', amount: 4900, created: 1000 }] },
+        }),
+      );
+
+      // PI fetch must have been triggered (sentinel is unresolved)
+      expect(mockStripeInstance.paymentIntents.retrieve).toHaveBeenCalledWith('pi_test_001');
+      // After backfill, refundPartial must be called with the REAL session id
+      expect(mockExtraService.refundPartial).toHaveBeenCalledWith(
+        orgId, stripeSessionId, 4900, 'pack_500k', 'rf_sentinel_001',
+      );
+    });
+
+    test('C1: stripeSessionId absent triggers PI backfill (absent ≡ unresolved)', async () => {
+      const charge = makeCharge();
+      delete charge.metadata.stripeSessionId;
+
+      await BillingWebhookService.handleChargeRefunded(charge);
+
+      expect(mockStripeInstance.paymentIntents.retrieve).toHaveBeenCalledWith('pi_test_001');
+      expect(mockExtraService.refundPartial).toHaveBeenCalledWith(
+        orgId, stripeSessionId, 4900, 'pack_500k', 'rf_test_001',
+      );
+    });
+
+    test('C1: PI backfill returns __pending__ too → emits billing.refund.unresolved, refundPartial NOT called', async () => {
+      // Simulates case where the PI metadata patch never ran (checkout.session.completed not processed yet)
+      mockStripeInstance.paymentIntents.retrieve.mockResolvedValue({
+        id: 'pi_test_001',
+        metadata: { stripeSessionId: '__pending__', organizationId: orgId, packId: 'pack_500k' },
+      });
+
+      await BillingWebhookService.handleChargeRefunded(
+        makeCharge({
+          metadata: { organizationId: orgId, stripeSessionId: '__pending__', packId: 'pack_500k' },
+          refunds: { data: [{ id: 'rf_still_sentinel', amount: 4900, created: 1000 }] },
+        }),
+      );
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        '[billing] refund unresolved — manual reconciliation required',
+        expect.objectContaining({ chargeId: 'ch_test_001' }),
+      );
+      expect(mockEvents.emit).toHaveBeenCalledWith(
+        'billing.refund.unresolved',
+        expect.objectContaining({ chargeId: 'ch_test_001' }),
+      );
+      expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
+    });
+
+    test('C1: PI fetch failure → unresolved alert emitted, refundPartial NOT called', async () => {
+      mockStripeInstance.paymentIntents.retrieve.mockRejectedValue(new Error('Stripe API down'));
+
+      await BillingWebhookService.handleChargeRefunded(
+        makeCharge({
+          metadata: { organizationId: orgId, stripeSessionId: '__pending__', packId: 'pack_500k' },
+          refunds: { data: [{ id: 'rf_pi_fail', amount: 4900, created: 1000 }] },
+        }),
+      );
+
+      // PI fetch error logged
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        '[billing] refund PI fetch failed',
+        expect.objectContaining({ chargeId: 'ch_test_001' }),
+      );
+      // After fetch failure → still unresolved → unresolved alert
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        '[billing] refund unresolved — manual reconciliation required',
+        expect.objectContaining({ chargeId: 'ch_test_001' }),
+      );
+      expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
+    });
+
+    test('C1: no payment_intent on charge AND __pending__ sentinel → unresolved alert without PI fetch', async () => {
+      await BillingWebhookService.handleChargeRefunded(
+        makeCharge({
+          payment_intent: null,
+          metadata: { organizationId: orgId, stripeSessionId: '__pending__', packId: 'pack_500k' },
+          refunds: { data: [{ id: 'rf_no_pi', amount: 4900, created: 1000 }] },
+        }),
+      );
+
+      expect(mockStripeInstance.paymentIntents.retrieve).not.toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        '[billing] refund unresolved — manual reconciliation required',
+        expect.objectContaining({ chargeId: 'ch_test_001' }),
+      );
+      expect(mockExtraService.refundPartial).not.toHaveBeenCalled();
+    });
+
+    test('C1: real session id present (not sentinel) → no PI fetch, refundPartial called directly', async () => {
+      await BillingWebhookService.handleChargeRefunded(
+        makeCharge({ refunds: { data: [{ id: 'rf_normal', amount: 4900, created: 1000 }] } }),
+      );
+
+      expect(mockStripeInstance.paymentIntents.retrieve).not.toHaveBeenCalled();
+      expect(mockExtraService.refundPartial).toHaveBeenCalledWith(
+        orgId, stripeSessionId, 4900, 'pack_500k', 'rf_normal',
+      );
     });
   });
 });

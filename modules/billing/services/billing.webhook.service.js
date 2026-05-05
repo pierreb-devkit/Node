@@ -12,6 +12,19 @@ import OrganizationRepository from '../../organizations/repositories/organizatio
 import BillingExtraService from './billing.extra.service.js';
 import BillingResetService from './billing.reset.service.js';
 import billingEvents from '../lib/events.js';
+import { SENTINEL_PENDING } from '../lib/billing.constants.js';
+
+/**
+ * Treats a stripeSessionId as "unresolved" when absent, empty, or still the
+ * creation-time sentinel placeholder written before Stripe assigned a real cs_* id.
+ * Stripe Charge metadata is a one-time snapshot copied at charge creation — later
+ * PaymentIntent metadata patches do NOT propagate back, so charge.metadata.stripeSessionId
+ * may permanently carry SENTINEL_PENDING for any charge created during the brief window
+ * between session.create and checkout.session.completed.
+ * @param {string|undefined} id
+ * @returns {boolean}
+ */
+const isUnresolved = (id) => !id || id === SENTINEL_PENDING;
 
 /**
  * Maximum number of handler execution attempts before an event is dead-lettered.
@@ -112,14 +125,14 @@ const withIdempotency = async (event, handler) => {
     }
 
     // Rollback claim so Stripe can retry on a fresh delivery.
-    try {
-      await ProcessedStripeEventRepository.deleteByEventId(eventId);
-    } catch (rollbackErr) {
+    // Swallow rollback errors so the original handler error is always propagated.
+    await ProcessedStripeEventRepository.deleteByEventId(event.id).catch((rollbackErr) => {
       logger.error('[billing.webhook] rollback deleteByEventId failed — event may be stuck', {
-        eventId,
-        error: rollbackErr?.message ?? rollbackErr,
+        eventId: event.id,
+        error: rollbackErr?.message ?? String(rollbackErr),
+        stack: rollbackErr?.stack,
       });
-    }
+    });
     throw err;
   }
 };
@@ -185,6 +198,11 @@ const handleCheckoutCompleted = async (session) => {
  * @description Handle checkout.session.completed for mode='payment' — credit extras pack.
  *       Extracts organizationId, packId, kind from session metadata.
  *       Skips silently if payment_status !== 'paid', kind !== 'extras', or metadata is incomplete.
+ *       Backfills PaymentIntent metadata with the real cs_* session ID so that
+ *       charge.refunded events can correlate the charge back to the correct ledger entry.
+ *       At session creation time stripeSessionId is set to SENTINEL_PENDING (Stripe forbids
+ *       self-reference). Charge.metadata is a one-time snapshot, so the PI patch is best-effort;
+ *       handleChargeRefunded has a backfill resolver as a secondary defence.
  * @param {Object} session - Stripe checkout session object (mode='payment')
  * @returns {Promise<void>}
  */
@@ -203,7 +221,7 @@ const handleCheckoutPaymentCompleted = async (session) => {
 
   // Backfill PaymentIntent metadata with the real session ID so that charge.refunded
   // events can correlate the charge back to this ledger entry.
-  // At session.create time stripeSessionId was set to '__pending__' (Stripe forbids
+  // At session.create time stripeSessionId was set to SENTINEL_PENDING (Stripe forbids
   // self-reference). Propagating the real cs_* ID here ensures charge.metadata carries
   // it when a refund is issued later.
   if (paymentIntentId) {
@@ -215,12 +233,16 @@ const handleCheckoutPaymentCompleted = async (session) => {
             organizationId,
             packId,
             kind: 'extras',
-            stripeSessionId,  // real cs_* ID
+            stripeSessionId,  // real cs_* ID (replaces SENTINEL_PENDING)
           },
         });
       } catch (err) {
-        // Log but don't fail — refund correlation may need fallback path
-        console.warn('[billing.webhook] PaymentIntent metadata update failed:', err.message);
+        // Log but don't fail — refund correlation may use the backfill resolver path
+        logger.warn('[billing.webhook] PaymentIntent metadata update failed', {
+          paymentIntentId,
+          error: err?.message ?? String(err),
+          stack: err?.stack,
+        });
       }
     }
   }
@@ -289,7 +311,10 @@ const handleSubscriptionUpdated = async (subscription, event) => {
         });
       } catch (evtErr) {
         // Listener errors must not disrupt webhook processing — log for traceability
-        console.error('[billing.webhook] plan.changed listener error (non-fatal):', evtErr?.message ?? evtErr);
+        logger.error('[billing.webhook] plan.changed listener error (non-fatal)', {
+          error: evtErr?.message ?? String(evtErr),
+          stack: evtErr?.stack,
+        });
       }
 
       // Plan switch mid-cycle = refresh the active week snapshot to the new plan.
@@ -307,10 +332,10 @@ const handleSubscriptionUpdated = async (subscription, event) => {
         await BillingResetService.forceRotateForPlanChange(organizationId, { preserveUsage: true });
       } catch (err) {
         planChangeResetTriggered = false;
-        console.error(
-          '[billing.webhook] forceRotateForPlanChange failed, falling back to resetWeek:',
-          err?.message ?? err,
-        );
+        logger.error('[billing.webhook] forceRotateForPlanChange failed, falling back to resetWeek', {
+          error: err?.message ?? String(err),
+          stack: err?.stack,
+        });
       }
     }
   }
@@ -328,7 +353,10 @@ const handleSubscriptionUpdated = async (subscription, event) => {
       await BillingResetService.resetWeek(organizationId, newPeriodStart);
     } catch (err) {
       // Log for monitoring — not thrown so webhook processing continues
-      console.error('[billing.webhook] resetWeek failed (non-fatal):', err?.message ?? err);
+      logger.error('[billing.webhook] resetWeek failed (non-fatal)', {
+        error: err?.message ?? String(err),
+        stack: err?.stack,
+      });
     }
   }
 };
@@ -360,7 +388,10 @@ const handleSubscriptionDeleted = async (subscription, event) => {
     await BillingResetService.forceRotateForPlanChange(organizationId, { preserveUsage: false });
   } catch (err) {
     // Log for monitoring — not thrown so webhook processing continues
-    console.error('[billing.webhook] forceRotateForPlanChange on cancel failed (non-fatal):', err?.message ?? err);
+    logger.error('[billing.webhook] forceRotateForPlanChange on cancel failed (non-fatal)', {
+      error: err?.message ?? String(err),
+      stack: err?.stack,
+    });
   }
 };
 
@@ -398,7 +429,10 @@ const handleInvoicePaymentFailed = async (invoice, event) => {
     billingEvents.emit('payment.failed', { organizationId });
   } catch (evtErr) {
     // Listener errors must not disrupt webhook processing — log for traceability
-    console.error('[billing.webhook] payment.failed listener error (non-fatal):', evtErr?.message ?? evtErr);
+    logger.error('[billing.webhook] payment.failed listener error (non-fatal)', {
+      error: evtErr?.message ?? String(evtErr),
+      stack: evtErr?.stack,
+    });
   }
 };
 
@@ -452,6 +486,12 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
  *       Each refund's rf_ id is used as the idempotency key, making webhook replay safe.
  *       Individual entries are silently skipped when: metadata is incomplete, refund amount
  *       is absent/zero, or the refund object has no id.
+ *
+ *       SENTINEL handling: at session.create time stripeSessionId is set to SENTINEL_PENDING
+ *       ('__pending__'). Stripe Charge metadata is a one-time snapshot — even though
+ *       checkout.session.completed patches the PaymentIntent with the real cs_* id,
+ *       charge.metadata.stripeSessionId may permanently carry SENTINEL_PENDING.
+ *       Both absent AND sentinel values trigger the PI backfill resolver path.
  * @param {Object} charge - Stripe charge object
  * @returns {Promise<void>}
  */
@@ -466,8 +506,10 @@ const handleChargeRefunded = async (charge) => {
 
   if (!organizationId || !mongoose.Types.ObjectId.isValid(organizationId)) return;
 
-  // Backfill resolver: if stripeSessionId is missing, fetch the PaymentIntent to find it.
-  if (!stripeSessionId && paymentIntentId) {
+  // Backfill resolver: if stripeSessionId is missing OR carries SENTINEL_PENDING,
+  // fetch the PaymentIntent to find the real session ID patched by checkout.session.completed.
+  // isUnresolved() treats both falsy values and the sentinel string as "unresolved".
+  if (isUnresolved(stripeSessionId) && paymentIntentId) {
     const stripe = getStripe();
     if (stripe) {
       try {
@@ -482,12 +524,17 @@ const handleChargeRefunded = async (charge) => {
           }
         }
       } catch (err) {
-        logger.error('[billing] refund PI fetch failed', { chargeId: charge.id, paymentIntentId, error: err?.message });
+        logger.error('[billing] refund PI fetch failed', {
+          chargeId: charge.id,
+          paymentIntentId,
+          error: err?.message ?? String(err),
+          stack: err?.stack,
+        });
       }
     }
   }
 
-  if (!stripeSessionId) {
+  if (isUnresolved(stripeSessionId)) {
     // Could not resolve stripeSessionId from charge or PaymentIntent metadata.
     // Emit alert event and log for manual reconciliation.
     const refundAmount = charge.refunds?.data?.reduce((sum, r) => sum + (r.amount ?? 0), 0) ?? 0;
@@ -499,7 +546,10 @@ const handleChargeRefunded = async (charge) => {
     try {
       billingEvents.emit('billing.refund.unresolved', { chargeId: charge.id, paymentIntentId, refundAmount });
     } catch (evtErr) {
-      console.error('[billing.webhook] billing.refund.unresolved listener error (non-fatal):', evtErr?.message ?? evtErr);
+      logger.error('[billing.webhook] billing.refund.unresolved listener error (non-fatal)', {
+        error: evtErr?.message ?? String(evtErr),
+        stack: evtErr?.stack,
+      });
     }
     return;
   }
