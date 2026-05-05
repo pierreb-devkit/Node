@@ -54,7 +54,7 @@ const get = (id) => {
  */
 const updateById = (orgId, fields) => {
   if (!mongoose.Types.ObjectId.isValid(orgId)) return Promise.resolve(null);
-  return Organization.findByIdAndUpdate(orgId, { $set: fields }, { new: true, runValidators: true })
+  return Organization.findByIdAndUpdate(orgId, { $set: fields }, { returnDocument: 'after', runValidators: true })
     .populate(defaultPopulate)
     .exec();
 };

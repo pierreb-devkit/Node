@@ -136,19 +136,17 @@ const get = async (id) => {
 /**
  * @function update
  * @description Service to update an existing organization using a sparse $set patch.
- *   Billing-managed fields (plan, stripeCustomerId, stripeSubscriptionId) are stripped
- *   defensively — they are owned exclusively by the Stripe webhook path and must never
- *   flow through this settings endpoint.
+ *   The patch is constructed via an explicit allow-list so billing-owned fields (plan)
+ *   are never included — they are written exclusively by the Stripe webhook path
+ *   (setPlan / billing crons) and must never flow through this settings endpoint.
  * @param {Object} organization - The existing organization Mongoose document (for slug validation).
  * @param {Object} body - Zod-validated request body (already parsed by model.isValid middleware).
  * @returns {Promise<Object>} A promise resolving to the updated organization.
  */
 const update = async (organization, body) => {
-  // Billing-owned fields — strip defensively even if present in the Zod-parsed body.
-  // These are written exclusively by the Stripe webhook path (setPlan / billing crons).
-  const BILLING_FIELDS = ['plan', 'stripeCustomerId', 'stripeSubscriptionId'];
-
-  // Build sparse patch from validated body, excluding billing-owned fields.
+  // Build sparse patch from validated body via explicit allow-list.
+  // Billing-owned fields (plan) are intentionally absent — they are written exclusively
+  // by the Stripe webhook path (setPlan / billing crons).
   const patch = {};
   if (body.name !== undefined) patch.name = body.name;
   if (body.description !== undefined) patch.description = body.description;
@@ -163,12 +161,6 @@ const update = async (organization, body) => {
       }
     }
     patch.slug = body.slug;
-  }
-
-  // Defensive: remove billing-owned fields in case body was constructed outside the
-  // standard route (e.g. admin scripts, future refactors).
-  for (const field of BILLING_FIELDS) {
-    delete patch[field];
   }
 
   const orgId = organization._id || organization.id;

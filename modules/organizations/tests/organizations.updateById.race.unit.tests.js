@@ -62,7 +62,7 @@ describe('OrganizationsRepository.updateById (#3605):', () => {
     expect(mockModel.findByIdAndUpdate).toHaveBeenCalledWith(
       orgId,
       { $set: { name: 'New name' } },
-      expect.objectContaining({ new: true, runValidators: true }),
+      expect.objectContaining({ returnDocument: 'after', runValidators: true }),
     );
     expect(result).toEqual(updatedOrg);
   });
@@ -190,19 +190,24 @@ describe('OrganizationsCrudService.update — race-condition invariant (#3605):'
   );
 
   test(
-    'billing-owned fields in body are stripped defensively — plan never flows through update (#3605)',
+    'plan is excluded from patch by allow-list construction — billing fields never flow through update (#3605)',
     async () => {
       const { default: OrgCrudService } = await import('../services/organizations.crud.service.js');
 
       const organization = { _id: orgId, id: orgId, name: 'Old name', plan: 'free', slug: 'old-org', domain: '' };
 
-      // Attempt to pass plan via body (e.g. admin script or future refactor)
+      // Even when body contains plan, the allow-list in update() only copies known
+      // settable fields (name, description, domain, slug) — plan is structurally absent.
       await OrgCrudService.update(organization, { name: 'New name', plan: 'enterprise' });
 
       const [, patch] = mockUpdateById.mock.calls[0];
+      // plan must not appear in the patch — it is excluded by allow-list construction
       expect(patch).not.toHaveProperty('plan');
-      expect(patch).not.toHaveProperty('stripeCustomerId');
-      expect(patch).not.toHaveProperty('stripeSubscriptionId');
+      // Only allow-listed fields may be present
+      const allowedKeys = new Set(['name', 'description', 'domain', 'slug']);
+      for (const key of Object.keys(patch)) {
+        expect(allowedKeys.has(key)).toBe(true);
+      }
     },
   );
 });
