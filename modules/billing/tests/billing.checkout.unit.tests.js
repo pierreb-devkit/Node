@@ -233,20 +233,19 @@ describe('Billing service unit tests:', () => {
 
       expect(url).toBe('https://checkout.stripe.com/session_123');
       expect(mockStripeInstance.customers.create).not.toHaveBeenCalled();
-      expect(mockStripeInstance.checkout.sessions.create).toHaveBeenCalledWith(
-        {
-          customer: 'cus_existing',
-          mode: 'subscription',
-          line_items: [{ price: 'price_starter_m', quantity: 1 }],
-          success_url: 'http://ok',
-          cancel_url: 'http://cancel',
-          metadata: {
-            organizationId: orgId,
-            plan: 'starter',
-          },
+      // No idempotencyKey on checkout sessions — they're ephemeral (24h TTL),
+      // a static key locks abandoned-then-retried users into expired sessions.
+      expect(mockStripeInstance.checkout.sessions.create).toHaveBeenCalledWith({
+        customer: 'cus_existing',
+        mode: 'subscription',
+        line_items: [{ price: 'price_starter_m', quantity: 1 }],
+        success_url: 'http://ok',
+        cancel_url: 'http://cancel',
+        metadata: {
+          organizationId: orgId,
+          plan: 'starter',
         },
-        { idempotencyKey: `sub_checkout_${orgId}_price_starter_m` },
-      );
+      });
     });
 
     test('should NOT include automatic_tax when config.stripe.automaticTax is false', async () => {

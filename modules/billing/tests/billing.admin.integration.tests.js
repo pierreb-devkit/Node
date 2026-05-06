@@ -20,7 +20,7 @@ describe('Billing admin integration tests:', () => {
     const routes = new Map();
     const app = {
       route: jest.fn((path) => {
-        const entry = { all: [], get: [], post: [] };
+        const entry = { all: [], get: [], post: [], patch: [] };
         routes.set(path, entry);
         const routeBuilder = {
           all: (...handlers) => {
@@ -33,6 +33,10 @@ describe('Billing admin integration tests:', () => {
           },
           post: (...handlers) => {
             entry.post.push(...handlers);
+            return routeBuilder;
+          },
+          patch: (...handlers) => {
+            entry.patch.push(...handlers);
             return routeBuilder;
           },
         };
@@ -334,8 +338,8 @@ describe('Billing admin integration tests:', () => {
     expect(res.status).toHaveBeenCalledWith(422);
   });
 
-  test('/api/admin/billing/plans/bump route no longer registered (endpoint removed)', async () => {
+  test('/api/admin/billing/plans/bump route is registered (PATCH for adminBumpPlan)', async () => {
     const routes = await buildRoutes();
-    expect(routes.has('/api/admin/billing/plans/bump')).toBe(false);
+    expect(routes.has('/api/admin/billing/plans/bump')).toBe(true);
   });
 });

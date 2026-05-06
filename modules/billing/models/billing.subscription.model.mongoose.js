@@ -104,6 +104,25 @@ const SubscriptionMongoose = new Schema(
       type: String,
       default: null,
     },
+
+    // ── Admin override audit trail ───────────────────────────────────────────
+    /**
+     * Timestamp of the last admin-initiated plan change (via adminUpdatePlanOnly).
+     * Distinct from updatedAt (touched by every webhook). Used by audit + ops UI to
+     * surface when a subscription's plan was overridden manually.
+     */
+    adminUpdatedAt: {
+      type: Date,
+      default: null,
+    },
+    /**
+     * ObjectId of the admin user who triggered the last plan override.
+     */
+    adminUpdatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
   },
   {
     timestamps: true,

@@ -107,9 +107,11 @@ describe('Billing webhook checkout unit tests:', () => {
     test('mode=subscription routes to handleCheckoutCompleted (subscription update)', async () => {
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByOrganization.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
+      mockSubscriptionRepository.updateIfEventNewer.mockResolvedValue({ _id: subId });
 
       await BillingWebhookService.handleCheckoutSessionCompleted({
+        id: 'evt_co_1',
+        created: 1700000010,
         data: {
           object: {
             id: stripeSessionId,
@@ -121,8 +123,12 @@ describe('Billing webhook checkout unit tests:', () => {
         },
       });
 
-      expect(mockSubscriptionRepository.update).toHaveBeenCalledWith(
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
+        subId,
+        1700000010,
+        'evt_co_1',
         expect.objectContaining({ plan: 'pro', status: 'active' }),
+        'subscription',
       );
       expect(mockExtraService.creditPack).not.toHaveBeenCalled();
     });
@@ -292,37 +298,51 @@ describe('Billing webhook checkout unit tests:', () => {
   });
 
   describe('handleCheckoutCompleted (mode=subscription)', () => {
-    test('should update existing subscription', async () => {
+    const checkoutEvent = { id: 'evt_co_2', created: 1700000020, data: {} };
+
+    test('should update existing subscription via updateIfEventNewer', async () => {
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByOrganization.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
+      mockSubscriptionRepository.updateIfEventNewer.mockResolvedValue({ _id: subId });
 
-      await BillingWebhookService.handleCheckoutCompleted({
-        customer: 'cus_123',
-        subscription: 'sub_456',
-        metadata: { organizationId: orgId, plan: 'pro' },
-      });
+      await BillingWebhookService.handleCheckoutCompleted(
+        {
+          customer: 'cus_123',
+          subscription: 'sub_456',
+          metadata: { organizationId: orgId, plan: 'pro' },
+        },
+        checkoutEvent,
+      );
 
-      expect(mockSubscriptionRepository.update).toHaveBeenCalledWith(
-        expect.objectContaining({ _id: subId, plan: 'pro', status: 'active' }),
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
+        subId,
+        1700000020,
+        'evt_co_2',
+        expect.objectContaining({ plan: 'pro', status: 'active' }),
+        'subscription',
       );
     });
 
-    test('should create subscription when none exists', async () => {
+    test('should create subscription with seeded markers when none exists', async () => {
       mockSubscriptionRepository.findByOrganization.mockResolvedValue(null);
       mockSubscriptionRepository.create.mockResolvedValue({});
 
-      await BillingWebhookService.handleCheckoutCompleted({
-        customer: 'cus_123',
-        subscription: 'sub_456',
-        metadata: { organizationId: orgId, plan: 'starter' },
-      });
+      await BillingWebhookService.handleCheckoutCompleted(
+        {
+          customer: 'cus_123',
+          subscription: 'sub_456',
+          metadata: { organizationId: orgId, plan: 'starter' },
+        },
+        checkoutEvent,
+      );
 
       expect(mockSubscriptionRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({
           organization: orgId,
           plan: 'starter',
           status: 'active',
+          lastSubscriptionEventCreatedAt: 1700000020,
+          lastSubscriptionEventId: 'evt_co_2',
         }),
       );
     });

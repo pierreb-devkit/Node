@@ -156,7 +156,7 @@ describe('BillingSubscriptionRepository unit tests:', () => {
   // ── updateIfEventNewer ────────────────────────────────────────────────────
 
   describe('updateIfEventNewer', () => {
-    test('updates when stripeEventCreatedAt is null (first event)', async () => {
+    test('updates when lastSubscriptionEventCreatedAt is null (first event)', async () => {
       const updated = { _id: subId, status: 'canceled', lastSubscriptionEventCreatedAt: 1000, lastSubscriptionEventId: 'evt_abc' };
       const populateMock = jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(updated) });
       mockModel.findOneAndUpdate.mockReturnValue({ populate: populateMock });
@@ -186,9 +186,6 @@ describe('BillingSubscriptionRepository unit tests:', () => {
             status: 'canceled',
             lastSubscriptionEventCreatedAt: 1000,
             lastSubscriptionEventId: 'evt_abc',
-            // Legacy fields kept in sync for back-compat
-            stripeEventCreatedAt: 1000,
-            stripeEventId: 'evt_abc',
           },
         },
         { returnDocument: 'after', runValidators: true },

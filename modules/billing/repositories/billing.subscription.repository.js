@@ -271,6 +271,41 @@ const updateIfEventNewer = (id, eventCreatedAt, eventId, fields, family = 'subsc
     .exec();
 };
 
+/**
+ * @function adminUpdatePlanOnly
+ * @description Restricted admin update — sets ONLY `plan` and `adminUpdatedAt`. Never touches
+ *              `status`, `stripeCustomerId`, `stripeSubscriptionId`, `currentPeriodStart`, or
+ *              the per-family event-ordering markers. Webhook handlers retain exclusive write
+ *              authority on those fields via `updateIfEventNewer`.
+ *
+ *              Why this restriction matters: a free `update()` call with `{ plan, status }` from
+ *              an admin path would overwrite Stripe-driven status (active/past_due/etc.) with
+ *              whatever the admin sent, breaking dunning + access control. Splitting the surface
+ *              forces admin overrides to plan-only territory.
+ *
+ * @param {string} id - Subscription ObjectId (string).
+ * @param {string} planId - The new plan identifier (must be in config.billing.plans enum).
+ * @param {string} adminUserId - The admin user ObjectId (string) who triggered the bump (for audit).
+ * @returns {Promise<Object|null>} Updated subscription doc, or null if id is invalid.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const adminUpdatePlanOnly = (id, planId, adminUserId) => {
+  if (!id || !mongoose.Types.ObjectId.isValid(id)) return null;
+  return Subscription.findByIdAndUpdate(
+    id,
+    {
+      $set: {
+        plan: planId,
+        adminUpdatedAt: new Date(),
+        adminUpdatedBy: adminUserId,
+      },
+    },
+    { returnDocument: 'after', runValidators: true },
+  )
+    .populate(defaultPopulate)
+    .exec();
+};
+
 export default {
   list,
   create,
@@ -286,4 +321,5 @@ export default {
   findStaleDunning,
   markUnpaid,
   updateIfEventNewer,
+  adminUpdatePlanOnly,
 };

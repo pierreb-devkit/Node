@@ -58,9 +58,9 @@ describe('updateIfEventNewer — per-family guard:', () => {
     // Write targets the subscription-family field
     expect(update.$set.lastSubscriptionEventCreatedAt).toBe(100);
     expect(update.$set.lastSubscriptionEventId).toBe('evt_1');
-    // Legacy fields also updated for back-compat
-    expect(update.$set.stripeEventCreatedAt).toBe(100);
-    expect(update.$set.stripeEventId).toBe('evt_1');
+    // Legacy fields no longer written — migration $unset them
+    expect(update.$set.stripeEventCreatedAt).toBeUndefined();
+    expect(update.$set.stripeEventId).toBeUndefined();
     // Invoice-family fields not touched
     expect(update.$set.lastInvoiceEventCreatedAt).toBeUndefined();
   });

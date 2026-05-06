@@ -78,6 +78,9 @@ describe('Billing webhook service unit tests:', () => {
   });
 
   describe('handleCheckoutCompleted', () => {
+    // Synthetic event passed to handleCheckoutCompleted (second arg) for event-ordering markers.
+    const makeCheckoutEvent = () => ({ id: 'evt_checkout_1', created: 1700000050, data: {} });
+
     test('should create new subscription when none exists', async () => {
       mockSubscriptionRepository.findByOrganization.mockResolvedValue(null);
       mockSubscriptionRepository.create.mockResolvedValue({});
@@ -85,42 +88,58 @@ describe('Billing webhook service unit tests:', () => {
       const mod = await import('../services/billing.webhook.service.js');
       BillingWebhookService = mod.default;
 
-      await BillingWebhookService.handleCheckoutCompleted({
-        customer: 'cus_123',
-        subscription: 'sub_456',
-        metadata: { organizationId: orgId, plan: 'pro' },
-      });
+      await BillingWebhookService.handleCheckoutCompleted(
+        {
+          customer: 'cus_123',
+          subscription: 'sub_456',
+          metadata: { organizationId: orgId, plan: 'pro' },
+        },
+        makeCheckoutEvent(),
+      );
 
-      expect(mockSubscriptionRepository.create).toHaveBeenCalledWith({
-        organization: orgId,
-        stripeCustomerId: 'cus_123',
-        stripeSubscriptionId: 'sub_456',
-        plan: 'pro',
-        status: 'active',
-      });
+      expect(mockSubscriptionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          organization: orgId,
+          stripeCustomerId: 'cus_123',
+          stripeSubscriptionId: 'sub_456',
+          plan: 'pro',
+          // Status fetched from Stripe; falls back to 'active' when getStripe() returns null in tests.
+          status: 'active',
+          lastSubscriptionEventCreatedAt: 1700000050,
+          lastSubscriptionEventId: 'evt_checkout_1',
+        }),
+      );
       expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
     });
 
-    test('should update existing subscription on checkout', async () => {
+    test('should update existing subscription on checkout via updateIfEventNewer', async () => {
       mockSubscriptionRepository.findByOrganization.mockResolvedValue({ _id: subId });
-      mockSubscriptionRepository.update.mockResolvedValue({});
+      mockSubscriptionRepository.updateIfEventNewer.mockResolvedValue({ _id: subId });
 
       const mod = await import('../services/billing.webhook.service.js');
       BillingWebhookService = mod.default;
 
-      await BillingWebhookService.handleCheckoutCompleted({
-        customer: 'cus_123',
-        subscription: 'sub_456',
-        metadata: { organizationId: orgId, plan: 'starter' },
-      });
+      await BillingWebhookService.handleCheckoutCompleted(
+        {
+          customer: 'cus_123',
+          subscription: 'sub_456',
+          metadata: { organizationId: orgId, plan: 'starter' },
+        },
+        makeCheckoutEvent(),
+      );
 
-      expect(mockSubscriptionRepository.update).toHaveBeenCalledWith({
-        _id: subId,
-        stripeCustomerId: 'cus_123',
-        stripeSubscriptionId: 'sub_456',
-        plan: 'starter',
-        status: 'active',
-      });
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
+        subId,
+        1700000050,
+        'evt_checkout_1',
+        expect.objectContaining({
+          stripeCustomerId: 'cus_123',
+          stripeSubscriptionId: 'sub_456',
+          plan: 'starter',
+          status: 'active',
+        }),
+        'subscription',
+      );
     });
 
     test('should default plan to free when metadata plan is missing', async () => {
@@ -130,11 +149,14 @@ describe('Billing webhook service unit tests:', () => {
       const mod = await import('../services/billing.webhook.service.js');
       BillingWebhookService = mod.default;
 
-      await BillingWebhookService.handleCheckoutCompleted({
-        customer: 'cus_123',
-        subscription: 'sub_456',
-        metadata: { organizationId: orgId },
-      });
+      await BillingWebhookService.handleCheckoutCompleted(
+        {
+          customer: 'cus_123',
+          subscription: 'sub_456',
+          metadata: { organizationId: orgId },
+        },
+        makeCheckoutEvent(),
+      );
 
       expect(mockSubscriptionRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({ plan: 'free' }),
@@ -147,11 +169,14 @@ describe('Billing webhook service unit tests:', () => {
       const mod = await import('../services/billing.webhook.service.js');
       BillingWebhookService = mod.default;
 
-      await BillingWebhookService.handleCheckoutCompleted({
-        customer: 'cus_unknown',
-        subscription: 'sub_456',
-        metadata: {},
-      });
+      await BillingWebhookService.handleCheckoutCompleted(
+        {
+          customer: 'cus_unknown',
+          subscription: 'sub_456',
+          metadata: {},
+        },
+        makeCheckoutEvent(),
+      );
 
       expect(mockSubscriptionRepository.findByStripeCustomerId).toHaveBeenCalledWith('cus_unknown');
       expect(mockSubscriptionRepository.findByOrganization).not.toHaveBeenCalled();
@@ -165,11 +190,14 @@ describe('Billing webhook service unit tests:', () => {
       const mod = await import('../services/billing.webhook.service.js');
       BillingWebhookService = mod.default;
 
-      await BillingWebhookService.handleCheckoutCompleted({
-        customer: 'cus_123',
-        subscription: 'sub_456',
-        metadata: {},
-      });
+      await BillingWebhookService.handleCheckoutCompleted(
+        {
+          customer: 'cus_123',
+          subscription: 'sub_456',
+          metadata: {},
+        },
+        makeCheckoutEvent(),
+      );
 
       expect(mockSubscriptionRepository.findByStripeCustomerId).toHaveBeenCalledWith('cus_123');
       expect(mockSubscriptionRepository.create).toHaveBeenCalledWith(
