@@ -70,19 +70,29 @@ describe('Billing meter lifecycle integration tests:', () => {
   });
 
   test('plan.changed webhook updates active week quota snapshot mid-week', async () => {
+    // Pick two distinct plan ids from the project's enum so the test runs on any downstream
+    // (upstream defaults expose no plans → fall back to legacy 'starter'/'pro').
+    const plans = Array.isArray(config.billing.plans) && config.billing.plans.length >= 2
+      ? config.billing.plans
+      : ['starter', 'pro'];
+    const initialPlan = plans[0];
+    const upgradePlan = plans[plans.length - 1];
+    const initialVersion = `${initialPlan}-v1`;
+    const upgradeVersion = `${upgradePlan}-v2`;
+
     config.billing.planDefinitions = [
-      { planId: 'starter', version: 'starter-v1', meterQuota: 100, ratios: { scrap: 1 } },
-      { planId: 'pro', version: 'pro-v2', meterQuota: 1000, ratios: { scrap: 1 } },
+      { planId: initialPlan, version: initialVersion, meterQuota: 100, ratios: { scrap: 1 } },
+      { planId: upgradePlan, version: upgradeVersion, meterQuota: 1000, ratios: { scrap: 1 } },
     ];
 
     const organizationId = new mongoose.Types.ObjectId();
     const weekKey = isoWeekKey(new Date());
-    await Organization.create({ _id: organizationId, name: 'Lifecycle Org', slug: 'lifecycle-org', plan: 'starter' });
+    await Organization.create({ _id: organizationId, name: 'Lifecycle Org', slug: 'lifecycle-org', plan: initialPlan });
     await Subscription.create({
       organization: organizationId,
       stripeCustomerId: 'cus_lifecycle',
       stripeSubscriptionId: 'sub_lifecycle',
-      plan: 'starter',
+      plan: initialPlan,
       status: 'active',
     });
     await BillingUsage.create({
@@ -92,7 +102,7 @@ describe('Billing meter lifecycle integration tests:', () => {
       counters: {},
       meterUsed: 25,
       meterQuota: 100,
-      planVersion: 'starter-v1',
+      planVersion: initialVersion,
       meterBreakdown: { scrap: 25 },
       consumedAttributionKeys: [],
     });
@@ -104,12 +114,12 @@ describe('Billing meter lifecycle integration tests:', () => {
         current_period_end: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
         current_period_start: Math.floor(Date.now() / 1000) - 24 * 60 * 60,
         cancel_at_period_end: false,
-        items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
+        items: { data: [{ price: { metadata: { planId: upgradePlan } } }] },
       },
       {
         data: {
           previous_attributes: {
-            items: { data: [{ price: { metadata: { planId: 'starter' } } }] },
+            items: { data: [{ price: { metadata: { planId: initialPlan } } }] },
           },
         },
       },
@@ -117,7 +127,7 @@ describe('Billing meter lifecycle integration tests:', () => {
 
     const usage = await BillingUsage.findOne({ organizationId, weekKey }).lean();
     expect(usage.meterQuota).toBe(1000);
-    expect(usage.planVersion).toBe('pro-v2');
+    expect(usage.planVersion).toBe(upgradeVersion);
     expect(usage.meterUsed).toBe(25);
     expect(usage.meterBreakdown).toEqual({ scrap: 25 });
   });
