@@ -260,12 +260,12 @@ describe('BillingAdminService unit tests:', () => {
       await expect(BillingAdminService.replayWebhookEvent('evt_test_001')).rejects.toMatchObject({ status: 502 });
     });
 
-    test('continues dispatch even when deleteByEventId throws (doc absent is non-fatal)', async () => {
-      mockProcessedStripeEventRepository.deleteByEventId.mockRejectedValue(new Error('not found'));
+    test('propagates deleteByEventId infrastructure errors (not swallowed)', async () => {
+      // deleteByEventId returns { deleted: false } for missing docs — never throws.
+      // If it does throw (DB connection loss, etc.) the error must propagate, not be swallowed.
+      mockProcessedStripeEventRepository.deleteByEventId.mockRejectedValue(new Error('DB connection lost'));
 
-      // Should not throw — should still dispatch
-      const result = await BillingAdminService.replayWebhookEvent('evt_test_001');
-      expect(result).toMatchObject({ eventId: 'evt_test_001' });
+      await expect(BillingAdminService.replayWebhookEvent('evt_test_001')).rejects.toThrow('DB connection lost');
     });
 
     test('skips unknown event types gracefully (returns skipped sentinel)', async () => {

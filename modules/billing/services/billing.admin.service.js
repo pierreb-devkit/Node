@@ -99,6 +99,8 @@ const syncOrgFromStripe = async (orgId) => {
 
   const previous = { plan: existing.plan, status: existing.status };
 
+  // Intentional: full Stripe-truth sync — writes status AND plan directly.
+  // adminUpdatePlanOnly is for the UI plan-bump flow only (audit trail, no Stripe re-sync).
   const updated = await SubscriptionRepository.update({
     _id: existing._id,
     plan: newPlan,
@@ -149,11 +151,9 @@ const replayWebhookEvent = async (eventId) => {
     );
   }
 
-  // Clear idempotency record so the handler can re-run (handles both normal + dead-letter states)
-  await ProcessedStripeEventRepository.deleteByEventId(eventId).catch(() => {
-    // Non-fatal: doc may not exist (e.g. never processed). Log and continue.
-    logger.warn('[billing.admin] replayWebhookEvent — deleteByEventId skipped (not found)', { eventId });
-  });
+  // Clear idempotency record so the handler can re-run (handles both normal + dead-letter states).
+  // deleteByEventId returns { deleted: false } when not found — never throws — so no catch needed.
+  await ProcessedStripeEventRepository.deleteByEventId(eventId);
 
   // Re-dispatch via the same switch used by the webhook controller
   const result = await dispatchWebhookEvent(event);

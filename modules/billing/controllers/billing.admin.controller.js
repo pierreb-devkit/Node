@@ -4,6 +4,7 @@
 import responses from '../../../lib/helpers/responses.js';
 import getStripe from '../lib/stripe.js';
 import BillingAdminService from '../services/billing.admin.service.js';
+import { AdminDeadLettersQuery } from '../models/billing.subscription.schema.js';
 
 /**
  * @desc Admin endpoint to trigger a Stripe refund for a charge.
@@ -212,7 +213,13 @@ const adminReplayWebhook = async (req, res) => {
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const adminListDeadLetters = async (req, res) => {
   try {
-    const { page, limit } = req.query;
+    const parsed = AdminDeadLettersQuery.safeParse(req.query);
+    if (!parsed.success) {
+      return responses.error(res, 422, 'Unprocessable Entity', 'Invalid query parameters')(
+        parsed.error,
+      );
+    }
+    const { page, limit } = parsed.data;
     const result = await BillingAdminService.listDeadLetters({ page, limit });
     return responses.success(res, 'dead letters')(result);
   } catch (err) {
