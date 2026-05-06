@@ -24,8 +24,6 @@ const baseShape = {
   currentPeriodStart: z.coerce.date().nullable().optional(),
   pastDueSince: z.coerce.date().nullable().optional(),
   lastResetAt: z.coerce.date().nullable().optional(),
-  stripeEventCreatedAt: z.number().int().nullable().optional(),
-  stripeEventId: z.string().nullable().optional(),
   // Per-family event ordering guards
   lastSubscriptionEventCreatedAt: z.number().int().nullable().optional(),
   lastSubscriptionEventId: z.string().nullable().optional(),

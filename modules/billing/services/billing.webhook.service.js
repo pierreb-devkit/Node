@@ -156,16 +156,22 @@ const handleCheckoutSessionCompleted = async (event) => {
   if (session.mode === 'payment') {
     return handleCheckoutPaymentCompleted(session);
   }
-  return handleCheckoutCompleted(session);
+  return handleCheckoutCompleted(session, event);
 };
 
 /**
- * @description Handle checkout.session.completed for mode='subscription' — create or update subscription
+ * @description Handle checkout.session.completed for mode='subscription' — create or update subscription.
+ *              - Fetches real subscription status from Stripe (avoids hardcoding 'active' which is wrong
+ *                for trialing subscriptions).
+ *              - Uses updateIfEventNewer for existing rows so concurrent webhooks/admin updates don't race.
+ *              - On race with subscription.updated arriving first, that handler returns early because
+ *                the row doesn't exist yet, then checkout creates the row with markers seeded.
  * @param {Object} session - Stripe checkout session object
+ * @param {Object} event - Full Stripe event (for event-ordering guard)
  * @returns {Promise<void>}
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const handleCheckoutCompleted = async (session) => {
+const handleCheckoutCompleted = async (session, event) => {
   const { customer: stripeCustomerId, subscription: stripeSubscriptionId, metadata } = session;
   let organizationId = metadata?.organizationId;
   const plan = validatePlan(metadata?.plan) || 'free';
@@ -177,23 +183,60 @@ const handleCheckoutCompleted = async (session) => {
   }
 
   if (!organizationId || !mongoose.Types.ObjectId.isValid(organizationId)) return;
+  if (!stripeSubscriptionId) {
+    logger.warn('[billing.webhook] checkout.session.completed in mode=subscription without subscription id', {
+      sessionId: session?.id,
+      organizationId,
+    });
+    return;
+  }
+
+  // Fetch real status from Stripe — never assume 'active' (could be 'trialing', 'incomplete', etc.)
+  let realStatus = 'active';
+  const stripe = getStripe();
+  if (stripe) {
+    try {
+      const sub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+      realStatus = sub?.status ?? 'active';
+    } catch (err) {
+      logger.error('[billing.webhook] checkout.session.completed — subscription retrieve failed, falling back to active', {
+        stripeSubscriptionId,
+        error: err?.message ?? String(err),
+      });
+    }
+  }
 
   const existing = await SubscriptionRepository.findByOrganization(organizationId);
   if (existing) {
-    await SubscriptionRepository.update({
-      _id: existing._id,
+    // Existing row → use event-ordering guard. Prevents a stale checkout event arriving after
+    // a fresh subscription.updated from overwriting state.
+    const fields = {
       stripeCustomerId,
       stripeSubscriptionId,
       plan,
-      status: 'active',
-    });
+      status: realStatus,
+    };
+    const updated = await SubscriptionRepository.updateIfEventNewer(
+      String(existing._id),
+      event.created,
+      event.id,
+      fields,
+      'subscription',
+    );
+    if (!updated) {
+      logger.info('[billing.webhook] skipped stale checkout.session.completed', { eventId: event.id });
+      return;
+    }
   } else {
+    // New row → create with markers seeded so subsequent stale events are rejected.
     await SubscriptionRepository.create({
       organization: organizationId,
       stripeCustomerId,
       stripeSubscriptionId,
       plan,
-      status: 'active',
+      status: realStatus,
+      lastSubscriptionEventCreatedAt: event.created,
+      lastSubscriptionEventId: event.id,
     });
   }
 

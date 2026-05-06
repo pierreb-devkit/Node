@@ -222,8 +222,6 @@ const markUnpaid = (id, threshold) => {
  *              The `family` parameter scopes the event-ordering guard to either the
  *              'subscription' family (customer.subscription.*) or the 'invoice' family
  *              (invoice.*).  Same-second cross-family deliveries no longer cancel each other.
- *              Falls back to legacy stripeEventCreatedAt/stripeEventId for back-compat when
- *              per-family fields are not yet populated (gradual migration — no down-time).
  *
  *              Returns null when the guard prevents the write (stale event).
  * @param {string} id - The subscription ObjectId (string).
@@ -262,9 +260,9 @@ const updateIfEventNewer = (id, eventCreatedAt, eventId, fields, family = 'subsc
         ...fields,
         [createdAtField]: eventCreatedAt,
         [eventIdField]: eventId,
-        // Keep legacy fields in sync for back-compat with existing queries / reports
-        stripeEventCreatedAt: eventCreatedAt,
-        stripeEventId: eventId,
+        // Legacy fields stripeEventCreatedAt/stripeEventId are no longer written.
+        // The migration in trawl_node $unset them post-deploy so docs converge to
+        // per-family markers only. Reading the legacy fields anywhere is dead surface.
       },
     },
     { returnDocument: 'after', runValidators: true },
