@@ -3,6 +3,8 @@
  */
 import responses from '../../../lib/helpers/responses.js';
 import getStripe from '../lib/stripe.js';
+import BillingAdminService from '../services/billing.admin.service.js';
+import { AdminDeadLettersQuery } from '../models/billing.subscription.schema.js';
 
 /**
  * @desc Admin endpoint to trigger a Stripe refund for a charge.
@@ -52,7 +54,11 @@ const adminRefundCharge = async (req, res) => {
     const refund = await stripe.refunds.create(params, { idempotencyKey });
     responses.success(res, 'billing refund created')(refund);
   } catch (err) {
-    const status = err.message?.startsWith('invalid argument') ? 422 : 502;
+    // Stripe invalid_request_error (e.g. refund > original amount) → surface as 422.
+    // Other Stripe errors (network, auth) → 502.
+    const isInvalidArg = err.message?.startsWith('invalid argument');
+    const isStripeInvalidRequest = err.type === 'StripeInvalidRequestError' || err.code === 'charge_already_refunded' || err.type === 'invalid_request_error';
+    const status = isInvalidArg || isStripeInvalidRequest ? 422 : 502;
     const title = status === 422 ? 'Unprocessable Entity' : 'Bad Gateway';
     responses.error(res, status, title, 'Failed to refund charge')(err);
   }
@@ -137,7 +143,138 @@ const adminBumpPlan = async (req, res) => {
   }
 };
 
+/**
+ * @desc GET /api/admin/billing/customer/:orgId
+ *       Return Stripe customer state + DB subscription side-by-side.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
+const adminGetCustomerStatus = async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const result = await BillingAdminService.getCustomerStatus(orgId);
+    return responses.success(res, 'customer status')(result);
+  } catch (err) {
+    const status = err.status ?? 500;
+    const title = status === 404 ? 'Not Found' : status === 422 ? 'Unprocessable Entity' : status === 502 ? 'Bad Gateway' : 'Internal Server Error';
+    return responses.error(res, status, title, 'Failed to fetch customer status')(err);
+  }
+};
+
+/**
+ * @desc POST /api/admin/billing/sync/:orgId
+ *       Force Stripe→DB sync for an organization's subscription.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
+const adminSyncFromStripe = async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const result = await BillingAdminService.syncOrgFromStripe(orgId);
+    return responses.success(res, 'subscription synced from Stripe')(result);
+  } catch (err) {
+    const status = err.status ?? 500;
+    const title = status === 404 ? 'Not Found' : status === 422 ? 'Unprocessable Entity' : status === 502 ? 'Bad Gateway' : 'Internal Server Error';
+    return responses.error(res, status, title, 'Failed to sync from Stripe')(err);
+  }
+};
+
+/**
+ * @desc POST /api/admin/billing/webhook/replay
+ *       Re-fetch a Stripe event and re-dispatch it through webhook handlers.
+ * @param {Object} req - Express request object (body: { eventId })
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
+const adminReplayWebhook = async (req, res) => {
+  try {
+    const { eventId } = req.body;
+    const result = await BillingAdminService.replayWebhookEvent(eventId);
+    return responses.success(res, 'webhook event replayed')(result);
+  } catch (err) {
+    const status = err.status ?? 500;
+    const title = status === 404 ? 'Not Found' : status === 422 ? 'Unprocessable Entity' : status === 502 ? 'Bad Gateway' : 'Internal Server Error';
+    return responses.error(res, status, title, 'Failed to replay webhook event')(err);
+  }
+};
+
+/**
+ * @desc GET /api/admin/billing/dead-letters
+ *       Paginated list of dead-lettered processed Stripe events.
+ * @param {Object} req - Express request object (query: { page, limit })
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
+const adminListDeadLetters = async (req, res) => {
+  try {
+    const parsed = AdminDeadLettersQuery.safeParse(req.query);
+    if (!parsed.success) {
+      return responses.error(res, 422, 'Unprocessable Entity', 'Invalid query parameters')(
+        parsed.error,
+      );
+    }
+    const { page, limit } = parsed.data;
+    const result = await BillingAdminService.listDeadLetters({ page, limit });
+    return responses.success(res, 'dead letters')(result);
+  } catch (err) {
+    return responses.error(res, 500, 'Internal Server Error', 'Failed to list dead letters')(err);
+  }
+};
+
+/**
+ * @desc DELETE /api/admin/billing/dead-letters/:eventId
+ *       Permanently purge a dead-lettered event after manual investigation.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
+const adminPurgeDeadLetter = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const result = await BillingAdminService.purgeDeadLetter(eventId);
+    return responses.success(res, 'dead letter purged')(result);
+  } catch (err) {
+    const status = err.status ?? 500;
+    const title = status === 404 ? 'Not Found' : status === 422 ? 'Unprocessable Entity' : 'Internal Server Error';
+    return responses.error(res, status, title, 'Failed to purge dead letter')(err);
+  }
+};
+
+/**
+ * @desc POST /api/admin/billing/cancel/:orgId
+ *       Cancel Stripe subscription + downgrade DB to free/canceled.
+ *       Decision #5: cancel → retrieve-verify → DB write.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
+const adminCancelSubscription = async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const result = await BillingAdminService.cancelSubscription(orgId);
+    return responses.success(res, 'subscription canceled')(result);
+  } catch (err) {
+    const status = err.status ?? 500;
+    const title = status === 404 ? 'Not Found' : status === 422 ? 'Unprocessable Entity' : status === 502 ? 'Bad Gateway' : 'Internal Server Error';
+    return responses.error(res, status, title, 'Failed to cancel subscription')(err);
+  }
+};
+
 export default {
   adminRefundCharge,
   adminBumpPlan,
+  adminGetCustomerStatus,
+  adminSyncFromStripe,
+  adminReplayWebhook,
+  adminListDeadLetters,
+  adminPurgeDeadLetter,
+  adminCancelSubscription,
 };

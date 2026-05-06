@@ -42,6 +42,10 @@ describe('Billing meter lifecycle integration tests:', () => {
     Organization = mongoose.model('Organization');
     BillingExtraBalance = mongoose.model('BillingExtraBalance');
 
+    // Ensure compound indexes (added in feat/billing-admin-toolkit-foundations) are synced
+    // to the test DB before tests run. Prevents E11000 flakes on the first resetWeek sweep.
+    await Subscription.syncIndexes();
+
     BillingWebhookService = (await import('../services/billing.webhook.service.js')).default;
     BillingMeterService = (await import('../services/billing.meter.service.js')).default;
     BillingUsageService = (await import('../services/billing.usage.service.js')).default;

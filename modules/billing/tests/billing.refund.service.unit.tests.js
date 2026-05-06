@@ -49,6 +49,18 @@ describe('Admin refund controller unit tests:', () => {
       default: mockResponses,
     }));
 
+    // Mock the admin service to prevent its deep import chain from touching mongoose models.
+    jest.unstable_mockModule('../services/billing.admin.service.js', () => ({
+      default: {
+        getCustomerStatus: jest.fn(),
+        syncOrgFromStripe: jest.fn(),
+        replayWebhookEvent: jest.fn(),
+        listDeadLetters: jest.fn(),
+        purgeDeadLetter: jest.fn(),
+        cancelSubscription: jest.fn(),
+      },
+    }));
+
     const mod = await import('../controllers/billing.admin.controller.js');
     adminRefundCharge = mod.default.adminRefundCharge;
   });
@@ -202,6 +214,65 @@ describe('Admin refund controller unit tests:', () => {
     expect(mockStripeInstance.refunds.create).toHaveBeenCalled();
     expect(mockResponses.success).toHaveBeenCalled();
   });
+
+  // ── Refund > original amount (D — tests reliability) ─────────────────────────
+
+  test('refund > original amount — Stripe StripeInvalidRequestError maps to 422', async () => {
+    // Stripe returns invalid_request_error when amountCents exceeds the charge amount.
+    const stripeErr = new Error('The amount requested exceeds the amount that can be refunded');
+    stripeErr.type = 'StripeInvalidRequestError';
+    mockStripeInstance.refunds.create.mockRejectedValue(stripeErr);
+
+    const res = makeRes();
+    await adminRefundCharge(
+      { body: { chargeId: 'ch_test_full', amountCents: 9999999, refundRequestId: 'req-overflow01' } },
+      res,
+    );
+
+    expect(mockResponses.error).toHaveBeenCalledWith(res, 422, 'Unprocessable Entity', 'Failed to refund charge');
+  });
+
+  test('refund > original amount — invalid_request_error type maps to 422', async () => {
+    const stripeErr = new Error('The amount requested exceeds what can be refunded');
+    stripeErr.type = 'invalid_request_error';
+    mockStripeInstance.refunds.create.mockRejectedValue(stripeErr);
+
+    const res = makeRes();
+    await adminRefundCharge(
+      { body: { chargeId: 'ch_test_full2', amountCents: 99999, refundRequestId: 'req-overflow02' } },
+      res,
+    );
+
+    expect(mockResponses.error).toHaveBeenCalledWith(res, 422, 'Unprocessable Entity', 'Failed to refund charge');
+  });
+
+  test('multi-refund cumul — two calls with same session use same idempotency key (dedup protection)', async () => {
+    // Simulates an admin double-clicking the refund button twice for the same session.
+    // Both calls must send identical idempotency keys so Stripe deduplicates them.
+    const body = { chargeId: 'ch_test_multi', amountCents: 2450, refundRequestId: 'req-multi-sum01' };
+
+    await adminRefundCharge({ body }, makeRes());
+    await adminRefundCharge({ body }, makeRes());
+
+    const calls = mockStripeInstance.refunds.create.mock.calls;
+    expect(calls).toHaveLength(2);
+    expect(calls[0][1].idempotencyKey).toBe(calls[1][1].idempotencyKey);
+    expect(calls[0][1].idempotencyKey).toBe('refund_admin_req-multi-sum01');
+  });
+
+  test('charge_already_refunded Stripe code maps to 422 (not 502)', async () => {
+    const stripeErr = new Error('This charge has already been fully refunded');
+    stripeErr.code = 'charge_already_refunded';
+    mockStripeInstance.refunds.create.mockRejectedValue(stripeErr);
+
+    const res = makeRes();
+    await adminRefundCharge(
+      { body: { chargeId: 'ch_already_done', refundRequestId: 'req-already-001' } },
+      res,
+    );
+
+    expect(mockResponses.error).toHaveBeenCalledWith(res, 422, 'Unprocessable Entity', 'Failed to refund charge');
+  });
 });
 
 describe('adminBumpPlan controller unit tests:', () => {
@@ -262,6 +333,18 @@ describe('adminBumpPlan controller unit tests:', () => {
 
     // Stripe not needed for adminBumpPlan but imported at module level
     jest.unstable_mockModule('../lib/stripe.js', () => ({ default: jest.fn(() => null) }));
+
+    // Mock admin service to prevent deep import chain touching mongoose models
+    jest.unstable_mockModule('../services/billing.admin.service.js', () => ({
+      default: {
+        getCustomerStatus: jest.fn(),
+        syncOrgFromStripe: jest.fn(),
+        replayWebhookEvent: jest.fn(),
+        listDeadLetters: jest.fn(),
+        purgeDeadLetter: jest.fn(),
+        cancelSubscription: jest.fn(),
+      },
+    }));
 
     const mod = await import('../controllers/billing.admin.controller.js');
     adminBumpPlan = mod.default.adminBumpPlan;

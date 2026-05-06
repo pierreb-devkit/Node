@@ -138,6 +138,15 @@ function addID() {
 }
 
 /**
+ * Compound indexes — scanning operations
+ *
+ * weeklyReset sweep: quickly find active/trialing subs whose lastResetAt is stale.
+ * dunningSweep scan: quickly find past_due subs where pastDueSince has exceeded threshold.
+ */
+SubscriptionMongoose.index({ status: 1, lastResetAt: 1 });   // weeklyReset scan
+SubscriptionMongoose.index({ status: 1, pastDueSince: 1 });  // dunningSweep scan
+
+/**
  * Model configuration
  */
 SubscriptionMongoose.virtual('id').get(addID);

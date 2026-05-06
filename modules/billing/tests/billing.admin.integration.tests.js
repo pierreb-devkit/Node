@@ -20,7 +20,7 @@ describe('Billing admin integration tests:', () => {
     const routes = new Map();
     const app = {
       route: jest.fn((path) => {
-        const entry = { all: [], get: [], post: [], patch: [] };
+        const entry = { all: [], get: [], post: [], patch: [], delete: [] };
         routes.set(path, entry);
         const routeBuilder = {
           all: (...handlers) => {
@@ -37,6 +37,10 @@ describe('Billing admin integration tests:', () => {
           },
           patch: (...handlers) => {
             entry.patch.push(...handlers);
+            return routeBuilder;
+          },
+          delete: (...handlers) => {
+            entry.delete.push(...handlers);
             return routeBuilder;
           },
         };
@@ -183,6 +187,18 @@ describe('Billing admin integration tests:', () => {
 
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
       default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
+    }));
+
+    // Mock admin service to prevent deep import chain from touching mongoose models.
+    jest.unstable_mockModule('../services/billing.admin.service.js', () => ({
+      default: {
+        getCustomerStatus: jest.fn(),
+        syncOrgFromStripe: jest.fn(),
+        replayWebhookEvent: jest.fn(),
+        listDeadLetters: jest.fn(),
+        purgeDeadLetter: jest.fn(),
+        cancelSubscription: jest.fn(),
+      },
     }));
 
     billingAdminRoutes = (await import('../routes/billing.admin.routes.js')).default;
