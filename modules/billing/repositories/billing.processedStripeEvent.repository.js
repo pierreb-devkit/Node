@@ -104,20 +104,37 @@ const deleteByEventId = async (eventId) => {
  * @function incrementAttempts
  * @description Atomically increment the attempts counter and record the last error details
  *              on the processed event document. Used by withIdempotency to track retry depth.
+ *              Stores the full stack trace when available (err.stack), falling back to the
+ *              message string — provides full context for ops investigation of dead-letters.
  * @param {string} eventId - Stripe event ID.
- * @param {string} errorMessage - Error message from the last failed handler execution.
+ * @param {string|Error} errorOrMessage - Error object (preferred) or message string from the
+ *   last failed handler execution. When an Error is passed, err.stack is persisted; otherwise
+ *   the string value is stored as-is.
  * @returns {Promise<Object|null>} Updated document or null if not found.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
-const incrementAttempts = async (eventId, errorMessage) => {
+const incrementAttempts = async (eventId, errorOrMessage) => {
   if (typeof eventId !== 'string' || eventId.trim() === '') {
     throw new Error('invalid argument: eventId must be a non-empty string');
+  }
+  // Persist stack trace when available — provides full context for ops investigation.
+  // Falls back gracefully for non-Error throws (string, plain object, etc.).
+  // JSON.stringify for plain objects avoids the uninformative "[object Object]" fallback.
+  let lastError;
+  if (errorOrMessage instanceof Error) {
+    lastError = errorOrMessage.stack || errorOrMessage.message || String(errorOrMessage);
+  } else if (errorOrMessage === null || errorOrMessage === undefined) {
+    lastError = '';
+  } else if (typeof errorOrMessage === 'object') {
+    try { lastError = JSON.stringify(errorOrMessage); } catch { lastError = String(errorOrMessage); }
+  } else {
+    lastError = String(errorOrMessage);
   }
   return ProcessedStripeEvent().findOneAndUpdate(
     { eventId },
     {
       $inc: { attempts: 1 },
-      $set: { lastError: String(errorMessage ?? ''), lastErrorAt: new Date() },
+      $set: { lastError, lastErrorAt: new Date() },
     },
     { returnDocument: 'after' },
   ).exec();

@@ -97,20 +97,25 @@ const syncOrganizationPlan = async (organizationId, plan) => {
  *
  * @param {Object} event - Full Stripe event object (must have event.id and event.type).
  * @param {Function} handler - Async function (event) => result called when event is new or retrying.
+ * @param {Object} [ctx={}] - Optional context passed from the controller layer.
+ * @param {string} [ctx.requestId] - Express request ID for end-to-end traceability across log lines.
  * @returns {Promise<Object>} Handler result, or skip sentinel
  *          { skipped: true, reason: 'duplicate_event_or_dead_letter' }, or
  *          dead-letter sentinel { deadLettered: true, eventId, eventType, attempts }.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const withIdempotency = async (event, handler) => {
+const withIdempotency = async (event, handler, { requestId } = {}) => {
   const eventId = event.id;
   const eventType = event.type;
 
   // Atomically claim or re-enter — see tryRecord for 3-state semantics.
   const claim = await ProcessedStripeEventRepository.tryRecord(eventId, eventType);
   if (!claim.recorded) {
+    logger.info('[billing] webhook skipped', { eventId, eventType, reason: claim.reason, requestId });
     return { skipped: true, reason: 'duplicate_event_or_dead_letter', detail: claim.reason };
   }
+
+  logger.info('[billing] webhook handler entry', { eventId, eventType, retry: claim.retry ?? false, requestId });
   try {
     return await handler(event);
   } catch (err) {
@@ -119,10 +124,10 @@ const withIdempotency = async (event, handler) => {
     // for BILLING_WEBHOOK_MAX_ATTEMPTS to be reachable.
     let attempts = 1;
     try {
-      const updated = await ProcessedStripeEventRepository.incrementAttempts(eventId, err?.message ?? String(err));
+      const updated = await ProcessedStripeEventRepository.incrementAttempts(eventId, err);
       attempts = updated?.attempts ?? 1;
     } catch (counterErr) {
-      logger.error('[billing] webhook attempts increment failed', { eventId, eventType, error: counterErr?.message });
+      logger.error('[billing] webhook attempts increment failed', { eventId, eventType, error: counterErr?.message, requestId });
     }
 
     if (attempts >= BILLING_WEBHOOK_MAX_ATTEMPTS) {
@@ -130,15 +135,16 @@ const withIdempotency = async (event, handler) => {
       try {
         await ProcessedStripeEventRepository.markDeadLetter(eventId);
       } catch (dlErr) {
-        logger.error('[billing] webhook markDeadLetter failed', { eventId, eventType, error: dlErr?.message });
+        logger.error('[billing] webhook markDeadLetter failed', { eventId, eventType, error: dlErr?.message, requestId });
       }
-      logger.error('[billing] webhook dead-letter', { eventId, eventType, attempts, error: err?.message ?? String(err) });
+      logger.error('[billing] webhook dead-letter', { eventId, eventType, attempts, error: err?.message ?? String(err), stack: err?.stack, requestId });
       // Return success to Stripe so it stops retrying.
       return { deadLettered: true, eventId, eventType, attempts };
     }
 
     // Below MAX: keep the doc (attempts persists), throw so Stripe retries on next delivery.
     // The next delivery will hit tryRecord → { recorded: true, retry: true } and re-enter here.
+    logger.error('[billing] webhook handler failed, will retry', { eventId, eventType, attempts, error: err?.message ?? String(err), requestId });
     throw err;
   }
 };

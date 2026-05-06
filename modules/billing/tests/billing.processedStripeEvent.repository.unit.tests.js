@@ -210,6 +210,66 @@ describe('ProcessedStripeEventRepository unit tests:', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // incrementAttempts — stack trace capture
+  // ─────────────────────────────────────────────────────────────────────────────
+  describe('incrementAttempts', () => {
+    const stubUpdate = (doc) => ({
+      exec: jest.fn().mockResolvedValue(doc),
+    });
+
+    test('stores err.stack when an Error object is passed', async () => {
+      const doc = { eventId: 'evt_stack', attempts: 1, lastError: 'some stack trace', lastErrorAt: new Date() };
+      mockModel.findOneAndUpdate = jest.fn().mockReturnValue(stubUpdate(doc));
+
+      const err = new Error('handler blew up');
+      // Stack trace is set by V8 at creation time
+      await ProcessedStripeEventRepository.incrementAttempts('evt_stack', err);
+
+      const updateCall = mockModel.findOneAndUpdate.mock.calls[0];
+      const setPayload = updateCall[1].$set;
+      // Should persist the stack, not just the message
+      expect(setPayload.lastError).toBe(err.stack);
+      expect(setPayload.lastError).toContain('handler blew up');
+    });
+
+    test('falls back to String(errorOrMessage) when a plain string is passed', async () => {
+      const doc = { eventId: 'evt_str', attempts: 1, lastError: 'plain error string', lastErrorAt: new Date() };
+      mockModel.findOneAndUpdate = jest.fn().mockReturnValue(stubUpdate(doc));
+
+      await ProcessedStripeEventRepository.incrementAttempts('evt_str', 'plain error string');
+
+      const updateCall = mockModel.findOneAndUpdate.mock.calls[0];
+      expect(updateCall[1].$set.lastError).toBe('plain error string');
+    });
+
+    test('handles null/undefined gracefully (empty string fallback)', async () => {
+      const doc = { eventId: 'evt_null', attempts: 1, lastError: '', lastErrorAt: new Date() };
+      mockModel.findOneAndUpdate = jest.fn().mockReturnValue(stubUpdate(doc));
+
+      await ProcessedStripeEventRepository.incrementAttempts('evt_null', null);
+
+      const updateCall = mockModel.findOneAndUpdate.mock.calls[0];
+      expect(updateCall[1].$set.lastError).toBe('');
+    });
+
+    test('serializes plain object throws as JSON to avoid [object Object]', async () => {
+      const doc = { eventId: 'evt_obj', attempts: 1, lastError: '{"code":"DB_ERR"}', lastErrorAt: new Date() };
+      mockModel.findOneAndUpdate = jest.fn().mockReturnValue(stubUpdate(doc));
+
+      await ProcessedStripeEventRepository.incrementAttempts('evt_obj', { code: 'DB_ERR' });
+
+      const updateCall = mockModel.findOneAndUpdate.mock.calls[0];
+      expect(updateCall[1].$set.lastError).toBe('{"code":"DB_ERR"}');
+    });
+
+    test('throws for empty eventId', async () => {
+      await expect(
+        ProcessedStripeEventRepository.incrementAttempts('', new Error('x')),
+      ).rejects.toThrow('invalid argument: eventId must be a non-empty string');
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // listDeadLetters (new in feat/billing-admin-toolkit-foundations)
   // ─────────────────────────────────────────────────────────────────────────────
   describe('listDeadLetters', () => {

@@ -399,4 +399,75 @@ describe('Billing plans service unit tests:', () => {
       expect(plan).toHaveProperty('monthlyPrice');
     }
   });
+
+  // ── clearPlansCache — test isolation helper ─────────────────────────────
+  test('clearPlansCache: resets in-memory cache so next call fetches from Stripe', async () => {
+    const mod = await import('../services/billing.plans.service.js');
+    BillingPlansService = mod.default;
+
+    // Populate cache
+    await BillingPlansService.getPlans();
+    expect(mockStripeInstance.products.list).toHaveBeenCalledTimes(1);
+
+    // clearPlansCache resets state
+    BillingPlansService.clearPlansCache();
+
+    // Next call must issue a fresh Stripe round-trip
+    await BillingPlansService.getPlans();
+    expect(mockStripeInstance.products.list).toHaveBeenCalledTimes(2);
+  });
+
+  test('clearPlansCache: is exported on the default facade', async () => {
+    const mod = await import('../services/billing.plans.service.js');
+    BillingPlansService = mod.default;
+
+    expect(typeof BillingPlansService.clearPlansCache).toBe('function');
+  });
+
+  // ── Duplicate Stripe price ID warn ─────────────────────────────────────
+  test('warns when the same Stripe price ID is mapped to multiple plans', async () => {
+    // Two products share price_dup_m — config error
+    mockStripeInstance.products.list.mockReturnValue(
+      mockListResult([
+        { id: 'prod_a', name: 'Plan A', metadata: { planId: 'plan_a' } },
+        { id: 'prod_b', name: 'Plan B', metadata: { planId: 'plan_b' } },
+      ]),
+    );
+    mockStripeInstance.prices.list.mockReturnValue(
+      mockListResult([
+        { product: 'prod_a', recurring: { interval: 'month' }, unit_amount: 900, id: 'price_dup_m' },
+        { product: 'prod_b', recurring: { interval: 'month' }, unit_amount: 2900, id: 'price_dup_m' },
+      ]),
+    );
+
+    const mod = await import('../services/billing.plans.service.js');
+    BillingPlansService = mod.default;
+    const loggerMod = await import('../../../lib/services/logger.js');
+    const mockLogger = loggerMod.default;
+
+    await BillingPlansService.getPlans();
+
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      '[billing.plans] duplicate Stripe price ID mapped to multiple plans — config error',
+      expect.objectContaining({
+        priceId: 'price_dup_m',
+        planIds: expect.arrayContaining(['plan_a', 'plan_b']),
+      }),
+    );
+  });
+
+  test('does not warn when all price IDs are unique per plan', async () => {
+    // Default mock has unique price IDs per product — no warn expected
+    const mod = await import('../services/billing.plans.service.js');
+    BillingPlansService = mod.default;
+    const loggerMod = await import('../../../lib/services/logger.js');
+    const mockLogger = loggerMod.default;
+
+    await BillingPlansService.getPlans();
+
+    const warnCalls = mockLogger.warn.mock.calls.filter((args) =>
+      String(args[0]).includes('duplicate Stripe price ID'),
+    );
+    expect(warnCalls).toHaveLength(0);
+  });
 });

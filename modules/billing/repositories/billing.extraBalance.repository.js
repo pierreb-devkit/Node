@@ -258,6 +258,60 @@ const getBalance = async (orgId) => {
 };
 
 /**
+ * @function listLedgerPage
+ * @description Return a paginated slice of the ledger array for an organization using
+ *              MongoDB aggregation `$slice` — only the requested page is transferred over the
+ *              wire, avoiding full-document fetches for large ledgers (1000+ entries).
+ *
+ *              Entries are sorted descending by `at` (newest first) at the aggregation layer.
+ *              The aggregation pipeline is:
+ *                1. $match   — find the org's document
+ *                2. $project — sort + slice the ledger, plus cachedBalance and _id=0
+ *
+ *              Returns null when no document exists for the org yet (balance = 0).
+ *
+ * @param {string} orgId - The organization ObjectId (string).
+ * @param {number} skip - Number of entries to skip (0-based).
+ * @param {number} limit - Maximum number of entries to return.
+ * @returns {Promise<{ledgerPage: Object[], total: number, cachedBalance: number}|null>}
+ *   null when the org has no ExtraBalance document.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const listLedgerPage = async (orgId, skip, limit) => {
+  if (!isValidOrgId(orgId)) return null;
+  if (!Number.isFinite(skip) || skip < 0) throw new TypeError('skip must be a non-negative number');
+  if (!Number.isFinite(limit) || limit <= 0) throw new TypeError('limit must be a positive number');
+
+  const results = await BillingExtraBalance().aggregate([
+    { $match: { organization: new mongoose.Types.ObjectId(orgId) } },
+    {
+      $project: {
+        _id: 0,
+        cachedBalance: 1,
+        total: { $size: { $ifNull: ['$ledger', []] } },
+        // Sort descending by `at` then slice the requested page.
+        // $ifNull guards against missing/null ledger field on legacy docs.
+        ledgerPage: {
+          $slice: [
+            {
+              $sortArray: {
+                input: { $ifNull: ['$ledger', []] },
+                sortBy: { at: -1 },
+              },
+            },
+            skip,
+            limit,
+          ],
+        },
+      },
+    },
+  ]).exec();
+
+  if (!results || results.length === 0) return null;
+  return results[0];
+};
+
+/**
  * @function findOrgsWithExpiringTopups
  * @description Return the distinct organizationIds that have at least one topup ledger entry
  *              with `expiresAt < now` for which no matching expiration entry (`kind: 'expiration'`
@@ -308,5 +362,6 @@ export default {
   addExpirationEntries,
   refundPartial,
   getBalance,
+  listLedgerPage,
   findOrgsWithExpiringTopups,
 };

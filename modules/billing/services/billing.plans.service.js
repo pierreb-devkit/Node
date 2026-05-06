@@ -64,8 +64,14 @@ const fetchPlansFromStripe = async (stripe) => {
     pricesByProduct[price.product].push(price);
   }
 
+  // Build reverse-lookup: priceId → [planId, ...] to detect price ID reuse across plans.
+  // A Stripe price ID mapped to multiple plans is a configuration error that causes silent
+  // billing misrouting — warn explicitly with both plan IDs + the duplicate price ID.
+  const priceIdToPlanIds = {};
+
   const plans = products.map((product) => {
     const productPrices = pricesByProduct[product.id] || [];
+    const planId = product.metadata?.planId || product.id;
 
     let monthlyPrice = 0;
     let annualPrice = 0;
@@ -82,10 +88,15 @@ const fetchPlansFromStripe = async (stripe) => {
         annualPrice = amount / 100;
         stripePriceAnnual = price.id;
       }
+      // Track price-to-plan mapping for duplicate detection
+      if (price.id) {
+        if (!priceIdToPlanIds[price.id]) priceIdToPlanIds[price.id] = [];
+        priceIdToPlanIds[price.id].push(planId);
+      }
     }
 
     return {
-      planId: product.metadata?.planId || product.id,
+      planId,
       name: product.name,
       monthlyPrice,
       annualPrice,
@@ -93,6 +104,17 @@ const fetchPlansFromStripe = async (stripe) => {
       stripePriceAnnual,
     };
   });
+
+  // Emit explicit warn for any Stripe price ID mapped to more than one plan.
+  // This is a Stripe account configuration error that causes silent billing misrouting.
+  for (const [priceId, planIds] of Object.entries(priceIdToPlanIds)) {
+    if (planIds.length > 1) {
+      logger.warn('[billing.plans] duplicate Stripe price ID mapped to multiple plans — config error', {
+        priceId,
+        planIds,
+      });
+    }
+  }
 
   return plans.sort((a, b) => a.monthlyPrice - b.monthlyPrice);
 };
@@ -164,6 +186,25 @@ const getPlans = async () => {
   return inFlightFetch;
 };
 
+/**
+ * @desc Reset the in-memory plan cache.
+ *
+ * Exposed for test isolation: each test that exercises different Stripe configurations
+ * should call `clearPlansCache()` in `beforeEach`/`afterEach` to prevent stale module-scope
+ * state from leaking between test files (ESM module cache is per-worker but shared across
+ * tests in the same worker file when `jest.resetModules()` is not in use).
+ *
+ * NOT intended for production use — the cache is self-refreshing via stale-while-revalidate.
+ */
+const clearPlansCache = () => {
+  cachedPlans = null;
+  cacheTimestamp = 0;
+  stalePlans = null;
+  staleTimestamp = 0;
+  inFlightFetch = null;
+};
+
 export default {
   getPlans,
+  clearPlansCache,
 };

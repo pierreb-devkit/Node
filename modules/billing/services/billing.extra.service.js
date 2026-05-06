@@ -216,6 +216,10 @@ const refundPartial = async (orgId, stripeSessionId, amountRefundedCents, packId
  * @description Return a paginated slice of the ledger for an organization.
  *              Entries are returned in reverse chronological order (newest first).
  *
+ *              Uses MongoDB aggregation `$slice` via the repository so only the
+ *              requested page is transferred over the wire — avoids loading the full
+ *              ledger array into memory on large accounts (1000+ entries).
+ *
  * @param {string} orgId - The organization ObjectId (string).
  * @param {Object} [options={}] - Pagination options.
  * @param {number} [options.page=1] - 1-based page number.
@@ -224,17 +228,18 @@ const refundPartial = async (orgId, stripeSessionId, amountRefundedCents, packId
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const listLedger = async (orgId, { page = 1, limit = 20 } = {}) => {
-  const doc = await BillingExtraBalanceRepository.getOrCreate(orgId);
-  if (!doc) return { entries: [], total: 0, balance: 0 };
-  const ledger = doc.ledger ?? [];
-  const total = ledger.length;
+  const safePage = Math.max(1, Math.floor(Number(page)) || 1);
+  const safeLimit = Math.max(1, Math.floor(Number(limit)) || 20);
+  const skip = (safePage - 1) * safeLimit;
 
-  // Sort descending by at date
-  const sorted = [...ledger].sort((a, b) => new Date(b.at) - new Date(a.at));
-  const start = (page - 1) * limit;
-  const entries = sorted.slice(start, start + limit);
+  const result = await BillingExtraBalanceRepository.listLedgerPage(orgId, skip, safeLimit);
+  if (!result) return { entries: [], total: 0, balance: 0 };
 
-  return { entries, total, balance: doc.cachedBalance ?? 0 };
+  return {
+    entries: result.ledgerPage ?? [],
+    total: result.total ?? 0,
+    balance: result.cachedBalance ?? 0,
+  };
 };
 
 export default {

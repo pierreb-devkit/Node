@@ -46,6 +46,7 @@ describe('BillingExtraService unit tests:', () => {
       getOrCreate: jest.fn(),
       getBalance: jest.fn(),
       refundPartial: jest.fn(),
+      listLedgerPage: jest.fn(),
     };
 
     jest.unstable_mockModule('../../../config/index.js', () => ({
@@ -186,49 +187,46 @@ describe('BillingExtraService unit tests:', () => {
   });
 
   describe('listLedger', () => {
-    test('should return empty result when getOrCreate returns null (malformed orgId)', async () => {
-      mockRepository.getOrCreate.mockResolvedValue(null);
+    test('should return empty result when listLedgerPage returns null (malformed orgId)', async () => {
+      mockRepository.listLedgerPage.mockResolvedValue(null);
 
       const result = await BillingExtraService.listLedger('bad-org-id');
       expect(result).toEqual({ entries: [], total: 0, balance: 0 });
     });
 
-    test('should return paginated ledger entries in reverse chronological order', async () => {
-      const t1 = new Date('2026-05-01T10:00:00Z');
-      const t2 = new Date('2026-05-02T10:00:00Z');
-      const doc = makeDoc({
+    test('should delegate pagination to repository with correct skip+limit', async () => {
+      mockRepository.listLedgerPage.mockResolvedValue({
+        ledgerPage: [{ kind: 'debit', amount: -100, at: new Date() }],
+        total: 1,
         cachedBalance: 900000,
-        ledger: [
-          { kind: 'topup', amount: 500000, at: t1 },
-          { kind: 'topup', amount: 500000, at: t2 },
-          { kind: 'debit', amount: -100000, at: new Date('2026-05-03T10:00:00Z') },
-        ],
       });
-      mockRepository.getOrCreate.mockResolvedValue(doc);
 
       const result = await BillingExtraService.listLedger(orgId, { page: 1, limit: 2 });
 
-      expect(result.total).toBe(3);
+      expect(mockRepository.listLedgerPage).toHaveBeenCalledWith(orgId, 0, 2);
+      expect(result.total).toBe(1);
       expect(result.balance).toBe(900000);
-      expect(result.entries).toHaveLength(2);
-      // Newest first
-      expect(result.entries[0].kind).toBe('debit');
+      expect(result.entries).toHaveLength(1);
     });
 
-    test('should return second page correctly', async () => {
-      const doc = makeDoc({
+    test('should compute correct skip for page 2', async () => {
+      mockRepository.listLedgerPage.mockResolvedValue({
+        ledgerPage: [{ kind: 'topup', amount: 100, at: new Date() }],
+        total: 3,
         cachedBalance: 0,
-        ledger: [
-          { kind: 'topup', amount: 100, at: new Date('2026-01-01') },
-          { kind: 'topup', amount: 100, at: new Date('2026-02-01') },
-          { kind: 'topup', amount: 100, at: new Date('2026-03-01') },
-        ],
       });
-      mockRepository.getOrCreate.mockResolvedValue(doc);
 
-      const result = await BillingExtraService.listLedger(orgId, { page: 2, limit: 2 });
+      await BillingExtraService.listLedger(orgId, { page: 2, limit: 2 });
 
-      expect(result.entries).toHaveLength(1);
+      // page=2, limit=2 → skip=2
+      expect(mockRepository.listLedgerPage).toHaveBeenCalledWith(orgId, 2, 2);
+    });
+
+    test('should return empty result when listLedgerPage returns null for valid org with no balance doc', async () => {
+      mockRepository.listLedgerPage.mockResolvedValue(null);
+
+      const result = await BillingExtraService.listLedger(orgId);
+      expect(result).toEqual({ entries: [], total: 0, balance: 0 });
     });
   });
 

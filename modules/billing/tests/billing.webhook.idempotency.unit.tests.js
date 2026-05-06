@@ -195,10 +195,12 @@ describe('Billing webhook idempotency unit tests:', () => {
         BillingWebhookService.withIdempotency(event, handler),
       ).rejects.toThrow('handler blew up');
 
-      expect(mockProcessedStripeEventRepository.incrementAttempts).toHaveBeenCalledWith(
-        'evt_test_001',
-        'handler blew up',
-      );
+      // incrementAttempts receives the full Error object (for stack trace capture)
+      expect(mockProcessedStripeEventRepository.incrementAttempts).toHaveBeenCalledTimes(1);
+      const [eidArg, errArg] = mockProcessedStripeEventRepository.incrementAttempts.mock.calls[0];
+      expect(eidArg).toBe('evt_test_001');
+      expect(errArg).toBeInstanceOf(Error);
+      expect(errArg.message).toBe('handler blew up');
       // Critical: doc must NOT be deleted — attempts must persist across redeliveries.
       expect(mockProcessedStripeEventRepository.deleteByEventId).not.toHaveBeenCalled();
     });
@@ -244,6 +246,38 @@ describe('Billing webhook idempotency unit tests:', () => {
 
       expect(mockProcessedStripeEventRepository.tryRecord).toHaveBeenCalledTimes(1);
       expect(mockProcessedStripeEventRepository.wasProcessed).not.toHaveBeenCalled();
+    });
+
+    // ── req.id / requestId correlation ────────────────────────────────────
+
+    test('passes full Error to incrementAttempts (stack trace capture)', async () => {
+      mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: true, retry: false });
+      mockProcessedStripeEventRepository.incrementAttempts.mockResolvedValue({ attempts: 1 });
+      const handlerError = new Error('handler exploded');
+      const handler = jest.fn().mockRejectedValue(handlerError);
+      const event = makeEvent('evt_stack_trace');
+
+      await expect(BillingWebhookService.withIdempotency(event, handler)).rejects.toThrow('handler exploded');
+
+      // Should receive the Error object itself, not err.message
+      expect(mockProcessedStripeEventRepository.incrementAttempts).toHaveBeenCalledTimes(1);
+      const [, errorArg] = mockProcessedStripeEventRepository.incrementAttempts.mock.calls[0];
+      expect(errorArg).toBe(handlerError);
+    });
+
+    test('requestId context is accepted without affecting handler result', async () => {
+      mockProcessedStripeEventRepository.tryRecord.mockResolvedValue({ recorded: true, retry: false });
+      const handler = jest.fn().mockResolvedValue({ ok: true });
+      const event = makeEvent('evt_with_req_id');
+
+      const result = await BillingWebhookService.withIdempotency(
+        event,
+        handler,
+        { requestId: 'test-request-id-abc' },
+      );
+
+      expect(result).toEqual({ ok: true });
+      expect(handler).toHaveBeenCalledWith(event);
     });
   });
 });

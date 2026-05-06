@@ -9,10 +9,7 @@ import {
   getMeterRunBase,
   getDollarsToUnitRatio,
   getMaxUnitsPerOperation,
-  METER_RUN_BASE,
 } from '../lib/billing.constants.js';
-
-export { METER_RUN_BASE };
 
 /**
  * @function unitsFromCosts
@@ -237,5 +234,5 @@ export default {
   unitsFromCosts,
   attribute,
   capBreakdown,
-  METER_RUN_BASE,
+  getMeterRunBase,
 };
