@@ -22,19 +22,24 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'development';
 const [
   { default: config },
   { default: mongooseService },
+  { default: logger },
   { applyJitter },
   { getCronJitterMaxMs, getDunningThresholdDays },
 ] = await Promise.all([
   import('../../../config/index.js'),
   import('../../../lib/services/mongoose.js'),
+  import('../../../lib/services/logger.js'),
   import('../lib/billing.cron-utils.js'),
   import('../lib/billing.constants.js'),
 ]);
 
 if (!config?.billing?.meterMode) {
-  console.log('[billing.dunningSweep] meterMode disabled — skipping.');
+  logger.info('[cron.dunningSweep] meterMode disabled — skipping.');
   process.exit(0);
 }
+
+const startMs = Date.now();
+logger.info('[cron.dunningSweep] start');
 
 try {
   await applyJitter(getCronJitterMaxMs());
@@ -49,7 +54,7 @@ try {
   const threshold = new Date(now.getTime() - getDunningThresholdDays() * 24 * 60 * 60 * 1000);
 
   const staleSubs = await BillingSubscriptionRepository.findStaleDunning(threshold);
-  console.log(`[billing.dunningSweep] ${staleSubs.length} stale past_due subscription(s) found`);
+  logger.info('[cron.dunningSweep] stale past_due subscriptions found', { count: staleSubs.length });
 
   let processed = 0;
   let errors = 0;
@@ -59,7 +64,7 @@ try {
     try {
       const subscription = await BillingSubscriptionRepository.markUnpaid(String(sub._id), threshold);
       if (!subscription) {
-        console.log(`[billing.dunningSweep] sub ${sub._id} skipped — already recovered`);
+        logger.info('[cron.dunningSweep] sub skipped — already recovered', { subId: String(sub._id) });
         continue;
       }
 
@@ -68,22 +73,30 @@ try {
       } catch (orgErr) {
         // Compensation: Subscription is now unpaid but Org.plan update failed.
         // Log for manual reconciliation — do not revert Subscription status.
-        console.error('[billing.dunningSweep] Org plan sync failed (manual reconciliation required):', orgErr);
+        logger.error('[cron.dunningSweep] Org plan sync failed (manual reconciliation required)', {
+          subId: String(sub._id),
+          orgId: String(sub.organization),
+          err: orgErr?.message,
+          stack: orgErr?.stack,
+        });
         desyncErrors += 1;
       }
 
-      console.log(`[billing.dunningSweep] sub ${sub._id} → unpaid, org ${sub.organization} → free`);
+      logger.info('[cron.dunningSweep] sub transitioned to unpaid', {
+        subId: String(sub._id),
+        orgId: String(sub.organization),
+      });
       processed += 1;
     } catch (err) {
       errors += 1;
-      console.error(`[billing.dunningSweep] failed for sub ${sub._id}:`, err);
+      logger.error('[cron.dunningSweep] failed for sub', { subId: String(sub._id), err: err?.message, stack: err?.stack });
     }
   }
 
-  console.log(`[billing.dunningSweep] done — processed: ${processed}, errors: ${errors}, desyncErrors: ${desyncErrors}`);
+  logger.info('[cron.dunningSweep] complete', { processed, errors, desyncErrors, durationMs: Date.now() - startMs });
   process.exitCode = errors > 0 ? 1 : 0;
 } catch (err) {
-  console.error('[billing.dunningSweep] fatal:', err);
+  logger.error('[cron.dunningSweep] failed', { err: err?.message, stack: err?.stack });
   process.exitCode = 1;
 } finally {
   await mongooseService.disconnect?.();

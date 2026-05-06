@@ -52,6 +52,16 @@ describe('Billing plans service unit tests:', () => {
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: mockConfig,
     }));
+
+    // Mock logger to avoid real winston initialisation (requires full config.log)
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+    }));
+
+    // Mock events to avoid real EventEmitter side effects
+    jest.unstable_mockModule('../lib/events.js', () => ({
+      default: { emit: jest.fn(), on: jest.fn(), off: jest.fn() },
+    }));
   });
 
   afterEach(() => {
@@ -190,21 +200,22 @@ describe('Billing plans service unit tests:', () => {
     expect(mockStripeInstance.prices.list).toHaveBeenCalledTimes(1);
   });
 
-  test('should refresh cache after TTL expires', async () => {
+  test('should refresh cache after FRESH_TTL expires (5 minutes)', async () => {
     const mod = await import('../services/billing.plans.service.js');
     BillingPlansService = mod.default;
 
     await BillingPlansService.getPlans();
 
-    // Advance time past TTL (1 hour)
+    // Advance time past FRESH_TTL (5 minutes)
     const originalDateNow = Date.now;
-    Date.now = jest.fn().mockReturnValue(originalDateNow() + 61 * 60 * 1000);
+    Date.now = jest.fn().mockReturnValue(originalDateNow() + 6 * 60 * 1000);
 
-    await BillingPlansService.getPlans();
-
-    expect(mockStripeInstance.products.list).toHaveBeenCalledTimes(2);
-
-    Date.now = originalDateNow;
+    try {
+      await BillingPlansService.getPlans();
+      expect(mockStripeInstance.products.list).toHaveBeenCalledTimes(2);
+    } finally {
+      Date.now = originalDateNow;
+    }
   });
 
   // ── Facade regression — billing.plans.service.js public API ────────────
@@ -267,35 +278,37 @@ describe('Billing plans service unit tests:', () => {
     await BillingPlansService.getPlans();
     expect(mockStripeInstance.products.list).toHaveBeenCalledTimes(1);
 
-    // Advance time past TTL.
+    // Advance time past FRESH_TTL (5 minutes).
     const originalDateNow = Date.now;
-    Date.now = jest.fn().mockReturnValue(originalDateNow() + 61 * 60 * 1000);
+    Date.now = jest.fn().mockReturnValue(originalDateNow() + 6 * 60 * 1000);
 
-    // 50 concurrent callers after TTL expires.
-    let resolveProducts;
-    mockStripeInstance.products.list.mockReturnValue({
-      autoPagingToArray: jest.fn().mockReturnValue(
-        new Promise((resolve) => {
-          resolveProducts = () => resolve(productsData);
-        }),
-      ),
-    });
+    try {
+      // 50 concurrent callers after TTL expires.
+      let resolveProducts;
+      mockStripeInstance.products.list.mockReturnValue({
+        autoPagingToArray: jest.fn().mockReturnValue(
+          new Promise((resolve) => {
+            resolveProducts = () => resolve(productsData);
+          }),
+        ),
+      });
 
-    const inflight = Array.from({ length: 50 }, () => BillingPlansService.getPlans());
-    resolveProducts();
-    await Promise.all(inflight);
+      const inflight = Array.from({ length: 50 }, () => BillingPlansService.getPlans());
+      resolveProducts();
+      await Promise.all(inflight);
 
-    // Total: 1 (initial) + 1 (after TTL) — not 1 + 50.
-    expect(mockStripeInstance.products.list).toHaveBeenCalledTimes(2);
-
-    Date.now = originalDateNow;
+      // Total: 1 (initial) + 1 (after TTL) — not 1 + 50.
+      expect(mockStripeInstance.products.list).toHaveBeenCalledTimes(2);
+    } finally {
+      Date.now = originalDateNow;
+    }
   });
 
-  test('in-flight slot resets after fetch failure → next call retries cleanly', async () => {
+  test('in-flight slot resets after fetch failure with no stale cache → throws', async () => {
     const mod = await import('../services/billing.plans.service.js');
     BillingPlansService = mod.default;
 
-    // First fetch fails — slot must reset, otherwise the next call hangs forever.
+    // First fetch fails with no stale cache — must throw (no fallback available).
     mockStripeInstance.products.list.mockReturnValueOnce({
       autoPagingToArray: jest.fn().mockRejectedValue(new Error('Stripe API down')),
     });
@@ -309,6 +322,69 @@ describe('Billing plans service unit tests:', () => {
     const plans = await BillingPlansService.getPlans();
     expect(plans).toHaveLength(2);
     expect(mockStripeInstance.products.list).toHaveBeenCalledTimes(2);
+  });
+
+  // ── Stale-while-revalidate — Stripe outage resilience ───────────────────
+  // getPlans() must not throw when Stripe is down, provided a stale cache
+  // was populated within the last 24h (STALE_TTL). This prevents the public
+  // plans endpoint from surfacing 500s during transient Stripe outages.
+
+  test('Stripe down after successful fetch → returns stale cache, does not throw', async () => {
+    const mod = await import('../services/billing.plans.service.js');
+    BillingPlansService = mod.default;
+
+    // Get the mock emit function from the mocked events module
+    const eventsMod = await import('../lib/events.js');
+    const mockBillingEventsEmit = eventsMod.default.emit;
+
+    // First call succeeds — populates stale snapshot
+    const freshPlans = await BillingPlansService.getPlans();
+    expect(freshPlans).toHaveLength(2);
+
+    // Advance time past FRESH_TTL so the next call hits Stripe
+    const originalDateNow = Date.now;
+    Date.now = jest.fn().mockReturnValue(originalDateNow() + 6 * 60 * 1000);
+
+    try {
+      // Stripe is now down
+      mockStripeInstance.products.list.mockReturnValueOnce({
+        autoPagingToArray: jest.fn().mockRejectedValue(new Error('Stripe API down')),
+      });
+
+      // Should return stale data instead of throwing
+      const stalePlansResult = await BillingPlansService.getPlans();
+      expect(stalePlansResult).toHaveLength(2);
+      expect(stalePlansResult[0].planId).toBe('starter');
+
+      // Should have emitted billing.plans.stale
+      expect(mockBillingEventsEmit).toHaveBeenCalledWith('billing.plans.stale', expect.objectContaining({ staleAgeMs: expect.any(Number) }));
+    } finally {
+      Date.now = originalDateNow;
+    }
+  });
+
+  test('Stripe down with stale cache expired (> 24h) → throws', async () => {
+    const mod = await import('../services/billing.plans.service.js');
+    BillingPlansService = mod.default;
+
+    // First call succeeds — populates stale snapshot
+    await BillingPlansService.getPlans();
+
+    // Advance time past STALE_TTL (24h)
+    const originalDateNow = Date.now;
+    Date.now = jest.fn().mockReturnValue(originalDateNow() + 25 * 60 * 60 * 1000);
+
+    try {
+      // Stripe is now down
+      mockStripeInstance.products.list.mockReturnValueOnce({
+        autoPagingToArray: jest.fn().mockRejectedValue(new Error('Stripe API down after stale TTL')),
+      });
+
+      // Stale TTL exceeded → must throw, not silently serve very old data
+      await expect(BillingPlansService.getPlans()).rejects.toThrow('Stripe API down after stale TTL');
+    } finally {
+      Date.now = originalDateNow;
+    }
   });
 
   test('facade: getPlans returns array of plan objects', async () => {

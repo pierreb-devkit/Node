@@ -91,6 +91,11 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       default: { emit: mockBillingEventsEmit, on: jest.fn(), off: jest.fn() },
     }));
 
+    // Mock logger to avoid real winston initialisation (requires full config.log)
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+    }));
+
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: mockConfig,
     }));
@@ -270,8 +275,29 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       expect(mockExtraService.debit).not.toHaveBeenCalled();
     });
 
+    test('debit applied=false with unexpected reason → logs error, continues', async () => {
+      const loggerMod = await import('../../../lib/services/logger.js');
+      const mockLoggerError = loggerMod.default.error;
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan({ meterQuota: 500000 }));
+      const updatedDoc = makeUsageDoc({ meterUsed: 510000, meterQuota: 500000 });
+      mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
+      // applied=false with reason that is NOT 'duplicate_step' — unexpected, should log error
+      mockExtraService.debit.mockResolvedValue({ applied: false, reason: 'insufficient_balance' });
+
+      const result = await BillingUsageService.incrementMeter(orgId, 50000, {}, 'hist_debit_unexpected_skip');
+
+      expect(result.applied).toBe(true);
+      expect(result.extrasConsumed).toBe(10000);
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        '[billing.usage] extras debit unexpectedly not applied',
+        expect.objectContaining({ organizationId: orgId, reason: 'insufficient_balance' }),
+      );
+    });
+
     test('debit failure is non-fatal — logs warning and still returns applied=true', async () => {
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const loggerMod = await import('../../../lib/services/logger.js');
+      const mockLoggerWarn = loggerMod.default.warn;
       mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockReturnValue(makePlan({ meterQuota: 500000 }));
       const updatedDoc = makeUsageDoc({ meterUsed: 510000, meterQuota: 500000 });
@@ -282,11 +308,10 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
 
       expect(result.applied).toBe(true);
       expect(result.extrasConsumed).toBe(10000);
-      expect(warnSpy).toHaveBeenCalledWith(
-        '[billing.usage] extras debit failed (usage already counted):',
-        'balance write failed',
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        '[billing.usage] extras debit failed (usage already counted)',
+        expect.objectContaining({ err: 'balance write failed' }),
       );
-      warnSpy.mockRestore();
     });
   });
 
@@ -319,7 +344,8 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
     });
 
     test('warns and skips when thresholdPercents contains unsupported value (not 80/100)', async () => {
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const loggerMod = await import('../../../lib/services/logger.js');
+      const mockLoggerWarn = loggerMod.default.warn;
       mockConfig.billing.alerts.thresholdPercents = [90];
       mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockReturnValue(makePlan({ meterQuota: 500000 }));
@@ -330,8 +356,10 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
 
       expect(result.alertCrossed).toBeNull();
       expect(mockUsageRepository.markThreshold).not.toHaveBeenCalled();
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('threshold 90% has no schema field'));
-      warnSpy.mockRestore();
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        '[billing.usage] threshold has no schema field — skipping',
+        expect.objectContaining({ threshold: 90 }),
+      );
     });
 
     test('should NOT re-emit threshold 80 when already alerted (alertedAt80 set)', async () => {

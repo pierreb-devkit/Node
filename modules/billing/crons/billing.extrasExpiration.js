@@ -17,19 +17,24 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'development';
 const [
   { default: config },
   { default: mongooseService },
+  { default: logger },
   { applyJitter },
   { getCronJitterMaxMs },
 ] = await Promise.all([
   import('../../../config/index.js'),
   import('../../../lib/services/mongoose.js'),
+  import('../../../lib/services/logger.js'),
   import('../lib/billing.cron-utils.js'),
   import('../lib/billing.constants.js'),
 ]);
 
 if (!config?.billing?.meterMode) {
-  console.log('[billing.extrasExpiration] meterMode disabled — skipping.');
+  logger.info('[cron.extrasExpiration] meterMode disabled — skipping.');
   process.exit(0);
 }
+
+const startMs = Date.now();
+logger.info('[cron.extrasExpiration] start');
 
 try {
   await applyJitter(getCronJitterMaxMs());
@@ -50,18 +55,18 @@ try {
   for (const orgId of orgIds) {
     try {
       const added = await BillingExtraService.expireOldEntries(orgId);
-      console.log(`[billing.extrasExpiration] org ${orgId}: ${added} expiration entries added`);
+      logger.info('[cron.extrasExpiration] org processed', { orgId: String(orgId), entriesAdded: added });
       processed += 1;
     } catch (err) {
       errors += 1;
-      console.error(`[billing.extrasExpiration] expireOldEntries failed for org ${orgId}:`, err);
+      logger.error('[cron.extrasExpiration] expireOldEntries failed', { orgId: String(orgId), err: err?.message, stack: err?.stack });
     }
   }
 
-  console.log(`[billing.extrasExpiration] done — processed: ${processed}, errors: ${errors}`);
+  logger.info('[cron.extrasExpiration] complete', { processed, errors, durationMs: Date.now() - startMs });
   process.exitCode = errors > 0 ? 1 : 0;
 } catch (err) {
-  console.error('[billing.extrasExpiration] fatal:', err);
+  logger.error('[cron.extrasExpiration] failed', { err: err?.message, stack: err?.stack });
   process.exitCode = 1;
 } finally {
   await mongooseService.disconnect?.();
