@@ -45,6 +45,10 @@ describe('Billing webhook checkout unit tests:', () => {
       paymentIntents: {
         update: jest.fn().mockResolvedValue({}),
       },
+      subscriptions: {
+        // Default: return 'active' status so handleCheckoutCompleted proceeds normally in tests.
+        retrieve: jest.fn().mockResolvedValue({ status: 'active' }),
+      },
     };
 
     jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
@@ -107,9 +111,11 @@ describe('Billing webhook checkout unit tests:', () => {
     test('mode=subscription routes to handleCheckoutCompleted (subscription update)', async () => {
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByOrganization.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
+      mockSubscriptionRepository.updateIfEventNewer.mockResolvedValue({ _id: subId });
 
       await BillingWebhookService.handleCheckoutSessionCompleted({
+        id: 'evt_co_1',
+        created: 1700000010,
         data: {
           object: {
             id: stripeSessionId,
@@ -121,8 +127,12 @@ describe('Billing webhook checkout unit tests:', () => {
         },
       });
 
-      expect(mockSubscriptionRepository.update).toHaveBeenCalledWith(
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
+        subId,
+        1700000010,
+        'evt_co_1',
         expect.objectContaining({ plan: 'pro', status: 'active' }),
+        'subscription',
       );
       expect(mockExtraService.creditPack).not.toHaveBeenCalled();
     });
@@ -292,39 +302,189 @@ describe('Billing webhook checkout unit tests:', () => {
   });
 
   describe('handleCheckoutCompleted (mode=subscription)', () => {
-    test('should update existing subscription', async () => {
+    const checkoutEvent = { id: 'evt_co_2', created: 1700000020, data: {} };
+
+    test('should update existing subscription via updateIfEventNewer', async () => {
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByOrganization.mockResolvedValue(existing);
-      mockSubscriptionRepository.update.mockResolvedValue({});
+      mockSubscriptionRepository.updateIfEventNewer.mockResolvedValue({ _id: subId });
 
-      await BillingWebhookService.handleCheckoutCompleted({
-        customer: 'cus_123',
-        subscription: 'sub_456',
-        metadata: { organizationId: orgId, plan: 'pro' },
-      });
+      await BillingWebhookService.handleCheckoutCompleted(
+        {
+          customer: 'cus_123',
+          subscription: 'sub_456',
+          metadata: { organizationId: orgId, plan: 'pro' },
+        },
+        checkoutEvent,
+      );
 
-      expect(mockSubscriptionRepository.update).toHaveBeenCalledWith(
-        expect.objectContaining({ _id: subId, plan: 'pro', status: 'active' }),
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
+        subId,
+        1700000020,
+        'evt_co_2',
+        expect.objectContaining({ plan: 'pro', status: 'active' }),
+        'subscription',
       );
     });
 
-    test('should create subscription when none exists', async () => {
+    test('should create subscription with seeded markers when none exists', async () => {
       mockSubscriptionRepository.findByOrganization.mockResolvedValue(null);
       mockSubscriptionRepository.create.mockResolvedValue({});
 
-      await BillingWebhookService.handleCheckoutCompleted({
-        customer: 'cus_123',
-        subscription: 'sub_456',
-        metadata: { organizationId: orgId, plan: 'starter' },
-      });
+      await BillingWebhookService.handleCheckoutCompleted(
+        {
+          customer: 'cus_123',
+          subscription: 'sub_456',
+          metadata: { organizationId: orgId, plan: 'starter' },
+        },
+        checkoutEvent,
+      );
 
       expect(mockSubscriptionRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({
           organization: orgId,
           plan: 'starter',
           status: 'active',
+          lastSubscriptionEventCreatedAt: 1700000020,
+          lastSubscriptionEventId: 'evt_co_2',
         }),
       );
+    });
+
+    test('should persist real status from Stripe (trialing, not active)', async () => {
+      mockStripeInstance.subscriptions.retrieve.mockResolvedValue({ status: 'trialing' });
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue(existing);
+      mockSubscriptionRepository.updateIfEventNewer.mockResolvedValue({ _id: subId });
+
+      await BillingWebhookService.handleCheckoutCompleted(
+        {
+          customer: 'cus_123',
+          subscription: 'sub_456',
+          metadata: { organizationId: orgId, plan: 'pro' },
+        },
+        checkoutEvent,
+      );
+
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
+        subId,
+        1700000020,
+        'evt_co_2',
+        expect.objectContaining({ status: 'trialing' }),
+        'subscription',
+      );
+    });
+
+    test('should abort without persisting when stripe.subscriptions.retrieve throws', async () => {
+      mockStripeInstance.subscriptions.retrieve.mockRejectedValue(new Error('Stripe API error'));
+
+      await BillingWebhookService.handleCheckoutCompleted(
+        {
+          customer: 'cus_123',
+          subscription: 'sub_456',
+          metadata: { organizationId: orgId, plan: 'pro' },
+        },
+        checkoutEvent,
+      );
+
+      // Should not persist anything — aborting to avoid stale 'active' assumption
+      expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();
+      expect(mockSubscriptionRepository.create).not.toHaveBeenCalled();
+    });
+
+    test('should abort without persisting when stripe returns null status', async () => {
+      mockStripeInstance.subscriptions.retrieve.mockResolvedValue({ status: null });
+
+      await BillingWebhookService.handleCheckoutCompleted(
+        {
+          customer: 'cus_123',
+          subscription: 'sub_456',
+          metadata: { organizationId: orgId, plan: 'pro' },
+        },
+        checkoutEvent,
+      );
+
+      expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();
+      expect(mockSubscriptionRepository.create).not.toHaveBeenCalled();
+    });
+
+    test('should return early without querying when stripeSubscriptionId is missing', async () => {
+      await BillingWebhookService.handleCheckoutCompleted(
+        {
+          customer: 'cus_123',
+          // subscription omitted — e.g. mode=subscription but sub not created yet
+          metadata: { organizationId: orgId, plan: 'pro' },
+        },
+        checkoutEvent,
+      );
+
+      expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();
+      expect(mockSubscriptionRepository.create).not.toHaveBeenCalled();
+    });
+
+    test('should abort without querying when Stripe is not configured (getStripe returns null)', async () => {
+      // The billing.webhook.checkout.unit.tests.js mocks stripe.js at module level.
+      // To test the getStripe()=null branch, we reload the module with a null-returning mock.
+      jest.resetModules();
+      jest.unstable_mockModule('../lib/stripe.js', () => ({ default: jest.fn(() => null) }));
+      jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
+        default: mockSubscriptionRepository,
+      }));
+      jest.unstable_mockModule('../repositories/billing.processedStripeEvent.repository.js', () => ({
+        default: { wasProcessed: jest.fn().mockResolvedValue(false), tryRecord: jest.fn().mockResolvedValue({ recorded: true }) },
+      }));
+      jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
+        default: mockOrganizationRepository,
+      }));
+      jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
+        default: { creditPack: jest.fn(), refundPartial: jest.fn() },
+      }));
+      jest.unstable_mockModule('../services/billing.reset.service.js', () => ({
+        default: { resetWeek: jest.fn() },
+      }));
+      jest.unstable_mockModule('../lib/events.js', () => ({ default: { emit: jest.fn() } }));
+      jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+        default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
+      }));
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { billing: { plans: ['free', 'starter', 'pro', 'enterprise'] } },
+      }));
+      jest.unstable_mockModule('mongoose', () => ({
+        default: { Types: { ObjectId: { isValid: (id) => /^[a-f\d]{24}$/i.test(id) } }, model: () => ({}) },
+      }));
+
+      const mod2 = await import('../services/billing.webhook.service.js');
+      const svc2 = mod2.default;
+
+      await svc2.handleCheckoutCompleted(
+        {
+          customer: 'cus_123',
+          subscription: 'sub_456',
+          metadata: { organizationId: orgId, plan: 'pro' },
+        },
+        checkoutEvent,
+      );
+
+      expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();
+      expect(mockSubscriptionRepository.create).not.toHaveBeenCalled();
+    });
+
+    test('should skip org sync when checkout event is stale (updateIfEventNewer returns null)', async () => {
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue(existing);
+      mockSubscriptionRepository.updateIfEventNewer.mockResolvedValue(null);
+
+      await BillingWebhookService.handleCheckoutCompleted(
+        {
+          customer: 'cus_123',
+          subscription: 'sub_456',
+          metadata: { organizationId: orgId, plan: 'pro' },
+        },
+        checkoutEvent,
+      );
+
+      // Event was stale — org plan should not be synced
+      expect(mockOrganizationRepository.setPlan).not.toHaveBeenCalled();
     });
   });
 });

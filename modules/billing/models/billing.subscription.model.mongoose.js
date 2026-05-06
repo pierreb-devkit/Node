@@ -72,24 +72,6 @@ const SubscriptionMongoose = new Schema(
       type: Date,
       default: null,
     },
-    /**
-     * Stripe event.created timestamp (Unix seconds) of the last processed subscription event.
-     * Used to guard webhook handlers against out-of-order delivery — older events are skipped.
-     */
-    stripeEventCreatedAt: {
-      type: Number,
-      default: null,
-    },
-    /**
-     * Stripe event.id of the last processed subscription event.
-     * Tiebreaker for same-second events (lex string ordering on evt_ IDs).
-     * @deprecated use lastSubscriptionEventCreatedAt / lastInvoiceEventCreatedAt per-family fields.
-     */
-    stripeEventId: {
-      type: String,
-      default: null,
-    },
-
     // ── Per-family event ordering guards ─────────────────────────────────────
     // Separate trackers for 'subscription' vs 'invoice' event families prevent
     // same-second cross-family deliveries from cancelling each other's state.
@@ -120,6 +102,25 @@ const SubscriptionMongoose = new Schema(
      */
     lastInvoiceEventId: {
       type: String,
+      default: null,
+    },
+
+    // ── Admin override audit trail ───────────────────────────────────────────
+    /**
+     * Timestamp of the last admin-initiated plan change (via adminUpdatePlanOnly).
+     * Distinct from updatedAt (touched by every webhook). Used by audit + ops UI to
+     * surface when a subscription's plan was overridden manually.
+     */
+    adminUpdatedAt: {
+      type: Date,
+      default: null,
+    },
+    /**
+     * ObjectId of the admin user who triggered the last plan override.
+     */
+    adminUpdatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
       default: null,
     },
   },

@@ -222,8 +222,6 @@ const markUnpaid = (id, threshold) => {
  *              The `family` parameter scopes the event-ordering guard to either the
  *              'subscription' family (customer.subscription.*) or the 'invoice' family
  *              (invoice.*).  Same-second cross-family deliveries no longer cancel each other.
- *              Falls back to legacy stripeEventCreatedAt/stripeEventId for back-compat when
- *              per-family fields are not yet populated (gradual migration — no down-time).
  *
  *              Returns null when the guard prevents the write (stale event).
  * @param {string} id - The subscription ObjectId (string).
@@ -262,9 +260,48 @@ const updateIfEventNewer = (id, eventCreatedAt, eventId, fields, family = 'subsc
         ...fields,
         [createdAtField]: eventCreatedAt,
         [eventIdField]: eventId,
-        // Keep legacy fields in sync for back-compat with existing queries / reports
-        stripeEventCreatedAt: eventCreatedAt,
-        stripeEventId: eventId,
+        // Legacy fields stripeEventCreatedAt/stripeEventId are no longer written.
+        // The migration in trawl_node $unset them post-deploy so docs converge to
+        // per-family markers only. Reading the legacy fields anywhere is dead surface.
+      },
+    },
+    { returnDocument: 'after', runValidators: true },
+  )
+    .populate(defaultPopulate)
+    .exec();
+};
+
+/**
+ * @function adminUpdatePlanOnly
+ * @description Restricted admin update — sets ONLY `plan` and `adminUpdatedAt`. Never touches
+ *              `status`, `stripeCustomerId`, `stripeSubscriptionId`, `currentPeriodStart`, or
+ *              the per-family event-ordering markers. Webhook handlers retain exclusive write
+ *              authority on those fields via `updateIfEventNewer`.
+ *
+ *              Why this restriction matters: a free `update()` call with `{ plan, status }` from
+ *              an admin path would overwrite Stripe-driven status (active/past_due/etc.) with
+ *              whatever the admin sent, breaking dunning + access control. Splitting the surface
+ *              forces admin overrides to plan-only territory.
+ *
+ * @param {string} id - Subscription ObjectId (string).
+ * @param {string} planId - The new plan identifier (must be in config.billing.plans enum).
+ * @param {string} adminUserId - The admin user ObjectId (string) who triggered the bump (for audit).
+ * @returns {Promise<Object|null>} Updated subscription doc, or null if id is invalid.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const adminUpdatePlanOnly = (id, planId, adminUserId) => {
+  if (!id || !mongoose.Types.ObjectId.isValid(id)) return null;
+  // Validate adminUserId before persisting to adminUpdatedBy (ObjectId field).
+  // An empty string or non-ObjectId value triggers a Mongoose CastError at save time.
+  const safeAdminUserId =
+    adminUserId && mongoose.Types.ObjectId.isValid(adminUserId) ? adminUserId : null;
+  return Subscription.findByIdAndUpdate(
+    id,
+    {
+      $set: {
+        plan: planId,
+        adminUpdatedAt: new Date(),
+        adminUpdatedBy: safeAdminUserId,
       },
     },
     { returnDocument: 'after', runValidators: true },
@@ -288,4 +325,5 @@ export default {
   findStaleDunning,
   markUnpaid,
   updateIfEventNewer,
+  adminUpdatePlanOnly,
 };

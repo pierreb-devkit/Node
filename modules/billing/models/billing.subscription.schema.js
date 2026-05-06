@@ -24,13 +24,14 @@ const baseShape = {
   currentPeriodStart: z.coerce.date().nullable().optional(),
   pastDueSince: z.coerce.date().nullable().optional(),
   lastResetAt: z.coerce.date().nullable().optional(),
-  stripeEventCreatedAt: z.number().int().nullable().optional(),
-  stripeEventId: z.string().nullable().optional(),
   // Per-family event ordering guards
   lastSubscriptionEventCreatedAt: z.number().int().nullable().optional(),
   lastSubscriptionEventId: z.string().nullable().optional(),
   lastInvoiceEventCreatedAt: z.number().int().nullable().optional(),
   lastInvoiceEventId: z.string().nullable().optional(),
+  // Admin override audit trail
+  adminUpdatedAt: z.coerce.date().nullable().optional(),
+  adminUpdatedBy: z.string().regex(objectIdRegex).nullable().optional(),
 };
 
 const Subscription = z.object({
@@ -101,9 +102,8 @@ const AdminRefundRequest = z
 
 const AdminBumpPlanRequest = z
   .object({
-    planId: z.string().trim().min(1, 'planId is required'),
-    meterQuota: z.number().int().nonnegative(),
-    ratios: z.record(z.string(), z.number().nonnegative()).optional(),
+    orgId: z.string().regex(/^[a-f0-9]{24}$/i, 'orgId must be a valid ObjectId'),
+    planId: z.enum(config.billing.plans),
   })
   .strict();
 

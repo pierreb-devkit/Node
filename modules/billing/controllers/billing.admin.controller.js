@@ -58,6 +58,86 @@ const adminRefundCharge = async (req, res) => {
   }
 };
 
+/**
+ * @desc Admin endpoint to override an organization's subscription plan.
+ *       Restricted to plan changes only — never touches Stripe-driven status fields.
+ *       Stripe remains source of truth for status / period / customer ids; this is
+ *       a manual ops escape hatch (e.g. comp a user during support, force a plan
+ *       during testing). The audit trail (adminUpdatedAt / adminUpdatedBy) is set
+ *       by the repo method.
+ *
+ *       NOTE: this DOES NOT call Stripe. The downstream Stripe subscription remains
+ *       on whatever plan the user is paying for. Use this only when the DB plan
+ *       must diverge from Stripe (rare ops scenarios). To change the actual Stripe
+ *       subscription, use the customer's Billing Portal or a separate Stripe API call.
+ *
+ * @param {Object} req - Express request object (req.body validated as AdminBumpPlanRequest)
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
+const adminBumpPlan = async (req, res) => {
+  try {
+    const { orgId, planId } = req.body;
+
+    // Guard: req.user._id must be a valid ObjectId — the JWT middleware sets it, but a missing
+    // or malformed token could leave it undefined, causing a Mongoose CastError downstream.
+    const rawAdminId = req.user?._id;
+    if (!rawAdminId) {
+      return responses.error(res, 422, 'Unprocessable Entity', 'Failed to bump plan')(
+        new Error('invalid argument: authenticated user id is missing'),
+      );
+    }
+    const adminUserId = String(rawAdminId);
+
+    // NOTE: this controller orchestrates directly against repo + logger to avoid adding a
+    // dedicated service method for a single admin escape hatch. This is an intentional
+    // exception to the service-layer convention: the operation is simple (find → update → sync),
+    // has no domain logic beyond what the repo already provides, and extracting it into
+    // billing.admin.service.js would add ceremony for no isolation benefit.
+    // Tracked for refactor in a future service-extraction pass if more admin operations join.
+    //
+    // Lazy imports — the repo module references mongoose.model('Subscription') at load time,
+    // and the logger module touches config.log.fileLogger which isn't always mocked. Unrelated
+    // unit tests that mock Stripe but don't load full schemas would crash on top-level imports.
+    const { default: SubscriptionRepository } = await import('../repositories/billing.subscription.repository.js');
+    const { default: OrganizationRepository } = await import('../../organizations/repositories/organizations.repository.js');
+    const { default: logger } = await import('../../../lib/services/logger.js');
+
+    const existing = await SubscriptionRepository.findByOrganization(orgId);
+    if (!existing) {
+      return responses.error(res, 404, 'Not Found', 'Subscription not found for organization')(
+        new Error(`subscription not found for orgId=${orgId}`),
+      );
+    }
+
+    const updated = await SubscriptionRepository.adminUpdatePlanOnly(String(existing._id), planId, adminUserId);
+
+    // Sync org plan so meter quotas / feature flags / access control reflect the bump
+    // immediately. Without this the new plan only applies to the subscription doc, but
+    // the organization's plan field — read by requirePlan / requireQuota — stays stale
+    // until the next Stripe webhook (which may revert to Stripe's value).
+    await OrganizationRepository.setPlan(orgId, planId);
+
+    logger.info('[billing.admin] plan bumped manually', {
+      orgId,
+      previousPlan: existing.plan,
+      newPlan: planId,
+      adminUserId,
+      subscriptionId: String(existing._id),
+    });
+
+    return responses.success(res, 'subscription plan bumped')(updated);
+  } catch (err) {
+    // Surface schema/validation errors from Mongoose as 422 instead of letting them fall to 500.
+    if (err?.name === 'ValidationError' || err?.message?.startsWith('invalid argument')) {
+      return responses.error(res, 422, 'Unprocessable Entity', 'Failed to bump plan')(err);
+    }
+    return responses.error(res, 500, 'Internal Server Error', 'Failed to bump plan')(err);
+  }
+};
+
 export default {
   adminRefundCharge,
+  adminBumpPlan,
 };

@@ -240,18 +240,18 @@ describe('Billing unit tests:', () => {
       expect(result.data.planVersion).toBe('v3');
     });
 
-    test('should accept stripeEventId as optional string', () => {
-      subscription.stripeEventId = 'evt_1AbCdEf';
+    test('should accept lastSubscriptionEventId as optional string', () => {
+      subscription.lastSubscriptionEventId = 'evt_1AbCdEf';
       const result = schema.Subscription.safeParse(subscription);
       expect(result.error).toBeFalsy();
-      expect(result.data.stripeEventId).toBe('evt_1AbCdEf');
+      expect(result.data.lastSubscriptionEventId).toBe('evt_1AbCdEf');
     });
 
-    test('should accept stripeEventId as null', () => {
-      subscription.stripeEventId = null;
+    test('should accept lastSubscriptionEventId as null', () => {
+      subscription.lastSubscriptionEventId = null;
       const result = schema.Subscription.safeParse(subscription);
       expect(result.error).toBeFalsy();
-      expect(result.data.stripeEventId).toBeNull();
+      expect(result.data.lastSubscriptionEventId).toBeNull();
     });
   });
 
