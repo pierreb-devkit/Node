@@ -275,6 +275,26 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       expect(mockExtraService.debit).not.toHaveBeenCalled();
     });
 
+    test('debit applied=false with unexpected reason → logs error, continues', async () => {
+      const loggerMod = await import('../../../lib/services/logger.js');
+      const mockLoggerError = loggerMod.default.error;
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan({ meterQuota: 500000 }));
+      const updatedDoc = makeUsageDoc({ meterUsed: 510000, meterQuota: 500000 });
+      mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
+      // applied=false with reason that is NOT 'duplicate_step' — unexpected, should log error
+      mockExtraService.debit.mockResolvedValue({ applied: false, reason: 'insufficient_balance' });
+
+      const result = await BillingUsageService.incrementMeter(orgId, 50000, {}, 'hist_debit_unexpected_skip');
+
+      expect(result.applied).toBe(true);
+      expect(result.extrasConsumed).toBe(10000);
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        '[billing.usage] extras debit unexpectedly not applied',
+        expect.objectContaining({ organizationId: orgId, reason: 'insufficient_balance' }),
+      );
+    });
+
     test('debit failure is non-fatal — logs warning and still returns applied=true', async () => {
       const loggerMod = await import('../../../lib/services/logger.js');
       const mockLoggerWarn = loggerMod.default.warn;
