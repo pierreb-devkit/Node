@@ -21,6 +21,12 @@ export function billingSubjectRegistration({ registerPathSubject }) {
   registerPathSubject('/api/billing/extras/ledger', 'BillingExtrasLedger');
   registerPathSubject('/api/admin/billing/refund', 'BillingAdminRefund');
   registerPathSubject('/api/admin/billing/plans/bump', 'BillingAdminPlanBump');
+  // Admin toolkit — 6 diagnostic + ops endpoints (all require admin role)
+  registerPathSubject('/api/admin/billing/customer', 'BillingAdminOps');
+  registerPathSubject('/api/admin/billing/sync', 'BillingAdminOps');
+  registerPathSubject('/api/admin/billing/webhook/replay', 'BillingAdminOps');
+  registerPathSubject('/api/admin/billing/dead-letters', 'BillingAdminOps');
+  registerPathSubject('/api/admin/billing/cancel', 'BillingAdminOps');
   // Webhook is mounted in billing.preroute.js before body parsing and auth middleware,
   // so it bypasses policy.isAllowed entirely. Registered here for documentation completeness.
   registerPathSubject('/api/billing/webhook', 'BillingWebhook');

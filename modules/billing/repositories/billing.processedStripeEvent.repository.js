@@ -142,10 +142,61 @@ const markDeadLetter = async (eventId) => {
   ).exec();
 };
 
+/**
+ * @function listDeadLetters
+ * @description Paginated list of dead-lettered processed events (deadLetter: true).
+ *              Sorted by processedAt descending (most-recently dead-lettered first).
+ * @param {Object} [opts] - Pagination options.
+ * @param {number} [opts.page=1] - 1-based page number.
+ * @param {number} [opts.limit=20] - Items per page (max 100).
+ * @returns {Promise<{items: Array, total: number, page: number, limit: number}>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const listDeadLetters = async ({ page = 1, limit = 20 } = {}) => {
+  const parsedPage = Math.floor(Number(page));
+  const parsedLimit = Math.floor(Number(limit));
+  // page: clamp to ≥1, fall back to 1 for NaN/non-finite
+  const safePage = Number.isFinite(parsedPage) ? Math.max(1, parsedPage) : 1;
+  // limit: clamp to [1, 100], fall back to 20 for NaN/non-finite
+  const safeLimit = Number.isFinite(parsedLimit) ? Math.min(100, Math.max(1, parsedLimit)) : 20;
+  const skip = (safePage - 1) * safeLimit;
+
+  const [items, total] = await Promise.all([
+    ProcessedStripeEvent()
+      .find({ deadLetter: true })
+      .sort({ processedAt: -1 })
+      .skip(skip)
+      .limit(safeLimit)
+      .lean()
+      .exec(),
+    ProcessedStripeEvent().countDocuments({ deadLetter: true }),
+  ]);
+
+  return { items, total, page: safePage, limit: safeLimit };
+};
+
+/**
+ * @function purgeDeadLetterByEventId
+ * @description Permanently delete a dead-lettered event by eventId.
+ *              Only removes documents where deadLetter === true (safety guard).
+ * @param {string} eventId - Stripe event ID to purge.
+ * @returns {Promise<{purged: boolean}>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const purgeDeadLetterByEventId = async (eventId) => {
+  if (typeof eventId !== 'string' || eventId.trim() === '') {
+    throw new Error('invalid argument: eventId must be a non-empty string');
+  }
+  const result = await ProcessedStripeEvent().deleteOne({ eventId, deadLetter: true });
+  return { purged: result.deletedCount > 0 };
+};
+
 export default {
   tryRecord,
   wasProcessed,
   deleteByEventId,
   incrementAttempts,
   markDeadLetter,
+  listDeadLetters,
+  purgeDeadLetterByEventId,
 };

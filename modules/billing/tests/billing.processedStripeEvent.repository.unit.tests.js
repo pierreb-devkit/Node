@@ -208,4 +208,112 @@ describe('ProcessedStripeEventRepository unit tests:', () => {
       ).rejects.toThrow('DB connection lost');
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // listDeadLetters (new in feat/billing-admin-toolkit-foundations)
+  // ─────────────────────────────────────────────────────────────────────────────
+  describe('listDeadLetters', () => {
+    const stubFind = (items = []) => {
+      const chain = {
+        sort: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockReturnThis(),
+        exec: jest.fn().mockResolvedValue(items),
+      };
+      return chain;
+    };
+
+    test('returns paginated dead-letter items and total', async () => {
+      const deadItems = [{ eventId: 'evt_dl_001', deadLetter: true }];
+      mockModel.find = jest.fn().mockReturnValue(stubFind(deadItems));
+      mockModel.countDocuments = jest.fn().mockResolvedValue(1);
+
+      const result = await ProcessedStripeEventRepository.listDeadLetters({ page: 1, limit: 20 });
+
+      expect(result).toMatchObject({ items: deadItems, total: 1, page: 1, limit: 20 });
+      expect(mockModel.find).toHaveBeenCalledWith({ deadLetter: true });
+      expect(mockModel.countDocuments).toHaveBeenCalledWith({ deadLetter: true });
+    });
+
+    test('defaults page to 1 and limit to 20 when not provided', async () => {
+      mockModel.find = jest.fn().mockReturnValue(stubFind([]));
+      mockModel.countDocuments = jest.fn().mockResolvedValue(0);
+
+      const result = await ProcessedStripeEventRepository.listDeadLetters();
+
+      expect(result).toMatchObject({ page: 1, limit: 20 });
+    });
+
+    test('clamps limit to 100 maximum', async () => {
+      mockModel.find = jest.fn().mockReturnValue(stubFind([]));
+      mockModel.countDocuments = jest.fn().mockResolvedValue(0);
+
+      const result = await ProcessedStripeEventRepository.listDeadLetters({ page: 1, limit: 999 });
+
+      expect(result.limit).toBe(100);
+    });
+
+    test('clamps limit to 1 minimum', async () => {
+      mockModel.find = jest.fn().mockReturnValue(stubFind([]));
+      mockModel.countDocuments = jest.fn().mockResolvedValue(0);
+
+      const result = await ProcessedStripeEventRepository.listDeadLetters({ page: 1, limit: 0 });
+
+      expect(result.limit).toBe(1);
+    });
+
+    test('returns empty list when no dead-letter events exist', async () => {
+      mockModel.find = jest.fn().mockReturnValue(stubFind([]));
+      mockModel.countDocuments = jest.fn().mockResolvedValue(0);
+
+      const result = await ProcessedStripeEventRepository.listDeadLetters();
+
+      expect(result.items).toHaveLength(0);
+      expect(result.total).toBe(0);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // purgeDeadLetterByEventId (new in feat/billing-admin-toolkit-foundations)
+  // ─────────────────────────────────────────────────────────────────────────────
+  describe('purgeDeadLetterByEventId', () => {
+    test('returns { purged: true } when dead-letter document deleted', async () => {
+      mockModel.deleteOne.mockResolvedValue({ deletedCount: 1 });
+
+      const result = await ProcessedStripeEventRepository.purgeDeadLetterByEventId('evt_dl_001');
+
+      expect(result).toEqual({ purged: true });
+      expect(mockModel.deleteOne).toHaveBeenCalledWith({ eventId: 'evt_dl_001', deadLetter: true });
+    });
+
+    test('returns { purged: false } when event not found or not dead-lettered', async () => {
+      mockModel.deleteOne.mockResolvedValue({ deletedCount: 0 });
+
+      const result = await ProcessedStripeEventRepository.purgeDeadLetterByEventId('evt_not_dl');
+
+      expect(result).toEqual({ purged: false });
+    });
+
+    test('guard: uses deadLetter: true filter to prevent purging healthy events', async () => {
+      mockModel.deleteOne.mockResolvedValue({ deletedCount: 0 });
+
+      await ProcessedStripeEventRepository.purgeDeadLetterByEventId('evt_active');
+
+      const call = mockModel.deleteOne.mock.calls[0][0];
+      expect(call).toEqual({ eventId: 'evt_active', deadLetter: true });
+    });
+
+    test('throws for empty eventId', async () => {
+      await expect(
+        ProcessedStripeEventRepository.purgeDeadLetterByEventId(''),
+      ).rejects.toThrow('invalid argument: eventId must be a non-empty string');
+    });
+
+    test('throws for non-string eventId', async () => {
+      await expect(
+        ProcessedStripeEventRepository.purgeDeadLetterByEventId(null),
+      ).rejects.toThrow('invalid argument: eventId must be a non-empty string');
+    });
+  });
 });

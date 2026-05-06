@@ -34,6 +34,9 @@ describe('BillingUsage concurrent attribution integration tests:', () => {
     BillingExtraBalance = mongoose.model('BillingExtraBalance');
     Subscription = mongoose.model('Subscription');
 
+    // Ensure compound indexes are synced before running concurrent tests.
+    await Subscription.syncIndexes();
+
     BillingUsageService = (await import('../services/billing.usage.service.js')).default;
   });
 

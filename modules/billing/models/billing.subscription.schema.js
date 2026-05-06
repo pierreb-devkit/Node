@@ -107,9 +107,31 @@ const AdminBumpPlanRequest = z
   })
   .strict();
 
+/**
+ * Webhook replay request body schema.
+ * eventId: Stripe event ID (evt_xxx) to re-fetch and re-dispatch.
+ */
+const AdminWebhookReplayRequest = z
+  .object({
+    eventId: z.string().trim().min(1, 'eventId is required'),
+  })
+  .strict();
+
+/**
+ * Dead-letters list query schema (GET parameters — all optional).
+ */
+const AdminDeadLettersQuery = z
+  .object({
+    page: z.coerce.number().int().min(1).optional().default(1),
+    limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+  })
+  .strict();
+
 export {
   AdminRefundRequest,
   AdminBumpPlanRequest,
+  AdminWebhookReplayRequest,
+  AdminDeadLettersQuery,
 };
 
 export default {
@@ -120,4 +142,6 @@ export default {
   ExtrasCheckoutRequest,
   AdminRefundRequest,
   AdminBumpPlanRequest,
+  AdminWebhookReplayRequest,
+  AdminDeadLettersQuery,
 };
