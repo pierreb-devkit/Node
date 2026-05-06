@@ -238,4 +238,56 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
     // No DB write must happen — only Stripe reads + logs
     // (mockSubscriptionModel has no update/save methods set up — if called they'd throw)
   });
+
+  test('paginates to second page when first page is full (RECONCILE_PAGE_SIZE=100)', async () => {
+    // Build an array of 100 subs (full page) then an empty second page
+    const fullPage = Array.from({ length: 100 }, (_, i) => makeDbSub({
+      _id: `sub_doc_${i}`,
+      stripeSubscriptionId: `sub_test_${i}`,
+    }));
+
+    const chain = {
+      skip: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockReturnThis(),
+      exec: jest.fn()
+        .mockResolvedValueOnce(fullPage)  // page 0: full — triggers page += 1
+        .mockResolvedValueOnce([]),        // page 1: empty — exits loop
+    };
+    mockSubscriptionModel.find.mockReturnValue(chain);
+    mockStripeInstance.subscriptions.retrieve.mockResolvedValue(makeStripeSub());
+
+    const result = await BillingReconcileService.runReconciliation();
+
+    // All 100 subs from page 0 should be checked
+    expect(result).toMatchObject({ checked: 100, divergences: 0, errors: 0 });
+    // find should have been called twice (page 0 + page 1)
+    expect(mockSubscriptionModel.find).toHaveBeenCalledTimes(2);
+  });
+
+  test('non-fatal: billingEvents.emit listener error is swallowed, divergence still counted', async () => {
+    const sub = makeDbSub({ status: 'active' });
+    const chain = {
+      skip: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockReturnThis(),
+      exec: jest.fn()
+        .mockResolvedValueOnce([sub])
+        .mockResolvedValue([]),
+    };
+    mockSubscriptionModel.find.mockReturnValue(chain);
+    mockStripeInstance.subscriptions.retrieve.mockResolvedValue(makeStripeSub({ status: 'canceled' }));
+    // Simulate a listener throwing on emit
+    mockEvents.emit.mockImplementation(() => { throw new Error('listener crash'); });
+
+    const result = await BillingReconcileService.runReconciliation();
+
+    // Divergence is still counted despite listener crash
+    expect(result).toMatchObject({ checked: 1, divergences: 1, errors: 0 });
+    // Error should be logged (non-fatal)
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing.reconcile] billing.reconciliation.divergence listener error (non-fatal)',
+      expect.objectContaining({ error: 'listener crash' }),
+    );
+  });
 });

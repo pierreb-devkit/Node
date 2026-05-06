@@ -278,6 +278,33 @@ describe('BillingAdminService unit tests:', () => {
       const result = await BillingAdminService.replayWebhookEvent('evt_unknown');
       expect(result.result).toMatchObject({ skipped: true, reason: 'unhandled_event_type' });
     });
+
+    // Each supported event type should route to its withIdempotency handler
+    const SUPPORTED_TYPES = [
+      'checkout.session.completed',
+      'customer.subscription.created',
+      'customer.subscription.deleted',
+      'invoice.payment_failed',
+      'invoice.payment_succeeded',
+      'charge.refunded',
+      'customer.deleted',
+      'charge.dispute.created',
+      'charge.dispute.funds_withdrawn',
+      'charge.dispute.funds_reinstated',
+    ];
+
+    test.each(SUPPORTED_TYPES)('dispatches %s via withIdempotency', async (eventType) => {
+      mockStripeInstance.events.retrieve.mockResolvedValue({
+        id: `evt_${eventType.replace(/\./g, '_')}`,
+        type: eventType,
+        data: { object: { id: 'sub_test_001' } },
+      });
+
+      const result = await BillingAdminService.replayWebhookEvent(`evt_${eventType.replace(/\./g, '_')}`);
+
+      expect(mockWebhookService.withIdempotency).toHaveBeenCalled();
+      expect(result).toMatchObject({ eventType });
+    });
   });
 
   // ─────────────────────────────────────────────────────────────────────────────

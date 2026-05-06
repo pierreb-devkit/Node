@@ -251,6 +251,55 @@ describe('Billing admin toolkit integration tests:', () => {
 
       expect(res.status).toHaveBeenCalledWith(403);
     });
+
+    test('returns 422 when service throws 422', async () => {
+      const routes = await buildRoutes();
+      const route = routes.get('/api/admin/billing/sync/:orgId');
+      const res = makeRes();
+      mockAdminService.syncOrgFromStripe.mockRejectedValue(
+        Object.assign(new Error('no stripe sub id'), { status: 422 }),
+      );
+
+      await runHandlers(
+        [...route.all, ...route.post],
+        { headers: { 'x-role': 'admin' }, params: { orgId }, body: {} },
+        res,
+      );
+
+      expect(res.status).toHaveBeenCalledWith(422);
+    });
+
+    test('returns 502 when service throws 502', async () => {
+      const routes = await buildRoutes();
+      const route = routes.get('/api/admin/billing/sync/:orgId');
+      const res = makeRes();
+      mockAdminService.syncOrgFromStripe.mockRejectedValue(
+        Object.assign(new Error('Stripe not configured'), { status: 502 }),
+      );
+
+      await runHandlers(
+        [...route.all, ...route.post],
+        { headers: { 'x-role': 'admin' }, params: { orgId }, body: {} },
+        res,
+      );
+
+      expect(res.status).toHaveBeenCalledWith(502);
+    });
+
+    test('returns 500 on unexpected error', async () => {
+      const routes = await buildRoutes();
+      const route = routes.get('/api/admin/billing/sync/:orgId');
+      const res = makeRes();
+      mockAdminService.syncOrgFromStripe.mockRejectedValue(new Error('unexpected'));
+
+      await runHandlers(
+        [...route.all, ...route.post],
+        { headers: { 'x-role': 'admin' }, params: { orgId }, body: {} },
+        res,
+      );
+
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
   });
 
   // ── POST /api/admin/billing/webhook/replay ────────────────────────────────────
@@ -299,6 +348,38 @@ describe('Billing admin toolkit integration tests:', () => {
 
       expect(res.status).toHaveBeenCalledWith(403);
     });
+
+    test('returns 502 when service throws 502', async () => {
+      const routes = await buildRoutes();
+      const route = routes.get('/api/admin/billing/webhook/replay');
+      const res = makeRes();
+      mockAdminService.replayWebhookEvent.mockRejectedValue(
+        Object.assign(new Error('Stripe unreachable'), { status: 502 }),
+      );
+
+      await runHandlers(
+        [...route.all, ...route.post],
+        { headers: { 'x-role': 'admin' }, body: { eventId } },
+        res,
+      );
+
+      expect(res.status).toHaveBeenCalledWith(502);
+    });
+
+    test('returns 500 on unexpected error', async () => {
+      const routes = await buildRoutes();
+      const route = routes.get('/api/admin/billing/webhook/replay');
+      const res = makeRes();
+      mockAdminService.replayWebhookEvent.mockRejectedValue(new Error('unexpected'));
+
+      await runHandlers(
+        [...route.all, ...route.post],
+        { headers: { 'x-role': 'admin' }, body: { eventId } },
+        res,
+      );
+
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
   });
 
   // ── GET /api/admin/billing/dead-letters ──────────────────────────────────────
@@ -331,6 +412,21 @@ describe('Billing admin toolkit integration tests:', () => {
       );
 
       expect(res.status).toHaveBeenCalledWith(403);
+    });
+
+    test('returns 500 on unexpected error', async () => {
+      const routes = await buildRoutes();
+      const route = routes.get('/api/admin/billing/dead-letters');
+      const res = makeRes();
+      mockAdminService.listDeadLetters.mockRejectedValue(new Error('db down'));
+
+      await runHandlers(
+        [...route.all, ...route.get],
+        { headers: { 'x-role': 'admin' }, query: {} },
+        res,
+      );
+
+      expect(res.status).toHaveBeenCalledWith(500);
     });
   });
 
