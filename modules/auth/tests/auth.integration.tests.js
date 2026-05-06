@@ -1542,7 +1542,7 @@ describe('Auth integration tests:', () => {
       expect(result.body.data.billing).toBeDefined();
       expect(typeof result.body.data.billing.enabled).toBe('boolean');
       expect(typeof result.body.data.billing.meterMode).toBe('boolean');
-      expect(result.body.data.billing.equivalences).toBeNull();
+      expect(result.body.data.billing.equivalences).toEqual(config.billing?.equivalences ?? null);
     });
 
     test('should reflect billing.meterMode=true when enabled (authenticated)', async () => {
