@@ -138,6 +138,28 @@ UsageMongoose.index(
 UsageMongoose.index({ organizationId: 1, weekKey: 1 }, { unique: true, sparse: true });
 
 /**
+ * TTL index: automatically purge archived usage documents after 1 year.
+ *
+ * Conditional on archivedAt being set (non-null) — active (non-archived) documents
+ * are excluded from this TTL via partialFilterExpression, so only past periods are
+ * eligible for purge. The 1-year retention keeps the audit trail long enough for
+ * billing reconciliation while preventing unbounded collection growth.
+ *
+ * Notes:
+ *   - The TTL daemon runs once per minute; actual deletion may lag by up to ~1min.
+ *   - Verify this index with: db.billingusages.getIndexes() — look for expireAfterSeconds.
+ *   - archivedAt is set by archiveOtherWeeks() in the usage repository when the
+ *     weekly reset sweep moves old weeks to the archive state.
+ */
+UsageMongoose.index(
+  { archivedAt: 1 },
+  {
+    expireAfterSeconds: 365 * 24 * 60 * 60,
+    partialFilterExpression: { archivedAt: { $type: 'date' } },
+  },
+);
+
+/**
  * Returns the hex string representation of the document ObjectId.
  * @returns {string} Hex string of the ObjectId.
  */

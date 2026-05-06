@@ -404,7 +404,11 @@ describe('withIdempotency — replay-storm dead-letter protection:', () => {
 
     await expect(BillingWebhookService.withIdempotency(event, handler)).rejects.toThrow('transient');
 
-    expect(mockProcessedStripeEventRepository.incrementAttempts).toHaveBeenCalledWith('evt_rl_001', 'transient');
+    // incrementAttempts receives the full Error object (for stack trace capture)
+    const [eidArg, errArg] = mockProcessedStripeEventRepository.incrementAttempts.mock.calls[0];
+    expect(eidArg).toBe('evt_rl_001');
+    expect(errArg).toBeInstanceOf(Error);
+    expect(errArg.message).toBe('transient');
     // Doc must NOT be deleted — attempts must persist across Stripe redeliveries
     // so MAX_ATTEMPTS (5) is reachable. Deleting on rollback was the original bug.
     expect(mockProcessedStripeEventRepository.deleteByEventId).not.toHaveBeenCalled();

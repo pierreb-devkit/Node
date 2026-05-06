@@ -22,6 +22,9 @@ const handleWebhook = async (req, res) => {
 
   const sig = req.headers['stripe-signature'];
   const { webhookSecret } = config.stripe;
+  // req.id is injected by the global requestId middleware (lib/middlewares/requestId.js).
+  // Propagate it through to enable end-to-end traceability across webhook log lines.
+  const requestId = req.id;
 
   let event;
   try {
@@ -30,70 +33,83 @@ const handleWebhook = async (req, res) => {
     return responses.error(res, 400, 'Bad Request', 'Webhook signature verification failed')(err);
   }
 
+  logger.info('[billing.webhook] received', { type: event.type, id: event.id, requestId });
+
   try {
     switch (event.type) {
       case 'checkout.session.completed':
         await BillingWebhookService.withIdempotency(event, (e) =>
           BillingWebhookService.handleCheckoutSessionCompleted(e),
+          { requestId },
         );
         break;
       case 'customer.subscription.created':
         await BillingWebhookService.withIdempotency(event, (e) =>
           BillingWebhookService.handleSubscriptionCreated(e.data.object, e),
+          { requestId },
         );
         break;
       case 'customer.subscription.updated':
         await BillingWebhookService.withIdempotency(event, (e) =>
           BillingWebhookService.handleSubscriptionUpdated(e.data.object, e),
+          { requestId },
         );
         break;
       case 'customer.subscription.deleted':
         await BillingWebhookService.withIdempotency(event, (e) =>
           BillingWebhookService.handleSubscriptionDeleted(e.data.object, e),
+          { requestId },
         );
         break;
       case 'invoice.payment_failed':
         await BillingWebhookService.withIdempotency(event, (e) =>
           BillingWebhookService.handleInvoicePaymentFailed(e.data.object, e),
+          { requestId },
         );
         break;
       case 'invoice.payment_succeeded':
         await BillingWebhookService.withIdempotency(event, (e) =>
           BillingWebhookService.handleInvoicePaymentSucceeded(e.data.object, e),
+          { requestId },
         );
         break;
       case 'charge.refunded':
         await BillingWebhookService.withIdempotency(event, (e) =>
           BillingWebhookService.handleChargeRefunded(e.data.object),
+          { requestId },
         );
         break;
       case 'customer.deleted':
         await BillingWebhookService.withIdempotency(event, (e) =>
           BillingWebhookService.handleCustomerDeleted(e.data.object, e),
+          { requestId },
         );
         break;
       case 'charge.dispute.created':
         await BillingWebhookService.withIdempotency(event, (e) =>
           BillingWebhookService.handleChargeDisputeCreated(e.data.object, e),
+          { requestId },
         );
         break;
       case 'charge.dispute.funds_withdrawn':
         await BillingWebhookService.withIdempotency(event, (e) =>
           BillingWebhookService.handleChargeDisputeFundsWithdrawn(e.data.object, e),
+          { requestId },
         );
         break;
       case 'charge.dispute.funds_reinstated':
         await BillingWebhookService.withIdempotency(event, (e) =>
           BillingWebhookService.handleChargeDisputeFundsReinstated(e.data.object, e),
+          { requestId },
         );
         break;
       default:
-        logger.info('[billing.webhook] unhandled event type', { type: event.type, id: event.id });
+        logger.info('[billing.webhook] unhandled event type', { type: event.type, id: event.id, requestId });
         break;
     }
     return res.status(200).json({ received: true });
   } catch (err) {
-    logger.error('Stripe webhook handler error:', err);
+    logger.error('[billing.webhook] handler error', { error: err?.message ?? String(err), stack: err?.stack, requestId });
     return responses.error(res, 500, 'Internal Server Error', 'Webhook handler failed')(err);
   }
 };

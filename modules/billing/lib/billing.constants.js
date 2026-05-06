@@ -23,17 +23,10 @@ export const DEFAULT_GRACE_PERIOD_DAYS = 7;
 export const DEFAULT_DUNNING_THRESHOLD_DAYS = 14;
 
 /**
- * Floor charge per run. `runBaseUnits` is kept as a backward-compatible alias
- * for downstream projects that already adopted the earlier config name.
- */
-export const METER_RUN_BASE =
-  config?.billing?.meter?.runBase
-  ?? config?.billing?.meter?.runBaseUnits
-  ?? DEFAULT_METER_RUN_BASE;
-
-/**
  * @function getMeterRunBase
  * @description Resolve the configured base units charged when no costs are present.
+ *              Evaluated lazily on each call so test overrides and runtime config
+ *              changes are always reflected (avoids the stale module-scope const pattern).
  * @returns {number} Meter run base units.
  */
 export const getMeterRunBase = () =>

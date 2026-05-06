@@ -139,7 +139,7 @@ describe('Billing webhook controller unit tests:', () => {
     await BillingWebhookController.handleWebhook(req, res);
 
     expect(mockBillingWebhookService.handleSubscriptionUpdated).toHaveBeenCalledWith({ id: 'sub_123' }, eventData);
-    expect(mockBillingWebhookService.withIdempotency).toHaveBeenCalledWith(eventData, expect.any(Function));
+    expect(mockBillingWebhookService.withIdempotency).toHaveBeenCalledWith(eventData, expect.any(Function), expect.objectContaining({}));
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -158,7 +158,7 @@ describe('Billing webhook controller unit tests:', () => {
     await BillingWebhookController.handleWebhook(req, res);
 
     expect(mockBillingWebhookService.handleSubscriptionDeleted).toHaveBeenCalledWith({ id: 'sub_del' }, eventData);
-    expect(mockBillingWebhookService.withIdempotency).toHaveBeenCalledWith(eventData, expect.any(Function));
+    expect(mockBillingWebhookService.withIdempotency).toHaveBeenCalledWith(eventData, expect.any(Function), expect.objectContaining({}));
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -177,7 +177,7 @@ describe('Billing webhook controller unit tests:', () => {
     await BillingWebhookController.handleWebhook(req, res);
 
     expect(mockBillingWebhookService.handleInvoicePaymentFailed).toHaveBeenCalledWith({ id: 'inv_fail' }, eventData);
-    expect(mockBillingWebhookService.withIdempotency).toHaveBeenCalledWith(eventData, expect.any(Function));
+    expect(mockBillingWebhookService.withIdempotency).toHaveBeenCalledWith(eventData, expect.any(Function), expect.objectContaining({}));
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -199,7 +199,7 @@ describe('Billing webhook controller unit tests:', () => {
       { id: 'dp_fw_1', charge: 'ch_1', amount: 2900 },
       eventData,
     );
-    expect(mockBillingWebhookService.withIdempotency).toHaveBeenCalledWith(eventData, expect.any(Function));
+    expect(mockBillingWebhookService.withIdempotency).toHaveBeenCalledWith(eventData, expect.any(Function), expect.objectContaining({}));
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -237,7 +237,10 @@ describe('Billing webhook controller unit tests:', () => {
     const req = { headers: { 'stripe-signature': 'sig_ok' }, body: 'raw' };
     await BillingWebhookController.handleWebhook(req, res);
 
-    expect(loggerMod.default.error).toHaveBeenCalledWith('Stripe webhook handler error:', expect.any(Error));
+    expect(loggerMod.default.error).toHaveBeenCalledWith(
+      '[billing.webhook] handler error',
+      expect.objectContaining({ error: 'DB error' }),
+    );
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
       type: 'error',

@@ -71,10 +71,11 @@ describe('BillingMeterService unit tests:', () => {
     jest.restoreAllMocks();
   });
 
-  describe('METER_RUN_BASE constant', () => {
-    test('should export METER_RUN_BASE from config', async () => {
+  describe('getMeterRunBase export', () => {
+    test('should export getMeterRunBase function returning configured value', async () => {
       const mod = await import('../services/billing.meter.service.js');
-      expect(mod.METER_RUN_BASE).toBe(1);
+      expect(typeof mod.default.getMeterRunBase).toBe('function');
+      expect(mod.default.getMeterRunBase()).toBe(1);
     });
   });
 
