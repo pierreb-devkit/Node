@@ -76,7 +76,8 @@ try {
         logger.error('[cron.dunningSweep] Org plan sync failed (manual reconciliation required)', {
           subId: String(sub._id),
           orgId: String(sub.organization),
-          err: orgErr,
+          err: orgErr?.message,
+          stack: orgErr?.stack,
         });
         desyncErrors += 1;
       }
@@ -88,14 +89,14 @@ try {
       processed += 1;
     } catch (err) {
       errors += 1;
-      logger.error('[cron.dunningSweep] failed for sub', { subId: String(sub._id), err });
+      logger.error('[cron.dunningSweep] failed for sub', { subId: String(sub._id), err: err?.message, stack: err?.stack });
     }
   }
 
   logger.info('[cron.dunningSweep] complete', { processed, errors, desyncErrors, durationMs: Date.now() - startMs });
   process.exitCode = errors > 0 ? 1 : 0;
 } catch (err) {
-  logger.error('[cron.dunningSweep] failed', { err });
+  logger.error('[cron.dunningSweep] failed', { err: err?.message, stack: err?.stack });
   process.exitCode = 1;
 } finally {
   await mongooseService.disconnect?.();

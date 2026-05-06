@@ -59,14 +59,14 @@ try {
       processed += 1;
     } catch (err) {
       errors += 1;
-      logger.error('[cron.extrasExpiration] expireOldEntries failed', { orgId: String(orgId), err });
+      logger.error('[cron.extrasExpiration] expireOldEntries failed', { orgId: String(orgId), err: err?.message, stack: err?.stack });
     }
   }
 
   logger.info('[cron.extrasExpiration] complete', { processed, errors, durationMs: Date.now() - startMs });
   process.exitCode = errors > 0 ? 1 : 0;
 } catch (err) {
-  logger.error('[cron.extrasExpiration] failed', { err });
+  logger.error('[cron.extrasExpiration] failed', { err: err?.message, stack: err?.stack });
   process.exitCode = 1;
 } finally {
   await mongooseService.disconnect?.();

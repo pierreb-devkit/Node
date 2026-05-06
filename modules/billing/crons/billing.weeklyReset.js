@@ -35,9 +35,8 @@ if (!config?.billing?.meterMode) {
 const startMs = Date.now();
 logger.info('[cron.weeklyReset] start');
 
-await applyJitter(getCronJitterMaxMs());
-
 try {
+  await applyJitter(getCronJitterMaxMs());
   await mongooseService.loadModels();
   await mongooseService.connect();
 
@@ -47,7 +46,7 @@ try {
   logger.info('[cron.weeklyReset] complete', { processed: result.processed, errors: result.errors, durationMs: Date.now() - startMs });
   process.exitCode = result.errors > 0 ? 1 : 0;
 } catch (err) {
-  logger.error('[cron.weeklyReset] failed', { err });
+  logger.error('[cron.weeklyReset] failed', { err: err?.message, stack: err?.stack });
   process.exitCode = 1;
 } finally {
   await mongooseService.disconnect?.();
