@@ -138,8 +138,11 @@ const getPlans = async () => {
       staleTimestamp = Date.now();
       return plans;
     } catch (err) {
-      // Stripe unavailable — attempt stale fallback
-      const staleAge = now - staleTimestamp;
+      // Stripe unavailable — attempt stale fallback.
+      // Use Date.now() here (not the captured `now`) to account for the time
+      // spent inside the Stripe round-trip: entries near the 24h boundary
+      // must be evaluated at the moment the catch runs, not at function entry.
+      const staleAge = Date.now() - staleTimestamp;
       if (stalePlans && staleAge < STALE_TTL) {
         logger.warn('[billing.plans] Stripe unavailable — serving stale plans cache', {
           staleAgeMs: staleAge,

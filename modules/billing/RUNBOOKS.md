@@ -110,7 +110,7 @@ Operational runbooks for the billing module. Each runbook references real endpoi
 - [ ] All 4 CronJob manifests deployed: `trawl-billing-dunning-sweep`, `trawl-billing-weekly-reset`, `trawl-billing-extras-expiration`, `trawl-billing-reconcile`
 - [ ] Dead-letter queue empty: `GET /api/admin/billing/dead-letters` → 0 entries
 - [ ] Test mode webhooks drained: Stripe Dashboard → Webhooks → no pending test deliveries
-- [ ] Smoke test: manually create a LIVE checkout session for a test card (Stripe test card `4242...`) in staging pointed at LIVE keys — confirm `checkout.session.completed` webhook received + subscription created in DB
+- [ ] Smoke test: in staging pointed at **TEST** Stripe keys (not LIVE), create a checkout session using Stripe test card `4242 4242 4242 4242` — confirm `checkout.session.completed` webhook received + subscription created in DB. Do **not** use test cards against LIVE keys (they are rejected; use this step to validate the integration flow, then cut over to LIVE keys for production)
 - [ ] Rollback plan documented: toggling `STRIPE_SECRET_KEY` back to test key is sufficient for rollback (no DB migration required)
 
 **Go/no-go gate**: all checkboxes ticked + at least 1 successful end-to-end checkout in staging with LIVE keys.
