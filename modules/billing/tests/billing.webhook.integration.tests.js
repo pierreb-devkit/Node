@@ -322,6 +322,48 @@ describe('Billing webhook integration tests:', () => {
     });
   });
 
+  describe('handleSubscriptionUpdated — incomplete_expired', () => {
+    const makeEvent = (overrides = {}) => ({ id: 'evt_ie', created: 1700000110, data: {}, ...overrides });
+
+    test('should downgrade plan to free and emit billing.subscription.expired on incomplete_expired', async () => {
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      const { default: billingEvents } = await import('../lib/events.js');
+
+      await WebhookService.handleSubscriptionUpdated(
+        { id: 'sub_456', status: 'incomplete_expired', items: { data: [] } },
+        makeEvent(),
+      );
+
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
+        subId,
+        1700000110,
+        'evt_ie',
+        expect.objectContaining({ plan: 'free', status: 'incomplete_expired' }),
+        'subscription',
+      );
+      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'free');
+      expect(billingEvents.emit).toHaveBeenCalledWith('billing.subscription.expired', {
+        organizationId: orgId,
+        stripeSubscriptionId: 'sub_456',
+      });
+    });
+
+    test('should not throw when billing.subscription.expired listener throws', async () => {
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      const { default: billingEvents } = await import('../lib/events.js');
+      billingEvents.emit.mockImplementationOnce(() => { throw new Error('listener_error'); });
+
+      await expect(
+        WebhookService.handleSubscriptionUpdated(
+          { id: 'sub_456', status: 'incomplete_expired', items: { data: [] } },
+          makeEvent(),
+        ),
+      ).resolves.not.toThrow();
+    });
+  });
+
   describe('handleSubscriptionDeleted', () => {
     const makeEvent = (overrides = {}) => ({ id: 'evt_deleted', created: 1700000200, ...overrides });
 
@@ -559,6 +601,18 @@ describe('Billing webhook integration tests:', () => {
       );
 
       expect(billingEvents.emit).not.toHaveBeenCalled();
+    });
+
+    test('should not throw when billing.dispute.reinstated listener throws (non-fatal)', async () => {
+      const { default: billingEvents } = await import('../lib/events.js');
+      billingEvents.emit.mockImplementationOnce(() => { throw new Error('listener_error'); });
+
+      await expect(
+        WebhookService.handleChargeDisputeFundsReinstated(
+          { id: 'dp_123', charge: 'ch_456', amount: 5000 },
+          makeEvent(),
+        ),
+      ).resolves.not.toThrow();
     });
   });
 
