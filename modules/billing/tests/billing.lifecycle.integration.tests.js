@@ -70,8 +70,9 @@ describe('Billing meter lifecycle integration tests:', () => {
   });
 
   test('plan.changed webhook updates active week quota snapshot mid-week', async () => {
-    // Pick two distinct plan ids from the project's enum so the test runs on any downstream
-    // (upstream defaults expose no plans → fall back to legacy 'starter'/'pro').
+    // Pick two distinct plan ids from the project's enum so the test runs on any downstream.
+    // Upstream defaults expose ['free','starter','pro','enterprise'] via planDefinitions;
+    // fallback to ['starter','pro'] only when plans array is absent or has fewer than 2 entries.
     const plans = Array.isArray(config.billing?.plans) && config.billing.plans.length >= 2
       ? config.billing.plans
       : ['starter', 'pro'];
