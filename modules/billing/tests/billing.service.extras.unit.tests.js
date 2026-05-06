@@ -65,6 +65,16 @@ describe('BillingService.createExtrasCheckout unit tests:', () => {
     jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
       default: mockSubscriptionRepository,
     }));
+
+    // Mock logger to avoid real winston initialisation (requires full config.log)
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+    }));
+
+    // Mock events to avoid real EventEmitter side effects
+    jest.unstable_mockModule('../lib/events.js', () => ({
+      default: { emit: jest.fn(), on: jest.fn(), off: jest.fn() },
+    }));
   });
 
   afterEach(() => {

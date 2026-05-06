@@ -163,6 +163,16 @@ describe('Billing usage header integration tests:', () => {
       activeStatuses: ['active', 'trialing'],
     }));
 
+    // Mock logger to avoid real winston initialisation (requires full config.log)
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+    }));
+
+    // Mock events to avoid real EventEmitter side effects
+    jest.unstable_mockModule('../lib/events.js', () => ({
+      default: { emit: jest.fn(), on: jest.fn(), off: jest.fn() },
+    }));
+
     billingRoutes = (await import('../routes/billing.routes.js')).default;
 
     const { app, routes } = createRouteRegistry();

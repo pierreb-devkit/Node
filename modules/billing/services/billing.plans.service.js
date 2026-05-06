@@ -2,13 +2,27 @@
  * Module dependencies
  */
 import getStripe from '../lib/stripe.js';
+import logger from '../../../lib/services/logger.js';
+import billingEvents from '../lib/events.js';
+
+/**
+ * Cache TTLs (ms)
+ */
+const FRESH_TTL = 5 * 60 * 1000; // 5 minutes — serve directly without Stripe call
+const STALE_TTL = 24 * 60 * 60 * 1000; // 24 hours — serve stale + revalidate; beyond this: throw
 
 /**
  * In-memory cache for plans
  */
 let cachedPlans = null;
 let cacheTimestamp = 0;
-const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+/**
+ * Stale-while-revalidate: last known-good plans snapshot.
+ * Updated only on successful Stripe fetches. Survives Stripe outages up to STALE_TTL.
+ */
+let stalePlans = null;
+let staleTimestamp = 0;
 
 /**
  * In-flight fetch promise — used to deduplicate concurrent cache-miss callers.
@@ -84,7 +98,19 @@ const fetchPlansFromStripe = async (stripe) => {
 };
 
 /**
- * @desc Get billing plans with in-memory caching
+ * @desc Get billing plans with stale-while-revalidate caching.
+ *
+ * Cache tiers:
+ *   - Fresh (< FRESH_TTL=5min): return in-memory cache directly, no Stripe call.
+ *   - Stale (5min–24h): attempt Stripe fetch; on failure, return last known-good
+ *     snapshot + log warning + emit billing.plans.stale. Protects plans endpoint
+ *     during transient Stripe outages.
+ *   - Expired (> 24h stale): throw — clients get a 503 but new checkouts would
+ *     fail at Stripe anyway, so serving a 24h-old plan list adds no value.
+ *
+ * In-flight dedup: only one Stripe round-trip per cache-miss window regardless
+ * of concurrency (thundering-herd protection for the public plans endpoint).
+ *
  * @returns {Promise<Array>} array of plan objects sorted by monthlyPrice ascending
  */
 const getPlans = async () => {
@@ -92,7 +118,9 @@ const getPlans = async () => {
   if (!stripe) return [DEFAULT_FREE_PLAN];
 
   const now = Date.now();
-  if (cachedPlans && now - cacheTimestamp < CACHE_TTL) return cachedPlans;
+
+  // Fresh cache hit — return immediately, no Stripe call
+  if (cachedPlans && now - cacheTimestamp < FRESH_TTL) return cachedPlans;
 
   // In-flight dedup: if another caller is already fetching, await its result
   // instead of issuing parallel Stripe API calls. Reset on completion so the
@@ -105,7 +133,26 @@ const getPlans = async () => {
       const plans = await fetchPlansFromStripe(stripe);
       cachedPlans = plans;
       cacheTimestamp = Date.now();
+      // Update stale snapshot on every successful fetch
+      stalePlans = plans;
+      staleTimestamp = Date.now();
       return plans;
+    } catch (err) {
+      // Stripe unavailable — attempt stale fallback
+      const staleAge = now - staleTimestamp;
+      if (stalePlans && staleAge < STALE_TTL) {
+        logger.warn('[billing.plans] Stripe unavailable — serving stale plans cache', {
+          staleAgeMs: staleAge,
+          err: err?.message ?? String(err),
+        });
+        billingEvents.emit('billing.plans.stale', { staleAgeMs: staleAge });
+        // Update in-memory cache timestamp so next call within FRESH_TTL skips Stripe
+        cachedPlans = stalePlans;
+        cacheTimestamp = Date.now();
+        return stalePlans;
+      }
+      // Stale TTL exceeded — re-throw so callers can surface a proper error
+      throw err;
     } finally {
       inFlightFetch = null;
     }

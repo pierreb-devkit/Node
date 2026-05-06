@@ -20,19 +20,24 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'development';
 const [
   { default: config },
   { default: mongooseService },
+  { default: logger },
   { applyJitter },
   { getCronJitterMaxMs },
 ] = await Promise.all([
   import('../../../config/index.js'),
   import('../../../lib/services/mongoose.js'),
+  import('../../../lib/services/logger.js'),
   import('../lib/billing.cron-utils.js'),
   import('../lib/billing.constants.js'),
 ]);
 
 if (!config?.billing?.meterMode) {
-  console.log('[billing.reconcile] meterMode disabled — skipping.');
+  logger.info('[cron.reconcile] meterMode disabled — skipping.');
   process.exit(0);
 }
+
+const startMs = Date.now();
+logger.info('[cron.reconcile] start');
 
 await applyJitter(getCronJitterMaxMs());
 
@@ -47,12 +52,10 @@ try {
   ]);
 
   const result = await BillingReconcileService.runReconciliation();
-  console.log(
-    `[billing.reconcile] done — checked: ${result.checked}, divergences: ${result.divergences}, errors: ${result.errors}`,
-  );
+  logger.info('[cron.reconcile] complete', { checked: result.checked, divergences: result.divergences, errors: result.errors, durationMs: Date.now() - startMs });
   process.exitCode = result.errors > 0 ? 1 : 0;
 } catch (err) {
-  console.error('[billing.reconcile] fatal:', err);
+  logger.error('[cron.reconcile] failed', { err });
   process.exitCode = 1;
 } finally {
   await mongooseService.disconnect?.();

@@ -16,19 +16,24 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'development';
 const [
   { default: config },
   { default: mongooseService },
+  { default: logger },
   { applyJitter },
   { getCronJitterMaxMs },
 ] = await Promise.all([
   import('../../../config/index.js'),
   import('../../../lib/services/mongoose.js'),
+  import('../../../lib/services/logger.js'),
   import('../lib/billing.cron-utils.js'),
   import('../lib/billing.constants.js'),
 ]);
 
 if (!config?.billing?.meterMode) {
-  console.log('[billing.weeklyReset] meterMode disabled — skipping.');
+  logger.info('[cron.weeklyReset] meterMode disabled — skipping.');
   process.exit(0);
 }
+
+const startMs = Date.now();
+logger.info('[cron.weeklyReset] start');
 
 await applyJitter(getCronJitterMaxMs());
 
@@ -39,10 +44,10 @@ try {
   const { default: BillingResetService } = await import('../services/billing.reset.service.js');
 
   const result = await BillingResetService.resetAllDue();
-  console.log(`[billing.weeklyReset] done — processed: ${result.processed}, errors: ${result.errors}`);
+  logger.info('[cron.weeklyReset] complete', { processed: result.processed, errors: result.errors, durationMs: Date.now() - startMs });
   process.exitCode = result.errors > 0 ? 1 : 0;
 } catch (err) {
-  console.error('[billing.weeklyReset] fatal:', err);
+  logger.error('[cron.weeklyReset] failed', { err });
   process.exitCode = 1;
 } finally {
   await mongooseService.disconnect?.();

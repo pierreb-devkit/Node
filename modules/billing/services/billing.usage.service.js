@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import config from '../../../config/index.js';
+import logger from '../../../lib/services/logger.js';
 import UsageRepository from '../repositories/billing.usage.repository.js';
 import BillingSubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import BillingPlanService from './billing.plan.service.js';
@@ -143,7 +144,7 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
       const debitResult = await BillingExtraService.debit(organizationId, extrasConsumed, idempotencyKey);
       if (debitResult.applied === false && debitResult.reason !== 'duplicate_step') {
         // Debit unexpectedly silenced — not a replay. Log for monitoring.
-        console.error('[billing.usage] extras debit unexpectedly not applied', {
+        logger.error('[billing.usage] extras debit unexpectedly not applied', {
           organizationId,
           extrasConsumed,
           idempotencyKey,
@@ -153,7 +154,11 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
     } catch (err) {
       // Usage is already counted. Log for monitoring — a retry cron or manual backfill
       // can reconcile if needed. Never let a debit failure block the usage write.
-      console.warn('[billing.usage] extras debit failed (usage already counted):', err?.message ?? err);
+      logger.warn('[billing.usage] extras debit failed (usage already counted)', {
+        organizationId,
+        idempotencyKey,
+        err: err?.message ?? String(err),
+      });
     }
   }
 
@@ -166,7 +171,7 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
     for (const threshold of getAlertThresholdPercents()) {
       const field = thresholdFields[threshold];
       if (!field) {
-        console.warn(`[billing.usage] threshold ${threshold}% has no schema field (only 80/100 are supported) — skipping`);
+        logger.warn('[billing.usage] threshold has no schema field — skipping', { threshold });
         continue;
       }
       // updatedDoc is pre-mark snapshot; DB-side dedup enforced by markThreshold conditional update.
@@ -177,7 +182,7 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
         const markResult = await UsageRepository.markThreshold(updatedDoc._id, field);
         marked = markResult?.modifiedCount > 0;
       } catch (err) {
-        console.warn('[billing.usage] threshold mark failed, skipping emit:', err?.message ?? err);
+        logger.warn('[billing.usage] threshold mark failed, skipping emit', { threshold, err: err?.message ?? String(err) });
       }
       if (marked) {
         alertCrossed = String(threshold);
