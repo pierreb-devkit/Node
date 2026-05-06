@@ -68,9 +68,21 @@ const ProcessedStripeEventMongoose = new Schema(
 );
 
 /**
- * TTL index: automatically remove documents 30 days after processedAt
+ * TTL index: automatically remove documents 30 days after processedAt.
+ *
+ * Excludes dead-letter documents via partial filter: dead-lettered events are
+ * permanent rejections (Stripe was told to stop retrying via 200 response) and
+ * must NEVER be purged. If purged, a manual replay from the Stripe dashboard
+ * after 30 days would re-process the event as if new — causing potential
+ * double-credit on extras packs or double subscription resets.
  */
-ProcessedStripeEventMongoose.index({ processedAt: 1 }, { expireAfterSeconds: 30 * 24 * 60 * 60 });
+ProcessedStripeEventMongoose.index(
+  { processedAt: 1 },
+  {
+    expireAfterSeconds: 30 * 24 * 60 * 60,
+    partialFilterExpression: { deadLetter: { $ne: true } },
+  },
+);
 
 /**
  * Returns the hex string representation of the document ObjectId.

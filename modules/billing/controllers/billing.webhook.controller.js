@@ -37,6 +37,11 @@ const handleWebhook = async (req, res) => {
           BillingWebhookService.handleCheckoutSessionCompleted(e),
         );
         break;
+      case 'customer.subscription.created':
+        await BillingWebhookService.withIdempotency(event, (e) =>
+          BillingWebhookService.handleSubscriptionCreated(e.data.object, e),
+        );
+        break;
       case 'customer.subscription.updated':
         await BillingWebhookService.withIdempotency(event, (e) =>
           BillingWebhookService.handleSubscriptionUpdated(e.data.object, e),
@@ -77,7 +82,13 @@ const handleWebhook = async (req, res) => {
           BillingWebhookService.handleChargeDisputeFundsWithdrawn(e.data.object, e),
         );
         break;
+      case 'charge.dispute.funds_reinstated':
+        await BillingWebhookService.withIdempotency(event, (e) =>
+          BillingWebhookService.handleChargeDisputeFundsReinstated(e.data.object, e),
+        );
+        break;
       default:
+        logger.info('[billing.webhook] unhandled event type', { type: event.type, id: event.id });
         break;
     }
     return res.status(200).json({ received: true });

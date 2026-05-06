@@ -184,10 +184,13 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
     checkoutParams.automatic_tax = { enabled: true };
     checkoutParams.customer_update = { address: 'auto', name: 'auto' };
   }
-  const session = await stripe.checkout.sessions.create(
-    checkoutParams,
-    { idempotencyKey: `sub_checkout_${String(organization._id)}_${priceId}` },
-  );
+  // No Stripe idempotency key here. Checkout sessions are ephemeral (24h TTL).
+  // A static `sub_checkout_${orgId}_${priceId}` key locks the user into a
+  // single session for 24h: if they abandon the first attempt, retrying within
+  // the day yields the same expired session URL, silently killing conversion.
+  // Same-tab double-clicks are prevented at the route level by the active-
+  // subscription guard above.
+  const session = await stripe.checkout.sessions.create(checkoutParams);
 
   return session.url;
 };

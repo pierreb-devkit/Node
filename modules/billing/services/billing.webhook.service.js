@@ -274,8 +274,14 @@ const handleSubscriptionUpdated = async (subscription, event) => {
     ? new Date(rawPeriodStart * 1000)
     : undefined;
 
+  // Stripe `incomplete_expired` is a status (not a separate event type) — it fires when
+  // the initial payment fails and the subscription is auto-cancelled by Stripe after ~24h.
+  // Treat it as a downgrade-to-free + signal the org so they can retry.
+  const isIncompleteExpired = subscription.status === 'incomplete_expired';
+  const effectivePlan = isIncompleteExpired ? 'free' : newPlan;
+
   const fields = {
-    plan: newPlan,
+    plan: effectivePlan,
     status: subscription.status,
   };
   if (newPeriodStart) fields.currentPeriodStart = newPeriodStart;
@@ -287,7 +293,23 @@ const handleSubscriptionUpdated = async (subscription, event) => {
   }
 
   const organizationId = String(existing.organization?._id || existing.organization);
-  await syncOrganizationPlan(organizationId, newPlan);
+  await syncOrganizationPlan(organizationId, effectivePlan);
+
+  if (isIncompleteExpired) {
+    logger.info('[billing.webhook] subscription incomplete_expired — downgraded to free', {
+      organizationId,
+      stripeSubscriptionId: subscription.id,
+      eventId: event?.id,
+    });
+    try {
+      billingEvents.emit('billing.subscription.expired', { organizationId, stripeSubscriptionId: subscription.id });
+    } catch (evtErr) {
+      logger.error('[billing.webhook] billing.subscription.expired listener error (non-fatal)', {
+        error: evtErr?.message ?? String(evtErr),
+        stack: evtErr?.stack,
+      });
+    }
+  }
 
   // Hoist previousPeriodStart so it is accessible both in the plan-change block
   // (anchor computation) and in the standalone period-start-change block below.
@@ -891,11 +913,106 @@ const handleChargeDisputeFundsWithdrawn = async (dispute, event) => {
   }
 };
 
+/**
+ * @description Handle customer.subscription.created event — defensive upsert.
+ *              In practice arrives just after checkout.session.completed which already
+ *              creates the Subscription doc. This handler is a safety net + handles
+ *              edge cases (subscription created via Stripe Dashboard/API outside checkout flow).
+ *              Idempotent via updateIfEventNewer.
+ * @param {Object} subscription - Stripe subscription object
+ * @param {Object} event - Full Stripe event for event-ordering guard
+ * @returns {Promise<void>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const handleSubscriptionCreated = async (subscription, event) => {
+  const existing = await SubscriptionRepository.findByStripeSubscriptionId(subscription.id);
+  if (!existing) {
+    // Subscription not yet in DB (race with checkout.session.completed or external creation).
+    // Log and skip — checkout handler or next subscription.updated will reconcile.
+    logger.info('[billing.webhook] subscription.created arrived but DB doc not found yet — will reconcile via next event', {
+      stripeSubscriptionId: subscription.id,
+      eventId: event?.id,
+    });
+    return;
+  }
+
+  const newPlan = resolvePlan(subscription);
+  const rawPeriodStart = subscription.items?.data?.[0]?.current_period_start ?? subscription.current_period_start;
+  const newPeriodStart = rawPeriodStart ? new Date(rawPeriodStart * 1000) : undefined;
+
+  const fields = {
+    plan: newPlan,
+    status: subscription.status,
+  };
+  if (newPeriodStart) fields.currentPeriodStart = newPeriodStart;
+
+  const updated = await SubscriptionRepository.updateIfEventNewer(
+    String(existing._id),
+    event.created,
+    event.id,
+    fields,
+    'subscription',
+  );
+  if (!updated) {
+    logger.info('[billing.webhook] skipped stale subscription.created event', { eventId: event.id });
+    return;
+  }
+
+  const organizationId = String(existing.organization?._id || existing.organization);
+  await syncOrganizationPlan(organizationId, newPlan);
+};
+
+/**
+ * @description Handle charge.dispute.funds_reinstated event — fires when a previously-lost
+ *              dispute is later resolved in the merchant's favor (appeal won, evidence accepted).
+ *              The funds were debited via handleChargeDisputeFundsWithdrawn earlier; this handler
+ *              MUST credit them back to keep the extras ledger accurate.
+ *
+ *              Implementation note: auto-compensation requires a `creditCompensation` repo
+ *              method that adds an idempotent ledger entry (refId `dispute_reinstate_${disputeId}`).
+ *              That method does not exist yet (Phase 1 admin toolkit will add it). Until then,
+ *              this handler logs + emits a critical alert for manual ops resolution via the
+ *              admin endpoint. The runbook documents the manual flow.
+ *
+ * @param {Object} dispute - Stripe dispute object
+ * @param {Object} event - Full Stripe event
+ * @returns {Promise<void>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const handleChargeDisputeFundsReinstated = async (dispute, event) => {
+  const chargeId = dispute?.charge;
+  const disputeId = dispute?.id;
+  const amount = dispute?.amount ?? 0;
+
+  logger.error('[billing.webhook] dispute.funds_reinstated received — manual ledger compensation required', {
+    disputeId,
+    chargeId,
+    amount,
+    eventId: event?.id,
+    note: 'Auto-credit deferred to Phase 1 admin endpoint. Use /api/admin/billing/credit (TBD) once available, or directly add a ledger entry via DB.',
+  });
+
+  try {
+    billingEvents.emit('billing.dispute.reinstated', {
+      disputeId,
+      chargeId,
+      amount,
+      eventId: event?.id,
+    });
+  } catch (evtErr) {
+    logger.error('[billing.webhook] billing.dispute.reinstated listener error (non-fatal)', {
+      error: evtErr?.message ?? String(evtErr),
+      stack: evtErr?.stack,
+    });
+  }
+};
+
 export default {
   withIdempotency,
   handleCheckoutSessionCompleted,
   handleCheckoutCompleted,
   handleCheckoutPaymentCompleted,
+  handleSubscriptionCreated,
   handleSubscriptionUpdated,
   handleSubscriptionDeleted,
   handleInvoicePaymentFailed,
@@ -904,4 +1021,5 @@ export default {
   handleCustomerDeleted,
   handleChargeDisputeCreated,
   handleChargeDisputeFundsWithdrawn,
+  handleChargeDisputeFundsReinstated,
 };
