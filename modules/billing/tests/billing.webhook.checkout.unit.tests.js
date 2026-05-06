@@ -407,5 +407,37 @@ describe('Billing webhook checkout unit tests:', () => {
       expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();
       expect(mockSubscriptionRepository.create).not.toHaveBeenCalled();
     });
+
+    test('should return early without querying when stripeSubscriptionId is missing', async () => {
+      await BillingWebhookService.handleCheckoutCompleted(
+        {
+          customer: 'cus_123',
+          // subscription omitted — e.g. mode=subscription but sub not created yet
+          metadata: { organizationId: orgId, plan: 'pro' },
+        },
+        checkoutEvent,
+      );
+
+      expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();
+      expect(mockSubscriptionRepository.create).not.toHaveBeenCalled();
+    });
+
+    test('should skip org sync when checkout event is stale (updateIfEventNewer returns null)', async () => {
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue(existing);
+      mockSubscriptionRepository.updateIfEventNewer.mockResolvedValue(null);
+
+      await BillingWebhookService.handleCheckoutCompleted(
+        {
+          customer: 'cus_123',
+          subscription: 'sub_456',
+          metadata: { organizationId: orgId, plan: 'pro' },
+        },
+        checkoutEvent,
+      );
+
+      // Event was stale — org plan should not be synced
+      expect(mockOrganizationRepository.setPlan).not.toHaveBeenCalled();
+    });
   });
 });
