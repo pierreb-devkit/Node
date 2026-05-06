@@ -85,6 +85,7 @@ const adminBumpPlan = async (req, res) => {
     // and the logger module touches config.log.fileLogger which isn't always mocked. Unrelated
     // unit tests that mock Stripe but don't load full schemas would crash on top-level imports.
     const { default: SubscriptionRepository } = await import('../repositories/billing.subscription.repository.js');
+    const { default: OrganizationRepository } = await import('../../organizations/repositories/organizations.repository.js');
     const { default: logger } = await import('../../../lib/services/logger.js');
 
     const existing = await SubscriptionRepository.findByOrganization(orgId);
@@ -95,6 +96,12 @@ const adminBumpPlan = async (req, res) => {
     }
 
     const updated = await SubscriptionRepository.adminUpdatePlanOnly(String(existing._id), planId, adminUserId);
+
+    // Sync org plan so meter quotas / feature flags / access control reflect the bump
+    // immediately. Without this the new plan only applies to the subscription doc, but
+    // the organization's plan field — read by requirePlan / requireQuota — stays stale
+    // until the next Stripe webhook (which may revert to Stripe's value).
+    await OrganizationRepository.setPlan(orgId, planId);
 
     logger.info('[billing.admin] plan bumped manually', {
       orgId,
