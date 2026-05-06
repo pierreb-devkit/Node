@@ -196,6 +196,7 @@ describe('Billing webhook idempotency unit tests:', () => {
       ).rejects.toThrow('handler blew up');
 
       // incrementAttempts receives the full Error object (for stack trace capture)
+      expect(mockProcessedStripeEventRepository.incrementAttempts).toHaveBeenCalledTimes(1);
       const [eidArg, errArg] = mockProcessedStripeEventRepository.incrementAttempts.mock.calls[0];
       expect(eidArg).toBe('evt_test_001');
       expect(errArg).toBeInstanceOf(Error);
@@ -259,6 +260,7 @@ describe('Billing webhook idempotency unit tests:', () => {
       await expect(BillingWebhookService.withIdempotency(event, handler)).rejects.toThrow('handler exploded');
 
       // Should receive the Error object itself, not err.message
+      expect(mockProcessedStripeEventRepository.incrementAttempts).toHaveBeenCalledTimes(1);
       const [, errorArg] = mockProcessedStripeEventRepository.incrementAttempts.mock.calls[0];
       expect(errorArg).toBe(handlerError);
     });

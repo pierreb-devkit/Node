@@ -203,6 +203,28 @@ describe('Billing webhook controller unit tests:', () => {
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
+  test('should propagate req.id as requestId into withIdempotency', async () => {
+    jest.unstable_mockModule('../../../config/index.js', () => ({
+      default: { stripe: { secretKey: 'sk_test_rid', webhookSecret: 'whsec_rid' } },
+    }));
+
+    const eventData = { type: 'customer.subscription.updated', data: { object: { id: 'sub_rid' } } };
+    mockStripeInstance.webhooks.constructEvent.mockReturnValue(eventData);
+
+    const mod = await import('../controllers/billing.webhook.controller.js');
+    BillingWebhookController = mod.default;
+
+    const req = { headers: { 'stripe-signature': 'sig_ok' }, body: 'raw', id: 'req-trace-id-001' };
+    await BillingWebhookController.handleWebhook(req, res);
+
+    expect(mockBillingWebhookService.withIdempotency).toHaveBeenCalledWith(
+      eventData,
+      expect.any(Function),
+      expect.objectContaining({ requestId: 'req-trace-id-001' }),
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
   test('should return 200 for unknown event types', async () => {
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: { stripe: { secretKey: 'sk_test_6', webhookSecret: 'whsec_6' } },

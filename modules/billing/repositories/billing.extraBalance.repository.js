@@ -288,13 +288,14 @@ const listLedgerPage = async (orgId, skip, limit) => {
       $project: {
         _id: 0,
         cachedBalance: 1,
-        total: { $size: '$ledger' },
-        // Sort descending by `at` then slice the requested page
+        total: { $size: { $ifNull: ['$ledger', []] } },
+        // Sort descending by `at` then slice the requested page.
+        // $ifNull guards against missing/null ledger field on legacy docs.
         ledgerPage: {
           $slice: [
             {
               $sortArray: {
-                input: '$ledger',
+                input: { $ifNull: ['$ledger', []] },
                 sortBy: { at: -1 },
               },
             },

@@ -405,6 +405,7 @@ describe('withIdempotency — replay-storm dead-letter protection:', () => {
     await expect(BillingWebhookService.withIdempotency(event, handler)).rejects.toThrow('transient');
 
     // incrementAttempts receives the full Error object (for stack trace capture)
+    expect(mockProcessedStripeEventRepository.incrementAttempts).toHaveBeenCalledTimes(1);
     const [eidArg, errArg] = mockProcessedStripeEventRepository.incrementAttempts.mock.calls[0];
     expect(eidArg).toBe('evt_rl_001');
     expect(errArg).toBeInstanceOf(Error);
