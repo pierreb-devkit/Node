@@ -71,6 +71,16 @@ describe('Billing webhook service unit tests:', () => {
         Types: { ObjectId: { isValid: jest.fn().mockReturnValue(true) } },
       },
     }));
+
+    // Mock Stripe so handleCheckoutCompleted can call stripe.subscriptions.retrieve.
+    // Returns 'active' by default; override per-test as needed.
+    jest.unstable_mockModule('../lib/stripe.js', () => ({
+      default: jest.fn(() => ({
+        subscriptions: {
+          retrieve: jest.fn().mockResolvedValue({ status: 'active' }),
+        },
+      })),
+    }));
   });
 
   afterEach(() => {
@@ -103,7 +113,7 @@ describe('Billing webhook service unit tests:', () => {
           stripeCustomerId: 'cus_123',
           stripeSubscriptionId: 'sub_456',
           plan: 'pro',
-          // Status fetched from Stripe; falls back to 'active' when getStripe() returns null in tests.
+          // Status fetched from Stripe — mocked to 'active' in this test suite's beforeEach.
           status: 'active',
           lastSubscriptionEventCreatedAt: 1700000050,
           lastSubscriptionEventId: 'evt_checkout_1',

@@ -321,4 +321,76 @@ describe('BillingSubscriptionRepository unit tests:', () => {
       expect(result).toEqual({ organization: orgId, lastResetAt: date });
     });
   });
+
+  // ── adminUpdatePlanOnly ────────────────────────────────────────────────────
+
+  describe('adminUpdatePlanOnly', () => {
+    const adminId = '707f1f77bcf86cd799439044';
+
+    test('updates plan + adminUpdatedAt + adminUpdatedBy when ids are valid', async () => {
+      const updated = { _id: subId, plan: 'pro', adminUpdatedBy: adminId };
+      const execMock = jest.fn().mockResolvedValue(updated);
+      const populateMock = jest.fn().mockReturnValue({ exec: execMock });
+      mockModel.findByIdAndUpdate.mockReturnValue({ populate: populateMock });
+
+      const result = await BillingSubscriptionRepository.adminUpdatePlanOnly(subId, 'pro', adminId);
+
+      expect(mockModel.findByIdAndUpdate).toHaveBeenCalledWith(
+        subId,
+        expect.objectContaining({
+          $set: expect.objectContaining({
+            plan: 'pro',
+            adminUpdatedBy: adminId,
+          }),
+        }),
+        { returnDocument: 'after', runValidators: true },
+      );
+      expect(result).toEqual(updated);
+    });
+
+    test('returns null without querying when subscription id is invalid', async () => {
+      const result = await BillingSubscriptionRepository.adminUpdatePlanOnly('not-valid', 'pro', adminId);
+      expect(result).toBeNull();
+      expect(mockModel.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+
+    test('returns null without querying when subscription id is falsy', async () => {
+      const result = await BillingSubscriptionRepository.adminUpdatePlanOnly(null, 'pro', adminId);
+      expect(result).toBeNull();
+      expect(mockModel.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+
+    test('sets adminUpdatedBy to null when adminUserId is an invalid ObjectId', async () => {
+      const execMock = jest.fn().mockResolvedValue({ _id: subId, plan: 'pro', adminUpdatedBy: null });
+      const populateMock = jest.fn().mockReturnValue({ exec: execMock });
+      mockModel.findByIdAndUpdate.mockReturnValue({ populate: populateMock });
+
+      await BillingSubscriptionRepository.adminUpdatePlanOnly(subId, 'pro', 'not-an-objectid');
+
+      const callArgs = mockModel.findByIdAndUpdate.mock.calls[0];
+      expect(callArgs[1].$set.adminUpdatedBy).toBeNull();
+    });
+
+    test('sets adminUpdatedBy to null when adminUserId is an empty string', async () => {
+      const execMock = jest.fn().mockResolvedValue({ _id: subId, plan: 'pro', adminUpdatedBy: null });
+      const populateMock = jest.fn().mockReturnValue({ exec: execMock });
+      mockModel.findByIdAndUpdate.mockReturnValue({ populate: populateMock });
+
+      await BillingSubscriptionRepository.adminUpdatePlanOnly(subId, 'pro', '');
+
+      const callArgs = mockModel.findByIdAndUpdate.mock.calls[0];
+      expect(callArgs[1].$set.adminUpdatedBy).toBeNull();
+    });
+
+    test('sets adminUpdatedAt to a Date', async () => {
+      const execMock = jest.fn().mockResolvedValue({ _id: subId, plan: 'pro' });
+      const populateMock = jest.fn().mockReturnValue({ exec: execMock });
+      mockModel.findByIdAndUpdate.mockReturnValue({ populate: populateMock });
+
+      await BillingSubscriptionRepository.adminUpdatePlanOnly(subId, 'pro', adminId);
+
+      const callArgs = mockModel.findByIdAndUpdate.mock.calls[0];
+      expect(callArgs[1].$set.adminUpdatedAt).toBeInstanceOf(Date);
+    });
+  });
 });

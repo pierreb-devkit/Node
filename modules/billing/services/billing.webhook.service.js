@@ -192,18 +192,32 @@ const handleCheckoutCompleted = async (session, event) => {
   }
 
   // Fetch real status from Stripe — never assume 'active' (could be 'trialing', 'incomplete', etc.)
-  let realStatus = 'active';
+  // On retrieval failure we abort: persisting 'active' on a failed fetch would silently
+  // misclassify trialing/incomplete subscriptions and bypass dunning. The next webhook
+  // (subscription.updated or invoice.payment_failed) will reconcile the correct status.
   const stripe = getStripe();
-  if (stripe) {
-    try {
-      const sub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
-      realStatus = sub?.status ?? 'active';
-    } catch (err) {
-      logger.error('[billing.webhook] checkout.session.completed — subscription retrieve failed, falling back to active', {
+  if (!stripe) {
+    logger.error('[billing.webhook] checkout.session.completed — Stripe not configured, aborting', {
+      stripeSubscriptionId,
+    });
+    return;
+  }
+  let realStatus;
+  try {
+    const sub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+    realStatus = sub?.status;
+    if (!realStatus) {
+      logger.error('[billing.webhook] checkout.session.completed — subscription has no status, aborting', {
         stripeSubscriptionId,
-        error: err?.message ?? String(err),
       });
+      return;
     }
+  } catch (err) {
+    logger.error('[billing.webhook] checkout.session.completed — subscription retrieve failed, aborting to avoid stale active assumption', {
+      stripeSubscriptionId,
+      error: err?.message ?? String(err),
+    });
+    return;
   }
 
   const existing = await SubscriptionRepository.findByOrganization(organizationId);
@@ -960,28 +974,64 @@ const handleChargeDisputeFundsWithdrawn = async (dispute, event) => {
  * @description Handle customer.subscription.created event — defensive upsert.
  *              In practice arrives just after checkout.session.completed which already
  *              creates the Subscription doc. This handler is a safety net + handles
- *              edge cases (subscription created via Stripe Dashboard/API outside checkout flow).
- *              Idempotent via updateIfEventNewer.
+ *              edge cases (subscription created via Stripe Dashboard/API outside checkout flow
+ *              (e.g. Payment Links, Stripe Dashboard manual subscriptions)).
+ *
+ *              When a DB doc already exists (normal checkout flow): uses updateIfEventNewer guard.
+ *              When no DB doc exists (Dashboard/Payment Link creation): resolves the organization
+ *              via stripeCustomerId and creates the subscription row so these edge-case
+ *              subscriptions are not silently dropped.
+ *
+ *              Idempotent via updateIfEventNewer (existing) or event marker seeding (new row).
  * @param {Object} subscription - Stripe subscription object
  * @param {Object} event - Full Stripe event for event-ordering guard
  * @returns {Promise<void>}
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleSubscriptionCreated = async (subscription, event) => {
-  const existing = await SubscriptionRepository.findByStripeSubscriptionId(subscription.id);
-  if (!existing) {
-    // Subscription not yet in DB (race with checkout.session.completed or external creation).
-    // Log and skip — checkout handler or next subscription.updated will reconcile.
-    logger.info('[billing.webhook] subscription.created arrived but DB doc not found yet — will reconcile via next event', {
-      stripeSubscriptionId: subscription.id,
-      eventId: event?.id,
-    });
-    return;
-  }
-
   const newPlan = resolvePlan(subscription);
   const rawPeriodStart = subscription.items?.data?.[0]?.current_period_start ?? subscription.current_period_start;
   const newPeriodStart = rawPeriodStart ? new Date(rawPeriodStart * 1000) : undefined;
+
+  const existing = await SubscriptionRepository.findByStripeSubscriptionId(subscription.id);
+  if (!existing) {
+    // No doc found via stripeSubscriptionId — could be a race with checkout.session.completed
+    // or a subscription created outside the checkout flow (Stripe Dashboard / Payment Links).
+    // Try to resolve the organization via stripeCustomerId and create the row.
+    const orgSub = subscription.customer
+      ? await SubscriptionRepository.findByStripeCustomerId(subscription.customer)
+      : null;
+
+    if (!orgSub) {
+      // Cannot resolve org — truly external subscription with no prior customer mapping.
+      // Log and skip; a later subscription.updated will reconcile when org is known.
+      logger.info('[billing.webhook] subscription.created — cannot resolve org, will reconcile via next event', {
+        stripeSubscriptionId: subscription.id,
+        stripeCustomerId: subscription.customer,
+        eventId: event?.id,
+      });
+      return;
+    }
+
+    const organizationId = String(orgSub.organization?._id || orgSub.organization);
+    logger.info('[billing.webhook] subscription.created — creating DB row for Dashboard/Payment Link subscription', {
+      stripeSubscriptionId: subscription.id,
+      organizationId,
+      eventId: event?.id,
+    });
+    await SubscriptionRepository.create({
+      organization: organizationId,
+      stripeCustomerId: subscription.customer,
+      stripeSubscriptionId: subscription.id,
+      plan: newPlan,
+      status: subscription.status,
+      lastSubscriptionEventCreatedAt: event.created,
+      lastSubscriptionEventId: event.id,
+      ...(newPeriodStart ? { currentPeriodStart: newPeriodStart } : {}),
+    });
+    await syncOrganizationPlan(organizationId, newPlan);
+    return;
+  }
 
   const fields = {
     plan: newPlan,
@@ -1027,7 +1077,20 @@ const handleChargeDisputeFundsReinstated = async (dispute, event) => {
   const disputeId = dispute?.id;
   const amount = dispute?.amount ?? 0;
 
-  logger.error('[billing.webhook] dispute.funds_reinstated received — manual ledger compensation required', {
+  // Validate required fields before logging/emitting — missing identifiers make ops investigation harder.
+  if (!disputeId || !chargeId) {
+    logger.error('[billing.webhook] dispute.funds_reinstated missing required fields — skipping emit', {
+      disputeId,
+      chargeId,
+      amount,
+      eventId: event?.id,
+    });
+    return;
+  }
+
+  // funds_reinstated is good news (dispute was won back) — log as warn, not error.
+  // The alert is for ops to manually credit the ledger (auto-credit deferred to Phase 1).
+  logger.warn('[billing.webhook] dispute.funds_reinstated received — manual ledger credit required', {
     disputeId,
     chargeId,
     amount,

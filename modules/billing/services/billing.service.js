@@ -188,8 +188,8 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
   // A static `sub_checkout_${orgId}_${priceId}` key locks the user into a
   // single session for 24h: if they abandon the first attempt, retrying within
   // the day yields the same expired session URL, silently killing conversion.
-  // Same-tab double-clicks are prevented at the route level by the active-
-  // subscription guard above.
+  // Same-tab double-clicks are prevented in this function by the active-
+  // subscription guard above (both the DB check and the live Stripe lookup).
   const session = await stripe.checkout.sessions.create(checkoutParams);
 
   return session.url;

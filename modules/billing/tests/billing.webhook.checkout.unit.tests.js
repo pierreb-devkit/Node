@@ -45,6 +45,10 @@ describe('Billing webhook checkout unit tests:', () => {
       paymentIntents: {
         update: jest.fn().mockResolvedValue({}),
       },
+      subscriptions: {
+        // Default: return 'active' status so handleCheckoutCompleted proceeds normally in tests.
+        retrieve: jest.fn().mockResolvedValue({ status: 'active' }),
+      },
     };
 
     jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
@@ -345,6 +349,63 @@ describe('Billing webhook checkout unit tests:', () => {
           lastSubscriptionEventId: 'evt_co_2',
         }),
       );
+    });
+
+    test('should persist real status from Stripe (trialing, not active)', async () => {
+      mockStripeInstance.subscriptions.retrieve.mockResolvedValue({ status: 'trialing' });
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue(existing);
+      mockSubscriptionRepository.updateIfEventNewer.mockResolvedValue({ _id: subId });
+
+      await BillingWebhookService.handleCheckoutCompleted(
+        {
+          customer: 'cus_123',
+          subscription: 'sub_456',
+          metadata: { organizationId: orgId, plan: 'pro' },
+        },
+        checkoutEvent,
+      );
+
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
+        subId,
+        1700000020,
+        'evt_co_2',
+        expect.objectContaining({ status: 'trialing' }),
+        'subscription',
+      );
+    });
+
+    test('should abort without persisting when stripe.subscriptions.retrieve throws', async () => {
+      mockStripeInstance.subscriptions.retrieve.mockRejectedValue(new Error('Stripe API error'));
+
+      await BillingWebhookService.handleCheckoutCompleted(
+        {
+          customer: 'cus_123',
+          subscription: 'sub_456',
+          metadata: { organizationId: orgId, plan: 'pro' },
+        },
+        checkoutEvent,
+      );
+
+      // Should not persist anything — aborting to avoid stale 'active' assumption
+      expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();
+      expect(mockSubscriptionRepository.create).not.toHaveBeenCalled();
+    });
+
+    test('should abort without persisting when stripe returns null status', async () => {
+      mockStripeInstance.subscriptions.retrieve.mockResolvedValue({ status: null });
+
+      await BillingWebhookService.handleCheckoutCompleted(
+        {
+          customer: 'cus_123',
+          subscription: 'sub_456',
+          metadata: { organizationId: orgId, plan: 'pro' },
+        },
+        checkoutEvent,
+      );
+
+      expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();
+      expect(mockSubscriptionRepository.create).not.toHaveBeenCalled();
     });
   });
 });

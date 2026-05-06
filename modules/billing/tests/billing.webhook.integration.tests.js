@@ -75,6 +75,16 @@ describe('Billing webhook integration tests:', () => {
       default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
     }));
 
+    // Mock Stripe so handleCheckoutCompleted can call stripe.subscriptions.retrieve.
+    // Default: return 'active' so normal flow proceeds; override per-test as needed.
+    jest.unstable_mockModule('../lib/stripe.js', () => ({
+      default: jest.fn(() => ({
+        subscriptions: {
+          retrieve: jest.fn().mockResolvedValue({ status: 'active' }),
+        },
+      })),
+    }));
+
     const mod = await import('../services/billing.webhook.service.js');
     WebhookService = mod.default;
   });
@@ -411,6 +421,144 @@ describe('Billing webhook integration tests:', () => {
       await WebhookService.handleInvoicePaymentFailed({ subscription: 'sub_456' }, makeEvent({ created: 50 }));
 
       expect(mockOrganizationRepository.setPlan).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleSubscriptionCreated', () => {
+    const makeEvent = (overrides = {}) => ({ id: 'evt_created', created: 1700000050, data: {}, ...overrides });
+
+    test('should update existing subscription doc via updateIfEventNewer when found by stripeSubscriptionId', async () => {
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+
+      await WebhookService.handleSubscriptionCreated(
+        {
+          id: 'sub_456',
+          customer: 'cus_123',
+          status: 'trialing',
+          items: { data: [{ current_period_start: 1700000000, price: { metadata: { planId: 'starter' } } }] },
+        },
+        makeEvent(),
+      );
+
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
+        subId,
+        1700000050,
+        'evt_created',
+        expect.objectContaining({ plan: 'starter', status: 'trialing' }),
+        'subscription',
+      );
+      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'starter');
+    });
+
+    test('should skip org sync when event is stale', async () => {
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockSubscriptionRepository.updateIfEventNewer.mockResolvedValue(null);
+
+      await WebhookService.handleSubscriptionCreated(
+        { id: 'sub_456', customer: 'cus_123', status: 'active', items: { data: [] } },
+        makeEvent({ created: 10 }),
+      );
+
+      expect(mockOrganizationRepository.setPlan).not.toHaveBeenCalled();
+    });
+
+    test('should create DB row via stripeCustomerId fallback for Dashboard-created subscriptions', async () => {
+      const orgSub = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(null);
+      mockSubscriptionRepository.findByStripeCustomerId.mockResolvedValue(orgSub);
+      mockSubscriptionRepository.create.mockResolvedValue({});
+
+      await WebhookService.handleSubscriptionCreated(
+        {
+          id: 'sub_dashboard_001',
+          customer: 'cus_123',
+          status: 'active',
+          items: { data: [{ current_period_start: 1700000000, price: { metadata: { planId: 'pro' } } }] },
+        },
+        makeEvent({ id: 'evt_dash_1', created: 1700000060 }),
+      );
+
+      expect(mockSubscriptionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          organization: orgId,
+          stripeCustomerId: 'cus_123',
+          stripeSubscriptionId: 'sub_dashboard_001',
+          plan: 'pro',
+          status: 'active',
+          lastSubscriptionEventCreatedAt: 1700000060,
+          lastSubscriptionEventId: 'evt_dash_1',
+        }),
+      );
+      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
+    });
+
+    test('should log and skip when org cannot be resolved (no stripeCustomerId match)', async () => {
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(null);
+      mockSubscriptionRepository.findByStripeCustomerId.mockResolvedValue(null);
+
+      await WebhookService.handleSubscriptionCreated(
+        { id: 'sub_external', customer: 'cus_unknown', status: 'active', items: { data: [] } },
+        makeEvent(),
+      );
+
+      expect(mockSubscriptionRepository.create).not.toHaveBeenCalled();
+      expect(mockOrganizationRepository.setPlan).not.toHaveBeenCalled();
+    });
+
+    test('should skip customer lookup when no customer field on subscription', async () => {
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(null);
+
+      await WebhookService.handleSubscriptionCreated(
+        { id: 'sub_nocust', status: 'active', items: { data: [] } },
+        makeEvent(),
+      );
+
+      expect(mockSubscriptionRepository.findByStripeCustomerId).not.toHaveBeenCalled();
+      expect(mockSubscriptionRepository.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleChargeDisputeFundsReinstated', () => {
+    const makeEvent = (overrides = {}) => ({ id: 'evt_reinstated', data: {}, ...overrides });
+
+    test('should emit billing.dispute.reinstated event on valid dispute', async () => {
+      const { default: billingEvents } = await import('../lib/events.js');
+
+      await WebhookService.handleChargeDisputeFundsReinstated(
+        { id: 'dp_123', charge: 'ch_456', amount: 5000 },
+        makeEvent(),
+      );
+
+      expect(billingEvents.emit).toHaveBeenCalledWith('billing.dispute.reinstated', {
+        disputeId: 'dp_123',
+        chargeId: 'ch_456',
+        amount: 5000,
+        eventId: 'evt_reinstated',
+      });
+    });
+
+    test('should skip emit when disputeId is missing', async () => {
+      const { default: billingEvents } = await import('../lib/events.js');
+
+      await WebhookService.handleChargeDisputeFundsReinstated(
+        { charge: 'ch_456', amount: 5000 },
+        makeEvent(),
+      );
+
+      expect(billingEvents.emit).not.toHaveBeenCalled();
+    });
+
+    test('should skip emit when chargeId is missing', async () => {
+      const { default: billingEvents } = await import('../lib/events.js');
+
+      await WebhookService.handleChargeDisputeFundsReinstated(
+        { id: 'dp_123', amount: 5000 },
+        makeEvent(),
+      );
+
+      expect(billingEvents.emit).not.toHaveBeenCalled();
     });
   });
 

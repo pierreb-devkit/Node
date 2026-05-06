@@ -160,6 +160,31 @@ describe('Billing admin integration tests:', () => {
       },
     }));
 
+    // Lazy-imported by adminBumpPlan — must be mocked before the handler runs.
+    jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
+      default: {
+        findByOrganization: jest.fn().mockResolvedValue({
+          _id: '607f1f77bcf86cd799439033',
+          plan: 'free',
+          organization: '507f1f77bcf86cd799439011',
+        }),
+        adminUpdatePlanOnly: jest.fn().mockResolvedValue({
+          _id: '607f1f77bcf86cd799439033',
+          plan: 'pro',
+        }),
+      },
+    }));
+
+    jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
+      default: {
+        setPlan: jest.fn().mockResolvedValue({}),
+      },
+    }));
+
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
+    }));
+
     billingAdminRoutes = (await import('../routes/billing.admin.routes.js')).default;
 
     const { app, routes } = createRouteRegistry();
@@ -338,8 +363,78 @@ describe('Billing admin integration tests:', () => {
     expect(res.status).toHaveBeenCalledWith(422);
   });
 
-  test('/api/admin/billing/plans/bump route is registered (PATCH for adminBumpPlan)', async () => {
+  test('/api/admin/billing/plans/bump route is registered as PATCH with auth + validation middleware', async () => {
     const routes = await buildRoutes();
-    expect(routes.has('/api/admin/billing/plans/bump')).toBe(true);
+    const bumpRoute = routes.get('/api/admin/billing/plans/bump');
+    // Route must exist and expose a PATCH handler array (not just be registered)
+    expect(bumpRoute).toBeDefined();
+    expect(bumpRoute.patch).toBeDefined();
+    expect(bumpRoute.patch.length).toBeGreaterThan(0);
+    // The .all chain should contain the JWT + policy guards (2 middleware functions)
+    expect(bumpRoute.all.length).toBe(2);
+  });
+
+  test('admin can PATCH /api/admin/billing/plans/bump with valid body and gets 200', async () => {
+    const routes = await buildRoutes();
+    const bumpRoute = routes.get('/api/admin/billing/plans/bump');
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+    };
+
+    await runHandlers(
+      [...bumpRoute.all, ...bumpRoute.patch],
+      {
+        method: 'PATCH',
+        headers: { 'x-role': 'admin' },
+        body: { orgId: '507f1f77bcf86cd799439011', planId: 'pro' },
+      },
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  test('non-admin user gets 403 on bump endpoint', async () => {
+    const routes = await buildRoutes();
+    const bumpRoute = routes.get('/api/admin/billing/plans/bump');
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+    };
+
+    await runHandlers(
+      [...bumpRoute.all, ...bumpRoute.patch],
+      {
+        method: 'PATCH',
+        headers: { 'x-role': 'user' },
+        body: { orgId: '507f1f77bcf86cd799439011', planId: 'pro' },
+      },
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  test('invalid body for bump returns 422 from schema validation', async () => {
+    const routes = await buildRoutes();
+    const bumpRoute = routes.get('/api/admin/billing/plans/bump');
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+    };
+
+    await runHandlers(
+      [...bumpRoute.all, ...bumpRoute.patch],
+      {
+        method: 'PATCH',
+        headers: { 'x-role': 'admin' },
+        // orgId missing, planId is not a valid enum value
+        body: { planId: 'not-a-plan' },
+      },
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(422);
   });
 });

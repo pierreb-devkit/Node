@@ -80,7 +80,7 @@ ProcessedStripeEventMongoose.index(
   { processedAt: 1 },
   {
     expireAfterSeconds: 30 * 24 * 60 * 60,
-    partialFilterExpression: { deadLetter: { $ne: true } },
+    partialFilterExpression: { deadLetter: { $eq: false } },
   },
 );
 

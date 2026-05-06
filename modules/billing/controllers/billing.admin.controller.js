@@ -79,8 +79,24 @@ const adminRefundCharge = async (req, res) => {
 const adminBumpPlan = async (req, res) => {
   try {
     const { orgId, planId } = req.body;
-    const adminUserId = String(req.user?._id ?? '');
 
+    // Guard: req.user._id must be a valid ObjectId — the JWT middleware sets it, but a missing
+    // or malformed token could leave it undefined, causing a Mongoose CastError downstream.
+    const rawAdminId = req.user?._id;
+    if (!rawAdminId) {
+      return responses.error(res, 422, 'Unprocessable Entity', 'Failed to bump plan')(
+        new Error('invalid argument: authenticated user id is missing'),
+      );
+    }
+    const adminUserId = String(rawAdminId);
+
+    // NOTE: this controller orchestrates directly against repo + logger to avoid adding a
+    // dedicated service method for a single admin escape hatch. This is an intentional
+    // exception to the service-layer convention: the operation is simple (find → update → sync),
+    // has no domain logic beyond what the repo already provides, and extracting it into
+    // billing.admin.service.js would add ceremony for no isolation benefit.
+    // Tracked for refactor in a future service-extraction pass if more admin operations join.
+    //
     // Lazy imports — the repo module references mongoose.model('Subscription') at load time,
     // and the logger module touches config.log.fileLogger which isn't always mocked. Unrelated
     // unit tests that mock Stripe but don't load full schemas would crash on top-level imports.
@@ -113,6 +129,10 @@ const adminBumpPlan = async (req, res) => {
 
     return responses.success(res, 'subscription plan bumped')(updated);
   } catch (err) {
+    // Surface schema/validation errors from Mongoose as 422 instead of letting them fall to 500.
+    if (err?.name === 'ValidationError' || err?.message?.startsWith('invalid argument')) {
+      return responses.error(res, 422, 'Unprocessable Entity', 'Failed to bump plan')(err);
+    }
     return responses.error(res, 500, 'Internal Server Error', 'Failed to bump plan')(err);
   }
 };

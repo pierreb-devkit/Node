@@ -291,13 +291,17 @@ const updateIfEventNewer = (id, eventCreatedAt, eventId, fields, family = 'subsc
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const adminUpdatePlanOnly = (id, planId, adminUserId) => {
   if (!id || !mongoose.Types.ObjectId.isValid(id)) return null;
+  // Validate adminUserId before persisting to adminUpdatedBy (ObjectId field).
+  // An empty string or non-ObjectId value triggers a Mongoose CastError at save time.
+  const safeAdminUserId =
+    adminUserId && mongoose.Types.ObjectId.isValid(adminUserId) ? adminUserId : null;
   return Subscription.findByIdAndUpdate(
     id,
     {
       $set: {
         plan: planId,
         adminUpdatedAt: new Date(),
-        adminUpdatedBy: adminUserId,
+        adminUpdatedBy: safeAdminUserId,
       },
     },
     { returnDocument: 'after', runValidators: true },
