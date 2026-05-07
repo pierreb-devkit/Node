@@ -2,7 +2,6 @@
  * Module dependencies
  */
 import { EventEmitter } from 'events';
-import logger from '../../../lib/services/logger.js';
 
 /**
  * Singleton event emitter for billing events.
@@ -19,13 +18,10 @@ import logger from '../../../lib/services/logger.js';
  *   - `billing.refund.unresolved` — emitted when a charge.refunded event cannot be correlated
  *     to a known session/org (missing metadata on charge AND PaymentIntent, or ambiguous pack).
  *     Payload: { chargeId, paymentIntentId, refundAmount } | { reason, orgId, stripeSessionId, amountRefundedCents }
+ *
+ * NOTE: The 'error' event listener is registered in billing.init.js (after config is ready)
+ * to avoid module-load-time config reads in this low-level singleton.
  */
 const billingEvents = new EventEmitter();
-
-// Prevent accidental crash if any future code emits 'error' with no listener
-// (Node default behaviour: throws if no 'error' listener is registered).
-billingEvents.on('error', (err) => {
-  logger.error('[billingEvents] uncaught error event', { err });
-});
 
 export default billingEvents;

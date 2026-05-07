@@ -107,6 +107,13 @@ export default async (app) => {
     });
   });
 
+  // Prevent accidental crash if any future code emits 'error' with no listener
+  // (Node default behaviour: throws if no 'error' listener is registered).
+  // Registered here (after config is ready) so events.js stays config-free and importable without ordering hazards.
+  billingEvents.on('error', (err) => {
+    logger.error('[billingEvents] uncaught error event', { err });
+  });
+
   // Boot validator: check for legacy migration state before enabling meterMode.
   if (config?.billing?.meterMode) {
     const legacyUsageCount = await BillingUsageRepository.countLegacyConsumedHistoryIds();
