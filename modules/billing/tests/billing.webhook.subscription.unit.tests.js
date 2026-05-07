@@ -15,6 +15,7 @@ describe('Billing webhook subscription unit tests:', () => {
   let mockOrganizationRepository;
   let mockResetService;
   let mockEvents;
+  let mockStripe;
 
   const orgId = '507f1f77bcf86cd799439011';
   const subId = '607f1f77bcf86cd799439022';
@@ -63,6 +64,14 @@ describe('Billing webhook subscription unit tests:', () => {
 
     jest.unstable_mockModule('../services/billing.reset.service.js', () => ({
       default: mockResetService,
+    }));
+
+    mockStripe = {
+      subscriptions: { retrieve: jest.fn() },
+    };
+
+    jest.unstable_mockModule('../lib/stripe.js', () => ({
+      default: jest.fn(() => mockStripe),
     }));
 
     jest.unstable_mockModule('../lib/events.js', () => ({
@@ -441,6 +450,9 @@ describe('Billing webhook subscription unit tests:', () => {
         status: 'past_due',
       };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockStripe.subscriptions.retrieve.mockResolvedValue({
+        items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
+      });
 
       await BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_456' }, makeEvent());
 
@@ -448,7 +460,7 @@ describe('Billing webhook subscription unit tests:', () => {
         subId,
         1700000400,
         'evt_succeeded',
-        { pastDueSince: null, status: 'active' },
+        expect.objectContaining({ pastDueSince: null, status: 'active' }),
         'invoice',
       );
     });
@@ -485,6 +497,9 @@ describe('Billing webhook subscription unit tests:', () => {
         status: 'past_due',
       };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockStripe.subscriptions.retrieve.mockResolvedValue({
+        items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
+      });
 
       await BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_456' }, makeEvent());
 
@@ -492,7 +507,7 @@ describe('Billing webhook subscription unit tests:', () => {
         subId,
         1700000400,
         'evt_succeeded',
-        { pastDueSince: null, status: 'active' },
+        expect.objectContaining({ pastDueSince: null, status: 'active' }),
         'invoice',
       );
     });
@@ -520,6 +535,9 @@ describe('Billing webhook subscription unit tests:', () => {
       };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
       mockSubscriptionRepository.updateIfEventNewer.mockResolvedValue(null);
+      mockStripe.subscriptions.retrieve.mockResolvedValue({
+        items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
+      });
 
       let mockLogger;
       jest.unstable_mockModule('../../../lib/services/logger.js', () => {
@@ -530,6 +548,57 @@ describe('Billing webhook subscription unit tests:', () => {
       await BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_456' }, makeEvent({ created: 50 }));
 
       expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalled();
+    });
+
+    // V8 audit C1 — dunning recovery plan restoration
+    test('V8 C1 — dunning recovery: restores plan=pro after unpaid downgrade to free', async () => {
+      const existing = {
+        _id: subId,
+        organization: orgId,
+        pastDueSince: new Date('2026-04-01'),
+        status: 'unpaid',
+        plan: 'free',
+      };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockStripe.subscriptions.retrieve.mockResolvedValue({
+        items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
+      });
+
+      await BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_456' }, makeEvent());
+
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
+        subId,
+        1700000400,
+        'evt_succeeded',
+        expect.objectContaining({ plan: 'pro', status: 'active', pastDueSince: null }),
+        'invoice',
+      );
+      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
+    });
+
+    test('V8 C1 — Stripe re-fetch failure: falls back gracefully, does not restore plan', async () => {
+      const existing = {
+        _id: subId,
+        organization: orgId,
+        pastDueSince: new Date('2026-04-01'),
+        status: 'unpaid',
+        plan: 'free',
+      };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockStripe.subscriptions.retrieve.mockRejectedValue(new Error('Stripe unavailable'));
+
+      await expect(
+        BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_456' }, makeEvent()),
+      ).resolves.not.toThrow();
+
+      // update still fires but without plan field
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
+        subId,
+        1700000400,
+        'evt_succeeded',
+        expect.not.objectContaining({ plan: expect.anything() }),
+        'invoice',
+      );
     });
   });
 

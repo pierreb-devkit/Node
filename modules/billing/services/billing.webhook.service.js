@@ -538,9 +538,13 @@ const handleInvoicePaymentFailed = async (invoice, event) => {
 };
 
 /**
- * @description Handle invoice.payment_succeeded event — clear degraded mode (pastDueSince).
+ * @description Handle invoice.payment_succeeded event — clear degraded mode and restore plan.
  *       When a past-due invoice is finally paid, remove the pastDueSince marker so
  *       the subscription exits degraded mode on next request.
+ *       V8 C1: also re-fetches the live Stripe subscription to restore the correct plan,
+ *       guarding against the case where customer.subscription.updated is dead-lettered
+ *       after a dunning sweep downgraded the plan to 'free'. Stripe re-fetch failure is
+ *       non-fatal (warn log, plan not restored, pastDueSince+status update still fires).
  *       Uses updateIfEventNewer to guard against out-of-order webhook delivery (V5 P1 #1).
  * @param {Object} invoice - Stripe invoice object
  * @param {Object} event - Full Stripe event (with event.created and event.id for ordering)
@@ -561,8 +565,28 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
   // cheap (no runValidators on user-facing fields) and guards the invoice ordering window.
   //
   // For past-due subs: include pastDueSince + status so the sub exits degraded mode.
+  // V8 C1: also restore the plan from Stripe so a dunning-downgraded sub is fully recovered
+  // even when customer.subscription.updated is dead-lettered.
   const isPastDue = existing.pastDueSince !== null && existing.pastDueSince !== undefined;
   const fields = isPastDue ? { pastDueSince: null, status: 'active' } : {};
+
+  let resolvedPlan = null;
+  if (isPastDue) {
+    try {
+      const stripe = getStripe();
+      if (!stripe) throw new Error('Stripe not configured');
+      const stripeSub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+      resolvedPlan = resolvePlan(stripeSub);
+      fields.plan = resolvedPlan;
+    } catch (stripeErr) {
+      logger.warn('[billing.webhook] invoice.payment_succeeded — Stripe re-fetch failed, plan not restored', {
+        stripeSubscriptionId,
+        error: stripeErr?.message ?? String(stripeErr),
+      });
+    }
+  }
+
+  const organizationId = String(existing.organization?._id || existing.organization);
 
   const updated = await SubscriptionRepository.updateIfEventNewer(
     String(existing._id),
@@ -573,6 +597,11 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
   );
   if (!updated) {
     logger.info('[billing.webhook] skipped stale event', { eventId: event.id, type: event.type });
+    return;
+  }
+
+  if (isPastDue && resolvedPlan) {
+    await syncOrganizationPlan(organizationId, resolvedPlan);
   }
 };
 
