@@ -146,12 +146,27 @@ const AdminDisputeCreditRequest = z
   })
   .strict();
 
+/**
+ * Path parameter schemas for admin routes.
+ * orgId:   MongoDB ObjectId (24 hex chars, case-insensitive).
+ * eventId: Stripe event ID (evt_ prefix).
+ */
+const AdminOrgIdParam = z.object({
+  orgId: z.string().regex(/^[a-f0-9]{24}$/i, 'orgId must be a valid ObjectId'),
+});
+
+const AdminEventIdParam = z.object({
+  eventId: z.string().regex(/^evt_/, 'eventId must be a Stripe event ID (evt_...)'),
+});
+
 export {
   AdminRefundRequest,
   AdminBumpPlanRequest,
   AdminWebhookReplayRequest,
   AdminDeadLettersQuery,
   AdminDisputeCreditRequest,
+  AdminOrgIdParam,
+  AdminEventIdParam,
 };
 
 export default {
@@ -165,4 +180,6 @@ export default {
   AdminWebhookReplayRequest,
   AdminDeadLettersQuery,
   AdminDisputeCreditRequest,
+  AdminOrgIdParam,
+  AdminEventIdParam,
 };

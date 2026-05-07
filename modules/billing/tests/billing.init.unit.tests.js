@@ -12,6 +12,7 @@ describe('billing.init unit tests:', () => {
   let mockConfig;
   let mockDistinct;
   let mockMongoose;
+  let mockLogger;
 
   const mockApp = {};
 
@@ -34,6 +35,8 @@ describe('billing.init unit tests:', () => {
       model: jest.fn().mockReturnValue({ distinct: mockDistinct }),
     };
 
+    mockLogger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
+
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: mockConfig,
     }));
@@ -48,7 +51,7 @@ describe('billing.init unit tests:', () => {
     }));
 
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
-      default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
+      default: mockLogger,
     }));
 
     jest.unstable_mockModule('../lib/events.js', () => ({
@@ -84,16 +87,13 @@ describe('billing.init unit tests:', () => {
 
     mockDistinct.mockResolvedValue(['free', 'legacy_plan']);
 
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
-
     await billingInit(mockApp);
 
     expect(mockDistinct).toHaveBeenCalledWith('plan');
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('"legacy_plan" not in planDefinitions'),
-    );
-    const warnings = warnSpy.mock.calls.map((c) => c[0]);
-    expect(warnings.some((w) => w.includes('"free"'))).toBe(false);
+    // After Batch 4 item 6: uses logger.warn instead of console.warn
+    const warnCalls = mockLogger.warn.mock.calls.map((c) => c[0]);
+    expect(warnCalls.some((w) => w.includes('"legacy_plan" not in planDefinitions'))).toBe(true);
+    expect(warnCalls.some((w) => w.includes('"free"'))).toBe(false);
   });
 
   test('meterMode=true aborts boot when legacy consumedHistoryIds fields remain', async () => {
@@ -108,12 +108,11 @@ describe('billing.init unit tests:', () => {
     mockConfig.billing.alerts = { thresholdPercents: [75] };
     mockConfig.billing.plans = ['free'];
 
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
-
     await billingInit(mockApp);
 
-    const warnings = warnSpy.mock.calls.map((c) => c[0]);
-    expect(warnings.some((w) => w.includes('75%') && w.includes('silently skipped'))).toBe(true);
+    // After Batch 4 item 6: uses logger.warn instead of console.warn
+    const warnCalls = mockLogger.warn.mock.calls.map((c) => c[0]);
+    expect(warnCalls.some((w) => w.includes('75%') && w.includes('silently skipped'))).toBe(true);
   });
 
   test('does not warn at boot when thresholdPercents contains only supported values', async () => {
@@ -121,24 +120,20 @@ describe('billing.init unit tests:', () => {
     mockConfig.billing.alerts = { thresholdPercents: [80, 100] };
     mockConfig.billing.plans = ['free'];
 
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
-
     await billingInit(mockApp);
 
-    const warnings = warnSpy.mock.calls.map((c) => c[0]);
-    expect(warnings.some((w) => w.includes('silently skipped'))).toBe(false);
+    const warnCalls = mockLogger.warn.mock.calls.map((c) => c[0]);
+    expect(warnCalls.some((w) => typeof w === 'string' && w.includes('silently skipped'))).toBe(false);
   });
 
   test('does not warn at boot for threshold validation when meterMode=false', async () => {
     mockConfig.billing.meterMode = false;
     mockConfig.billing.alerts = { thresholdPercents: [75] };
 
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
-
     await billingInit(mockApp);
 
-    const warnings = warnSpy.mock.calls.map((c) => c[0]);
-    expect(warnings.some((w) => w.includes('silently skipped'))).toBe(false);
+    const warnCalls = mockLogger.warn.mock.calls.map((c) => c[0]);
+    expect(warnCalls.some((w) => typeof w === 'string' && w.includes('silently skipped'))).toBe(false);
   });
 
   test('boot validator failure does not crash boot', async () => {

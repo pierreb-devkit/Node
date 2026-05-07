@@ -4,7 +4,7 @@
 import responses from '../../../lib/helpers/responses.js';
 import getStripe from '../lib/stripe.js';
 import BillingAdminService from '../services/billing.admin.service.js';
-import { AdminDeadLettersQuery } from '../models/billing.subscription.schema.js';
+import { AdminDeadLettersQuery, AdminOrgIdParam, AdminEventIdParam } from '../models/billing.subscription.schema.js';
 import logger from '../../../lib/services/logger.js';
 
 /**
@@ -106,7 +106,11 @@ const adminBumpPlan = async (req, res) => {
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const adminGetCustomerStatus = async (req, res) => {
   try {
-    const { orgId } = req.params;
+    const parsed = AdminOrgIdParam.safeParse(req.params);
+    if (!parsed.success) {
+      return responses.error(res, 422, 'Unprocessable Entity', 'Invalid path parameters')(parsed.error);
+    }
+    const { orgId } = parsed.data;
     const result = await BillingAdminService.getCustomerStatus(orgId);
     return responses.success(res, 'customer status')(result);
   } catch (err) {
@@ -126,7 +130,11 @@ const adminGetCustomerStatus = async (req, res) => {
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const adminSyncFromStripe = async (req, res) => {
   try {
-    const { orgId } = req.params;
+    const parsed = AdminOrgIdParam.safeParse(req.params);
+    if (!parsed.success) {
+      return responses.error(res, 422, 'Unprocessable Entity', 'Invalid path parameters')(parsed.error);
+    }
+    const { orgId } = parsed.data;
     const result = await BillingAdminService.syncOrgFromStripe(orgId);
     return responses.success(res, 'subscription synced from Stripe')(result);
   } catch (err) {
@@ -190,7 +198,11 @@ const adminListDeadLetters = async (req, res) => {
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const adminPurgeDeadLetter = async (req, res) => {
   try {
-    const { eventId } = req.params;
+    const parsed = AdminEventIdParam.safeParse(req.params);
+    if (!parsed.success) {
+      return responses.error(res, 422, 'Unprocessable Entity', 'Invalid path parameters')(parsed.error);
+    }
+    const { eventId } = parsed.data;
     const result = await BillingAdminService.purgeDeadLetter(eventId);
     return responses.success(res, 'dead letter purged')(result);
   } catch (err) {
@@ -211,7 +223,11 @@ const adminPurgeDeadLetter = async (req, res) => {
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const adminCancelSubscription = async (req, res) => {
   try {
-    const { orgId } = req.params;
+    const parsed = AdminOrgIdParam.safeParse(req.params);
+    if (!parsed.success) {
+      return responses.error(res, 422, 'Unprocessable Entity', 'Invalid path parameters')(parsed.error);
+    }
+    const { orgId } = parsed.data;
     const result = await BillingAdminService.cancelSubscription(orgId);
     return responses.success(res, 'subscription canceled')(result);
   } catch (err) {

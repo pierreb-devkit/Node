@@ -312,26 +312,30 @@ const adminUpdatePlanOnly = (id, planId, adminUserId) => {
 
 /**
  * Fetch one page of subscriptions matching given statuses for reconciliation.
- * Used by the billing reconcile service (replaces direct mongoose.model() access there).
+ * Uses cursor-based pagination (_id > lastSeenId) instead of skip+limit for stability:
+ * skip offsets shift when new documents are inserted mid-run, causing silent skips or
+ * double-processing. The _id cursor is monotonically increasing and unaffected by inserts.
  * @param {string[]} statuses - Subscription statuses to include.
- * @param {number} page - 0-based page index.
+ * @param {string|null} lastSeenId - ObjectId string of the last document from the previous page, or null for first page.
  * @param {number} limit - Page size.
  * @returns {Promise<Object[]>} Lean subscription documents.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
-const findPageForReconciliation = (statuses, page, limit) =>
-  Subscription.find(
-    {
-      status: { $in: statuses },
-      stripeSubscriptionId: { $exists: true, $ne: null },
-    },
+const findPageForReconciliation = (statuses, lastSeenId, limit) => {
+  const filter = {
+    status: { $in: statuses },
+    stripeSubscriptionId: { $exists: true, $ne: null },
+    ...(lastSeenId ? { _id: { $gt: new mongoose.Types.ObjectId(lastSeenId) } } : {}),
+  };
+  return Subscription.find(
+    filter,
     { _id: 1, organization: 1, stripeSubscriptionId: 1, stripeCustomerId: 1, plan: 1, status: 1, currentPeriodStart: 1 },
   )
     .sort({ _id: 1 })
-    .skip(page * limit)
     .limit(limit)
     .lean()
     .exec();
+};
 
 export default {
   list,

@@ -286,7 +286,17 @@ const handleCheckoutPaymentCompleted = async (session) => {
   if (!organizationId || !mongoose.Types.ObjectId.isValid(organizationId)) return;
   if (!packId) return;
 
-  await BillingExtraService.creditPack(organizationId, packId, stripeSessionId);
+  const result = await BillingExtraService.creditPack(organizationId, packId, stripeSessionId);
+
+  // Observability: log when creditPack returns applied=false (duplicate session detected).
+  // Debug level — not an error, but useful to detect phantom Stripe redeliveries in prod.
+  if (result && !result.applied) {
+    logger.debug('[billing.webhook] creditPack duplicate session detected — idempotency guard fired', {
+      organizationId,
+      packId,
+      stripeSessionId,
+    });
+  }
 
   // Backfill PaymentIntent metadata with the real session ID so that charge.refunded
   // events can correlate the charge back to this ledger entry.
@@ -1116,9 +1126,9 @@ const handleChargeDisputeFundsReinstated = async (dispute, event) => {
     return;
   }
 
-  // funds_reinstated is good news (dispute was won back) — log as warn, not error.
-  // The alert is for ops to apply a manual ledger credit via the admin endpoint.
-  logger.warn('[billing.webhook] dispute.funds_reinstated received — use POST /api/admin/billing/dispute/credit/:orgId to restore the extras balance', {
+  // funds_reinstated requires immediate manual action (apply ledger credit via admin endpoint)
+  // — log as error so this surfaces in error-level alerting dashboards, not buried in warn noise.
+  logger.error('[billing.webhook] dispute.funds_reinstated received — ACTION REQUIRED: use POST /api/admin/billing/dispute/credit/:orgId to restore the extras balance', {
     disputeId,
     chargeId,
     amount,

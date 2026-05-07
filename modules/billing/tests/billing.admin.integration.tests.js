@@ -456,4 +456,96 @@ describe('Billing admin integration tests:', () => {
 
     expect(res.status).toHaveBeenCalledWith(422);
   });
+
+  // ── Param validation (Batch 4 — item 2) ────────────────────────────────────
+
+  test('invalid orgId on GET /customer/:orgId returns 422', async () => {
+    const routes = await buildRoutes();
+    const route = routes.get('/api/admin/billing/customer/:orgId');
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() };
+
+    await runHandlers(
+      [...route.all, ...route.get],
+      { method: 'GET', headers: { 'x-role': 'admin' }, params: { orgId: 'not-an-objectid' }, body: {} },
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(422);
+  });
+
+  test('valid orgId on GET /customer/:orgId reaches the service', async () => {
+    const routes = await buildRoutes();
+    const route = routes.get('/api/admin/billing/customer/:orgId');
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() };
+
+    const { default: BillingAdminService } = await import('../services/billing.admin.service.js');
+    BillingAdminService.getCustomerStatus.mockResolvedValueOnce({ plan: 'pro' });
+
+    await runHandlers(
+      [...route.all, ...route.get],
+      { method: 'GET', headers: { 'x-role': 'admin' }, params: { orgId: '507f1f77bcf86cd799439011' }, body: {} },
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  test('invalid orgId on POST /sync/:orgId returns 422', async () => {
+    const routes = await buildRoutes();
+    const route = routes.get('/api/admin/billing/sync/:orgId');
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() };
+
+    await runHandlers(
+      [...route.all, ...route.post],
+      { method: 'POST', headers: { 'x-role': 'admin' }, params: { orgId: 'bad' }, body: {} },
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(422);
+  });
+
+  test('invalid orgId on POST /cancel/:orgId returns 422', async () => {
+    const routes = await buildRoutes();
+    const route = routes.get('/api/admin/billing/cancel/:orgId');
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() };
+
+    await runHandlers(
+      [...route.all, ...route.post],
+      { method: 'POST', headers: { 'x-role': 'admin' }, params: { orgId: '!!invalid!!' }, body: {} },
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(422);
+  });
+
+  test('invalid eventId on DELETE /dead-letters/:eventId returns 422', async () => {
+    const routes = await buildRoutes();
+    const route = routes.get('/api/admin/billing/dead-letters/:eventId');
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() };
+
+    await runHandlers(
+      [...route.all, ...route.delete],
+      { method: 'DELETE', headers: { 'x-role': 'admin' }, params: { eventId: 'not-an-evt-id' }, body: {} },
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(422);
+  });
+
+  test('valid eventId (evt_*) on DELETE /dead-letters/:eventId reaches the service', async () => {
+    const routes = await buildRoutes();
+    const route = routes.get('/api/admin/billing/dead-letters/:eventId');
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() };
+
+    const { default: BillingAdminService } = await import('../services/billing.admin.service.js');
+    BillingAdminService.purgeDeadLetter.mockResolvedValueOnce({ deleted: true });
+
+    await runHandlers(
+      [...route.all, ...route.delete],
+      { method: 'DELETE', headers: { 'x-role': 'admin' }, params: { eventId: 'evt_1ABC' }, body: {} },
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
 });
