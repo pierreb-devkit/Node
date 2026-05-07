@@ -58,11 +58,11 @@ function requireQuota(resource, action) {
         // ── Degraded-mode gate (past_due grace period) ─────────────────────
         const subscription = await SubscriptionRepository.findByOrganization(req.organization._id);
 
-        // Fail-closed statuses: paused, unpaid, incomplete_expired → always route to free quota.
+        // Fail-closed statuses: paused, unpaid, incomplete_expired, incomplete → always route to free quota.
         // These statuses fire as customer.subscription.updated (status field changes), so they
         // arrive here while the subscription doc may still hold a paid-tier meterQuota.
-        // Resetting to zero prevents paid-quota bleed-through on lapsed subscriptions.
-        const failClosedStatuses = ['paused', 'unpaid', 'incomplete_expired'];
+        // Resetting to zero prevents paid-quota bleed-through on lapsed/failed subscriptions.
+        const failClosedStatuses = ['paused', 'unpaid', 'incomplete_expired', 'incomplete'];
         if (subscription && failClosedStatuses.includes(subscription.status)) {
           const planId = getDefaultPlanId();
           const freePlan = BillingPlanService.getActivePlan(planId);

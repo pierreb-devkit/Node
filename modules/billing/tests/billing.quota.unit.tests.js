@@ -594,5 +594,31 @@ describe('requireQuota middleware:', () => {
       const errData = JSON.parse(payload.error);
       expect(errData.type).toBe('METER_EXHAUSTED');
     });
+
+    // ── V8 audit C2: incomplete subscription must be fail-closed ─────────────
+
+    test('V8-C2: incomplete subscription + no BillingUsage doc → 402 METER_EXHAUSTED with free quota (not pro)', async () => {
+      // Org has status='incomplete' (initial payment failed, Stripe ~24h auto-cancel window).
+      // No BillingUsage doc exists yet for this brand-new subscription.
+      // The paid plan (pro) has meterQuota=50000 but must NOT bleed through.
+      // Fail-closed branch routes to free plan; free quota=0 → 402.
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro', status: 'incomplete' });
+      mockBillingUsageService.getMeter.mockResolvedValue(null);
+      mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
+      mockBillingPlanService.getActivePlan.mockReturnValue({ meterQuota: 0, version: 'v1' });
+
+      await requireQuota('scraps', 'create')(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(402);
+      const payload = res.json.mock.calls[0][0];
+      const errData = JSON.parse(payload.error);
+      expect(errData.type).toBe('METER_EXHAUSTED');
+      // Free plan quota (0), not the pro paid quota (50000)
+      expect(errData.meterQuota).toBe(0);
+      // getActivePlan called with the free/default plan id, not 'pro'
+      expect(mockBillingPlanService.getActivePlan).toHaveBeenCalledWith('free');
+      expect(mockBillingPlanService.getActivePlan).not.toHaveBeenCalledWith('pro');
+    });
   });
 });
