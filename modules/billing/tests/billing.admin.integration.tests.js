@@ -488,6 +488,8 @@ describe('Billing admin integration tests:', () => {
     );
 
     expect(res.status).toHaveBeenCalledWith(200);
+    // Verify the validated orgId was passed through to the service (controller→service wiring)
+    expect(BillingAdminService.getCustomerStatus).toHaveBeenCalledWith('507f1f77bcf86cd799439011');
   });
 
   test('invalid orgId on POST /sync/:orgId returns 422', async () => {
@@ -547,6 +549,8 @@ describe('Billing admin integration tests:', () => {
     );
 
     expect(res.status).toHaveBeenCalledWith(200);
+    // Verify the validated eventId was passed through to the service (controller→service wiring)
+    expect(BillingAdminService.purgeDeadLetter).toHaveBeenCalledWith('evt_1ABC');
   });
 
   test('invalid orgId on POST /dispute/credit/:orgId returns 422', async () => {
