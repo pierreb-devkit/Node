@@ -42,9 +42,13 @@ describe('billing.init unit tests:', () => {
       default: mockBillingUsageRepository,
     }));
 
-    // Stub analytics and events to avoid side effects
+    // Stub analytics, logger and events to avoid side effects
     jest.unstable_mockModule('../../../lib/services/analytics.js', () => ({
       default: { groupIdentify: jest.fn() },
+    }));
+
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
     }));
 
     jest.unstable_mockModule('../lib/events.js', () => ({

@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import { EventEmitter } from 'events';
+import logger from '../../../lib/services/logger.js';
 
 /**
  * Singleton event emitter for billing events.
@@ -20,5 +21,11 @@ import { EventEmitter } from 'events';
  *     Payload: { chargeId, paymentIntentId, refundAmount } | { reason, orgId, stripeSessionId, amountRefundedCents }
  */
 const billingEvents = new EventEmitter();
+
+// Prevent accidental crash if any future code emits 'error' with no listener
+// (Node default behaviour: throws if no 'error' listener is registered).
+billingEvents.on('error', (err) => {
+  logger.error('[billingEvents] uncaught error event', { err });
+});
 
 export default billingEvents;
