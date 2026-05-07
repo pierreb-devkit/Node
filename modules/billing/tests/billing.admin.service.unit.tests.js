@@ -452,17 +452,35 @@ describe('BillingAdminService unit tests:', () => {
         chargeId, amountCents, reason, refundRequestId, orgId, adminUserId,
       );
 
+      // amountCents=2000, default dollarsToUnitRatio=1000 → creditUnits = Math.round((2000/100)*1000) = 20000
+      const expectedCreditUnits = Math.round((amountCents / 100) * 1000);
       expect(result.applied).toBe(true);
       expect(result.ledgerEntry).toBeDefined();
       expect(mockExtraBalanceRepository.creditCompensation).toHaveBeenCalledWith(
         orgId,
-        amountCents,
+        expectedCreditUnits,
         `dispute-credit-${refundRequestId}`,
         reason,
       );
       expect(mockLogger.info).toHaveBeenCalledWith(
         '[billing.admin] creditDisputeReinstated — applied',
-        expect.objectContaining({ orgId, chargeId, amountCents, applied: true }),
+        expect.objectContaining({ orgId, chargeId, amountCents, creditUnits: expectedCreditUnits, applied: true }),
+      );
+    });
+
+    test('converts amountCents to creditUnits using dollarsToUnitRatio (V8 audit C5)', async () => {
+      mockConfig.billing.meter = { dollarsToUnitRatio: 1000 };
+
+      await BillingAdminService.creditDisputeReinstated(
+        'ch_test', 5000, 'dispute', 'req_xxxxxxxx', orgId, adminUserId,
+      );
+
+      // 5000 cents = $50 × 1000 units/dollar = 50,000 units
+      expect(mockExtraBalanceRepository.creditCompensation).toHaveBeenCalledWith(
+        orgId,
+        50000,
+        expect.any(String),
+        'dispute',
       );
     });
 

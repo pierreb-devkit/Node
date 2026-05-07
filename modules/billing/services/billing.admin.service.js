@@ -9,6 +9,7 @@ import ProcessedStripeEventRepository from '../repositories/billing.processedStr
 import OrganizationRepository from '../../organizations/repositories/organizations.repository.js';
 import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
 import BillingWebhookService from './billing.webhook.service.js';
+import { getDollarsToUnitRatio } from '../lib/billing.constants.js';
 
 /**
  * Valid plan names from config (immutable set for O(1) lookups).
@@ -296,13 +297,12 @@ const cancelSubscription = async (orgId) => {
  *              Idempotent: `refundRequestId` is used as the idempotency key so double-clicking
  *              the admin UI never produces a double credit.
  *
- *              Audit trail: logs adminUserId + chargeId + amountCents on every call.
+ *              Audit trail: logs adminUserId + chargeId + amountCents + creditUnits on every call.
  *
  * @param {string} chargeId - Stripe charge ID (ch_xxx) to correlate with the dispute.
- * @param {number} amountCents - Amount to credit in cents (positive integer). Converted to
- *                               meter units by a 1:1 mapping — callers should pass the
- *                               dispute amount or a proportion; the exact unit conversion
- *                               is owned by ops (they know the pack price per unit).
+ * @param {number} amountCents - Dispute amount in cents (positive integer). Internally converted
+ *                               to meter units via `config.billing.meter.dollarsToUnitRatio`
+ *                               (default 1000 → $1 = 1000 units, so 5000 cents = 50,000 units).
  * @param {string} reason - Ops note for audit trail (stored in ledger entry refId context).
  * @param {string} refundRequestId - UUID per click (idempotency key).
  * @param {string} orgId - Organization ObjectId (string) — whose extras balance to credit.
@@ -338,14 +338,15 @@ const creditDisputeReinstated = async (chargeId, amountCents, reason, refundRequ
   // Idempotency key includes the refundRequestId to prevent double-click double-credit.
   const refId = `dispute-credit-${refundRequestId}`;
 
-  // Credit the extras balance using the compensation path.
-  // amountCents is used directly as the credit unit — ops chooses the proportional amount.
-  const result = await BillingExtraBalanceRepository.creditCompensation(orgId, amountCents, refId, reason);
+  // Convert cents to meter units using the configured dollarsToUnitRatio.
+  const creditUnits = Math.round((amountCents / 100) * getDollarsToUnitRatio());
+  const result = await BillingExtraBalanceRepository.creditCompensation(orgId, creditUnits, refId, reason);
 
   logger.info('[billing.admin] creditDisputeReinstated — applied', {
     orgId,
     chargeId,
     amountCents,
+    creditUnits,
     reason,
     refundRequestId,
     adminUserId,
