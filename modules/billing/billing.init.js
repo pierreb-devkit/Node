@@ -58,7 +58,7 @@ export default async (app) => {
 
   // billing.dispute.opened — priority 5 (urgent): 7-day evidence window starts now.
   // Downstream projects (e.g. trawl_node) re-listen on billingEvents for ntfy push.
-  billingEvents.on('billing.dispute.opened', async (payload) => {
+  billingEvents.on('billing.dispute.opened', (payload) => {
     const { disputeId, chargeId, organizationId, stripeSessionId, amount, reason } = payload;
     logger.error('[billing.init] ALERT: dispute opened — 7-day evidence window — manual review required', {
       disputeId,
@@ -72,7 +72,7 @@ export default async (app) => {
   });
 
   // billing.dispute.lost — priority 5 (urgent): funds withdrawn, ledger already debited.
-  billingEvents.on('billing.dispute.lost', async (payload) => {
+  billingEvents.on('billing.dispute.lost', (payload) => {
     const { disputeId, chargeId, organizationId, stripeSessionId, amount } = payload;
     logger.error('[billing.init] ALERT: dispute lost — funds withdrawn — ledger debited', {
       disputeId,
@@ -85,7 +85,7 @@ export default async (app) => {
   });
 
   // billing.refund.unresolved — priority 4 (high): unresolvable refund needs manual reconciliation.
-  billingEvents.on('billing.refund.unresolved', async (payload) => {
+  billingEvents.on('billing.refund.unresolved', (payload) => {
     logger.error('[billing.init] ALERT: refund unresolved — manual reconciliation required', {
       ...payload,
       ntfyPriority: 4,
@@ -93,7 +93,7 @@ export default async (app) => {
   });
 
   // billing.reconciliation.divergence — priority 4 (high): DB vs Stripe plan/status mismatch.
-  billingEvents.on('billing.reconciliation.divergence', async (payload) => {
+  billingEvents.on('billing.reconciliation.divergence', (payload) => {
     const { organizationId, subscriptionId, stripeSubscriptionId, db, stripe, statusMismatch, planMismatch } = payload;
     logger.error('[billing.init] ALERT: reconciliation divergence — DB vs Stripe mismatch', {
       organizationId,

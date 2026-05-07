@@ -26,8 +26,14 @@ describe('billing.init ops-listeners unit tests:', () => {
   const mockApp = {};
 
   /**
-   * Wire minimal mocks for billing.init dependencies and import the module.
-   * Returns the real billingEvents singleton so we can .emit() on it.
+   * Wire minimal mocks for billing.init dependencies, import the module, and
+   * run billingInit. Sets `mockLogger` and `realBillingEvents` in the outer
+   * scope as side effects so individual tests can emit events and assert on
+   * the logger.
+   *
+   * @param {Object} [options={}] - Setup options.
+   * @param {Object} [options.loggerOverrides={}] - Method overrides merged into the mock logger.
+   * @returns {Promise<void>}
    */
   const setup = async ({ loggerOverrides = {} } = {}) => {
     jest.resetModules();
