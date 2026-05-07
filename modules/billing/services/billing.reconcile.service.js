@@ -37,7 +37,7 @@ const resolveStripePlan = (subscription) => {
 
 /**
  * @function runReconciliation
- * @description Paginate all active|past_due subscriptions, fetch live Stripe status for each,
+ * @description Paginate all active|past_due|trialing subscriptions, fetch live Stripe status for each,
  *              and emit billing.reconciliation.divergence when status or plan diverges.
  *
  *              LOG-ONLY policy: this function NEVER writes to the DB or Stripe.
