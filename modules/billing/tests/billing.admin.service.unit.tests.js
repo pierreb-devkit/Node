@@ -5,14 +5,15 @@ import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globa
 
 /**
  * Unit tests for BillingAdminService.
- * Covers all 6 admin operations: getCustomerStatus, syncOrgFromStripe, replayWebhookEvent,
- * listDeadLetters, purgeDeadLetter, cancelSubscription.
+ * Covers all 7 admin operations: getCustomerStatus, syncOrgFromStripe, replayWebhookEvent,
+ * listDeadLetters, purgeDeadLetter, cancelSubscription, creditDisputeReinstated.
  */
 describe('BillingAdminService unit tests:', () => {
   let BillingAdminService;
   let mockSubscriptionRepository;
   let mockProcessedStripeEventRepository;
   let mockOrganizationRepository;
+  let mockExtraBalanceRepository;
   let mockWebhookService;
   let mockStripeInstance;
   let mockGetStripe;
@@ -62,6 +63,16 @@ describe('BillingAdminService unit tests:', () => {
 
     mockOrganizationRepository = {
       setPlan: jest.fn().mockResolvedValue({}),
+    };
+
+    mockExtraBalanceRepository = {
+      creditCompensation: jest.fn().mockResolvedValue({
+        doc: {
+          ledger: [{ refId: 'dispute-credit-test-uuid-12345', kind: 'adjustment', amount: 2000 }],
+          cachedBalance: 2000,
+        },
+        applied: true,
+      }),
     };
 
     mockWebhookService = {
@@ -131,6 +142,9 @@ describe('BillingAdminService unit tests:', () => {
     }));
     jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
       default: mockOrganizationRepository,
+    }));
+    jest.unstable_mockModule('../repositories/billing.extraBalance.repository.js', () => ({
+      default: mockExtraBalanceRepository,
     }));
     jest.unstable_mockModule('../services/billing.webhook.service.js', () => ({
       default: mockWebhookService,
@@ -424,6 +438,131 @@ describe('BillingAdminService unit tests:', () => {
         '[billing.admin] cancelSubscription — post-cancel retrieve failed, assuming canceled',
         expect.any(Object),
       );
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // creditDisputeReinstated (Item 1 — Batch 2)
+  // ─────────────────────────────────────────────────────────────────────────────
+  describe('creditDisputeReinstated:', () => {
+    const chargeId = 'ch_test_001';
+    const amountCents = 2000;
+    const reason = 'dispute won — funds reinstated';
+    const refundRequestId = 'test-uuid-12345';
+    const adminUserId = '617f1f77bcf86cd799439099';
+
+    test('applies credit and returns applied:true + ledgerEntry', async () => {
+      const result = await BillingAdminService.creditDisputeReinstated(
+        chargeId, amountCents, reason, refundRequestId, orgId, adminUserId,
+      );
+
+      expect(result.applied).toBe(true);
+      expect(result.ledgerEntry).toBeDefined();
+      expect(mockExtraBalanceRepository.creditCompensation).toHaveBeenCalledWith(
+        orgId,
+        amountCents,
+        `dispute-credit-${refundRequestId}`,
+        reason,
+      );
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        '[billing.admin] creditDisputeReinstated — applied',
+        expect.objectContaining({ orgId, chargeId, amountCents, applied: true }),
+      );
+    });
+
+    test('returns applied:false when creditCompensation reports duplicate_refId (idempotency)', async () => {
+      mockExtraBalanceRepository.creditCompensation.mockResolvedValue({
+        doc: null,
+        applied: false,
+        reason: 'duplicate_refId',
+      });
+
+      const result = await BillingAdminService.creditDisputeReinstated(
+        chargeId, amountCents, reason, refundRequestId, orgId, adminUserId,
+      );
+
+      expect(result.applied).toBe(false);
+      expect(result.ledgerEntry).toBeNull();
+    });
+
+    test('throws 422 for invalid orgId', async () => {
+      await expect(
+        BillingAdminService.creditDisputeReinstated(chargeId, amountCents, reason, refundRequestId, 'bad-id', adminUserId),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+
+    test('throws 422 for invalid chargeId (not starting with ch_)', async () => {
+      await expect(
+        BillingAdminService.creditDisputeReinstated('pi_not_a_charge', amountCents, reason, refundRequestId, orgId, adminUserId),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+
+    test('throws 422 for zero or negative amountCents', async () => {
+      await expect(
+        BillingAdminService.creditDisputeReinstated(chargeId, 0, reason, refundRequestId, orgId, adminUserId),
+      ).rejects.toMatchObject({ status: 422 });
+      await expect(
+        BillingAdminService.creditDisputeReinstated(chargeId, -100, reason, refundRequestId, orgId, adminUserId),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+
+    test('throws 422 when refundRequestId is too short', async () => {
+      await expect(
+        BillingAdminService.creditDisputeReinstated(chargeId, amountCents, reason, 'abc', orgId, adminUserId),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+
+    test('throws 422 when reason is too short', async () => {
+      await expect(
+        BillingAdminService.creditDisputeReinstated(chargeId, amountCents, 'ab', refundRequestId, orgId, adminUserId),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // dispatchWebhookEvent — covers the switch in admin.service.js (replay path)
+  // ─────────────────────────────────────────────────────────────────────────────
+  describe('dispatchWebhookEvent (replay):', () => {
+    const baseEvent = (type) => ({ id: `evt_${type.replace(/\./g, '_')}`, type, data: { object: { id: 'sub_x' } } });
+
+    test.each([
+      ['checkout.session.completed', 'handleCheckoutSessionCompleted'],
+      ['customer.subscription.created', 'handleSubscriptionCreated'],
+      ['customer.subscription.updated', 'handleSubscriptionUpdated'],
+      ['customer.subscription.deleted', 'handleSubscriptionDeleted'],
+      ['invoice.payment_failed', 'handleInvoicePaymentFailed'],
+      ['invoice.payment_succeeded', 'handleInvoicePaymentSucceeded'],
+      ['charge.refunded', 'handleChargeRefunded'],
+      ['customer.deleted', 'handleCustomerDeleted'],
+      ['charge.dispute.created', 'handleChargeDisputeCreated'],
+      ['charge.dispute.funds_withdrawn', 'handleChargeDisputeFundsWithdrawn'],
+      ['charge.dispute.funds_reinstated', 'handleChargeDisputeFundsReinstated'],
+    ])('routes %s through withIdempotency to %s', async (eventType, handlerName) => {
+      const event = baseEvent(eventType);
+      mockStripeInstance.events.retrieve.mockResolvedValueOnce(event);
+      mockWebhookService.withIdempotency.mockImplementationOnce(async (e, fn) => fn(e));
+      mockWebhookService[handlerName].mockResolvedValueOnce({ ok: true });
+
+      await BillingAdminService.replayWebhookEvent(event.id);
+
+      expect(mockWebhookService.withIdempotency).toHaveBeenCalledWith(event, expect.any(Function));
+      expect(mockWebhookService[handlerName]).toHaveBeenCalled();
+    });
+
+    test('default case logs unhandled event and returns skipped', async () => {
+      mockStripeInstance.events.retrieve.mockResolvedValueOnce({
+        id: 'evt_unknown',
+        type: 'some.unknown.event_type',
+        data: { object: {} },
+      });
+
+      const out = await BillingAdminService.replayWebhookEvent('evt_unknown');
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('unhandled event type'),
+        expect.objectContaining({ type: 'some.unknown.event_type' }),
+      );
+      expect(out.result).toMatchObject({ skipped: true });
     });
   });
 });

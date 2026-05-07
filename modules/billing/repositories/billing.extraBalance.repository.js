@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import mongoose from 'mongoose';
+import AppError from '../../../lib/helpers/AppError.js';
 
 /**
  * Validate that orgId is a syntactically valid MongoDB ObjectId.
@@ -116,6 +117,27 @@ const debit = async (orgId, amount, refId) => {
   };
 
   // Step 1: ensure the document exists (atomic getOrCreate, no-op if already present).
+  // Guard: if no doc exists yet, validate that the organization exists before creating a
+  // dangling ExtraBalance doc for a ghost org (Opus H4). Accepts proof via either the
+  // Organization collection OR the Subscription collection — a valid Subscription is
+  // sufficient evidence that the org is real (provisioning sometimes writes Subscription
+  // before the full Organization doc, e.g. in CLI tools or integration tests).
+  const existing = await BillingExtraBalance().exists({ organization: orgId });
+  if (!existing) {
+    const { default: OrganizationRepository } = await import('../../organizations/repositories/organizations.repository.js');
+    const orgExists = await OrganizationRepository.exists({ _id: orgId });
+    if (!orgExists) {
+      const Subscription = mongoose.model('Subscription');
+      const subExists = await Subscription.exists({ organization: orgId });
+      if (!subExists) {
+        throw Object.assign(
+          new AppError(`Organization not found: ${orgId}`, { status: 404, code: 'ORGANIZATION_NOT_FOUND' }),
+          { organizationId: orgId },
+        );
+      }
+    }
+  }
+
   await BillingExtraBalance().findOneAndUpdate(
     { organization: orgId },
     { $setOnInsert: { organization: orgId, ledger: [], cachedBalance: 0, cachedBalanceAt: new Date() } },
@@ -138,6 +160,57 @@ const debit = async (orgId, amount, refId) => {
 
   if (doc) return { doc, applied: true };
   return { doc: null, applied: false, reason: 'duplicate_step' };
+};
+
+/**
+ * @function creditCompensation
+ * @description Atomically push a positive 'adjustment' ledger entry for dispute/ops compensation.
+ *              Idempotent: if a ledger entry with the same refId already exists the update
+ *              is a no-op and applied=false is returned.
+ *              Uses a 2-step pattern aligned with creditPack:
+ *                Step 1 — ensure doc exists (getOrCreate, no-op on replay).
+ *                Step 2 — idempotency-guarded credit push.
+ *              Intended use: admin dispute reinstatement, manual ops corrections.
+ *
+ * @param {string} orgId - The organization ObjectId (string).
+ * @param {number} amount - Meter units to credit (must be > 0).
+ * @param {string} refId - Unique idempotency key (e.g. `dispute-credit-<refundRequestId>`).
+ * @param {string} [memo] - Optional human-readable memo stored in the ledger entry.
+ * @returns {Promise<{doc: Object|null, applied: boolean, reason?: string}>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const creditCompensation = async (orgId, amount, refId, memo = '') => {
+  if (!isValidOrgId(orgId)) return { doc: null, applied: false };
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('invalid argument: amount must be a positive finite number');
+  if (typeof refId !== 'string' || refId.trim() === '') throw new Error('invalid argument: refId must be a non-empty string');
+
+  const entry = {
+    kind: 'adjustment',
+    amount,
+    refId,
+    at: new Date(),
+    ...(memo ? { memo } : {}),
+  };
+
+  // Step 1: ensure the document exists (atomic getOrCreate, no-op if already present).
+  await getOrCreate(orgId);
+
+  // Step 2: idempotency-guarded credit (no upsert — doc is guaranteed to exist after step 1).
+  const doc = await BillingExtraBalance().findOneAndUpdate(
+    {
+      organization: orgId,
+      'ledger.refId': { $ne: refId },
+    },
+    {
+      $push: { ledger: entry },
+      $inc: { cachedBalance: amount },
+      $set: { cachedBalanceAt: new Date() },
+    },
+    { returnDocument: 'after' },
+  );
+
+  if (doc) return { doc, applied: true };
+  return { doc: null, applied: false, reason: 'duplicate_refId' };
 };
 
 /**
@@ -355,13 +428,32 @@ const findOrgsWithExpiringTopups = async (now) => {
   return orgIds;
 };
 
+/**
+ * Fetch the full ledger array for an org.
+ * Used by the reconcile service to compute actual extras debits in the current period.
+ * Returns null when no document exists yet (org has never had extras).
+ * @param {string} orgId - Organization ObjectId (string).
+ * @returns {Promise<Object[]|null>} Ledger entries array or null.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const findLedgerByOrg = async (orgId) => {
+  if (!isValidOrgId(orgId)) return null;
+  const doc = await BillingExtraBalance().findOne(
+    { organization: orgId },
+    { ledger: 1 },
+  ).lean();
+  return doc?.ledger ?? null;
+};
+
 export default {
   getOrCreate,
   creditPack,
+  creditCompensation,
   debit,
   addExpirationEntries,
   refundPartial,
   getBalance,
   listLedgerPage,
   findOrgsWithExpiringTopups,
+  findLedgerByOrg,
 };

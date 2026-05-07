@@ -453,7 +453,9 @@ describe('Billing webhook subscription unit tests:', () => {
       );
     });
 
-    test('should advance event markers even when pastDueSince is null (routine invoice)', async () => {
+    test('invoice-marker advance — healthy sub (pastDueSince=null) calls updateIfEventNewer with empty fields', async () => {
+      // Always advance the invoice-family marker even for healthy subs so stale
+      // replays of older invoice events are rejected by the ordering guard (DeepSeek HIGH fix).
       const existing = {
         _id: subId,
         organization: orgId,
@@ -464,7 +466,7 @@ describe('Billing webhook subscription unit tests:', () => {
 
       await BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_456' }, makeEvent());
 
-      // markers-only update (empty fields object) — ensures stale out-of-order replays are rejected
+      // updateIfEventNewer IS called with empty fields — marker-only update, no field changes
       expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
         subId,
         1700000400,
@@ -474,31 +476,24 @@ describe('Billing webhook subscription unit tests:', () => {
       );
     });
 
-    test('stale payment_succeeded after recent payment_failed — markers reject replay', async () => {
+    test('Opus H7 — past_due sub still calls updateIfEventNewer (critical write)', async () => {
+      // Ensures the pastDueSince clearance still happens correctly for degraded subs.
       const existing = {
         _id: subId,
         organization: orgId,
-        pastDueSince: null,
-        status: 'active',
+        pastDueSince: new Date('2026-04-01'),
+        status: 'past_due',
       };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      // Simulate stale event rejected by updateIfEventNewer
-      mockSubscriptionRepository.updateIfEventNewer.mockResolvedValue(null);
 
-      let mockLogger;
-      jest.unstable_mockModule('../../../lib/services/logger.js', () => {
-        mockLogger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
-        return { default: mockLogger };
-      });
-
-      // old event — should be a no-op (markers guard)
-      await BillingWebhookService.handleInvoicePaymentSucceeded(
-        { subscription: 'sub_456' },
-        makeEvent({ created: 10 }),
-      );
+      await BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_456' }, makeEvent());
 
       expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
-        subId, 10, 'evt_succeeded', {}, 'invoice',
+        subId,
+        1700000400,
+        'evt_succeeded',
+        { pastDueSince: null, status: 'active' },
+        'invoice',
       );
     });
 

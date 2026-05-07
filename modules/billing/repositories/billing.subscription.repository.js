@@ -310,6 +310,25 @@ const adminUpdatePlanOnly = (id, planId, adminUserId) => {
     .exec();
 };
 
+/**
+ * Fetch one page of subscriptions matching given statuses for reconciliation.
+ * Used by the billing reconcile service (replaces direct mongoose.model() access there).
+ * @param {string[]} statuses - Subscription statuses to include.
+ * @param {number} page - 0-based page index.
+ * @param {number} limit - Page size.
+ * @returns {Promise<Object[]>} Lean subscription documents.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const findPageForReconciliation = (statuses, page, limit) =>
+  Subscription.find(
+    { status: { $in: statuses }, stripeSubscriptionId: { $ne: null } },
+    { _id: 1, organization: 1, stripeSubscriptionId: 1, stripeCustomerId: 1, plan: 1, status: 1, currentPeriodStart: 1 },
+  )
+    .skip(page * limit)
+    .limit(limit)
+    .lean()
+    .exec();
+
 export default {
   list,
   create,
@@ -326,4 +345,5 @@ export default {
   markUnpaid,
   updateIfEventNewer,
   adminUpdatePlanOnly,
+  findPageForReconciliation,
 };

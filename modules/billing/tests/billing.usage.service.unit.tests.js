@@ -544,4 +544,84 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       expect(result).toBeNull();
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // runaway negative balance detection (Item 3 — Batch 2)
+  // ─────────────────────────────────────────────────────────────────────────────
+  describe('incrementMeter — runaway negative balance detection (Opus H1):', () => {
+    test('normal debit on pro plan — no runaway, no event', async () => {
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan({ meterQuota: 500000 }));
+      const updatedDoc = makeUsageDoc({ meterUsed: 510000, meterQuota: 500000 });
+      mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
+      // Balance just slightly negative — within 10x quota threshold
+      mockExtraService.debit.mockResolvedValue({
+        applied: true,
+        doc: { cachedBalance: -100 },
+      });
+
+      await BillingUsageService.incrementMeter(orgId, 10000, {}, 'hist_normal_debit');
+
+      // No runaway event emitted
+      const runawayEmits = mockBillingEventsEmit.mock.calls.filter(
+        ([name]) => name === 'billing.extras.runaway_debit',
+      );
+      expect(runawayEmits).toHaveLength(0);
+    });
+
+    test('excessive debit pushing balance below -10×quota — emits runaway_debit event and logs error', async () => {
+      const loggerMod = await import('../../../lib/services/logger.js');
+      const mockLoggerError = loggerMod.default.error;
+
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan({ meterQuota: 500000 }));
+      const updatedDoc = makeUsageDoc({ meterUsed: 510000, meterQuota: 500000 });
+      mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
+      // Balance far below -10 × 500000 = -5000000 threshold
+      mockExtraService.debit.mockResolvedValue({
+        applied: true,
+        doc: { cachedBalance: -6000000 },
+      });
+
+      await BillingUsageService.incrementMeter(orgId, 10000, {}, 'hist_runaway');
+
+      const runawayEmits = mockBillingEventsEmit.mock.calls.filter(
+        ([name]) => name === 'billing.extras.runaway_debit',
+      );
+      expect(runawayEmits).toHaveLength(1);
+      expect(runawayEmits[0][1]).toMatchObject({
+        organizationId: orgId,
+        currentBalance: -6000000,
+        planQuota: 500000,
+      });
+
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        '[billing.extra] runaway negative balance detected — possible debit loop or quota gate bypass',
+        expect.objectContaining({
+          organizationId: orgId,
+          currentBalance: -6000000,
+          planQuota: 500000,
+        }),
+      );
+    });
+
+    test('free plan (meterQuota=0) — runaway check skipped (no threshold defined)', async () => {
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'free' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan({ meterQuota: 0 }));
+      const updatedDoc = makeUsageDoc({ meterUsed: 50, meterQuota: 0 });
+      mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
+      // Deeply negative balance — but free plan has no quota threshold
+      mockExtraService.debit.mockResolvedValue({
+        applied: true,
+        doc: { cachedBalance: -999999 },
+      });
+
+      await BillingUsageService.incrementMeter(orgId, 50, {}, 'hist_free_no_runaway');
+
+      const runawayEmits = mockBillingEventsEmit.mock.calls.filter(
+        ([name]) => name === 'billing.extras.runaway_debit',
+      );
+      expect(runawayEmits).toHaveLength(0);
+    });
+  });
 });

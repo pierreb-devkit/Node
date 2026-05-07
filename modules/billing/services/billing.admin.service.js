@@ -1,14 +1,13 @@
 /**
  * Module dependencies
  */
-import mongoose from 'mongoose';
-
 import config from '../../../config/index.js';
 import getStripe from '../lib/stripe.js';
 import logger from '../../../lib/services/logger.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import ProcessedStripeEventRepository from '../repositories/billing.processedStripeEvent.repository.js';
 import OrganizationRepository from '../../organizations/repositories/organizations.repository.js';
+import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
 import BillingWebhookService from './billing.webhook.service.js';
 
 /**
@@ -25,7 +24,7 @@ const validPlans = new Set(config.billing?.plans || ['free', 'starter', 'pro', '
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const getCustomerStatus = async (orgId) => {
-  if (!mongoose.Types.ObjectId.isValid(orgId)) {
+  if (!/^[0-9a-fA-F]{24}$/.test(orgId)) {
     throw Object.assign(new Error('invalid argument: orgId must be a valid ObjectId'), { status: 422 });
   }
 
@@ -73,7 +72,7 @@ const getCustomerStatus = async (orgId) => {
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const syncOrgFromStripe = async (orgId) => {
-  if (!mongoose.Types.ObjectId.isValid(orgId)) {
+  if (!/^[0-9a-fA-F]{24}$/.test(orgId)) {
     throw Object.assign(new Error('invalid argument: orgId must be a valid ObjectId'), { status: 422 });
   }
 
@@ -210,7 +209,7 @@ const purgeDeadLetter = async (eventId) => {
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const cancelSubscription = async (orgId) => {
-  if (!mongoose.Types.ObjectId.isValid(orgId)) {
+  if (!/^[0-9a-fA-F]{24}$/.test(orgId)) {
     throw Object.assign(new Error('invalid argument: orgId must be a valid ObjectId'), { status: 422 });
   }
 
@@ -277,6 +276,73 @@ const cancelSubscription = async (orgId) => {
   });
 
   return { previous, updated, stripeStatus: confirmedStatus };
+};
+
+/**
+ * @function creditDisputeReinstated
+ * @description Apply a manual extras-balance credit after Stripe rules in our favor on a dispute.
+ *              When `charge.dispute.funds_reinstated` fires, the merchant gets the funds back,
+ *              but the customer's meter units were already consumed. This endpoint lets ops
+ *              restore the extras balance proportionally so the customer keeps their credit.
+ *
+ *              Idempotent: `refundRequestId` is used as the idempotency key so double-clicking
+ *              the admin UI never produces a double credit.
+ *
+ *              Audit trail: logs adminUserId + chargeId + amountCents on every call.
+ *
+ * @param {string} chargeId - Stripe charge ID (ch_xxx) to correlate with the dispute.
+ * @param {number} amountCents - Amount to credit in cents (positive integer). Converted to
+ *                               meter units by a 1:1 mapping — callers should pass the
+ *                               dispute amount or a proportion; the exact unit conversion
+ *                               is owned by ops (they know the pack price per unit).
+ * @param {string} reason - Ops note for audit trail (stored in ledger entry refId context).
+ * @param {string} refundRequestId - UUID per click (idempotency key).
+ * @param {string} orgId - Organization ObjectId (string) — whose extras balance to credit.
+ * @param {string} adminUserId - Authenticated admin user ID for audit trail.
+ * @returns {Promise<{applied: boolean, ledgerEntry: Object|null}>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const creditDisputeReinstated = async (chargeId, amountCents, reason, refundRequestId, orgId, adminUserId) => {
+  if (!/^[0-9a-fA-F]{24}$/.test(orgId)) {
+    throw Object.assign(new Error('invalid argument: orgId must be a valid ObjectId'), { status: 422 });
+  }
+  if (typeof chargeId !== 'string' || !/^ch_/.test(chargeId)) {
+    throw Object.assign(new Error('invalid argument: chargeId must start with ch_'), { status: 422 });
+  }
+  if (!Number.isInteger(amountCents) || amountCents <= 0) {
+    throw Object.assign(new Error('invalid argument: amountCents must be a positive integer'), { status: 422 });
+  }
+  if (typeof refundRequestId !== 'string' || refundRequestId.trim().length < 8) {
+    throw Object.assign(new Error('invalid argument: refundRequestId must be at least 8 characters'), { status: 422 });
+  }
+  if (typeof reason !== 'string' || reason.trim().length < 3) {
+    throw Object.assign(new Error('invalid argument: reason must be at least 3 characters'), { status: 422 });
+  }
+
+  // Idempotency key includes the refundRequestId to prevent double-click double-credit.
+  const refId = `dispute-credit-${refundRequestId}`;
+
+  // Credit the extras balance using the compensation path.
+  // amountCents is used directly as the credit unit — ops chooses the proportional amount.
+  const result = await BillingExtraBalanceRepository.creditCompensation(orgId, amountCents, refId, reason);
+
+  logger.info('[billing.admin] creditDisputeReinstated — applied', {
+    orgId,
+    chargeId,
+    amountCents,
+    reason,
+    refundRequestId,
+    adminUserId,
+    applied: result.applied,
+    reason_for_skip: result.reason,
+  });
+
+  return {
+    applied: result.applied,
+    ledgerEntry: result.doc
+      ? result.doc.ledger?.find((e) => e.refId === refId) ?? null
+      : null,
+  };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -364,4 +430,5 @@ export default {
   listDeadLetters,
   purgeDeadLetter,
   cancelSubscription,
+  creditDisputeReinstated,
 };

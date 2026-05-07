@@ -161,6 +161,7 @@ describe('BillingExtraBalance unit tests:', () => {
         findOneAndUpdate: jest.fn(),
         updateOne: jest.fn(),
         updateMany: jest.fn(),
+        exists: jest.fn(),
       };
 
       jest.unstable_mockModule('mongoose', () => ({
@@ -287,6 +288,13 @@ describe('BillingExtraBalance unit tests:', () => {
     });
 
     describe('debit', () => {
+      // Most debit tests start with an existing doc, bypassing the org-existence guard.
+      // Tests that need fresh-org behaviour override exists individually.
+      beforeEach(() => {
+        // Default: doc exists → org check is skipped (exists returns truthy ObjectId)
+        mockModel.exists.mockResolvedValue({ _id: orgId });
+      });
+
       test('should apply debit when balance is sufficient and refId is new', async () => {
         const existingDoc = makeDoc();
         const updatedDoc = makeDoc({ cachedBalance: 400000, ledger: [{ kind: 'debit', amount: -100000, refId: 'ref_1' }] });
@@ -316,22 +324,51 @@ describe('BillingExtraBalance unit tests:', () => {
         expect(result.doc.cachedBalance).toBe(-5);
       });
 
-      test('step 1 issues upsert getOrCreate with $setOnInsert (fresh org support)', async () => {
+      test('step 1 issues upsert getOrCreate with $setOnInsert (fresh org — org exists)', async () => {
+        // Simulate fresh org: exists returns null (no existing doc)
+        // → org check triggered → org found → upsert proceeds
+        mockModel.exists.mockResolvedValue(null);
+
         let step1Filter;
         let step1Update;
         let step1Options;
         const updatedDoc = makeDoc({ cachedBalance: -50 });
+
+        // Reload module after adding the org mock
+        jest.resetModules();
+        jest.unstable_mockModule('mongoose', () => ({
+          default: {
+            model: jest.fn(() => mockModel),
+            Types: { ObjectId: { isValid: jest.fn(() => true) } },
+          },
+        }));
+        jest.unstable_mockModule('../../../lib/helpers/AppError.js', () => ({
+          default: class AppError extends Error {
+            constructor(message, { status, code } = {}) {
+              super(message);
+              this.status = status ?? 500;
+              this.code = code;
+            }
+          },
+        }));
+        jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
+          default: { exists: jest.fn().mockResolvedValue({ _id: orgId }) },
+        }));
+        const freshMod = await import('../repositories/billing.extraBalance.repository.js');
+        const FreshRepo = freshMod.default;
+
+        mockModel.exists.mockResolvedValue(null);
         mockModel.findOneAndUpdate.mockImplementation((filter, update, options) => {
           if (!step1Filter) {
             step1Filter = filter;
             step1Update = update;
             step1Options = options;
-            return Promise.resolve(null); // fresh org — no doc yet
+            return Promise.resolve(null);
           }
           return Promise.resolve(updatedDoc);
         });
 
-        await BillingExtraBalanceRepository.debit(orgId, 50, 'ref_fresh');
+        await FreshRepo.debit(orgId, 50, 'ref_fresh');
 
         expect(step1Options?.upsert).toBe(true);
         expect(step1Update.$setOnInsert).toMatchObject({ organization: orgId, ledger: [], cachedBalance: 0 });
@@ -553,6 +590,190 @@ describe('BillingExtraBalance unit tests:', () => {
       test('should throw on empty refId', async () => {
         await expect(
           BillingExtraBalanceRepository.debit(orgId, 100, ''),
+        ).rejects.toThrow('invalid argument: refId must be a non-empty string');
+      });
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // debit — org-existence guard (Item 4 — Batch 2)
+    // ─────────────────────────────────────────────────────────────────────────────
+    describe('debit — org-existence guard (Opus H4):', () => {
+      let BillingExtraBalanceRepositoryWithOrg;
+      let mockModelWithOrg;
+      let mockOrgRepository;
+
+      beforeEach(async () => {
+        jest.resetModules();
+
+        mockModelWithOrg = {
+          findOne: jest.fn(),
+          findOneAndUpdate: jest.fn(),
+          updateOne: jest.fn(),
+          // Used by: 1) BillingExtraBalance.exists (doc pre-check), 2) Subscription.exists fallback
+          exists: jest.fn().mockResolvedValue(null),
+        };
+
+        mockOrgRepository = {
+          exists: jest.fn(),
+        };
+
+        jest.unstable_mockModule('mongoose', () => ({
+          default: {
+            // Route model() calls: Subscription check returns mockModelWithOrg (with exists);
+            // BillingExtraBalance + all others also return mockModelWithOrg (simplest mock).
+            model: jest.fn(() => mockModelWithOrg),
+            Types: {
+              ObjectId: { isValid: jest.fn(() => true) },
+            },
+          },
+        }));
+        jest.unstable_mockModule('../../../lib/helpers/AppError.js', () => ({
+          default: class AppError extends Error {
+            constructor(message, { status, code } = {}) {
+              super(message);
+              this.status = status ?? 500;
+              this.code = code;
+              this.name = 'AppError';
+            }
+          },
+        }));
+        jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
+          default: mockOrgRepository,
+        }));
+
+        const mod = await import('../repositories/billing.extraBalance.repository.js');
+        BillingExtraBalanceRepositoryWithOrg = mod.default;
+      });
+
+      test('debit for valid org when no existing doc — upserts without throwing', async () => {
+        // No existing doc → triggers org check → org exists → proceeds
+        mockModelWithOrg.exists.mockResolvedValueOnce(null); // BillingExtraBalance.exists → no doc
+        mockOrgRepository.exists.mockResolvedValue({ _id: orgId });
+        const updatedDoc = {
+          _id: '507f1f77bcf86cd799439099',
+          organization: orgId,
+          ledger: [{ kind: 'debit', amount: -100, refId: 'ref_new_org' }],
+          cachedBalance: -100,
+          cachedBalanceAt: new Date(),
+        };
+        mockModelWithOrg.findOneAndUpdate
+          .mockResolvedValueOnce(null) // upsert
+          .mockResolvedValueOnce(updatedDoc); // debit
+
+        const result = await BillingExtraBalanceRepositoryWithOrg.debit(orgId, 100, 'ref_new_org');
+
+        expect(result.applied).toBe(true);
+        expect(mockOrgRepository.exists).toHaveBeenCalledWith({ _id: orgId });
+      });
+
+      test('debit for valid org with existing doc — skips org check', async () => {
+        // Existing doc → no org check needed (exists returns truthy)
+        mockModelWithOrg.exists.mockResolvedValueOnce({ _id: orgId }); // BillingExtraBalance.exists → doc exists
+        const existingDoc = {
+          _id: '507f1f77bcf86cd799439099',
+          organization: orgId,
+          ledger: [],
+          cachedBalance: 0,
+          cachedBalanceAt: new Date(),
+        };
+        const updatedDoc = { ...existingDoc, cachedBalance: -100 };
+        mockModelWithOrg.findOneAndUpdate
+          .mockResolvedValueOnce(null) // upsert (no-op)
+          .mockResolvedValueOnce(updatedDoc); // debit
+
+        const result = await BillingExtraBalanceRepositoryWithOrg.debit(orgId, 100, 'ref_existing_org');
+
+        expect(result.applied).toBe(true);
+        // Org check must NOT be called when doc already exists
+        expect(mockOrgRepository.exists).not.toHaveBeenCalled();
+      });
+
+      test('debit for non-existent org (no Organization + no Subscription) — throws AppError (status 404)', async () => {
+        // No existing balance doc, no Organization doc, no Subscription doc → throws
+        mockModelWithOrg.exists
+          .mockResolvedValueOnce(null)  // BillingExtraBalance.exists → no doc
+          .mockResolvedValueOnce(null); // Subscription.exists → no sub
+        mockOrgRepository.exists.mockResolvedValue(null); // org not found
+
+        await expect(
+          BillingExtraBalanceRepositoryWithOrg.debit(orgId, 100, 'ref_ghost_org'),
+        ).rejects.toMatchObject({ status: 404 });
+
+        // No doc should be created
+        expect(mockModelWithOrg.findOneAndUpdate).not.toHaveBeenCalled();
+      });
+
+      test('debit for org with Subscription but no Organization doc — succeeds (provisioning path)', async () => {
+        // Subscription exists → org is real → allow debit even without an Org doc
+        mockModelWithOrg.exists
+          .mockResolvedValueOnce(null)                 // BillingExtraBalance.exists → no doc
+          .mockResolvedValueOnce({ _id: 'sub_001' });  // Subscription.exists → exists
+        mockOrgRepository.exists.mockResolvedValue(null); // no Organization doc
+
+        const updatedDoc = {
+          _id: '507f1f77bcf86cd799439099',
+          organization: orgId,
+          ledger: [{ kind: 'debit', amount: -100, refId: 'ref_sub_only_org' }],
+          cachedBalance: -100,
+          cachedBalanceAt: new Date(),
+        };
+        mockModelWithOrg.findOneAndUpdate
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(updatedDoc);
+
+        const result = await BillingExtraBalanceRepositoryWithOrg.debit(orgId, 100, 'ref_sub_only_org');
+        expect(result.applied).toBe(true);
+      });
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // creditCompensation (Item 1 support — Batch 2)
+    // ─────────────────────────────────────────────────────────────────────────────
+    describe('creditCompensation:', () => {
+      test('should apply credit with adjustment kind and return applied:true', async () => {
+        const updatedDoc = makeDoc({
+          cachedBalance: 2000,
+          ledger: [{ kind: 'adjustment', amount: 2000, refId: 'dispute-credit-abc' }],
+        });
+        // Step 1: getOrCreate; Step 2: credit
+        mockModel.findOneAndUpdate
+          .mockResolvedValueOnce(makeDoc())
+          .mockResolvedValueOnce(updatedDoc);
+
+        const result = await BillingExtraBalanceRepository.creditCompensation(orgId, 2000, 'dispute-credit-abc');
+
+        expect(result.applied).toBe(true);
+        expect(result.doc.cachedBalance).toBe(2000);
+        expect(mockModel.findOneAndUpdate).toHaveBeenCalledTimes(2);
+      });
+
+      test('should return applied:false with reason duplicate_refId when refId already used', async () => {
+        // Step 1: getOrCreate; Step 2: idempotency filter excludes → null
+        mockModel.findOneAndUpdate
+          .mockResolvedValueOnce(makeDoc())
+          .mockResolvedValueOnce(null);
+
+        const result = await BillingExtraBalanceRepository.creditCompensation(orgId, 1000, 'already-used-ref');
+
+        expect(result.applied).toBe(false);
+        expect(result.reason).toBe('duplicate_refId');
+      });
+
+      test('should throw on zero amount', async () => {
+        await expect(
+          BillingExtraBalanceRepository.creditCompensation(orgId, 0, 'ref_zero'),
+        ).rejects.toThrow('invalid argument: amount must be a positive finite number');
+      });
+
+      test('should throw on negative amount', async () => {
+        await expect(
+          BillingExtraBalanceRepository.creditCompensation(orgId, -100, 'ref_neg'),
+        ).rejects.toThrow('invalid argument: amount must be a positive finite number');
+      });
+
+      test('should throw on empty refId', async () => {
+        await expect(
+          BillingExtraBalanceRepository.creditCompensation(orgId, 100, ''),
         ).rejects.toThrow('invalid argument: refId must be a non-empty string');
       });
     });

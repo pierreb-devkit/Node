@@ -544,11 +544,15 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId);
   if (!existing) return;
 
-  // Always advance the event markers (stripeEventCreatedAt + stripeEventId) so out-of-order
-  // replays are correctly rejected even when the sub is already active (pastDueSince == null).
-  const fields = (existing.pastDueSince !== null && existing.pastDueSince !== undefined)
-    ? { pastDueSince: null, status: 'active' }
-    : {};
+  // Always advance the invoice-family marker (lastInvoiceEventCreatedAt / lastInvoiceEventId)
+  // so stale replays of older invoice events are correctly rejected by the ordering guard.
+  //
+  // For healthy subs (pastDueSince == null): pass empty fields — the marker-only $set is
+  // cheap (no runValidators on user-facing fields) and guards the invoice ordering window.
+  //
+  // For past-due subs: include pastDueSince + status so the sub exits degraded mode.
+  const isPastDue = existing.pastDueSince !== null && existing.pastDueSince !== undefined;
+  const fields = isPastDue ? { pastDueSince: null, status: 'active' } : {};
 
   const updated = await SubscriptionRepository.updateIfEventNewer(
     String(existing._id),
@@ -1095,13 +1099,12 @@ const handleChargeDisputeFundsReinstated = async (dispute, event) => {
   }
 
   // funds_reinstated is good news (dispute was won back) — log as warn, not error.
-  // The alert is for ops to manually credit the ledger (auto-credit deferred to Phase 1).
-  logger.warn('[billing.webhook] dispute.funds_reinstated received — manual ledger credit required', {
+  // The alert is for ops to apply a manual ledger credit via the admin endpoint.
+  logger.warn('[billing.webhook] dispute.funds_reinstated received — use POST /api/admin/billing/dispute/credit/:orgId to restore the extras balance', {
     disputeId,
     chargeId,
     amount,
     eventId: event?.id,
-    note: 'Auto-credit deferred to Phase 1 admin endpoint. Use /api/admin/billing/credit (TBD) once available, or directly add a ledger entry via DB.',
   });
 
   try {
