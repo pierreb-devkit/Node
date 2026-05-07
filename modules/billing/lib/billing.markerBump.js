@@ -13,6 +13,6 @@ export const bumpEventMarkers = (family, source) => {
   const fieldPrefix = family === 'invoice' ? 'lastInvoiceEvent' : 'lastSubscriptionEvent';
   return {
     [`${fieldPrefix}CreatedAt`]: Math.floor(ms / 1000),
-    [`${fieldPrefix}Id`]: `${source}-${ms}`,
+    [`${fieldPrefix}Id`]: `~${source}-${ms}`,
   };
 };

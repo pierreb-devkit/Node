@@ -409,7 +409,7 @@ describe('BillingSubscriptionRepository unit tests:', () => {
 
       expect(lastSubscriptionEventCreatedAt).toBeGreaterThanOrEqual(before);
       expect(lastSubscriptionEventCreatedAt).toBeLessThanOrEqual(after);
-      expect(lastSubscriptionEventId).toMatch(/^admin-bump-\d+$/);
+      expect(lastSubscriptionEventId).toMatch(/^~admin-bump-\d+$/);
     });
   });
 
@@ -433,7 +433,7 @@ describe('BillingSubscriptionRepository unit tests:', () => {
 
       expect(lastSubscriptionEventCreatedAt).toBeGreaterThanOrEqual(before);
       expect(lastSubscriptionEventCreatedAt).toBeLessThanOrEqual(after);
-      expect(lastSubscriptionEventId).toMatch(/^dunning-\d+$/);
+      expect(lastSubscriptionEventId).toMatch(/^~dunning-\d+$/);
     });
   });
 });
