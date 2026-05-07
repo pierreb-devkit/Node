@@ -518,4 +518,51 @@ describe('BillingAdminService unit tests:', () => {
       ).rejects.toMatchObject({ status: 422 });
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // dispatchWebhookEvent — covers the switch in admin.service.js (replay path)
+  // ─────────────────────────────────────────────────────────────────────────────
+  describe('dispatchWebhookEvent (replay):', () => {
+    const baseEvent = (type) => ({ id: `evt_${type.replace(/\./g, '_')}`, type, data: { object: { id: 'sub_x' } } });
+
+    test.each([
+      ['checkout.session.completed', 'handleCheckoutSessionCompleted'],
+      ['customer.subscription.created', 'handleSubscriptionCreated'],
+      ['customer.subscription.updated', 'handleSubscriptionUpdated'],
+      ['customer.subscription.deleted', 'handleSubscriptionDeleted'],
+      ['invoice.payment_failed', 'handleInvoicePaymentFailed'],
+      ['invoice.payment_succeeded', 'handleInvoicePaymentSucceeded'],
+      ['charge.refunded', 'handleChargeRefunded'],
+      ['customer.deleted', 'handleCustomerDeleted'],
+      ['charge.dispute.created', 'handleChargeDisputeCreated'],
+      ['charge.dispute.funds_withdrawn', 'handleChargeDisputeFundsWithdrawn'],
+      ['charge.dispute.funds_reinstated', 'handleChargeDisputeFundsReinstated'],
+    ])('routes %s through withIdempotency to %s', async (eventType, handlerName) => {
+      const event = baseEvent(eventType);
+      mockStripeInstance.events.retrieve.mockResolvedValueOnce(event);
+      mockWebhookService.withIdempotency.mockImplementationOnce(async (e, fn) => fn(e));
+      mockWebhookService[handlerName].mockResolvedValueOnce({ ok: true });
+
+      await BillingAdminService.replayWebhookEvent(event.id);
+
+      expect(mockWebhookService.withIdempotency).toHaveBeenCalledWith(event, expect.any(Function));
+      expect(mockWebhookService[handlerName]).toHaveBeenCalled();
+    });
+
+    test('default case logs unhandled event and returns skipped', async () => {
+      mockStripeInstance.events.retrieve.mockResolvedValueOnce({
+        id: 'evt_unknown',
+        type: 'some.unknown.event_type',
+        data: { object: {} },
+      });
+
+      const out = await BillingAdminService.replayWebhookEvent('evt_unknown');
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('unhandled event type'),
+        expect.objectContaining({ type: 'some.unknown.event_type' }),
+      );
+      expect(out.result).toMatchObject({ skipped: true });
+    });
+  });
 });
