@@ -248,8 +248,13 @@ const adminCancelSubscription = async (req, res) => {
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const adminDisputeCredit = async (req, res) => {
   try {
+    const parsedParams = AdminOrgIdParam.safeParse(req.params);
+    if (!parsedParams.success) {
+      return responses.error(res, 422, 'Unprocessable Entity', 'Invalid path parameters')(parsedParams.error);
+    }
+    const { orgId } = parsedParams.data;
+
     const { chargeId, amountCents, reason, refundRequestId } = req.body;
-    const { orgId } = req.params;
 
     const rawAdminId = req.user?._id;
     if (!rawAdminId) {

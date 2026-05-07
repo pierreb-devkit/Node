@@ -548,4 +548,24 @@ describe('Billing admin integration tests:', () => {
 
     expect(res.status).toHaveBeenCalledWith(200);
   });
+
+  test('invalid orgId on POST /dispute/credit/:orgId returns 422', async () => {
+    const routes = await buildRoutes();
+    const route = routes.get('/api/admin/billing/dispute/credit/:orgId');
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() };
+
+    await runHandlers(
+      [...route.all, ...route.post],
+      {
+        method: 'POST',
+        headers: { 'x-role': 'admin' },
+        params: { orgId: 'not-objectid' },
+        body: { chargeId: 'ch_abc', amountCents: 1000, reason: 'dispute won', refundRequestId: 'req-12345678' },
+        user: { _id: '507f1f77bcf86cd799439022' },
+      },
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(422);
+  });
 });
