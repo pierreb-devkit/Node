@@ -72,6 +72,7 @@ describe('Billing admin toolkit integration tests:', () => {
       listDeadLetters: jest.fn().mockResolvedValue({ items: [], total: 0, page: 1, limit: 20 }),
       purgeDeadLetter: jest.fn().mockResolvedValue({ purged: true }),
       cancelSubscription: jest.fn().mockResolvedValue({ previous: { plan: 'pro', status: 'active' }, updated: {}, stripeStatus: 'canceled' }),
+      creditDisputeReinstated: jest.fn().mockResolvedValue({ applied: true, ledgerEntry: { refId: 'dispute-credit-test', amount: 2500 } }),
     };
 
     mockStripeInstance = {
@@ -540,6 +541,119 @@ describe('Billing admin toolkit integration tests:', () => {
       );
 
       expect(res.status).toHaveBeenCalledWith(502);
+    });
+  });
+
+  // ── POST /api/admin/billing/dispute/credit/:orgId ─────────────────────────────
+
+  describe('POST /api/admin/billing/dispute/credit/:orgId', () => {
+    const validBody = {
+      chargeId: 'ch_test_dispute_001',
+      amountCents: 2500,
+      reason: 'Stripe ruled in our favor — restore extras balance',
+      refundRequestId: 'req-dispute-credit-12345',
+    };
+
+    test('admin gets 200 on successful credit', async () => {
+      const routes = await buildRoutes();
+      const route = routes.get('/api/admin/billing/dispute/credit/:orgId');
+      const res = makeRes();
+
+      await runHandlers(
+        [...route.all, ...route.post],
+        { headers: { 'x-role': 'admin' }, params: { orgId }, body: validBody },
+        res,
+      );
+
+      expect(mockAdminService.creditDisputeReinstated).toHaveBeenCalledWith(
+        validBody.chargeId,
+        validBody.amountCents,
+        validBody.reason,
+        validBody.refundRequestId,
+        orgId,
+        '507f1f77bcf86cd799439022',
+      );
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    test('non-admin gets 403', async () => {
+      const routes = await buildRoutes();
+      const route = routes.get('/api/admin/billing/dispute/credit/:orgId');
+      const res = makeRes();
+
+      await runHandlers(
+        [...route.all, ...route.post],
+        { headers: { 'x-role': 'user' }, params: { orgId }, body: validBody },
+        res,
+      );
+
+      expect(res.status).toHaveBeenCalledWith(403);
+    });
+
+    test('invalid body returns 422 from schema validation', async () => {
+      const routes = await buildRoutes();
+      const route = routes.get('/api/admin/billing/dispute/credit/:orgId');
+      const res = makeRes();
+
+      await runHandlers(
+        [...route.all, ...route.post],
+        { headers: { 'x-role': 'admin' }, params: { orgId }, body: { chargeId: '', amountCents: -1 } },
+        res,
+      );
+
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(mockAdminService.creditDisputeReinstated).not.toHaveBeenCalled();
+    });
+
+    test('returns 404 when charge not found', async () => {
+      const routes = await buildRoutes();
+      const route = routes.get('/api/admin/billing/dispute/credit/:orgId');
+      const res = makeRes();
+      mockAdminService.creditDisputeReinstated.mockRejectedValue(
+        Object.assign(new Error('charge not found'), { status: 404 }),
+      );
+
+      await runHandlers(
+        [...route.all, ...route.post],
+        { headers: { 'x-role': 'admin' }, params: { orgId }, body: validBody },
+        res,
+      );
+
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    test('returns 500 on unexpected error', async () => {
+      const routes = await buildRoutes();
+      const route = routes.get('/api/admin/billing/dispute/credit/:orgId');
+      const res = makeRes();
+      mockAdminService.creditDisputeReinstated.mockRejectedValue(new Error('boom'));
+
+      await runHandlers(
+        [...route.all, ...route.post],
+        { headers: { 'x-role': 'admin' }, params: { orgId }, body: validBody },
+        res,
+      );
+
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  // ── GET /api/admin/billing/dead-letters — invalid query (line 219) ────────────
+
+  describe('GET /api/admin/billing/dead-letters — invalid query', () => {
+    test('returns 422 when query params fail Zod validation', async () => {
+      const routes = await buildRoutes();
+      const route = routes.get('/api/admin/billing/dead-letters');
+      const res = makeRes();
+
+      await runHandlers(
+        [...route.all, ...route.get],
+        { headers: { 'x-role': 'admin' }, query: { page: 'not-a-number', limit: 'also-bad' } },
+        res,
+      );
+
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(mockAdminService.listDeadLetters).not.toHaveBeenCalled();
     });
   });
 });
