@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import mongoose from 'mongoose';
+import { bumpEventMarkers } from '../lib/billing.markerBump.js';
 
 const Subscription = mongoose.model('Subscription');
 
@@ -206,7 +207,7 @@ const markUnpaid = (id, threshold) => {
   if (!(threshold instanceof Date)) throw new TypeError('threshold must be a Date instance');
   return Subscription.findOneAndUpdate(
     { _id: id, status: 'past_due', pastDueSince: { $lte: threshold } },
-    { $set: { status: 'unpaid', plan: 'free' } },
+    { $set: { status: 'unpaid', plan: 'free', ...bumpEventMarkers('subscription', 'dunning') } },
     { returnDocument: 'after', runValidators: true },
   ).exec();
 };
@@ -302,6 +303,7 @@ const adminUpdatePlanOnly = (id, planId, adminUserId) => {
         plan: planId,
         adminUpdatedAt: new Date(),
         adminUpdatedBy: safeAdminUserId,
+        ...bumpEventMarkers('subscription', 'admin-bump'),
       },
     },
     { returnDocument: 'after', runValidators: true },
