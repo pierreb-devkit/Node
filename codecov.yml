@@ -2,15 +2,15 @@ coverage:
   status:
     project:
       default:
-        target: auto
-        threshold: 0.5%
+        target: 80%        # hard floor — prevents long-term coverage decay (auto allows drift)
+        threshold: 0.5%    # allow ≤0.5% transient drop within the 80% floor
         flags:
           - unit
           - integration
     patch:
       default:
-        target: auto
-        threshold: 0%
+        target: auto       # new code must match local module baseline (not abstract 80%)
+        threshold: 0%      # no tolerance on new code
         flags:
           - unit
           - integration
