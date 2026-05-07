@@ -67,9 +67,13 @@ export default {
   // A list of reporter names that Jest uses when writing coverage reports
   coverageReporters: ['json', 'lcov', 'clover', 'text'],
 
-  // coverageThreshold removed — coverage gating moved to Codecov status checks
-  // (unit + integration flags merged server-side; per-job thresholds would fail
-  //  since each job covers only its slice of source paths)
+  // coverageThreshold removed — coverage gating moved to Codecov status checks.
+  // In the split test matrix (unit / integration / e2e), each CI job only sees
+  // its slice of `collectCoverageFrom`, so a global Jest threshold would fail
+  // in every job (61% instead of 80% because only one suite's paths are loaded).
+  // Codecov merges the unit + integration flags server-side and applies an 80%
+  // project floor there (see codecov.yml status.project). This was the design
+  // since efd7bbc7 (2026-05-01) — not a loosening of coverage enforcement.
 
   // Make calling deprecated APIs throw helpful error messages
   // errorOnDeprecated: false,

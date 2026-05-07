@@ -120,10 +120,7 @@ const refundPartial = async (orgId, stripeSessionId, amountRefundedCents, packId
         stripeRefundId,
       });
     } catch (evtErr) {
-      logger.error('[billing.extra] billing.refund.unresolved listener error (non-fatal)', {
-        error: evtErr?.message ?? String(evtErr),
-        stack: evtErr?.stack,
-      });
+      logger.error('[billing.extra] refund.unresolved listener failed', { err: evtErr });
     }
     return { doc: null, applied: false, reason: 'sentinel_unresolved', refundUnits: 0 };
   }
@@ -171,7 +168,7 @@ const refundPartial = async (orgId, stripeSessionId, amountRefundedCents, packId
           amountRefundedCents,
         });
       } catch (evtErr) {
-        console.error('[billing.extra] billing.refund.unresolved listener error (non-fatal):', evtErr?.message ?? evtErr);
+        logger.error('[billing.extra] refund.unresolved listener failed', { err: evtErr });
       }
       return { doc, applied: false, reason: 'ambiguous_pack_match', refundUnits: 0 };
     }

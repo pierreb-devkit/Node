@@ -18,6 +18,9 @@ import { EventEmitter } from 'events';
  *   - `billing.refund.unresolved` — emitted when a charge.refunded event cannot be correlated
  *     to a known session/org (missing metadata on charge AND PaymentIntent, or ambiguous pack).
  *     Payload: { chargeId, paymentIntentId, refundAmount } | { reason, orgId, stripeSessionId, amountRefundedCents }
+ *
+ * NOTE: The 'error' event listener is registered in billing.init.js (after config is ready)
+ * to avoid module-load-time config reads in this low-level singleton.
  */
 const billingEvents = new EventEmitter();
 

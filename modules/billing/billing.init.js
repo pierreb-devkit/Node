@@ -4,6 +4,7 @@
 import mongoose from 'mongoose';
 import config from '../../config/index.js';
 import AnalyticsService from '../../lib/services/analytics.js';
+import logger from '../../lib/services/logger.js';
 import billingEvents from './lib/events.js';
 import BillingUsageRepository from './repositories/billing.usage.repository.js';
 import { getAlertThresholdPercents } from './lib/billing.constants.js';
@@ -46,6 +47,71 @@ export default async (app) => {
     } catch (err) {
       console.warn('[billing] analytics groupIdentify failed (non-fatal):', err?.message ?? err);
     }
+  });
+
+  // Ops alerting — real-money events that require immediate human review.
+  //
+  // NOTE: devkit has no ntfy helper; the structured logger is the alert sink here.
+  // Downstream projects (e.g. trawl_node) wire the actual ntfy push by re-listening
+  // on the same billingEvents singleton and calling their own ntfy service.
+  // Priority annotations below document the intended ntfy priority for downstream use.
+
+  // billing.dispute.opened — priority 5 (urgent): 7-day evidence window starts now.
+  // Downstream projects (e.g. trawl_node) re-listen on billingEvents for ntfy push.
+  billingEvents.on('billing.dispute.opened', (payload) => {
+    const { disputeId, chargeId, organizationId, stripeSessionId, amount, reason } = payload;
+    logger.error('[billing.init] ALERT: dispute opened — 7-day evidence window — manual review required', {
+      disputeId,
+      chargeId,
+      organizationId,
+      stripeSessionId,
+      amount,
+      reason,
+      ntfyPriority: 5,
+    });
+  });
+
+  // billing.dispute.lost — priority 5 (urgent): funds withdrawn, ledger already debited.
+  billingEvents.on('billing.dispute.lost', (payload) => {
+    const { disputeId, chargeId, organizationId, stripeSessionId, amount } = payload;
+    logger.error('[billing.init] ALERT: dispute lost — funds withdrawn — ledger debited', {
+      disputeId,
+      chargeId,
+      organizationId,
+      stripeSessionId,
+      amount,
+      ntfyPriority: 5,
+    });
+  });
+
+  // billing.refund.unresolved — priority 4 (high): unresolvable refund needs manual reconciliation.
+  billingEvents.on('billing.refund.unresolved', (payload) => {
+    logger.error('[billing.init] ALERT: refund unresolved — manual reconciliation required', {
+      ...payload,
+      ntfyPriority: 4,
+    });
+  });
+
+  // billing.reconciliation.divergence — priority 4 (high): DB vs Stripe plan/status mismatch.
+  billingEvents.on('billing.reconciliation.divergence', (payload) => {
+    const { organizationId, subscriptionId, stripeSubscriptionId, db, stripe, statusMismatch, planMismatch } = payload;
+    logger.error('[billing.init] ALERT: reconciliation divergence — DB vs Stripe mismatch', {
+      organizationId,
+      subscriptionId,
+      stripeSubscriptionId,
+      db,
+      stripe,
+      statusMismatch,
+      planMismatch,
+      ntfyPriority: 4,
+    });
+  });
+
+  // Prevent accidental crash if any future code emits 'error' with no listener
+  // (Node default behaviour: throws if no 'error' listener is registered).
+  // Registered here (after config is ready) so events.js stays config-free and importable without ordering hazards.
+  billingEvents.on('error', (err) => {
+    logger.error('[billingEvents] uncaught error event', { err });
   });
 
   // Boot validator: check for legacy migration state before enabling meterMode.

@@ -522,10 +522,10 @@ describe('BillingExtraService refundPartial — sentinel listener-error swallow:
     // Listener error must NOT propagate — sentinel return shape preserved
     expect(result).toEqual({ doc: null, applied: false, reason: 'sentinel_unresolved', refundUnits: 0 });
 
-    // Inner catch must have logged the listener error (non-fatal)
+    // Inner catch must have logged the listener error via structured logger (non-fatal)
     expect(mockLogger.error).toHaveBeenCalledWith(
-      '[billing.extra] billing.refund.unresolved listener error (non-fatal)',
-      expect.objectContaining({ error: 'listener blew' }),
+      '[billing.extra] refund.unresolved listener failed',
+      expect.objectContaining({ err: expect.objectContaining({ message: 'listener blew' }) }),
     );
   });
 });
