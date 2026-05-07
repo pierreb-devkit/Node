@@ -11,7 +11,7 @@ import { jest, describe, test, beforeEach, expect } from '@jest/globals';
  *   without their Express patterns, so deriveSubjectType returned null for those routes.
  *   A future narrower role with `can('read', 'BillingAdminOps')` would 403 silently.
  *
- * After the fix, all 8 admin admin billing paths resolve to 'BillingAdminOps'.
+ * After the fix, all admin billing paths resolve to their correct CASL subject type.
  */
 
 // Mock logger before importing policy (logger touches config.log at load time)
@@ -34,14 +34,13 @@ const { default: policy } = await import('../../../lib/middlewares/policy.js');
 const { billingSubjectRegistration } = await import('../policies/billing.policy.js');
 
 describe('billing.policy — CASL subject registration unit tests:', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
-    // Reset policy registries so each test starts from a clean state.
-    // discoverPolicies clears the internal registries before repopulating.
-    // We call registerPathSubject directly here via the exported registration fn.
-    //
-    // Workaround: policy registries are module-level arrays. Re-trigger registration
-    // by calling the registration function with the exposed registerPathSubject helper.
+    // Reset the shared module-level registries before each test to avoid cross-test
+    // contamination (registries accumulate entries across calls; discoverPolicies([])
+    // clears them without loading any policy file).
+    await policy.discoverPolicies([]);
+    // Re-register billing subjects so each test has exactly one set of entries.
     billingSubjectRegistration({ registerPathSubject: policy.registerPathSubject });
   });
 

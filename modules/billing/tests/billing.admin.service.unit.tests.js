@@ -62,7 +62,7 @@ describe('BillingAdminService unit tests:', () => {
     };
 
     mockOrganizationRepository = {
-      get: jest.fn().mockResolvedValue({ _id: orgId, plan: 'pro' }),
+      exists: jest.fn().mockResolvedValue({ _id: orgId }),
       setPlan: jest.fn().mockResolvedValue({}),
     };
 
@@ -488,7 +488,7 @@ describe('BillingAdminService unit tests:', () => {
     });
 
     test('throws 422 when org does not exist in DB (ghost org guard)', async () => {
-      mockOrganizationRepository.get.mockResolvedValueOnce(null);
+      mockOrganizationRepository.exists.mockResolvedValueOnce(null);
       await expect(
         BillingAdminService.creditDisputeReinstated(chargeId, amountCents, reason, refundRequestId, orgId, adminUserId),
       ).rejects.toMatchObject({ status: 422 });

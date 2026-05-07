@@ -995,7 +995,10 @@ const handleChargeDisputeFundsWithdrawn = async (dispute, event) => {
  *              Idempotent via updateIfEventNewer (existing) or event marker seeding (new row).
  * @param {Object} subscription - Stripe subscription object
  * @param {Object} event - Full Stripe event for event-ordering guard
- * @returns {Promise<void>}
+ * @returns {Promise<void|{skipped: boolean, reason: string}>} Returns a skip sentinel
+ *          `{ skipped: true, reason: 'duplicate' }` when a concurrent delivery triggers an
+ *          E11000 duplicate-key error on create — graceful no-op, does not dead-letter.
+ *          Returns void in all other cases (including stale-event skip via updateIfEventNewer).
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleSubscriptionCreated = async (subscription, event) => {

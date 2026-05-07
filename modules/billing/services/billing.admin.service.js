@@ -321,8 +321,9 @@ const creditDisputeReinstated = async (chargeId, amountCents, reason, refundRequ
 
   // Guard: reject credits for non-existent orgs — mirrors the debit existence guard.
   // A 24-hex match that references a ghost org would silently create a ledger doc for nobody.
-  const org = await OrganizationRepository.get(orgId);
-  if (!org) {
+  // OrganizationRepository.exists() uses Mongoose .exists() — lighter than a full findOne+populate.
+  const orgExists = await OrganizationRepository.exists({ _id: orgId });
+  if (!orgExists) {
     throw Object.assign(new Error(`organization not found: ${orgId}`), { status: 422 });
   }
 
