@@ -42,7 +42,11 @@ const validPlans = new Set(config.billing?.plans || ['free', 'starter', 'pro', '
  * @param {string} plan - The plan name to validate.
  * @returns {string|null} The plan name if valid, null otherwise.
  */
-const validatePlan = (plan) => (validPlans.has(plan) ? plan : null);
+const validatePlan = (plan) => {
+  if (validPlans.has(plan)) return plan;
+  if (plan) logger.warn('[billing.webhook] validatePlan: unrecognized planId', { raw: plan, validPlans: [...validPlans] });
+  return null;
+};
 
 /**
  * Plan rank lookup — higher index means higher-tier plan.
@@ -601,7 +605,23 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
   }
 
   if (isPastDue && resolvedPlan) {
-    await syncOrganizationPlan(organizationId, resolvedPlan);
+    try {
+      await syncOrganizationPlan(organizationId, resolvedPlan);
+    } catch (syncErr) {
+      logger.error('[billing.webhook] syncOrganizationPlan failed (non-fatal)', {
+        organizationId,
+        error: syncErr?.message ?? String(syncErr),
+        stack: syncErr?.stack,
+      });
+      try {
+        billingEvents.emit('billing.organization.sync_failed', { organizationId, source: 'dunning_recovery' });
+      } catch (evtErr) {
+        logger.error('[billing.webhook] billing.organization.sync_failed listener error (non-fatal)', {
+          error: evtErr?.message ?? String(evtErr),
+          stack: evtErr?.stack,
+        });
+      }
+    }
   }
 };
 

@@ -15,7 +15,7 @@ const RECONCILE_PAGE_SIZE = 100;
 /**
  * Statuses reconciled against Stripe.
  */
-const RECONCILE_STATUSES = ['active', 'past_due', 'trialing'];
+const RECONCILE_STATUSES = ['active', 'past_due', 'trialing', 'unpaid'];
 
 /**
  * Valid plan names from config.

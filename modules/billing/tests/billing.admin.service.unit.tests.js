@@ -449,7 +449,7 @@ describe('BillingAdminService unit tests:', () => {
 
       expect(lastSubscriptionEventCreatedAt).toBeGreaterThanOrEqual(before);
       expect(lastSubscriptionEventCreatedAt).toBeLessThanOrEqual(after);
-      expect(lastSubscriptionEventId).toMatch(/^admin-cancel-\d+$/);
+      expect(lastSubscriptionEventId).toMatch(/^~admin-cancel-\d+$/);
     });
   });
 
