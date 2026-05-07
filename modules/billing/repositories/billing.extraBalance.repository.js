@@ -122,7 +122,7 @@ const debit = async (orgId, amount, refId) => {
   // Organization collection OR the Subscription collection — a valid Subscription is
   // sufficient evidence that the org is real (provisioning sometimes writes Subscription
   // before the full Organization doc, e.g. in CLI tools or integration tests).
-  const existing = await BillingExtraBalance().findOne({ organization: orgId }, { _id: 1 }).lean();
+  const existing = await BillingExtraBalance().exists({ organization: orgId });
   if (!existing) {
     const { default: OrganizationRepository } = await import('../../organizations/repositories/organizations.repository.js');
     const orgExists = await OrganizationRepository.exists({ _id: orgId });

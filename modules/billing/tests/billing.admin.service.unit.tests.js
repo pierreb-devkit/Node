@@ -462,6 +462,7 @@ describe('BillingAdminService unit tests:', () => {
         orgId,
         amountCents,
         `dispute-credit-${refundRequestId}`,
+        reason,
       );
       expect(mockLogger.info).toHaveBeenCalledWith(
         '[billing.admin] creditDisputeReinstated — applied',

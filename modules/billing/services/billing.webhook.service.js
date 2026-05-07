@@ -1100,7 +1100,7 @@ const handleChargeDisputeFundsReinstated = async (dispute, event) => {
 
   // funds_reinstated is good news (dispute was won back) — log as warn, not error.
   // The alert is for ops to apply a manual ledger credit via the admin endpoint.
-  logger.warn('[billing.webhook] dispute.funds_reinstated received — use POST /api/admin/billing/dispute/credit to restore the extras balance', {
+  logger.warn('[billing.webhook] dispute.funds_reinstated received — use POST /api/admin/billing/dispute/credit/:orgId to restore the extras balance', {
     disputeId,
     chargeId,
     amount,

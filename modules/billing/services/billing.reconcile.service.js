@@ -123,8 +123,10 @@ const _fetchPage = async (SubscriptionRepository, page, limit) => {
  *
  * Strategy:
  *   expectedExtrasUsage = units consumed beyond quota in the current week (overflow).
- *   actualExtrasDebits  = absolute sum of ledger debit entries recorded since the
- *                         current period started (cachedBalance change due to debits only).
+ *   actualExtrasDebits  = absolute sum of debit ledger entries in the current billing period
+ *                         (since currentPeriodStart). Note: this may span multiple weekly
+ *                         meter buckets — that's intentional; we compare the current-week
+ *                         overflow against the period's debit history to detect missing debits.
  *
  * Tolerance: divergence is only reported when
  *   |expected - actual| > max(50, 0.5% × max(expected, actual))
@@ -151,8 +153,8 @@ const _checkMeterExtrasMismatch = async (orgId, sub) => {
   const expectedExtrasUsage = meterQuota === 0 ? meterUsed : Math.max(0, meterUsed - meterQuota);
 
   // actualExtrasDebits: absolute sum of debit ledger entries since current period started.
-  // Use currentPeriodStart from the DB subscription as period boundary, falling back to
-  // the start of the current week if not set.
+  // Use currentPeriodStart from the DB subscription as period boundary.
+  // When not set (null/undefined), no date cutoff is applied — all debit entries are summed.
   const periodStart = sub.currentPeriodStart ? new Date(sub.currentPeriodStart) : null;
 
   const ledger = await BillingExtraBalanceRepository.findLedgerByOrg(orgId);

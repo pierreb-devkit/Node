@@ -324,7 +324,7 @@ const creditDisputeReinstated = async (chargeId, amountCents, reason, refundRequ
 
   // Credit the extras balance using the compensation path.
   // amountCents is used directly as the credit unit — ops chooses the proportional amount.
-  const result = await BillingExtraBalanceRepository.creditCompensation(orgId, amountCents, refId);
+  const result = await BillingExtraBalanceRepository.creditCompensation(orgId, amountCents, refId, reason);
 
   logger.info('[billing.admin] creditDisputeReinstated — applied', {
     orgId,

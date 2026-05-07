@@ -161,6 +161,7 @@ describe('BillingExtraBalance unit tests:', () => {
         findOneAndUpdate: jest.fn(),
         updateOne: jest.fn(),
         updateMany: jest.fn(),
+        exists: jest.fn(),
       };
 
       jest.unstable_mockModule('mongoose', () => ({
@@ -288,10 +289,10 @@ describe('BillingExtraBalance unit tests:', () => {
 
     describe('debit', () => {
       // Most debit tests start with an existing doc, bypassing the org-existence guard.
-      // Tests that need fresh-org behaviour override findOne individually.
+      // Tests that need fresh-org behaviour override exists individually.
       beforeEach(() => {
-        // Default: doc exists → org check is skipped
-        mockModel.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(makeDoc()) });
+        // Default: doc exists → org check is skipped (exists returns truthy ObjectId)
+        mockModel.exists.mockResolvedValue({ _id: orgId });
       });
 
       test('should apply debit when balance is sufficient and refId is new', async () => {
@@ -324,28 +325,14 @@ describe('BillingExtraBalance unit tests:', () => {
       });
 
       test('step 1 issues upsert getOrCreate with $setOnInsert (fresh org — org exists)', async () => {
-        // Simulate fresh org: findOne returns null (no existing doc)
+        // Simulate fresh org: exists returns null (no existing doc)
         // → org check triggered → org found → upsert proceeds
-        mockModel.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+        mockModel.exists.mockResolvedValue(null);
 
         let step1Filter;
         let step1Update;
         let step1Options;
         const updatedDoc = makeDoc({ cachedBalance: -50 });
-        mockModel.findOneAndUpdate.mockImplementation((filter, update, options) => {
-          if (!step1Filter) {
-            step1Filter = filter;
-            step1Update = update;
-            step1Options = options;
-            return Promise.resolve(null); // upsert no-op
-          }
-          return Promise.resolve(updatedDoc);
-        });
-
-        // Mock the lazy-loaded OrganizationRepository so org check passes
-        jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
-          default: { exists: jest.fn().mockResolvedValue({ _id: orgId }) },
-        }));
 
         // Reload module after adding the org mock
         jest.resetModules();
@@ -370,7 +357,7 @@ describe('BillingExtraBalance unit tests:', () => {
         const freshMod = await import('../repositories/billing.extraBalance.repository.js');
         const FreshRepo = freshMod.default;
 
-        mockModel.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+        mockModel.exists.mockResolvedValue(null);
         mockModel.findOneAndUpdate.mockImplementation((filter, update, options) => {
           if (!step1Filter) {
             step1Filter = filter;
@@ -622,7 +609,7 @@ describe('BillingExtraBalance unit tests:', () => {
           findOne: jest.fn(),
           findOneAndUpdate: jest.fn(),
           updateOne: jest.fn(),
-          // Used by the Subscription fallback check in the org-existence guard
+          // Used by: 1) BillingExtraBalance.exists (doc pre-check), 2) Subscription.exists fallback
           exists: jest.fn().mockResolvedValue(null),
         };
 
@@ -660,7 +647,7 @@ describe('BillingExtraBalance unit tests:', () => {
 
       test('debit for valid org when no existing doc — upserts without throwing', async () => {
         // No existing doc → triggers org check → org exists → proceeds
-        mockModelWithOrg.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+        mockModelWithOrg.exists.mockResolvedValueOnce(null); // BillingExtraBalance.exists → no doc
         mockOrgRepository.exists.mockResolvedValue({ _id: orgId });
         const updatedDoc = {
           _id: '507f1f77bcf86cd799439099',
@@ -680,7 +667,8 @@ describe('BillingExtraBalance unit tests:', () => {
       });
 
       test('debit for valid org with existing doc — skips org check', async () => {
-        // Existing doc → no org check needed
+        // Existing doc → no org check needed (exists returns truthy)
+        mockModelWithOrg.exists.mockResolvedValueOnce({ _id: orgId }); // BillingExtraBalance.exists → doc exists
         const existingDoc = {
           _id: '507f1f77bcf86cd799439099',
           organization: orgId,
@@ -688,7 +676,6 @@ describe('BillingExtraBalance unit tests:', () => {
           cachedBalance: 0,
           cachedBalanceAt: new Date(),
         };
-        mockModelWithOrg.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(existingDoc) });
         const updatedDoc = { ...existingDoc, cachedBalance: -100 };
         mockModelWithOrg.findOneAndUpdate
           .mockResolvedValueOnce(null) // upsert (no-op)
@@ -703,9 +690,10 @@ describe('BillingExtraBalance unit tests:', () => {
 
       test('debit for non-existent org (no Organization + no Subscription) — throws AppError (status 404)', async () => {
         // No existing balance doc, no Organization doc, no Subscription doc → throws
-        mockModelWithOrg.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+        mockModelWithOrg.exists
+          .mockResolvedValueOnce(null)  // BillingExtraBalance.exists → no doc
+          .mockResolvedValueOnce(null); // Subscription.exists → no sub
         mockOrgRepository.exists.mockResolvedValue(null); // org not found
-        mockModelWithOrg.exists.mockResolvedValue(null); // subscription not found
 
         await expect(
           BillingExtraBalanceRepositoryWithOrg.debit(orgId, 100, 'ref_ghost_org'),
@@ -717,9 +705,10 @@ describe('BillingExtraBalance unit tests:', () => {
 
       test('debit for org with Subscription but no Organization doc — succeeds (provisioning path)', async () => {
         // Subscription exists → org is real → allow debit even without an Org doc
-        mockModelWithOrg.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+        mockModelWithOrg.exists
+          .mockResolvedValueOnce(null)                 // BillingExtraBalance.exists → no doc
+          .mockResolvedValueOnce({ _id: 'sub_001' });  // Subscription.exists → exists
         mockOrgRepository.exists.mockResolvedValue(null); // no Organization doc
-        mockModelWithOrg.exists.mockResolvedValue({ _id: 'sub_001' }); // Subscription exists
 
         const updatedDoc = {
           _id: '507f1f77bcf86cd799439099',

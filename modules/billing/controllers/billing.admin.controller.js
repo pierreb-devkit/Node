@@ -270,7 +270,7 @@ const adminCancelSubscription = async (req, res) => {
 };
 
 /**
- * @desc POST /api/admin/billing/dispute/credit
+ * @desc POST /api/admin/billing/dispute/credit/:orgId
  *       Apply a manual extras-balance credit after a dispute is won (funds_reinstated).
  *       Idempotent via refundRequestId — safe to call multiple times per dispute.
  * @param {Object} req - Express request object (body validated as AdminDisputeCreditRequest)
