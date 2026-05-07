@@ -182,6 +182,25 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
     );
   });
 
+  test('detects plan drift on trialing sub — emits billing.reconciliation.divergence (C4)', async () => {
+    const sub = makeDbSub({ status: 'trialing', plan: 'pro' });
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce([sub])
+      .mockResolvedValue([]);
+    // Stripe has plan: starter — simulates Dashboard bump with lost webhook
+    mockStripeInstance.subscriptions.retrieve.mockResolvedValue(
+      makeStripeSub({ status: 'trialing', items: { data: [{ price: { metadata: { planId: 'starter' } } }] } }),
+    );
+
+    const result = await BillingReconcileService.runReconciliation();
+
+    expect(result).toMatchObject({ checked: 1, divergences: 1, errors: 0 });
+    expect(mockEvents.emit).toHaveBeenCalledWith(
+      'billing.reconciliation.divergence',
+      expect.objectContaining({ organizationId: orgId, planMismatch: true }),
+    );
+  });
+
   test('counts errors and continues on individual Stripe retrieve failure', async () => {
     const subs = [makeDbSub(), makeDbSub({ _id: 'sub_doc_002', stripeSubscriptionId: 'sub_test_002' })];
     mockSubscriptionRepository.findPageForReconciliation
