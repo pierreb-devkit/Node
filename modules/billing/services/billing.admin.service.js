@@ -100,11 +100,19 @@ const syncOrgFromStripe = async (orgId) => {
 
   // Intentional: full Stripe-truth sync — writes status AND plan directly.
   // adminUpdatePlanOnly is for the UI plan-bump flow only (audit trail, no Stripe re-sync).
+  //
+  // Bump event markers so any subsequent stale Stripe webhook (delayed re-delivery) whose
+  // event.created is older than this admin sync timestamp is rejected by updateIfEventNewer.
+  // The admin-sync-{ms} ID format is for traceability; updateIfEventNewer only compares
+  // lastSubscriptionEventCreatedAt for ordering — the ID acts as a tiebreaker.
+  const adminSyncMs = Date.now();
   const updated = await SubscriptionRepository.update({
     _id: existing._id,
     plan: newPlan,
     status: newStatus,
     ...(newPeriodStart ? { currentPeriodStart: newPeriodStart } : {}),
+    lastSubscriptionEventCreatedAt: Math.floor(adminSyncMs / 1000),
+    lastSubscriptionEventId: `admin-sync-${adminSyncMs}`,
   });
 
   // Sync org plan field so quotas + access control reflect the new plan immediately.
