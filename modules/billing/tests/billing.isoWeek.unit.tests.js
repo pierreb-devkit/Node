@@ -2,7 +2,7 @@
  * Module dependencies.
  */
 import { describe, test, expect } from '@jest/globals';
-import { currentWeekKey, isoWeekKey } from '../lib/billing.isoWeek.js';
+import { currentWeekKey, isoWeekKey, weekStartDate } from '../lib/billing.isoWeek.js';
 
 /**
  * @function referenceIsoWeekKey
@@ -47,5 +47,29 @@ describe('billing.isoWeek unit tests:', () => {
 
   test('currentWeekKey returns an ISO week key', () => {
     expect(currentWeekKey()).toMatch(/^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$/);
+  });
+
+  test('weekStartDate returns the Monday 00:00:00 UTC of the given ISO week key', () => {
+    // 2026-W01 starts on 2025-12-29 (Mon) — ISO week 1 rule: week containing Jan 4
+    expect(weekStartDate('2026-W01').toISOString()).toBe('2025-12-29T00:00:00.000Z');
+    // 2026-W18 starts on 2026-04-27 (Mon)
+    expect(weekStartDate('2026-W18').toISOString()).toBe('2026-04-27T00:00:00.000Z');
+    // 2024-W09 (leap year week containing Feb 29)
+    expect(weekStartDate('2024-W09').toISOString()).toBe('2024-02-26T00:00:00.000Z');
+    // 2020-W53 — 53-week year
+    expect(weekStartDate('2020-W53').toISOString()).toBe('2020-12-28T00:00:00.000Z');
+  });
+
+  test('weekStartDate round-trips with isoWeekKey', () => {
+    const testDates = [
+      new Date('2026-04-27T00:00:00.000Z'),
+      new Date('2021-01-04T00:00:00.000Z'),
+      new Date('2024-02-26T00:00:00.000Z'),
+    ];
+    for (const d of testDates) {
+      const key = isoWeekKey(d);
+      const start = weekStartDate(key);
+      expect(isoWeekKey(start)).toBe(key);
+    }
   });
 });
