@@ -611,12 +611,14 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
       logger.error('[billing.webhook] syncOrganizationPlan failed (non-fatal)', {
         organizationId,
         error: syncErr?.message ?? String(syncErr),
+        stack: syncErr?.stack,
       });
       try {
         billingEvents.emit('billing.organization.sync_failed', { organizationId, source: 'dunning_recovery' });
       } catch (evtErr) {
         logger.error('[billing.webhook] billing.organization.sync_failed listener error (non-fatal)', {
           error: evtErr?.message ?? String(evtErr),
+          stack: evtErr?.stack,
         });
       }
     }

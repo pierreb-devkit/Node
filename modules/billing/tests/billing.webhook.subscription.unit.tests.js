@@ -600,6 +600,40 @@ describe('Billing webhook subscription unit tests:', () => {
         'invoice',
       );
     });
+
+    // V8.1 — syncOrganizationPlan failure path coverage
+    test('V8.1 — syncOrganizationPlan failure: non-fatal, logs error + emits sync_failed', async () => {
+      const existing = {
+        _id: subId,
+        organization: orgId,
+        pastDueSince: new Date('2026-04-01'),
+        status: 'unpaid',
+        plan: 'free',
+      };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockStripe.subscriptions.retrieve.mockResolvedValue({
+        items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
+      });
+      mockOrganizationRepository.setPlan.mockRejectedValue(new Error('DB write failed'));
+
+      // The logger mock is registered in beforeEach via jest.unstable_mockModule.
+      // Import it here (after BillingWebhookService) to get the same mocked instance
+      // that the service module captured at load time.
+      const { default: mockLogger } = await import('../../../lib/services/logger.js');
+
+      await expect(
+        BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_456' }, makeEvent()),
+      ).resolves.not.toThrow();
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        '[billing.webhook] syncOrganizationPlan failed (non-fatal)',
+        expect.objectContaining({ organizationId: orgId }),
+      );
+      expect(mockEvents.emit).toHaveBeenCalledWith(
+        'billing.organization.sync_failed',
+        expect.objectContaining({ organizationId: orgId, source: 'dunning_recovery' }),
+      );
+    });
   });
 
   describe('handleInvoicePaymentFailed', () => {
