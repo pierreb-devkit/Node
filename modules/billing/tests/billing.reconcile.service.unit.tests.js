@@ -217,13 +217,13 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
   test('paginates to second page when first page is full (RECONCILE_PAGE_SIZE=100)', async () => {
     // Build an array of 100 subs (full page) then an empty second page
     const fullPage = Array.from({ length: 100 }, (_, i) => makeDbSub({
-      _id: `sub_doc_${i}`,
+      _id: `sub_doc_${String(i).padStart(24, '0')}`,
       stripeSubscriptionId: `sub_test_${i}`,
     }));
 
     mockSubscriptionRepository.findPageForReconciliation
-      .mockResolvedValueOnce(fullPage)  // page 0: full — triggers page += 1
-      .mockResolvedValueOnce([]);        // page 1: empty — exits loop
+      .mockResolvedValueOnce(fullPage)  // first call: full page — advance cursor
+      .mockResolvedValueOnce([]);        // second call: empty — exits loop
     mockStripeInstance.subscriptions.retrieve.mockResolvedValue(makeStripeSub());
 
     const result = await BillingReconcileService.runReconciliation();
@@ -232,6 +232,78 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
     expect(result).toMatchObject({ checked: 100, divergences: 0, errors: 0 });
     // findPageForReconciliation should have been called twice (page 0 + page 1)
     expect(mockSubscriptionRepository.findPageForReconciliation).toHaveBeenCalledTimes(2);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Cursor-based pagination (Batch 4 — item 3)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  describe('cursor-based pagination:', () => {
+    test('first page call passes null cursor', async () => {
+      mockSubscriptionRepository.findPageForReconciliation.mockResolvedValue([]);
+
+      await BillingReconcileService.runReconciliation();
+
+      // First call must pass null as lastSeenId (no prior page)
+      const [, firstCallLastSeen] = mockSubscriptionRepository.findPageForReconciliation.mock.calls[0];
+      expect(firstCallLastSeen).toBeNull();
+    });
+
+    test('second page call passes _id of last doc from first page as cursor', async () => {
+      const lastDocId = '507f1f77bcf86cd799439099';
+      const fullPage = Array.from({ length: 100 }, (_, i) => makeDbSub({
+        _id: i === 99 ? lastDocId : `507f1f77bcf86cd7994390${String(i).padStart(2, '0')}`,
+        stripeSubscriptionId: `sub_test_${i}`,
+      }));
+
+      mockSubscriptionRepository.findPageForReconciliation
+        .mockResolvedValueOnce(fullPage)
+        .mockResolvedValueOnce([]);
+      mockStripeInstance.subscriptions.retrieve.mockResolvedValue(makeStripeSub());
+
+      await BillingReconcileService.runReconciliation();
+
+      expect(mockSubscriptionRepository.findPageForReconciliation).toHaveBeenCalledTimes(2);
+      // Second call must pass the _id of the last doc from the first page
+      const [, secondCallLastSeen] = mockSubscriptionRepository.findPageForReconciliation.mock.calls[1];
+      expect(secondCallLastSeen).toBe(lastDocId);
+    });
+
+    test('mid-run insertion of a new sub does not cause double-processing (cursor stability)', async () => {
+      // Simulate: first page has 100 subs. Cursor advances to last _id.
+      // Second page is also full (100 subs) — triggers a third call with the second page's last _id.
+      // A skip-based approach would shift offsets and risk skipping or double-processing docs
+      // inserted before the cursor position mid-run. Cursor is immune to this.
+      const lastDocIdPage1 = '507f1f77bcf86cd799439099';
+      const fullPage1 = Array.from({ length: 100 }, (_, i) => makeDbSub({
+        _id: i === 99 ? lastDocIdPage1 : `507f1f77bcf86cd7994390${String(i).padStart(2, '0')}`,
+        stripeSubscriptionId: `sub_test_p1_${i}`,
+      }));
+      const lastDocIdPage2 = '607f1f77bcf86cd799439099';
+      const fullPage2 = Array.from({ length: 100 }, (_, i) => makeDbSub({
+        _id: i === 99 ? lastDocIdPage2 : `607f1f77bcf86cd7994390${String(i).padStart(2, '0')}`,
+        stripeSubscriptionId: `sub_test_p2_${i}`,
+      }));
+
+      mockSubscriptionRepository.findPageForReconciliation
+        .mockResolvedValueOnce(fullPage1)
+        .mockResolvedValueOnce(fullPage2)
+        .mockResolvedValueOnce([]);
+      mockStripeInstance.subscriptions.retrieve.mockResolvedValue(makeStripeSub());
+
+      const result = await BillingReconcileService.runReconciliation();
+
+      // 100 from page 1 + 100 from page 2 = 200 total
+      expect(result.checked).toBe(200);
+      // Three total calls to findPageForReconciliation
+      expect(mockSubscriptionRepository.findPageForReconciliation).toHaveBeenCalledTimes(3);
+      // Second call must use first page's last _id as cursor
+      const [, secondCallLastSeen] = mockSubscriptionRepository.findPageForReconciliation.mock.calls[1];
+      expect(secondCallLastSeen).toBe(lastDocIdPage1);
+      // Third call must use second page's last _id as cursor
+      const [, thirdCallLastSeen] = mockSubscriptionRepository.findPageForReconciliation.mock.calls[2];
+      expect(thirdCallLastSeen).toBe(lastDocIdPage2);
+    });
   });
 
   test('non-fatal: billingEvents.emit listener error is swallowed, divergence still counted', async () => {

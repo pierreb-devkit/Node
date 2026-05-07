@@ -328,6 +328,8 @@ describe('adminBumpPlan controller unit tests:', () => {
     // AdminDeadLettersQuery imported at module level
     jest.unstable_mockModule('../models/billing.subscription.schema.js', () => ({
       AdminDeadLettersQuery: { safeParse: jest.fn().mockReturnValue({ success: true, data: { page: 1, limit: 20 } }) },
+      AdminOrgIdParam: { safeParse: jest.fn().mockReturnValue({ success: true, data: { orgId: '507f1f77bcf86cd799439011' } }) },
+      AdminEventIdParam: { safeParse: jest.fn().mockReturnValue({ success: true, data: { eventId: 'evt_test' } }) },
       AdminRefundRequest: {},
       AdminBumpPlanRequest: {},
       AdminWebhookReplayRequest: {},

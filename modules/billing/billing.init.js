@@ -22,7 +22,7 @@ export default async (app) => {
   if (config.billing?.packs?.length) {
     for (const pack of config.billing.packs) {
       if (typeof pack.priceUsd !== 'number' || pack.priceUsd <= 0) {
-        console.warn(`[billing] pack '${pack.packId}' missing valid priceUsd; refundPartial fallback will be inaccurate`);
+        logger.warn(`[billing] pack '${pack.packId}' missing valid priceUsd; refundPartial fallback will be inaccurate`);
       }
     }
   }
@@ -33,7 +33,7 @@ export default async (app) => {
     const SUPPORTED_THRESHOLD_PERCENTS = new Set([80, 100]);
     for (const threshold of getAlertThresholdPercents()) {
       if (!SUPPORTED_THRESHOLD_PERCENTS.has(threshold)) {
-        console.warn(
+        logger.warn(
           `[billing] Configured alert threshold ${threshold}% is not in schema-supported set [80, 100] — alert will be silently skipped`,
         );
       }
@@ -45,7 +45,7 @@ export default async (app) => {
     try {
       AnalyticsService.groupIdentify('company', String(organizationId), { plan: newPlan });
     } catch (err) {
-      console.warn('[billing] analytics groupIdentify failed (non-fatal):', err?.message ?? err);
+      logger.warn('[billing] analytics groupIdentify failed (non-fatal)', { error: err?.message ?? String(err) });
     }
   });
 
@@ -131,11 +131,11 @@ export default async (app) => {
       const distinctPlans = await Subscription.distinct('plan');
       for (const plan of distinctPlans) {
         if (!knownPlans.has(plan)) {
-          console.warn(`[billing] Subscription.plan value "${plan}" not in planDefinitions — orphaned plan, may resolve quota=0`);
+          logger.warn(`[billing] Subscription.plan value "${plan}" not in planDefinitions — orphaned plan, may resolve quota=0`);
         }
       }
     } catch (err) {
-      console.warn('[billing] Subscription.plan boot validator failed (non-fatal):', err?.message ?? err);
+      logger.warn('[billing] Subscription.plan boot validator failed (non-fatal)', { error: err?.message ?? String(err) });
     }
   }
 };

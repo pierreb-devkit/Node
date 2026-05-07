@@ -65,13 +65,13 @@ const runReconciliation = async () => {
   let checked = 0;
   let divergences = 0;
   let errors = 0;
-  let page = 0;
+  let lastSeenId = null;
 
   let hasMore = true;
   while (hasMore) {
-    // Paginate via skip+limit — for large collections consider cursor-based pagination,
-    // but skip is acceptable for ops crons running at low frequency.
-    const subs = await _fetchPage(SubscriptionRepository, page, RECONCILE_PAGE_SIZE);
+    // Cursor-based pagination via _id > lastSeen — stable across new subscriptions inserted
+    // mid-run (skip+limit would shift offsets and silently skip or double-process docs).
+    const subs = await _fetchPage(SubscriptionRepository, lastSeenId, RECONCILE_PAGE_SIZE);
     if (!subs || subs.length === 0) break;
 
     for (const sub of subs) {
@@ -93,7 +93,7 @@ const runReconciliation = async () => {
     if (subs.length < RECONCILE_PAGE_SIZE) {
       hasMore = false;
     } else {
-      page += 1;
+      lastSeenId = String(subs[subs.length - 1]._id);
     }
   }
 
@@ -102,17 +102,20 @@ const runReconciliation = async () => {
 };
 
 /**
- * Fetch one page of active|past_due subscriptions.
+ * Fetch one page of active|past_due subscriptions using cursor-based pagination.
+ * Passing lastSeenId advances the cursor to the next page; null fetches the first page.
+ * Cursor approach is stable across new subscription inserts during a reconcile run —
+ * skip+limit would shift offsets and silently skip or double-process documents.
  * @param {Object} SubscriptionRepository - Subscription repository.
- * @param {number} page - 0-based page index.
+ * @param {string|null} lastSeenId - ObjectId string of the last document from the previous page, or null for first page.
  * @param {number} limit - Page size.
  * @returns {Promise<Array>}
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const _fetchPage = async (SubscriptionRepository, page, limit) => {
+const _fetchPage = async (SubscriptionRepository, lastSeenId, limit) => {
   return SubscriptionRepository.findPageForReconciliation(
     RECONCILE_STATUSES,
-    page,
+    lastSeenId,
     limit,
   );
 };

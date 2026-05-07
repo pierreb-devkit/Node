@@ -54,7 +54,7 @@ Operational runbooks for the billing module. Each runbook references real endpoi
 
 ## 2 — Dead-Letter Investigation
 
-**Context**: Stripe webhook events that fail processing 3+ times (or where the idempotency guard fires on a poisoned payload) are marked `deadLetter: true` in `processedStripeEvents`. They accumulate and must be reviewed manually — partial TTL index excludes them from auto-expiry.
+**Context**: Stripe webhook events that fail processing 5+ times (or where the idempotency guard fires on a poisoned payload) are marked `deadLetter: true` in `processedStripeEvents`. They accumulate and must be reviewed manually — partial TTL index excludes them from auto-expiry.
 
 **Steps**:
 
@@ -123,7 +123,7 @@ Operational runbooks for the billing module. Each runbook references real endpoi
 
    ```text
    PATCH /api/admin/billing/plans/bump
-   Body: { "orgId": "...", "planId": "pro", "reason": "manual reconciliation post-mismatch" }
+   Body: { "orgId": "...", "planId": "pro" }
    ```
 
 5. Re-run `GET /api/admin/billing/customer/:orgId` to confirm `stripeSnapshot` and `dbSnapshot` now match.
