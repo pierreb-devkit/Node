@@ -319,6 +319,13 @@ const creditDisputeReinstated = async (chargeId, amountCents, reason, refundRequ
     throw Object.assign(new Error('invalid argument: reason must be at least 3 characters'), { status: 422 });
   }
 
+  // Guard: reject credits for non-existent orgs — mirrors the debit existence guard in Item 4.
+  // A 24-hex match that references a ghost org would silently create a ledger doc for nobody.
+  const org = await OrganizationRepository.get(orgId);
+  if (!org) {
+    throw Object.assign(new Error(`organization not found: ${orgId}`), { status: 422 });
+  }
+
   // Idempotency key includes the refundRequestId to prevent double-click double-credit.
   const refId = `dispute-credit-${refundRequestId}`;
 
