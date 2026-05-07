@@ -435,6 +435,22 @@ describe('BillingAdminService unit tests:', () => {
         expect.any(Object),
       );
     });
+
+    // V8 audit C3 — cancelSubscription must bump markers so a stale
+    // customer.subscription.updated redelivery cannot restore 'active' after
+    // the admin cancellation wrote 'canceled' via direct SubscriptionRepository.update.
+    test('V8-C3: bumps lastSubscriptionEventCreatedAt + lastSubscriptionEventId so stale webhook is rejected', async () => {
+      const before = Math.floor(Date.now() / 1000);
+      await BillingAdminService.cancelSubscription(orgId);
+      const after = Math.floor(Date.now() / 1000);
+
+      const updateCall = mockSubscriptionRepository.update.mock.calls[0][0];
+      const { lastSubscriptionEventCreatedAt, lastSubscriptionEventId } = updateCall;
+
+      expect(lastSubscriptionEventCreatedAt).toBeGreaterThanOrEqual(before);
+      expect(lastSubscriptionEventCreatedAt).toBeLessThanOrEqual(after);
+      expect(lastSubscriptionEventId).toMatch(/^admin-cancel-\d+$/);
+    });
   });
 
   // ─────────────────────────────────────────────────────────────────────────────

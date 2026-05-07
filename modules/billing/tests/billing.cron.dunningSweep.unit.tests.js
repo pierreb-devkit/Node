@@ -105,7 +105,7 @@ describe('billing.dunningSweep cron — BillingSubscriptionRepository:', () => {
 
       expect(mockModel.findOneAndUpdate).toHaveBeenCalledWith(
         { _id: subId, status: 'past_due', pastDueSince: { $lte: threshold } },
-        { $set: { status: 'unpaid', plan: 'free' } },
+        { $set: expect.objectContaining({ status: 'unpaid', plan: 'free' }) },
         expect.objectContaining({ returnDocument: 'after' }),
       );
       expect(result).toEqual(updated);

@@ -105,7 +105,7 @@ describe('BillingSubscriptionRepository unit tests:', () => {
 
       expect(mockModel.findOneAndUpdate).toHaveBeenCalledWith(
         { _id: subId, status: 'past_due', pastDueSince: { $lte: threshold } },
-        { $set: { status: 'unpaid', plan: 'free' } },
+        { $set: expect.objectContaining({ status: 'unpaid', plan: 'free' }) },
         { returnDocument: 'after', runValidators: true },
       );
       expect(result).toEqual(updated);
@@ -391,6 +391,49 @@ describe('BillingSubscriptionRepository unit tests:', () => {
 
       const callArgs = mockModel.findByIdAndUpdate.mock.calls[0];
       expect(callArgs[1].$set.adminUpdatedAt).toBeInstanceOf(Date);
+    });
+
+    // V8 audit C3 — event-ordering markers must be bumped so a stale Stripe redelivery
+    // cannot overwrite the admin plan bump via updateIfEventNewer.
+    test('V8-C3: bumps lastSubscriptionEventCreatedAt + lastSubscriptionEventId so stale webhook is rejected', async () => {
+      const execMock = jest.fn().mockResolvedValue({ _id: subId, plan: 'pro' });
+      const populateMock = jest.fn().mockReturnValue({ exec: execMock });
+      mockModel.findByIdAndUpdate.mockReturnValue({ populate: populateMock });
+
+      const before = Math.floor(Date.now() / 1000);
+      await BillingSubscriptionRepository.adminUpdatePlanOnly(subId, 'pro', adminId);
+      const after = Math.floor(Date.now() / 1000);
+
+      const callArgs = mockModel.findByIdAndUpdate.mock.calls[0];
+      const { lastSubscriptionEventCreatedAt, lastSubscriptionEventId } = callArgs[1].$set;
+
+      expect(lastSubscriptionEventCreatedAt).toBeGreaterThanOrEqual(before);
+      expect(lastSubscriptionEventCreatedAt).toBeLessThanOrEqual(after);
+      expect(lastSubscriptionEventId).toMatch(/^admin-bump-\d+$/);
+    });
+  });
+
+  // ── markUnpaid — V8 audit C3 marker bump ─────────────────────────────────
+
+  describe('markUnpaid — V8-C3 event-ordering markers', () => {
+    const threshold = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+
+    // V8 audit C3 — markUnpaid must bump markers so a stale customer.subscription.updated
+    // redelivery cannot restore 'past_due' after the dunning sweep set 'unpaid'.
+    test('V8-C3: bumps lastSubscriptionEventCreatedAt + lastSubscriptionEventId so stale webhook is rejected', async () => {
+      const updated = { _id: subId, status: 'unpaid', plan: 'free' };
+      mockModel.findOneAndUpdate.mockReturnValue({ exec: jest.fn().mockResolvedValue(updated) });
+
+      const before = Math.floor(Date.now() / 1000);
+      await BillingSubscriptionRepository.markUnpaid(subId, threshold);
+      const after = Math.floor(Date.now() / 1000);
+
+      const callArgs = mockModel.findOneAndUpdate.mock.calls[0];
+      const { lastSubscriptionEventCreatedAt, lastSubscriptionEventId } = callArgs[1].$set;
+
+      expect(lastSubscriptionEventCreatedAt).toBeGreaterThanOrEqual(before);
+      expect(lastSubscriptionEventCreatedAt).toBeLessThanOrEqual(after);
+      expect(lastSubscriptionEventId).toMatch(/^dunning-\d+$/);
     });
   });
 });

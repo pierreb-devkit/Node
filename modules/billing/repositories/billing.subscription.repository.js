@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import mongoose from 'mongoose';
+import { bumpEventMarkers } from '../lib/billing.markerBump.js';
 
 const Subscription = mongoose.model('Subscription');
 
@@ -206,7 +207,7 @@ const markUnpaid = (id, threshold) => {
   if (!(threshold instanceof Date)) throw new TypeError('threshold must be a Date instance');
   return Subscription.findOneAndUpdate(
     { _id: id, status: 'past_due', pastDueSince: { $lte: threshold } },
-    { $set: { status: 'unpaid', plan: 'free' } },
+    { $set: { status: 'unpaid', plan: 'free', ...bumpEventMarkers('subscription', 'dunning') } },
     { returnDocument: 'after', runValidators: true },
   ).exec();
 };
@@ -273,15 +274,18 @@ const updateIfEventNewer = (id, eventCreatedAt, eventId, fields, family = 'subsc
 
 /**
  * @function adminUpdatePlanOnly
- * @description Restricted admin update — sets ONLY `plan` and `adminUpdatedAt`. Never touches
- *              `status`, `stripeCustomerId`, `stripeSubscriptionId`, `currentPeriodStart`, or
- *              the per-family event-ordering markers. Webhook handlers retain exclusive write
- *              authority on those fields via `updateIfEventNewer`.
+ * @description Restricted admin update — sets ONLY `plan`, `adminUpdatedAt`, and the
+ *              subscription-family event-ordering markers. Never touches `status`,
+ *              `stripeCustomerId`, `stripeSubscriptionId`, or `currentPeriodStart`.
  *
  *              Why this restriction matters: a free `update()` call with `{ plan, status }` from
  *              an admin path would overwrite Stripe-driven status (active/past_due/etc.) with
  *              whatever the admin sent, breaking dunning + access control. Splitting the surface
  *              forces admin overrides to plan-only territory.
+ *
+ *              The subscription-family markers (`lastSubscriptionEvent*`) are bumped so a
+ *              subsequent stale Stripe webhook redelivery (customer.subscription.*) cannot
+ *              overwrite the admin plan change via `updateIfEventNewer`.
  *
  * @param {string} id - Subscription ObjectId (string).
  * @param {string} planId - The new plan identifier (must be in config.billing.plans enum).
@@ -302,6 +306,7 @@ const adminUpdatePlanOnly = (id, planId, adminUserId) => {
         plan: planId,
         adminUpdatedAt: new Date(),
         adminUpdatedBy: safeAdminUserId,
+        ...bumpEventMarkers('subscription', 'admin-bump'),
       },
     },
     { returnDocument: 'after', runValidators: true },

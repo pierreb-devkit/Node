@@ -4,6 +4,7 @@
 import config from '../../../config/index.js';
 import getStripe from '../lib/stripe.js';
 import logger from '../../../lib/services/logger.js';
+import { bumpEventMarkers } from '../lib/billing.markerBump.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import ProcessedStripeEventRepository from '../repositories/billing.processedStripeEvent.repository.js';
 import OrganizationRepository from '../../organizations/repositories/organizations.repository.js';
@@ -273,6 +274,7 @@ const cancelSubscription = async (orgId) => {
     _id: existing._id,
     plan: 'free',
     status: 'canceled',
+    ...bumpEventMarkers('subscription', 'admin-cancel'),
   });
 
   await OrganizationRepository.setPlan(orgId, 'free');
