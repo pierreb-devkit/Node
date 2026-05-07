@@ -538,9 +538,13 @@ const handleInvoicePaymentFailed = async (invoice, event) => {
 };
 
 /**
- * @description Handle invoice.payment_succeeded event — clear degraded mode (pastDueSince).
+ * @description Handle invoice.payment_succeeded event — clear degraded mode and restore plan.
  *       When a past-due invoice is finally paid, remove the pastDueSince marker so
  *       the subscription exits degraded mode on next request.
+ *       V8 C1: also re-fetches the live Stripe subscription to restore the correct plan,
+ *       guarding against the case where customer.subscription.updated is dead-lettered
+ *       after a dunning sweep downgraded the plan to 'free'. Stripe re-fetch failure is
+ *       non-fatal (warn log, plan not restored, pastDueSince+status update still fires).
  *       Uses updateIfEventNewer to guard against out-of-order webhook delivery (V5 P1 #1).
  * @param {Object} invoice - Stripe invoice object
  * @param {Object} event - Full Stripe event (with event.created and event.id for ordering)
@@ -570,6 +574,7 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
   if (isPastDue) {
     try {
       const stripe = getStripe();
+      if (!stripe) throw new Error('Stripe not configured');
       const stripeSub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
       resolvedPlan = resolvePlan(stripeSub);
       fields.plan = resolvedPlan;
