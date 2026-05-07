@@ -418,7 +418,7 @@ describe('BillingSubscriptionRepository unit tests:', () => {
   describe('markUnpaid — V8-C3 event-ordering markers', () => {
     const threshold = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
 
-    // V8 audit C3 — markUnpaid must bump markers so a stale invoice.payment_failed
+    // V8 audit C3 — markUnpaid must bump markers so a stale customer.subscription.updated
     // redelivery cannot restore 'past_due' after the dunning sweep set 'unpaid'.
     test('V8-C3: bumps lastSubscriptionEventCreatedAt + lastSubscriptionEventId so stale webhook is rejected', async () => {
       const updated = { _id: subId, status: 'unpaid', plan: 'free' };
