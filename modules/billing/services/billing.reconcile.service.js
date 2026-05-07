@@ -7,6 +7,7 @@ import config from '../../../config/index.js';
 import getStripe from '../lib/stripe.js';
 import logger from '../../../lib/services/logger.js';
 import billingEvents from '../lib/events.js';
+import { currentWeekKey } from '../lib/billing.isoWeek.js';
 
 /**
  * Page size for the reconciliation cursor — fetch in batches to avoid long-running queries.
@@ -123,6 +124,71 @@ const _fetchPage = async (SubscriptionRepository, page, limit) => {
 };
 
 /**
+ * Compute meter↔extras divergence for a single org.
+ * Returns { diverged: boolean, expectedExtrasUsage: number, actualExtrasDebits: number }.
+ *
+ * Strategy:
+ *   expectedExtrasUsage = units consumed beyond quota in the current week (overflow).
+ *   actualExtrasDebits  = absolute sum of ledger debit entries recorded since the
+ *                         current period started (cachedBalance change due to debits only).
+ *
+ * Tolerance: divergence is only reported when
+ *   |expected - actual| > max(50, 0.5% × max(expected, actual))
+ * This avoids noise from timing skew (usage write before debit commits).
+ *
+ * @param {string} orgId
+ * @param {Object} sub - DB subscription (lean) — provides currentPeriodStart.
+ * @returns {Promise<{diverged: boolean, expectedExtrasUsage: number, actualExtrasDebits: number}>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const _checkMeterExtrasMismatch = async (orgId, sub) => {
+  const BillingUsage = mongoose.model('BillingUsage');
+  const BillingExtraBalance = mongoose.model('BillingExtraBalance');
+
+  const weekKey = currentWeekKey();
+
+  // expectedExtrasUsage: units consumed beyond quota in current week (from BillingUsage doc).
+  const usageDoc = await BillingUsage.findOne(
+    { organizationId: orgId, weekKey },
+    { meterUsed: 1, meterQuota: 1 },
+  ).lean();
+
+  const meterUsed = usageDoc?.meterUsed ?? 0;
+  const meterQuota = usageDoc?.meterQuota ?? 0;
+  // meterQuota=0 means free plan — every unit is extras.
+  const expectedExtrasUsage = meterQuota === 0 ? meterUsed : Math.max(0, meterUsed - meterQuota);
+
+  // actualExtrasDebits: absolute sum of debit ledger entries since current period started.
+  // Use currentPeriodStart from the DB subscription as period boundary, falling back to
+  // the start of the current week if not set.
+  const periodStart = sub.currentPeriodStart ? new Date(sub.currentPeriodStart) : null;
+
+  const extraDoc = await BillingExtraBalance.findOne(
+    { organization: orgId },
+    { ledger: 1 },
+  ).lean();
+
+  let actualExtrasDebits = 0;
+  if (extraDoc?.ledger) {
+    for (const entry of extraDoc.ledger) {
+      if (entry.kind !== 'debit') continue;
+      if (periodStart && entry.at && new Date(entry.at) < periodStart) continue;
+      // Debit entries have negative amount; sum their absolute values.
+      actualExtrasDebits += Math.abs(entry.amount);
+    }
+  }
+
+  // Tolerance: abs(delta) > max(50, 0.5% × max(expected, actual)) triggers divergence.
+  const delta = Math.abs(expectedExtrasUsage - actualExtrasDebits);
+  const toleranceBasis = Math.max(expectedExtrasUsage, actualExtrasDebits);
+  const tolerance = Math.max(50, 0.005 * toleranceBasis);
+
+  if (delta <= tolerance) return { diverged: false, expectedExtrasUsage, actualExtrasDebits };
+
+  return { diverged: true, expectedExtrasUsage, actualExtrasDebits };
+};
+
+/**
  * Reconcile a single subscription against Stripe.
  * Returns { diverged: boolean }.
  * @param {Object} stripe - Stripe client.
@@ -141,7 +207,41 @@ const _reconcileOne = async (stripe, sub) => {
   const statusMismatch = sub.status !== stripeStatus;
   const planMismatch = sub.plan !== stripePlan;
 
-  if (!statusMismatch && !planMismatch) return { diverged: false };
+  // Check meter↔extras divergence for this org (Opus C1 detection layer).
+  // This runs regardless of status/plan match — a healthy subscription can still
+  // have an accumulating ledger mismatch if debits were silently dropped.
+  let meterExtrasMismatch = false;
+  try {
+    const mismatchResult = await _checkMeterExtrasMismatch(orgId, sub);
+    meterExtrasMismatch = mismatchResult.diverged;
+
+    if (meterExtrasMismatch) {
+      const mismatchPayload = {
+        organizationId: orgId,
+        subscriptionId: String(sub._id),
+        subType: 'meter_extras_mismatch',
+        expectedExtrasUsage: mismatchResult.expectedExtrasUsage,
+        actualExtrasDebits: mismatchResult.actualExtrasDebits,
+        delta: Math.abs(mismatchResult.expectedExtrasUsage - mismatchResult.actualExtrasDebits),
+      };
+      logger.error('[billing.reconcile] meter↔extras mismatch detected — LOG ONLY, no auto-fix', mismatchPayload);
+      try {
+        billingEvents.emit('billing.reconciliation.divergence', mismatchPayload);
+      } catch (evtErr) {
+        logger.error('[billing.reconcile] billing.reconciliation.divergence (meter_extras_mismatch) listener error (non-fatal)', {
+          error: evtErr?.message ?? String(evtErr),
+        });
+      }
+    }
+  } catch (mismatchErr) {
+    // Non-fatal: meter↔extras check failure does not block the Stripe status/plan check.
+    logger.error('[billing.reconcile] meter↔extras check failed (non-fatal)', {
+      organizationId: orgId,
+      error: mismatchErr?.message ?? String(mismatchErr),
+    });
+  }
+
+  if (!statusMismatch && !planMismatch) return { diverged: meterExtrasMismatch };
 
   const payload = {
     organizationId: orgId,

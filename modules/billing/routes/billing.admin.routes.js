@@ -10,6 +10,7 @@ import {
   AdminRefundRequest,
   AdminBumpPlanRequest,
   AdminWebhookReplayRequest,
+  AdminDisputeCreditRequest,
 } from '../models/billing.subscription.schema.js';
 
 /**
@@ -59,4 +60,9 @@ export default (app) => {
     .route('/api/admin/billing/cancel/:orgId')
     .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
     .post(billingAdmin.adminCancelSubscription);
+
+  app
+    .route('/api/admin/billing/dispute/credit/:orgId')
+    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
+    .post(model.isValid(AdminDisputeCreditRequest), billingAdmin.adminDisputeCredit);
 };

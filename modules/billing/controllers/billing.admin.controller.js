@@ -5,6 +5,7 @@ import responses from '../../../lib/helpers/responses.js';
 import getStripe from '../lib/stripe.js';
 import BillingAdminService from '../services/billing.admin.service.js';
 import { AdminDeadLettersQuery } from '../models/billing.subscription.schema.js';
+import logger from '../../../lib/services/logger.js';
 
 /**
  * @desc Admin endpoint to trigger a Stripe refund for a charge.
@@ -268,6 +269,53 @@ const adminCancelSubscription = async (req, res) => {
   }
 };
 
+/**
+ * @desc POST /api/admin/billing/dispute/credit
+ *       Apply a manual extras-balance credit after a dispute is won (funds_reinstated).
+ *       Idempotent via refundRequestId — safe to call multiple times per dispute.
+ * @param {Object} req - Express request object (body validated as AdminDisputeCreditRequest)
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
+const adminDisputeCredit = async (req, res) => {
+  try {
+    const { chargeId, amountCents, reason, refundRequestId } = req.body;
+    const { orgId } = req.params;
+
+    const rawAdminId = req.user?._id;
+    if (!rawAdminId) {
+      return responses.error(res, 422, 'Unprocessable Entity', 'Failed to apply dispute credit')(
+        new Error('invalid argument: authenticated user id is missing'),
+      );
+    }
+    const adminUserId = String(rawAdminId);
+
+    const result = await BillingAdminService.creditDisputeReinstated(
+      chargeId,
+      amountCents,
+      reason,
+      refundRequestId,
+      orgId,
+      adminUserId,
+    );
+
+    logger.info('[billing.admin] adminDisputeCredit completed', {
+      orgId,
+      chargeId,
+      amountCents,
+      applied: result.applied,
+      adminUserId,
+    });
+
+    return responses.success(res, 'dispute credit applied')(result);
+  } catch (err) {
+    const status = err.status ?? 500;
+    const title = status === 404 ? 'Not Found' : status === 422 ? 'Unprocessable Entity' : 'Internal Server Error';
+    return responses.error(res, status, title, 'Failed to apply dispute credit')(err);
+  }
+};
+
 export default {
   adminRefundCharge,
   adminBumpPlan,
@@ -277,4 +325,5 @@ export default {
   adminListDeadLetters,
   adminPurgeDeadLetter,
   adminCancelSubscription,
+  adminDisputeCredit,
 };

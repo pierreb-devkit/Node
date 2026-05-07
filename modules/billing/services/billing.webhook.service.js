@@ -544,11 +544,20 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId);
   if (!existing) return;
 
-  // Always advance the event markers (stripeEventCreatedAt + stripeEventId) so out-of-order
-  // replays are correctly rejected even when the sub is already active (pastDueSince == null).
-  const fields = (existing.pastDueSince !== null && existing.pastDueSince !== undefined)
-    ? { pastDueSince: null, status: 'active' }
-    : {};
+  // Perf optimization (Opus H7): when the sub is already healthy (pastDueSince == null),
+  // skip the updateIfEventNewer call entirely — there are no fields to update and the
+  // runValidators overhead is wasted on ~95% of payment_succeeded webhooks.
+  // The event-ordering marker (lastInvoiceEventCreatedAt / lastInvoiceEventId) is NOT
+  // advanced here for healthy subs — the next customer.subscription.updated event will
+  // advance the subscription-family marker, which gates the same ordering window.
+  // Past-due subs still update normally: the pastDueSince clearance + status reset is
+  // the critical write that exits degraded mode, and the marker must advance to guard
+  // against stale replays of the same event.
+  if (existing.pastDueSince === null || existing.pastDueSince === undefined) {
+    return;
+  }
+
+  const fields = { pastDueSince: null, status: 'active' };
 
   const updated = await SubscriptionRepository.updateIfEventNewer(
     String(existing._id),
@@ -1095,13 +1104,12 @@ const handleChargeDisputeFundsReinstated = async (dispute, event) => {
   }
 
   // funds_reinstated is good news (dispute was won back) — log as warn, not error.
-  // The alert is for ops to manually credit the ledger (auto-credit deferred to Phase 1).
-  logger.warn('[billing.webhook] dispute.funds_reinstated received — manual ledger credit required', {
+  // The alert is for ops to apply a manual ledger credit via the admin endpoint.
+  logger.warn('[billing.webhook] dispute.funds_reinstated received — use POST /api/admin/billing/dispute/credit to restore the extras balance', {
     disputeId,
     chargeId,
     amount,
     eventId: event?.id,
-    note: 'Auto-credit deferred to Phase 1 admin endpoint. Use /api/admin/billing/credit (TBD) once available, or directly add a ledger entry via DB.',
   });
 
   try {

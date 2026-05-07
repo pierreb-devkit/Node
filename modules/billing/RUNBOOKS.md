@@ -22,7 +22,24 @@ Operational runbooks for the billing module. Each runbook references real endpoi
    ```
 4. Gather evidence in Stripe Dashboard: usage records, signup email, ToS acceptance timestamp, IP logs.
 5. Submit evidence before day 7 via Stripe Dashboard → Dispute → Submit evidence.
-6. If dispute won (`charge.dispute.funds_reinstated` received): verify the extras credit was re-applied by re-checking the ledger via `GET /api/admin/billing/customer/:orgId`.
+6. If dispute won (`charge.dispute.funds_reinstated` received): restore the customer's extras balance via:
+   ```
+   POST /api/admin/billing/dispute/credit/:orgId
+   Body: {
+     "chargeId": "ch_xxx",
+     "amountCents": <dispute_amount_cents>,
+     "reason": "dispute won — funds reinstated on charge ch_xxx",
+     "refundRequestId": "<uuid>"
+   }
+   ```
+   Example curl:
+   ```bash
+   curl -X POST https://api.trawl.me/api/admin/billing/dispute/credit/<orgId> \
+     -H "Authorization: Bearer $ADMIN_JWT" \
+     -H "Content-Type: application/json" \
+     -d '{"chargeId":"ch_xxx","amountCents":2000,"reason":"dispute won — Stripe reinstated funds","refundRequestId":"<uuid>"}'
+   ```
+   Confirm credit applied: `GET /api/admin/billing/customer/:orgId` — check ledger for an `adjustment` entry with `refId: dispute-credit-<uuid>`.
 7. If dispute lost: extras balance debited by `charge.dispute.funds_withdrawn` is not refunded — log in incident tracker.
 
 ---

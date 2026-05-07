@@ -6,6 +6,7 @@ import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globa
 /**
  * Unit tests for BillingReconcileService.runReconciliation.
  * Validates LOG-ONLY policy, pagination, divergence detection, and error handling.
+ * Also covers meter↔extras mismatch detection (_checkMeterExtrasMismatch — Item 2 Batch 2).
  */
 describe('BillingReconcileService.runReconciliation unit tests:', () => {
   let BillingReconcileService;
@@ -14,6 +15,8 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
   let mockLogger;
   let mockEvents;
   let mockSubscriptionModel;
+  let mockUsageModel;
+  let mockExtraBalanceModel;
   let mockConfig;
 
   const orgId = '507f1f77bcf86cd799439011';
@@ -72,13 +75,38 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
       find: jest.fn().mockReturnValue(mockFindChain),
     };
 
+    // Default usage doc: 200 used, 100 quota → 100 units in extras expected
+    mockUsageModel = {
+      findOne: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ meterUsed: 200, meterQuota: 100 }),
+      }),
+    };
+
+    // Default extra balance doc: 100 units debited (matches expected)
+    mockExtraBalanceModel = {
+      findOne: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          ledger: [
+            { kind: 'debit', amount: -100, at: new Date() },
+          ],
+        }),
+      }),
+    };
+
     jest.unstable_mockModule('../../../config/index.js', () => ({ default: mockConfig }));
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mockLogger }));
     jest.unstable_mockModule('../lib/stripe.js', () => ({ default: mockGetStripe }));
     jest.unstable_mockModule('../lib/events.js', () => ({ default: mockEvents }));
+    jest.unstable_mockModule('../lib/billing.isoWeek.js', () => ({
+      currentWeekKey: jest.fn().mockReturnValue('2026-W18'),
+    }));
     jest.unstable_mockModule('mongoose', () => ({
       default: {
-        model: jest.fn(() => mockSubscriptionModel),
+        model: jest.fn((name) => {
+          if (name === 'BillingUsage') return mockUsageModel;
+          if (name === 'BillingExtraBalance') return mockExtraBalanceModel;
+          return mockSubscriptionModel;
+        }),
       },
     }));
     jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
@@ -289,5 +317,152 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
       '[billing.reconcile] billing.reconciliation.divergence listener error (non-fatal)',
       expect.objectContaining({ error: 'listener crash' }),
     );
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // meter↔extras mismatch detection (Item 2 — Batch 2)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  describe('meter↔extras mismatch detection:', () => {
+    const makeSingleSubChain = (sub) => ({
+      skip: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockReturnThis(),
+      exec: jest.fn()
+        .mockResolvedValueOnce([sub])
+        .mockResolvedValue([]),
+    });
+
+    test('matching sums — no divergence, no event emitted', async () => {
+      const sub = makeDbSub();
+      mockSubscriptionModel.find.mockReturnValue(makeSingleSubChain(sub));
+      mockStripeInstance.subscriptions.retrieve.mockResolvedValue(makeStripeSub());
+
+      // meterUsed=200, meterQuota=100 → expectedExtras=100
+      // ledger debit=-100 → actualDebits=100
+      // delta=0 → within tolerance → no divergence
+      mockUsageModel.findOne.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ meterUsed: 200, meterQuota: 100 }),
+      });
+      mockExtraBalanceModel.findOne.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          ledger: [{ kind: 'debit', amount: -100, at: new Date() }],
+        }),
+      });
+
+      const result = await BillingReconcileService.runReconciliation();
+
+      expect(result).toMatchObject({ checked: 1, divergences: 0, errors: 0 });
+      // No meter_extras_mismatch emit
+      const emittedWithMismatch = mockEvents.emit.mock.calls.filter(
+        ([, p]) => p?.subType === 'meter_extras_mismatch',
+      );
+      expect(emittedWithMismatch).toHaveLength(0);
+    });
+
+    test('10-unit delta on 100-unit expected — within 0.5% tolerance — no event', async () => {
+      const sub = makeDbSub();
+      mockSubscriptionModel.find.mockReturnValue(makeSingleSubChain(sub));
+      mockStripeInstance.subscriptions.retrieve.mockResolvedValue(makeStripeSub());
+
+      // expectedExtras=10000, actualDebits=9990 → delta=10
+      // tolerance = max(50, 0.5% × 10000) = max(50, 50) = 50
+      // delta(10) <= tolerance(50) → no divergence
+      mockUsageModel.findOne.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ meterUsed: 10100, meterQuota: 100 }),
+      });
+      mockExtraBalanceModel.findOne.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          ledger: [{ kind: 'debit', amount: -9990, at: new Date() }],
+        }),
+      });
+
+      await BillingReconcileService.runReconciliation();
+
+      const mismatchEmits = mockEvents.emit.mock.calls.filter(
+        ([, p]) => p?.subType === 'meter_extras_mismatch',
+      );
+      expect(mismatchEmits).toHaveLength(0);
+    });
+
+    test('large delta — over tolerance — emits billing.reconciliation.divergence with subType:meter_extras_mismatch', async () => {
+      const sub = makeDbSub();
+      mockSubscriptionModel.find.mockReturnValue(makeSingleSubChain(sub));
+      mockStripeInstance.subscriptions.retrieve.mockResolvedValue(makeStripeSub());
+
+      // expectedExtras=10000, actualDebits=5000 → delta=5000
+      // tolerance = max(50, 0.5% × 10000) = 50 → delta(5000) >> tolerance
+      mockUsageModel.findOne.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ meterUsed: 10100, meterQuota: 100 }),
+      });
+      mockExtraBalanceModel.findOne.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          ledger: [{ kind: 'debit', amount: -5000, at: new Date() }],
+        }),
+      });
+
+      const result = await BillingReconcileService.runReconciliation();
+
+      // divergences counts both meter_extras_mismatch
+      expect(result.divergences).toBeGreaterThanOrEqual(1);
+      const mismatchEmits = mockEvents.emit.mock.calls.filter(
+        ([name, p]) => name === 'billing.reconciliation.divergence' && p?.subType === 'meter_extras_mismatch',
+      );
+      expect(mismatchEmits).toHaveLength(1);
+      expect(mismatchEmits[0][1]).toMatchObject({
+        organizationId: orgId,
+        subType: 'meter_extras_mismatch',
+        expectedExtrasUsage: 10000,
+        actualExtrasDebits: 5000,
+        delta: 5000,
+      });
+    });
+
+    test('meter↔extras check failure is non-fatal — subscription still counted, errors=0', async () => {
+      const sub = makeDbSub();
+      mockSubscriptionModel.find.mockReturnValue(makeSingleSubChain(sub));
+      mockStripeInstance.subscriptions.retrieve.mockResolvedValue(makeStripeSub());
+
+      // Simulate BillingUsage.findOne throwing
+      mockUsageModel.findOne.mockReturnValue({
+        lean: jest.fn().mockRejectedValue(new Error('DB unavailable')),
+      });
+
+      const result = await BillingReconcileService.runReconciliation();
+
+      // Sub is still checked (status/plan match), error not bubbled up as sub error
+      expect(result.checked).toBe(1);
+      expect(result.errors).toBe(0);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        '[billing.reconcile] meter↔extras check failed (non-fatal)',
+        expect.any(Object),
+      );
+    });
+
+    test('free plan (meterQuota=0): all units are extras — large debit matches', async () => {
+      const sub = makeDbSub({ plan: 'free' });
+      mockSubscriptionModel.find.mockReturnValue(makeSingleSubChain(sub));
+      mockStripeInstance.subscriptions.retrieve.mockResolvedValue(
+        makeStripeSub({ items: { data: [{ price: { metadata: { planId: 'free' } } }] } }),
+      );
+
+      // meterUsed=50, meterQuota=0 → expectedExtras=50 (all units are extras)
+      // actualDebits=50 → delta=0 → no divergence
+      mockUsageModel.findOne.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ meterUsed: 50, meterQuota: 0 }),
+      });
+      mockExtraBalanceModel.findOne.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          ledger: [{ kind: 'debit', amount: -50, at: new Date() }],
+        }),
+      });
+
+      await BillingReconcileService.runReconciliation();
+
+      const mismatchEmits = mockEvents.emit.mock.calls.filter(
+        ([, p]) => p?.subType === 'meter_extras_mismatch',
+      );
+      expect(mismatchEmits).toHaveLength(0);
+    });
   });
 });

@@ -27,6 +27,8 @@ export function billingSubjectRegistration({ registerPathSubject }) {
   registerPathSubject('/api/admin/billing/webhook/replay', 'BillingAdminOps');
   registerPathSubject('/api/admin/billing/dead-letters', 'BillingAdminOps');
   registerPathSubject('/api/admin/billing/cancel', 'BillingAdminOps');
+  // Dispute credit — manual ledger credit after funds_reinstated (Batch 2)
+  registerPathSubject('/api/admin/billing/dispute/credit', 'BillingAdminOps');
   // Webhook is mounted in billing.preroute.js before body parsing and auth middleware,
   // so it bypasses policy.isAllowed entirely. Registered here for documentation completeness.
   registerPathSubject('/api/billing/webhook', 'BillingWebhook');

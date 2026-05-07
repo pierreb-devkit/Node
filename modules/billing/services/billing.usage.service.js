@@ -151,6 +151,39 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
           reason: debitResult.reason,
         });
       }
+
+      // Sanity ceiling — runaway negative balance detection (Opus H1).
+      // A cachedBalance below -10 × meterQuota means something is deeply wrong:
+      // either the quota gating failed upstream, a bug is accumulating spurious debits,
+      // or the plan snapshot is stale. Emit an alert for ops; the debit was already applied
+      // (we do not block it — the usage write already committed above).
+      if (debitResult.applied && debitResult.doc) {
+        const RUNAWAY_MULTIPLIER = 10;
+        const runawayThreshold = -(RUNAWAY_MULTIPLIER * effectiveQuota);
+        const currentBalance = debitResult.doc.cachedBalance;
+        // Only check when quota > 0; free plans (quota=0) have no meaningful threshold.
+        if (effectiveQuota > 0 && currentBalance < runawayThreshold) {
+          logger.error('[billing.extra] runaway negative balance detected — possible debit loop or quota gate bypass', {
+            organizationId,
+            currentBalance,
+            planQuota: effectiveQuota,
+            attemptedDebit: extrasConsumed,
+            runawayThreshold,
+          });
+          try {
+            billingEvents.emit('billing.extras.runaway_debit', {
+              organizationId,
+              currentBalance,
+              planQuota: effectiveQuota,
+              attemptedDebit: extrasConsumed,
+            });
+          } catch (evtErr) {
+            logger.error('[billing.usage] billing.extras.runaway_debit listener failed', {
+              error: evtErr?.message ?? String(evtErr),
+            });
+          }
+        }
+      }
     } catch (err) {
       // Usage is already counted. Log for monitoring — a retry cron or manual backfill
       // can reconcile if needed. Never let a debit failure block the usage write.
