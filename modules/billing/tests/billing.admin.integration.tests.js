@@ -198,6 +198,9 @@ describe('Billing admin integration tests:', () => {
         listDeadLetters: jest.fn(),
         purgeDeadLetter: jest.fn(),
         cancelSubscription: jest.fn(),
+        creditDisputeReinstated: jest.fn(),
+        // Batch 3a: adminBumpPlan now delegates here (controller→service refactor)
+        bumpOrgPlan: jest.fn().mockResolvedValue({ _id: '607f1f77bcf86cd799439033', plan: 'pro' }),
       },
     }));
 

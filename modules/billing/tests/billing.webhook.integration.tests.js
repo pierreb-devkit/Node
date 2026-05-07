@@ -560,6 +560,43 @@ describe('Billing webhook integration tests:', () => {
       expect(mockSubscriptionRepository.findByStripeCustomerId).not.toHaveBeenCalled();
       expect(mockSubscriptionRepository.create).not.toHaveBeenCalled();
     });
+
+    test('E11000 duplicate key: logs warn and returns { skipped: true, reason: duplicate } without dead-lettering', async () => {
+      const orgSub = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(null);
+      mockSubscriptionRepository.findByStripeCustomerId.mockResolvedValue(orgSub);
+      const dupErr = Object.assign(new Error('E11000 duplicate key error'), { code: 11000 });
+      mockSubscriptionRepository.create.mockRejectedValue(dupErr);
+
+      const result = await WebhookService.handleSubscriptionCreated(
+        {
+          id: 'sub_dup_001',
+          customer: 'cus_123',
+          status: 'active',
+          items: { data: [{ current_period_start: 1700000000, price: { metadata: { planId: 'pro' } } }] },
+        },
+        makeEvent({ id: 'evt_dup_1', created: 1700000070 }),
+      );
+
+      expect(result).toMatchObject({ skipped: true, reason: 'duplicate' });
+      // org plan sync must NOT have been called when creation was skipped
+      expect(mockOrganizationRepository.setPlan).not.toHaveBeenCalled();
+    });
+
+    test('E11000 catch: re-throws non-duplicate errors (not all errors are swallowed)', async () => {
+      const orgSub = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(null);
+      mockSubscriptionRepository.findByStripeCustomerId.mockResolvedValue(orgSub);
+      const dbErr = Object.assign(new Error('DB connection lost'), { code: 13435 });
+      mockSubscriptionRepository.create.mockRejectedValue(dbErr);
+
+      await expect(
+        WebhookService.handleSubscriptionCreated(
+          { id: 'sub_dberr', customer: 'cus_123', status: 'active', items: { data: [] } },
+          makeEvent(),
+        ),
+      ).rejects.toThrow('DB connection lost');
+    });
   });
 
   describe('handleChargeDisputeFundsReinstated', () => {

@@ -995,7 +995,10 @@ const handleChargeDisputeFundsWithdrawn = async (dispute, event) => {
  *              Idempotent via updateIfEventNewer (existing) or event marker seeding (new row).
  * @param {Object} subscription - Stripe subscription object
  * @param {Object} event - Full Stripe event for event-ordering guard
- * @returns {Promise<void>}
+ * @returns {Promise<void|{skipped: boolean, reason: string}>} Returns a skip sentinel
+ *          `{ skipped: true, reason: 'duplicate' }` when a concurrent delivery triggers an
+ *          E11000 duplicate-key error on create — graceful no-op, does not dead-letter.
+ *          Returns void in all other cases (including stale-event skip via updateIfEventNewer).
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleSubscriptionCreated = async (subscription, event) => {
@@ -1029,16 +1032,31 @@ const handleSubscriptionCreated = async (subscription, event) => {
       organizationId,
       eventId: event?.id,
     });
-    await SubscriptionRepository.create({
-      organization: organizationId,
-      stripeCustomerId: subscription.customer,
-      stripeSubscriptionId: subscription.id,
-      plan: newPlan,
-      status: subscription.status,
-      lastSubscriptionEventCreatedAt: event.created,
-      lastSubscriptionEventId: event.id,
-      ...(newPeriodStart ? { currentPeriodStart: newPeriodStart } : {}),
-    });
+    try {
+      await SubscriptionRepository.create({
+        organization: organizationId,
+        stripeCustomerId: subscription.customer,
+        stripeSubscriptionId: subscription.id,
+        plan: newPlan,
+        status: subscription.status,
+        lastSubscriptionEventCreatedAt: event.created,
+        lastSubscriptionEventId: event.id,
+        ...(newPeriodStart ? { currentPeriodStart: newPeriodStart } : {}),
+      });
+    } catch (err) {
+      if (err.code === 11000) {
+        // Duplicate key — a concurrent subscription.created delivery (or checkout.session.completed
+        // racing ahead) already inserted the row. Skip creation gracefully; the existing row
+        // carries the correct state and withIdempotency will not dead-letter this event.
+        logger.warn('[billing.webhook] secondary subscription detected for org, skipping duplicate creation', {
+          organizationId,
+          stripeSubscriptionId: subscription.id,
+          eventId: event?.id,
+        });
+        return { skipped: true, reason: 'duplicate' };
+      }
+      throw err;
+    }
     await syncOrganizationPlan(organizationId, newPlan);
     return;
   }
