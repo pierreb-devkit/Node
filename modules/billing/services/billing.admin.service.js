@@ -1,8 +1,6 @@
 /**
  * Module dependencies
  */
-import mongoose from 'mongoose';
-
 import config from '../../../config/index.js';
 import getStripe from '../lib/stripe.js';
 import logger from '../../../lib/services/logger.js';
@@ -26,7 +24,7 @@ const validPlans = new Set(config.billing?.plans || ['free', 'starter', 'pro', '
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const getCustomerStatus = async (orgId) => {
-  if (!mongoose.Types.ObjectId.isValid(orgId)) {
+  if (!/^[0-9a-fA-F]{24}$/.test(orgId)) {
     throw Object.assign(new Error('invalid argument: orgId must be a valid ObjectId'), { status: 422 });
   }
 
@@ -74,7 +72,7 @@ const getCustomerStatus = async (orgId) => {
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const syncOrgFromStripe = async (orgId) => {
-  if (!mongoose.Types.ObjectId.isValid(orgId)) {
+  if (!/^[0-9a-fA-F]{24}$/.test(orgId)) {
     throw Object.assign(new Error('invalid argument: orgId must be a valid ObjectId'), { status: 422 });
   }
 
@@ -211,7 +209,7 @@ const purgeDeadLetter = async (eventId) => {
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const cancelSubscription = async (orgId) => {
-  if (!mongoose.Types.ObjectId.isValid(orgId)) {
+  if (!/^[0-9a-fA-F]{24}$/.test(orgId)) {
     throw Object.assign(new Error('invalid argument: orgId must be a valid ObjectId'), { status: 422 });
   }
 
@@ -305,7 +303,7 @@ const cancelSubscription = async (orgId) => {
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const creditDisputeReinstated = async (chargeId, amountCents, reason, refundRequestId, orgId, adminUserId) => {
-  if (!mongoose.Types.ObjectId.isValid(orgId)) {
+  if (!/^[0-9a-fA-F]{24}$/.test(orgId)) {
     throw Object.assign(new Error('invalid argument: orgId must be a valid ObjectId'), { status: 422 });
   }
   if (typeof chargeId !== 'string' || !/^ch_/.test(chargeId)) {

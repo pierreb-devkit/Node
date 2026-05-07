@@ -453,9 +453,9 @@ describe('Billing webhook subscription unit tests:', () => {
       );
     });
 
-    test('Opus H7 — healthy sub (pastDueSince=null) returns early WITHOUT calling updateIfEventNewer', async () => {
-      // Perf optimization: skip the validator overhead on ~95% of healthy webhooks.
-      // The next customer.subscription.updated will advance the marker.
+    test('invoice-marker advance — healthy sub (pastDueSince=null) calls updateIfEventNewer with empty fields', async () => {
+      // Always advance the invoice-family marker even for healthy subs so stale
+      // replays of older invoice events are rejected by the ordering guard (DeepSeek HIGH fix).
       const existing = {
         _id: subId,
         organization: orgId,
@@ -466,8 +466,14 @@ describe('Billing webhook subscription unit tests:', () => {
 
       await BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_456' }, makeEvent());
 
-      // updateIfEventNewer must NOT be called on a healthy sub
-      expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();
+      // updateIfEventNewer IS called with empty fields — marker-only update, no field changes
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
+        subId,
+        1700000400,
+        'evt_succeeded',
+        {},
+        'invoice',
+      );
     });
 
     test('Opus H7 — past_due sub still calls updateIfEventNewer (critical write)', async () => {

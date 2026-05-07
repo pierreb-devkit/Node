@@ -544,20 +544,15 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId);
   if (!existing) return;
 
-  // Perf optimization (Opus H7): when the sub is already healthy (pastDueSince == null),
-  // skip the updateIfEventNewer call entirely — there are no fields to update and the
-  // runValidators overhead is wasted on ~95% of payment_succeeded webhooks.
-  // The event-ordering marker (lastInvoiceEventCreatedAt / lastInvoiceEventId) is NOT
-  // advanced here for healthy subs — the next customer.subscription.updated event will
-  // advance the subscription-family marker, which gates the same ordering window.
-  // Past-due subs still update normally: the pastDueSince clearance + status reset is
-  // the critical write that exits degraded mode, and the marker must advance to guard
-  // against stale replays of the same event.
-  if (existing.pastDueSince === null || existing.pastDueSince === undefined) {
-    return;
-  }
-
-  const fields = { pastDueSince: null, status: 'active' };
+  // Always advance the invoice-family marker (lastInvoiceEventCreatedAt / lastInvoiceEventId)
+  // so stale replays of older invoice events are correctly rejected by the ordering guard.
+  //
+  // For healthy subs (pastDueSince == null): pass empty fields — the marker-only $set is
+  // cheap (no runValidators on user-facing fields) and guards the invoice ordering window.
+  //
+  // For past-due subs: include pastDueSince + status so the sub exits degraded mode.
+  const isPastDue = existing.pastDueSince !== null && existing.pastDueSince !== undefined;
+  const fields = isPastDue ? { pastDueSince: null, status: 'active' } : {};
 
   const updated = await SubscriptionRepository.updateIfEventNewer(
     String(existing._id),

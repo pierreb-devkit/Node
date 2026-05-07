@@ -1,8 +1,6 @@
 /**
  * Module dependencies
  */
-import mongoose from 'mongoose';
-
 import config from '../../../config/index.js';
 import getStripe from '../lib/stripe.js';
 import logger from '../../../lib/services/logger.js';
@@ -112,15 +110,11 @@ const runReconciliation = async () => {
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const _fetchPage = async (SubscriptionRepository, page, limit) => {
-  const Subscription = mongoose.model('Subscription');
-  return Subscription.find(
-    { status: { $in: RECONCILE_STATUSES }, stripeSubscriptionId: { $ne: null } },
-    { _id: 1, organization: 1, stripeSubscriptionId: 1, stripeCustomerId: 1, plan: 1, status: 1 },
-  )
-    .skip(page * limit)
-    .limit(limit)
-    .lean()
-    .exec();
+  return SubscriptionRepository.findPageForReconciliation(
+    RECONCILE_STATUSES,
+    page,
+    limit,
+  );
 };
 
 /**
@@ -142,16 +136,14 @@ const _fetchPage = async (SubscriptionRepository, page, limit) => {
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const _checkMeterExtrasMismatch = async (orgId, sub) => {
-  const BillingUsage = mongoose.model('BillingUsage');
-  const BillingExtraBalance = mongoose.model('BillingExtraBalance');
+  // Lazy imports — deferred to keep unit tests importable before model registration.
+  const { default: BillingUsageRepository } = await import('../repositories/billing.usage.repository.js');
+  const { default: BillingExtraBalanceRepository } = await import('../repositories/billing.extraBalance.repository.js');
 
   const weekKey = currentWeekKey();
 
   // expectedExtrasUsage: units consumed beyond quota in current week (from BillingUsage doc).
-  const usageDoc = await BillingUsage.findOne(
-    { organizationId: orgId, weekKey },
-    { meterUsed: 1, meterQuota: 1 },
-  ).lean();
+  const usageDoc = await BillingUsageRepository.findByWeek(orgId, weekKey);
 
   const meterUsed = usageDoc?.meterUsed ?? 0;
   const meterQuota = usageDoc?.meterQuota ?? 0;
@@ -163,10 +155,8 @@ const _checkMeterExtrasMismatch = async (orgId, sub) => {
   // the start of the current week if not set.
   const periodStart = sub.currentPeriodStart ? new Date(sub.currentPeriodStart) : null;
 
-  const extraDoc = await BillingExtraBalance.findOne(
-    { organization: orgId },
-    { ledger: 1 },
-  ).lean();
+  const ledger = await BillingExtraBalanceRepository.findLedgerByOrg(orgId);
+  const extraDoc = ledger ? { ledger } : null;
 
   let actualExtrasDebits = 0;
   if (extraDoc?.ledger) {

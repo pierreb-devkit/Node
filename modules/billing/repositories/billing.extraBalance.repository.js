@@ -428,6 +428,23 @@ const findOrgsWithExpiringTopups = async (now) => {
   return orgIds;
 };
 
+/**
+ * Fetch the full ledger array for an org.
+ * Used by the reconcile service to compute actual extras debits in the current period.
+ * Returns null when no document exists yet (org has never had extras).
+ * @param {string} orgId - Organization ObjectId (string).
+ * @returns {Promise<Object[]|null>} Ledger entries array or null.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const findLedgerByOrg = async (orgId) => {
+  if (!isValidOrgId(orgId)) return null;
+  const doc = await BillingExtraBalance().findOne(
+    { organization: orgId },
+    { ledger: 1 },
+  ).lean();
+  return doc?.ledger ?? null;
+};
+
 export default {
   getOrCreate,
   creditPack,
@@ -438,4 +455,5 @@ export default {
   getBalance,
   listLedgerPage,
   findOrgsWithExpiringTopups,
+  findLedgerByOrg,
 };

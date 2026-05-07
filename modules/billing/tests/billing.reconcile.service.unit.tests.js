@@ -14,9 +14,9 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
   let mockGetStripe;
   let mockLogger;
   let mockEvents;
-  let mockSubscriptionModel;
-  let mockUsageModel;
-  let mockExtraBalanceModel;
+  let mockSubscriptionRepository;
+  let mockUsageRepository;
+  let mockExtraBalanceRepository;
   let mockConfig;
 
   const orgId = '507f1f77bcf86cd799439011';
@@ -64,33 +64,21 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
     };
     mockGetStripe = jest.fn().mockReturnValue(mockStripeInstance);
 
-    // The subscription model is accessed via mongoose.model('Subscription')
-    const mockFindChain = {
-      skip: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockReturnThis(),
-      exec: jest.fn().mockResolvedValue([]),
-    };
-    mockSubscriptionModel = {
-      find: jest.fn().mockReturnValue(mockFindChain),
+    // SubscriptionRepository: paginated fetch via findPageForReconciliation
+    mockSubscriptionRepository = {
+      findPageForReconciliation: jest.fn().mockResolvedValue([]),
     };
 
     // Default usage doc: 200 used, 100 quota → 100 units in extras expected
-    mockUsageModel = {
-      findOne: jest.fn().mockReturnValue({
-        lean: jest.fn().mockResolvedValue({ meterUsed: 200, meterQuota: 100 }),
-      }),
+    mockUsageRepository = {
+      findByWeek: jest.fn().mockResolvedValue({ meterUsed: 200, meterQuota: 100 }),
     };
 
-    // Default extra balance doc: 100 units debited (matches expected)
-    mockExtraBalanceModel = {
-      findOne: jest.fn().mockReturnValue({
-        lean: jest.fn().mockResolvedValue({
-          ledger: [
-            { kind: 'debit', amount: -100, at: new Date() },
-          ],
-        }),
-      }),
+    // Default extra balance: ledger with 100-unit debit (matches expected)
+    mockExtraBalanceRepository = {
+      findLedgerByOrg: jest.fn().mockResolvedValue([
+        { kind: 'debit', amount: -100, at: new Date() },
+      ]),
     };
 
     jest.unstable_mockModule('../../../config/index.js', () => ({ default: mockConfig }));
@@ -100,17 +88,14 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
     jest.unstable_mockModule('../lib/billing.isoWeek.js', () => ({
       currentWeekKey: jest.fn().mockReturnValue('2026-W18'),
     }));
-    jest.unstable_mockModule('mongoose', () => ({
-      default: {
-        model: jest.fn((name) => {
-          if (name === 'BillingUsage') return mockUsageModel;
-          if (name === 'BillingExtraBalance') return mockExtraBalanceModel;
-          return mockSubscriptionModel;
-        }),
-      },
-    }));
     jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
-      default: {},
+      default: mockSubscriptionRepository,
+    }));
+    jest.unstable_mockModule('../repositories/billing.usage.repository.js', () => ({
+      default: mockUsageRepository,
+    }));
+    jest.unstable_mockModule('../repositories/billing.extraBalance.repository.js', () => ({
+      default: mockExtraBalanceRepository,
     }));
 
     const mod = await import('../services/billing.reconcile.service.js');
@@ -139,14 +124,7 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
   });
 
   test('returns { checked: 0 } when no active/past_due subs found', async () => {
-    // find returns empty — loop exits immediately
-    const mockFindChain = {
-      skip: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockReturnThis(),
-      exec: jest.fn().mockResolvedValue([]),
-    };
-    mockSubscriptionModel.find.mockReturnValue(mockFindChain);
+    mockSubscriptionRepository.findPageForReconciliation.mockResolvedValue([]);
 
     const result = await BillingReconcileService.runReconciliation();
 
@@ -155,15 +133,9 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
 
   test('checks matching sub — no divergence when status + plan match', async () => {
     const sub = makeDbSub();
-    const chain = {
-      skip: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockReturnThis(),
-      exec: jest.fn()
-        .mockResolvedValueOnce([sub])  // first page: 1 sub
-        .mockResolvedValue([]),         // second page: empty → exit
-    };
-    mockSubscriptionModel.find.mockReturnValue(chain);
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce([sub])  // first page: 1 sub
+      .mockResolvedValue([]);         // second page: empty → exit
     mockStripeInstance.subscriptions.retrieve.mockResolvedValue(makeStripeSub());
 
     const result = await BillingReconcileService.runReconciliation();
@@ -174,15 +146,9 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
 
   test('detects status divergence — emits billing.reconciliation.divergence and logs', async () => {
     const sub = makeDbSub({ status: 'active' });
-    const chain = {
-      skip: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockReturnThis(),
-      exec: jest.fn()
-        .mockResolvedValueOnce([sub])
-        .mockResolvedValue([]),
-    };
-    mockSubscriptionModel.find.mockReturnValue(chain);
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce([sub])
+      .mockResolvedValue([]);
     mockStripeInstance.subscriptions.retrieve.mockResolvedValue(makeStripeSub({ status: 'past_due' }));
 
     const result = await BillingReconcileService.runReconciliation();
@@ -200,15 +166,9 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
 
   test('detects plan divergence — emits billing.reconciliation.divergence', async () => {
     const sub = makeDbSub({ plan: 'pro' });
-    const chain = {
-      skip: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockReturnThis(),
-      exec: jest.fn()
-        .mockResolvedValueOnce([sub])
-        .mockResolvedValue([]),
-    };
-    mockSubscriptionModel.find.mockReturnValue(chain);
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce([sub])
+      .mockResolvedValue([]);
     // Stripe has plan: free instead of pro
     mockStripeInstance.subscriptions.retrieve.mockResolvedValue(
       makeStripeSub({ items: { data: [{ price: { metadata: { planId: 'free' } } }] } }),
@@ -225,15 +185,9 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
 
   test('counts errors and continues on individual Stripe retrieve failure', async () => {
     const subs = [makeDbSub(), makeDbSub({ _id: 'sub_doc_002', stripeSubscriptionId: 'sub_test_002' })];
-    const chain = {
-      skip: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockReturnThis(),
-      exec: jest.fn()
-        .mockResolvedValueOnce(subs)
-        .mockResolvedValue([]),
-    };
-    mockSubscriptionModel.find.mockReturnValue(chain);
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce(subs)
+      .mockResolvedValue([]);
     mockStripeInstance.subscriptions.retrieve
       .mockRejectedValueOnce(new Error('Stripe timeout'))
       .mockResolvedValueOnce(makeStripeSub());
@@ -249,22 +203,16 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
 
   test('LOG-ONLY policy: never writes to DB (no repo update calls)', async () => {
     const sub = makeDbSub({ status: 'active' });
-    const chain = {
-      skip: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockReturnThis(),
-      exec: jest.fn()
-        .mockResolvedValueOnce([sub])
-        .mockResolvedValue([]),
-    };
-    mockSubscriptionModel.find.mockReturnValue(chain);
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce([sub])
+      .mockResolvedValue([]);
     // Deliberate divergence
     mockStripeInstance.subscriptions.retrieve.mockResolvedValue(makeStripeSub({ status: 'past_due' }));
 
     await BillingReconcileService.runReconciliation();
 
     // No DB write must happen — only Stripe reads + logs
-    // (mockSubscriptionModel has no update/save methods set up — if called they'd throw)
+    // (mockSubscriptionRepository has no update/save methods set up — if called they'd throw)
   });
 
   test('paginates to second page when first page is full (RECONCILE_PAGE_SIZE=100)', async () => {
@@ -274,36 +222,24 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
       stripeSubscriptionId: `sub_test_${i}`,
     }));
 
-    const chain = {
-      skip: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockReturnThis(),
-      exec: jest.fn()
-        .mockResolvedValueOnce(fullPage)  // page 0: full — triggers page += 1
-        .mockResolvedValueOnce([]),        // page 1: empty — exits loop
-    };
-    mockSubscriptionModel.find.mockReturnValue(chain);
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce(fullPage)  // page 0: full — triggers page += 1
+      .mockResolvedValueOnce([]);        // page 1: empty — exits loop
     mockStripeInstance.subscriptions.retrieve.mockResolvedValue(makeStripeSub());
 
     const result = await BillingReconcileService.runReconciliation();
 
     // All 100 subs from page 0 should be checked
     expect(result).toMatchObject({ checked: 100, divergences: 0, errors: 0 });
-    // find should have been called twice (page 0 + page 1)
-    expect(mockSubscriptionModel.find).toHaveBeenCalledTimes(2);
+    // findPageForReconciliation should have been called twice (page 0 + page 1)
+    expect(mockSubscriptionRepository.findPageForReconciliation).toHaveBeenCalledTimes(2);
   });
 
   test('non-fatal: billingEvents.emit listener error is swallowed, divergence still counted', async () => {
     const sub = makeDbSub({ status: 'active' });
-    const chain = {
-      skip: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockReturnThis(),
-      exec: jest.fn()
-        .mockResolvedValueOnce([sub])
-        .mockResolvedValue([]),
-    };
-    mockSubscriptionModel.find.mockReturnValue(chain);
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce([sub])
+      .mockResolvedValue([]);
     mockStripeInstance.subscriptions.retrieve.mockResolvedValue(makeStripeSub({ status: 'canceled' }));
     // Simulate a listener throwing on emit
     mockEvents.emit.mockImplementation(() => { throw new Error('listener crash'); });
@@ -324,31 +260,24 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
   // ─────────────────────────────────────────────────────────────────────────────
 
   describe('meter↔extras mismatch detection:', () => {
-    const makeSingleSubChain = (sub) => ({
-      skip: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockReturnThis(),
-      exec: jest.fn()
+    const makeSingleSub = (sub) => {
+      mockSubscriptionRepository.findPageForReconciliation
         .mockResolvedValueOnce([sub])
-        .mockResolvedValue([]),
-    });
+        .mockResolvedValue([]);
+    };
 
     test('matching sums — no divergence, no event emitted', async () => {
       const sub = makeDbSub();
-      mockSubscriptionModel.find.mockReturnValue(makeSingleSubChain(sub));
+      makeSingleSub(sub);
       mockStripeInstance.subscriptions.retrieve.mockResolvedValue(makeStripeSub());
 
       // meterUsed=200, meterQuota=100 → expectedExtras=100
       // ledger debit=-100 → actualDebits=100
       // delta=0 → within tolerance → no divergence
-      mockUsageModel.findOne.mockReturnValue({
-        lean: jest.fn().mockResolvedValue({ meterUsed: 200, meterQuota: 100 }),
-      });
-      mockExtraBalanceModel.findOne.mockReturnValue({
-        lean: jest.fn().mockResolvedValue({
-          ledger: [{ kind: 'debit', amount: -100, at: new Date() }],
-        }),
-      });
+      mockUsageRepository.findByWeek.mockResolvedValue({ meterUsed: 200, meterQuota: 100 });
+      mockExtraBalanceRepository.findLedgerByOrg.mockResolvedValue([
+        { kind: 'debit', amount: -100, at: new Date() },
+      ]);
 
       const result = await BillingReconcileService.runReconciliation();
 
@@ -362,20 +291,16 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
 
     test('10-unit delta on 100-unit expected — within 0.5% tolerance — no event', async () => {
       const sub = makeDbSub();
-      mockSubscriptionModel.find.mockReturnValue(makeSingleSubChain(sub));
+      makeSingleSub(sub);
       mockStripeInstance.subscriptions.retrieve.mockResolvedValue(makeStripeSub());
 
       // expectedExtras=10000, actualDebits=9990 → delta=10
       // tolerance = max(50, 0.5% × 10000) = max(50, 50) = 50
       // delta(10) <= tolerance(50) → no divergence
-      mockUsageModel.findOne.mockReturnValue({
-        lean: jest.fn().mockResolvedValue({ meterUsed: 10100, meterQuota: 100 }),
-      });
-      mockExtraBalanceModel.findOne.mockReturnValue({
-        lean: jest.fn().mockResolvedValue({
-          ledger: [{ kind: 'debit', amount: -9990, at: new Date() }],
-        }),
-      });
+      mockUsageRepository.findByWeek.mockResolvedValue({ meterUsed: 10100, meterQuota: 100 });
+      mockExtraBalanceRepository.findLedgerByOrg.mockResolvedValue([
+        { kind: 'debit', amount: -9990, at: new Date() },
+      ]);
 
       await BillingReconcileService.runReconciliation();
 
@@ -387,19 +312,15 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
 
     test('large delta — over tolerance — emits billing.reconciliation.divergence with subType:meter_extras_mismatch', async () => {
       const sub = makeDbSub();
-      mockSubscriptionModel.find.mockReturnValue(makeSingleSubChain(sub));
+      makeSingleSub(sub);
       mockStripeInstance.subscriptions.retrieve.mockResolvedValue(makeStripeSub());
 
       // expectedExtras=10000, actualDebits=5000 → delta=5000
       // tolerance = max(50, 0.5% × 10000) = 50 → delta(5000) >> tolerance
-      mockUsageModel.findOne.mockReturnValue({
-        lean: jest.fn().mockResolvedValue({ meterUsed: 10100, meterQuota: 100 }),
-      });
-      mockExtraBalanceModel.findOne.mockReturnValue({
-        lean: jest.fn().mockResolvedValue({
-          ledger: [{ kind: 'debit', amount: -5000, at: new Date() }],
-        }),
-      });
+      mockUsageRepository.findByWeek.mockResolvedValue({ meterUsed: 10100, meterQuota: 100 });
+      mockExtraBalanceRepository.findLedgerByOrg.mockResolvedValue([
+        { kind: 'debit', amount: -5000, at: new Date() },
+      ]);
 
       const result = await BillingReconcileService.runReconciliation();
 
@@ -420,13 +341,11 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
 
     test('meter↔extras check failure is non-fatal — subscription still counted, errors=0', async () => {
       const sub = makeDbSub();
-      mockSubscriptionModel.find.mockReturnValue(makeSingleSubChain(sub));
+      makeSingleSub(sub);
       mockStripeInstance.subscriptions.retrieve.mockResolvedValue(makeStripeSub());
 
-      // Simulate BillingUsage.findOne throwing
-      mockUsageModel.findOne.mockReturnValue({
-        lean: jest.fn().mockRejectedValue(new Error('DB unavailable')),
-      });
+      // Simulate BillingUsageRepository.findByWeek throwing
+      mockUsageRepository.findByWeek.mockRejectedValue(new Error('DB unavailable'));
 
       const result = await BillingReconcileService.runReconciliation();
 
@@ -441,21 +360,17 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
 
     test('free plan (meterQuota=0): all units are extras — large debit matches', async () => {
       const sub = makeDbSub({ plan: 'free' });
-      mockSubscriptionModel.find.mockReturnValue(makeSingleSubChain(sub));
+      makeSingleSub(sub);
       mockStripeInstance.subscriptions.retrieve.mockResolvedValue(
         makeStripeSub({ items: { data: [{ price: { metadata: { planId: 'free' } } }] } }),
       );
 
       // meterUsed=50, meterQuota=0 → expectedExtras=50 (all units are extras)
       // actualDebits=50 → delta=0 → no divergence
-      mockUsageModel.findOne.mockReturnValue({
-        lean: jest.fn().mockResolvedValue({ meterUsed: 50, meterQuota: 0 }),
-      });
-      mockExtraBalanceModel.findOne.mockReturnValue({
-        lean: jest.fn().mockResolvedValue({
-          ledger: [{ kind: 'debit', amount: -50, at: new Date() }],
-        }),
-      });
+      mockUsageRepository.findByWeek.mockResolvedValue({ meterUsed: 50, meterQuota: 0 });
+      mockExtraBalanceRepository.findLedgerByOrg.mockResolvedValue([
+        { kind: 'debit', amount: -50, at: new Date() },
+      ]);
 
       await BillingReconcileService.runReconciliation();
 
