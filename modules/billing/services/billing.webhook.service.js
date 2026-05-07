@@ -561,8 +561,27 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
   // cheap (no runValidators on user-facing fields) and guards the invoice ordering window.
   //
   // For past-due subs: include pastDueSince + status so the sub exits degraded mode.
+  // V8 C1: also restore the plan from Stripe so a dunning-downgraded sub is fully recovered
+  // even when customer.subscription.updated is dead-lettered.
   const isPastDue = existing.pastDueSince !== null && existing.pastDueSince !== undefined;
   const fields = isPastDue ? { pastDueSince: null, status: 'active' } : {};
+
+  let resolvedPlan = null;
+  if (isPastDue) {
+    try {
+      const stripe = getStripe();
+      const stripeSub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+      resolvedPlan = resolvePlan(stripeSub);
+      fields.plan = resolvedPlan;
+    } catch (stripeErr) {
+      logger.warn('[billing.webhook] invoice.payment_succeeded — Stripe re-fetch failed, plan not restored', {
+        stripeSubscriptionId,
+        error: stripeErr?.message ?? String(stripeErr),
+      });
+    }
+  }
+
+  const organizationId = String(existing.organization?._id || existing.organization);
 
   const updated = await SubscriptionRepository.updateIfEventNewer(
     String(existing._id),
@@ -573,6 +592,11 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
   );
   if (!updated) {
     logger.info('[billing.webhook] skipped stale event', { eventId: event.id, type: event.type });
+    return;
+  }
+
+  if (isPastDue && resolvedPlan) {
+    await syncOrganizationPlan(organizationId, resolvedPlan);
   }
 };
 
