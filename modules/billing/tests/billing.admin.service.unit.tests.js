@@ -62,6 +62,7 @@ describe('BillingAdminService unit tests:', () => {
     };
 
     mockOrganizationRepository = {
+      get: jest.fn().mockResolvedValue({ _id: orgId, plan: 'pro' }),
       setPlan: jest.fn().mockResolvedValue({}),
     };
 
@@ -129,11 +130,6 @@ describe('BillingAdminService unit tests:', () => {
     jest.unstable_mockModule('../../../config/index.js', () => ({ default: mockConfig }));
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mockLogger }));
     jest.unstable_mockModule('../lib/stripe.js', () => ({ default: mockGetStripe }));
-    jest.unstable_mockModule('mongoose', () => ({
-      default: {
-        Types: { ObjectId: { isValid: (id) => /^[a-f\d]{24}$/i.test(id) } },
-      },
-    }));
     jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
       default: mockSubscriptionRepository,
     }));
@@ -485,10 +481,18 @@ describe('BillingAdminService unit tests:', () => {
       expect(result.ledgerEntry).toBeNull();
     });
 
-    test('throws 422 for invalid orgId', async () => {
+    test('throws 422 for invalid orgId (regex)', async () => {
       await expect(
         BillingAdminService.creditDisputeReinstated(chargeId, amountCents, reason, refundRequestId, 'bad-id', adminUserId),
       ).rejects.toMatchObject({ status: 422 });
+    });
+
+    test('throws 422 when org does not exist in DB (ghost org guard)', async () => {
+      mockOrganizationRepository.get.mockResolvedValueOnce(null);
+      await expect(
+        BillingAdminService.creditDisputeReinstated(chargeId, amountCents, reason, refundRequestId, orgId, adminUserId),
+      ).rejects.toMatchObject({ status: 422 });
+      expect(mockExtraBalanceRepository.creditCompensation).not.toHaveBeenCalled();
     });
 
     test('throws 422 for invalid chargeId (not starting with ch_)', async () => {
@@ -516,6 +520,53 @@ describe('BillingAdminService unit tests:', () => {
       await expect(
         BillingAdminService.creditDisputeReinstated(chargeId, amountCents, 'ab', refundRequestId, orgId, adminUserId),
       ).rejects.toMatchObject({ status: 422 });
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // bumpOrgPlan (Item 1 — Batch 3a: controller→service refactor)
+  // ─────────────────────────────────────────────────────────────────────────────
+  describe('bumpOrgPlan:', () => {
+    const adminUserId = '617f1f77bcf86cd799439099';
+    const planId = 'starter';
+
+    beforeEach(() => {
+      mockSubscriptionRepository.adminUpdatePlanOnly = jest.fn().mockResolvedValue(makeDbSub({ plan: planId }));
+    });
+
+    test('finds subscription, updates plan-only, syncs org, logs info', async () => {
+      const result = await BillingAdminService.bumpOrgPlan(orgId, planId, adminUserId);
+
+      expect(mockSubscriptionRepository.findByOrganization).toHaveBeenCalledWith(orgId);
+      expect(mockSubscriptionRepository.adminUpdatePlanOnly).toHaveBeenCalledWith(subId, planId, adminUserId);
+      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, planId);
+      expect(result.plan).toBe(planId);
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        '[billing.admin] plan bumped manually',
+        expect.objectContaining({ orgId, newPlan: planId, adminUserId }),
+      );
+    });
+
+    test('throws 404 when no subscription exists for org', async () => {
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue(null);
+
+      await expect(BillingAdminService.bumpOrgPlan(orgId, planId, adminUserId)).rejects.toMatchObject({ status: 404 });
+    });
+
+    test('throws 422 for invalid orgId format', async () => {
+      await expect(BillingAdminService.bumpOrgPlan('bad-id', planId, adminUserId)).rejects.toMatchObject({ status: 422 });
+    });
+
+    test('throws 422 when adminUserId is missing', async () => {
+      await expect(BillingAdminService.bumpOrgPlan(orgId, planId, '')).rejects.toMatchObject({ status: 422 });
+      await expect(BillingAdminService.bumpOrgPlan(orgId, planId, null)).rejects.toMatchObject({ status: 422 });
+    });
+
+    test('does not call OrganizationRepository.setPlan when adminUpdatePlanOnly fails', async () => {
+      mockSubscriptionRepository.adminUpdatePlanOnly.mockRejectedValue(new Error('DB write failed'));
+
+      await expect(BillingAdminService.bumpOrgPlan(orgId, planId, adminUserId)).rejects.toThrow('DB write failed');
+      expect(mockOrganizationRepository.setPlan).not.toHaveBeenCalled();
     });
   });
 

@@ -430,7 +430,6 @@ const findOrgsWithExpiringTopups = async (now) => {
 
 /**
  * Fetch the full ledger array for an org.
- * Used by the reconcile service to compute actual extras debits in the current period.
  * Returns null when no document exists yet (org has never had extras).
  * @param {string} orgId - Organization ObjectId (string).
  * @returns {Promise<Object[]|null>} Ledger entries array or null.
@@ -445,6 +444,41 @@ const findLedgerByOrg = async (orgId) => {
   return doc?.ledger ?? null;
 };
 
+/**
+ * Sum absolute debit entries within a time window using a server-side aggregation.
+ * Avoids loading the full ledger into memory — O(1) payload regardless of ledger size.
+ *
+ * Used by the billing reconcile service to compute actualExtrasDebits for the current week.
+ *
+ * @param {string} orgId - Organization ObjectId (string).
+ * @param {Date} windowStart - Inclusive lower bound (entries with at >= windowStart).
+ * @param {Date} windowEnd - Exclusive upper bound (entries with at < windowEnd).
+ * @returns {Promise<number>} Sum of absolute debit amounts in the window, or 0.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const sumDebitsByWindow = async (orgId, windowStart, windowEnd) => {
+  if (!isValidOrgId(orgId)) return 0;
+
+  const [result] = await BillingExtraBalance().aggregate([
+    { $match: { organization: new mongoose.Types.ObjectId(orgId) } },
+    { $unwind: '$ledger' },
+    {
+      $match: {
+        'ledger.kind': 'debit',
+        'ledger.at': { $gte: windowStart, $lt: windowEnd },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: { $abs: '$ledger.amount' } },
+      },
+    },
+  ]);
+
+  return result?.total ?? 0;
+};
+
 export default {
   getOrCreate,
   creditPack,
@@ -456,4 +490,5 @@ export default {
   listLedgerPage,
   findOrgsWithExpiringTopups,
   findLedgerByOrg,
+  sumDebitsByWindow,
 };

@@ -5,7 +5,7 @@ import config from '../../../config/index.js';
 import getStripe from '../lib/stripe.js';
 import logger from '../../../lib/services/logger.js';
 import billingEvents from '../lib/events.js';
-import { currentWeekKey } from '../lib/billing.isoWeek.js';
+import { currentWeekKey, weekStartDate } from '../lib/billing.isoWeek.js';
 
 /**
  * Page size for the reconciliation cursor — fetch in batches to avoid long-running queries.
@@ -122,22 +122,22 @@ const _fetchPage = async (SubscriptionRepository, page, limit) => {
  * Returns { diverged: boolean, expectedExtrasUsage: number, actualExtrasDebits: number }.
  *
  * Strategy:
+ *   Both sides use the same ISO week window (currentWeekKey boundaries):
  *   expectedExtrasUsage = units consumed beyond quota in the current week (overflow).
- *   actualExtrasDebits  = absolute sum of debit ledger entries in the current billing period
- *                         (since currentPeriodStart). Note: this may span multiple weekly
- *                         meter buckets — that's intentional; we compare the current-week
- *                         overflow against the period's debit history to detect missing debits.
+ *   actualExtrasDebits  = absolute sum of debit ledger entries within the current week.
+ *
+ * Alignment note: using the same ISO week window avoids the cross-window
+ * mismatch between billing-period debits and weekly meter overflow.
  *
  * Tolerance: divergence is only reported when
  *   |expected - actual| > max(50, 0.5% × max(expected, actual))
  * This avoids noise from timing skew (usage write before debit commits).
  *
  * @param {string} orgId
- * @param {Object} sub - DB subscription (lean) — provides currentPeriodStart.
  * @returns {Promise<{diverged: boolean, expectedExtrasUsage: number, actualExtrasDebits: number}>}
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const _checkMeterExtrasMismatch = async (orgId, sub) => {
+const _checkMeterExtrasMismatch = async (orgId) => {
   // Lazy imports — deferred to keep unit tests importable before model registration.
   const { default: BillingUsageRepository } = await import('../repositories/billing.usage.repository.js');
   const { default: BillingExtraBalanceRepository } = await import('../repositories/billing.extraBalance.repository.js');
@@ -152,23 +152,16 @@ const _checkMeterExtrasMismatch = async (orgId, sub) => {
   // meterQuota=0 means free plan — every unit is extras.
   const expectedExtrasUsage = meterQuota === 0 ? meterUsed : Math.max(0, meterUsed - meterQuota);
 
-  // actualExtrasDebits: absolute sum of debit ledger entries since current period started.
-  // Use currentPeriodStart from the DB subscription as period boundary.
-  // When not set (null/undefined), no date cutoff is applied — all debit entries are summed.
-  const periodStart = sub.currentPeriodStart ? new Date(sub.currentPeriodStart) : null;
+  // actualExtrasDebits: server-side aggregated sum of debit entries in the same ISO week.
+  // Both sides share the same week boundary — apples-to-apples comparison (CodeRabbit fix).
+  const weekStart = weekStartDate(weekKey);
+  const weekEnd = new Date(weekStart.getTime() + 7 * 86_400_000); // exclusive upper bound
 
-  const ledger = await BillingExtraBalanceRepository.findLedgerByOrg(orgId);
-  const extraDoc = ledger ? { ledger } : null;
-
-  let actualExtrasDebits = 0;
-  if (extraDoc?.ledger) {
-    for (const entry of extraDoc.ledger) {
-      if (entry.kind !== 'debit') continue;
-      if (periodStart && entry.at && new Date(entry.at) < periodStart) continue;
-      // Debit entries have negative amount; sum their absolute values.
-      actualExtrasDebits += Math.abs(entry.amount);
-    }
-  }
+  const actualExtrasDebits = await BillingExtraBalanceRepository.sumDebitsByWindow(
+    orgId,
+    weekStart,
+    weekEnd,
+  );
 
   // Tolerance: abs(delta) > max(50, 0.5% × max(expected, actual)) triggers divergence.
   const delta = Math.abs(expectedExtrasUsage - actualExtrasDebits);
@@ -204,7 +197,7 @@ const _reconcileOne = async (stripe, sub) => {
   // have an accumulating ledger mismatch if debits were silently dropped.
   let meterExtrasMismatch = false;
   try {
-    const mismatchResult = await _checkMeterExtrasMismatch(orgId, sub);
+    const mismatchResult = await _checkMeterExtrasMismatch(orgId);
     meterExtrasMismatch = mismatchResult.diverged;
 
     if (meterExtrasMismatch) {

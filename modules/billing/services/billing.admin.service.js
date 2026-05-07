@@ -319,6 +319,13 @@ const creditDisputeReinstated = async (chargeId, amountCents, reason, refundRequ
     throw Object.assign(new Error('invalid argument: reason must be at least 3 characters'), { status: 422 });
   }
 
+  // Guard: reject credits for non-existent orgs — mirrors the debit existence guard.
+  // A 24-hex match that references a ghost org would silently create a ledger doc for nobody.
+  const org = await OrganizationRepository.get(orgId);
+  if (!org) {
+    throw Object.assign(new Error(`organization not found: ${orgId}`), { status: 422 });
+  }
+
   // Idempotency key includes the refundRequestId to prevent double-click double-credit.
   const refId = `dispute-credit-${refundRequestId}`;
 
@@ -423,6 +430,50 @@ const dispatchWebhookEvent = (event) => {
   }
 };
 
+/**
+ * @function bumpOrgPlan
+ * @description Override an organization's subscription plan (admin ops escape hatch).
+ *              Does NOT call Stripe — the downstream Stripe subscription remains on whatever
+ *              plan the user is paying for. Use only when the DB plan must diverge from Stripe
+ *              (rare ops scenarios such as comping a user during support or forcing a plan for testing).
+ *              The audit trail (adminUpdatedAt / adminUpdatedBy) is set by the repo method.
+ * @param {string} orgId - Organization ObjectId (string).
+ * @param {string} newPlanId - The new plan identifier (must be in config.billing.plans enum).
+ * @param {string} adminUserId - Authenticated admin user ObjectId (string) for audit trail.
+ * @returns {Promise<Object>} Updated subscription document.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const bumpOrgPlan = async (orgId, newPlanId, adminUserId) => {
+  if (!/^[0-9a-fA-F]{24}$/.test(orgId)) {
+    throw Object.assign(new Error('invalid argument: orgId must be a valid ObjectId'), { status: 422 });
+  }
+  if (!adminUserId) {
+    throw Object.assign(new Error('invalid argument: authenticated user id is missing'), { status: 422 });
+  }
+
+  const existing = await SubscriptionRepository.findByOrganization(orgId);
+  if (!existing) {
+    throw Object.assign(new Error(`subscription not found for orgId=${orgId}`), { status: 404 });
+  }
+
+  const updated = await SubscriptionRepository.adminUpdatePlanOnly(String(existing._id), newPlanId, adminUserId);
+
+  // Sync org plan so meter quotas / feature flags / access control reflect the bump immediately.
+  // Without this the new plan only applies to the subscription doc, but the organization's plan
+  // field — read by requirePlan / requireQuota — stays stale until the next Stripe webhook.
+  await OrganizationRepository.setPlan(orgId, newPlanId);
+
+  logger.info('[billing.admin] plan bumped manually', {
+    orgId,
+    previousPlan: existing.plan,
+    newPlan: newPlanId,
+    adminUserId,
+    subscriptionId: String(existing._id),
+  });
+
+  return updated;
+};
+
 export default {
   getCustomerStatus,
   syncOrgFromStripe,
@@ -431,4 +482,5 @@ export default {
   purgeDeadLetter,
   cancelSubscription,
   creditDisputeReinstated,
+  bumpOrgPlan,
 };

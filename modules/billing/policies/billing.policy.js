@@ -21,13 +21,16 @@ export function billingSubjectRegistration({ registerPathSubject }) {
   registerPathSubject('/api/billing/extras/ledger', 'BillingExtrasLedger');
   registerPathSubject('/api/admin/billing/refund', 'BillingAdminRefund');
   registerPathSubject('/api/admin/billing/plans/bump', 'BillingAdminPlanBump');
-  // Admin toolkit — 6 diagnostic + ops endpoints (all require admin role)
-  registerPathSubject('/api/admin/billing/customer', 'BillingAdminOps');
-  registerPathSubject('/api/admin/billing/sync', 'BillingAdminOps');
+  // Admin toolkit — diagnostic + ops endpoints (all require admin role).
+  // Paths registered with Express param patterns so deriveSubjectType (exact-string match)
+  // resolves the correct subject type for parameterised routes like /:orgId and /:eventId.
+  registerPathSubject('/api/admin/billing/customer/:orgId', 'BillingAdminOps');
+  registerPathSubject('/api/admin/billing/sync/:orgId', 'BillingAdminOps');
   registerPathSubject('/api/admin/billing/webhook/replay', 'BillingAdminOps');
   registerPathSubject('/api/admin/billing/dead-letters', 'BillingAdminOps');
-  registerPathSubject('/api/admin/billing/cancel', 'BillingAdminOps');
-  // Dispute credit — manual ledger credit after funds_reinstated (Batch 2)
+  registerPathSubject('/api/admin/billing/dead-letters/:eventId', 'BillingAdminOps');
+  registerPathSubject('/api/admin/billing/cancel/:orgId', 'BillingAdminOps');
+  // Dispute credit — manual ledger credit after funds_reinstated
   registerPathSubject('/api/admin/billing/dispute/credit/:orgId', 'BillingAdminOps');
   // Webhook is mounted in billing.preroute.js before body parsing and auth middleware,
   // so it bypasses policy.isAllowed entirely. Registered here for documentation completeness.

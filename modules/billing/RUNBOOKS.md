@@ -12,18 +12,23 @@ Operational runbooks for the billing module. Each runbook references real endpoi
 
 1. Confirm dispute in Stripe Dashboard → Radar → Disputes. Note the `charge_id` and `dispute_id`.
 2. Retrieve customer state to verify DB-side ledger matches Stripe:
-   ```
+
+   ```text
    GET /api/admin/billing/customer/:orgId
    ```
+
    Confirm `stripeStatus` matches `subscription.status` in DB.
 3. If the dispute is fraudulent (stolen card), cancel the subscription immediately:
-   ```
+
+   ```text
    POST /api/admin/billing/cancel/:orgId
    ```
+
 4. Gather evidence in Stripe Dashboard: usage records, signup email, ToS acceptance timestamp, IP logs.
 5. Submit evidence before day 7 via Stripe Dashboard → Dispute → Submit evidence.
 6. If dispute won (`charge.dispute.funds_reinstated` received): restore the customer's extras balance via:
-   ```
+
+   ```text
    POST /api/admin/billing/dispute/credit/:orgId
    Body: {
      "chargeId": "ch_xxx",
@@ -32,13 +37,16 @@ Operational runbooks for the billing module. Each runbook references real endpoi
      "refundRequestId": "<uuid>"
    }
    ```
+
    Example curl:
+
    ```bash
    curl -X POST https://api.trawl.me/api/admin/billing/dispute/credit/<orgId> \
      -H "Authorization: Bearer $ADMIN_JWT" \
      -H "Content-Type: application/json" \
      -d '{"chargeId":"ch_xxx","amountCents":2000,"reason":"dispute won — Stripe reinstated funds","refundRequestId":"<uuid>"}'
    ```
+
    Confirm credit applied: `GET /api/admin/billing/customer/:orgId` — check ledger for an `adjustment` entry with `refId: dispute-credit-<uuid>`.
 7. If dispute lost: extras balance debited by `charge.dispute.funds_withdrawn` is not refunded — log in incident tracker.
 
@@ -51,25 +59,31 @@ Operational runbooks for the billing module. Each runbook references real endpoi
 **Steps**:
 
 1. List all dead-letter events:
-   ```
+
+   ```text
    GET /api/admin/billing/dead-letters
    ```
+
    Response includes `eventId`, `type`, `createdAt`, `lastError` for each.
 
 2. For each suspicious event, attempt replay (re-fetches event from Stripe API, re-dispatches through the webhook pipeline):
-   ```
+
+   ```text
    POST /api/admin/billing/webhook/replay
    Body: { "eventId": "evt_xxx" }
    ```
+
    On success: the event is re-processed and the `deadLetter` flag cleared automatically.
 
 3. If replay succeeds but state is still inconsistent (e.g. subscription not updated), force a DB sync from Stripe:
-   ```
+
+   ```text
    POST /api/admin/billing/sync/:orgId
    ```
 
 4. If the event is stale/unrecoverable (e.g. the subscription no longer exists in Stripe), purge it:
-   ```
+
+   ```text
    DELETE /api/admin/billing/dead-letters/:eventId
    ```
 
@@ -84,24 +98,30 @@ Operational runbooks for the billing module. Each runbook references real endpoi
 **Steps**:
 
 1. Identify the divergence from the weekly reconciliation log:
-   ```
+
+   ```bash
    kubectl logs -n pierreb-projects job/billing-reconcile-<timestamp>
    ```
+
    Look for lines containing `divergence detected` — they include `orgId`, `stripeStatus`, `dbStatus`, `stripePlan`, `dbPlan`.
 
 2. Get the full customer state for the affected org:
-   ```
+
+   ```text
    GET /api/admin/billing/customer/:orgId
    ```
+
    Compare `stripeSnapshot` (live from Stripe API) vs `dbSnapshot` (local DB) fields.
 
 3. If Stripe is authoritative (e.g. subscription renewed but DB missed the webhook), sync Stripe → DB:
-   ```
+
+   ```text
    POST /api/admin/billing/sync/:orgId
    ```
 
 4. If the plan needs manual correction (e.g. plan bump after payment confirmation):
-   ```
+
+   ```text
    PATCH /api/admin/billing/plans/bump
    Body: { "orgId": "...", "planId": "pro", "reason": "manual reconciliation post-mismatch" }
    ```

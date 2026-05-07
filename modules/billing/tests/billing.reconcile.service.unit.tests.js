@@ -74,11 +74,9 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
       findByWeek: jest.fn().mockResolvedValue({ meterUsed: 200, meterQuota: 100 }),
     };
 
-    // Default extra balance: ledger with 100-unit debit (matches expected)
+    // Default extra balance: 100-unit debit sum for the current week (matches expected)
     mockExtraBalanceRepository = {
-      findLedgerByOrg: jest.fn().mockResolvedValue([
-        { kind: 'debit', amount: -100, at: new Date() },
-      ]),
+      sumDebitsByWindow: jest.fn().mockResolvedValue(100),
     };
 
     jest.unstable_mockModule('../../../config/index.js', () => ({ default: mockConfig }));
@@ -87,6 +85,7 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
     jest.unstable_mockModule('../lib/events.js', () => ({ default: mockEvents }));
     jest.unstable_mockModule('../lib/billing.isoWeek.js', () => ({
       currentWeekKey: jest.fn().mockReturnValue('2026-W18'),
+      weekStartDate: jest.fn().mockReturnValue(new Date('2026-04-28T00:00:00.000Z')),
     }));
     jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
       default: mockSubscriptionRepository,
@@ -272,12 +271,9 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
       mockStripeInstance.subscriptions.retrieve.mockResolvedValue(makeStripeSub());
 
       // meterUsed=200, meterQuota=100 → expectedExtras=100
-      // ledger debit=-100 → actualDebits=100
-      // delta=0 → within tolerance → no divergence
+      // sumDebitsByWindow returns 100 → delta=0 → within tolerance → no divergence
       mockUsageRepository.findByWeek.mockResolvedValue({ meterUsed: 200, meterQuota: 100 });
-      mockExtraBalanceRepository.findLedgerByOrg.mockResolvedValue([
-        { kind: 'debit', amount: -100, at: new Date() },
-      ]);
+      mockExtraBalanceRepository.sumDebitsByWindow.mockResolvedValue(100);
 
       const result = await BillingReconcileService.runReconciliation();
 
@@ -298,9 +294,7 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
       // tolerance = max(50, 0.5% × 10000) = max(50, 50) = 50
       // delta(10) <= tolerance(50) → no divergence
       mockUsageRepository.findByWeek.mockResolvedValue({ meterUsed: 10100, meterQuota: 100 });
-      mockExtraBalanceRepository.findLedgerByOrg.mockResolvedValue([
-        { kind: 'debit', amount: -9990, at: new Date() },
-      ]);
+      mockExtraBalanceRepository.sumDebitsByWindow.mockResolvedValue(9990);
 
       await BillingReconcileService.runReconciliation();
 
@@ -318,9 +312,7 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
       // expectedExtras=10000, actualDebits=5000 → delta=5000
       // tolerance = max(50, 0.5% × 10000) = 50 → delta(5000) >> tolerance
       mockUsageRepository.findByWeek.mockResolvedValue({ meterUsed: 10100, meterQuota: 100 });
-      mockExtraBalanceRepository.findLedgerByOrg.mockResolvedValue([
-        { kind: 'debit', amount: -5000, at: new Date() },
-      ]);
+      mockExtraBalanceRepository.sumDebitsByWindow.mockResolvedValue(5000);
 
       const result = await BillingReconcileService.runReconciliation();
 
@@ -366,11 +358,9 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
       );
 
       // meterUsed=50, meterQuota=0 → expectedExtras=50 (all units are extras)
-      // actualDebits=50 → delta=0 → no divergence
+      // sumDebitsByWindow returns 50 → delta=0 → no divergence
       mockUsageRepository.findByWeek.mockResolvedValue({ meterUsed: 50, meterQuota: 0 });
-      mockExtraBalanceRepository.findLedgerByOrg.mockResolvedValue([
-        { kind: 'debit', amount: -50, at: new Date() },
-      ]);
+      mockExtraBalanceRepository.sumDebitsByWindow.mockResolvedValue(50);
 
       await BillingReconcileService.runReconciliation();
 

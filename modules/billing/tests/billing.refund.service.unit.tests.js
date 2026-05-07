@@ -277,9 +277,7 @@ describe('Admin refund controller unit tests:', () => {
 
 describe('adminBumpPlan controller unit tests:', () => {
   let adminBumpPlan;
-  let mockSubscriptionRepository;
-  let mockOrganizationRepository;
-  let mockLogger;
+  let mockBillingAdminService;
   let mockResponses;
 
   const orgId = '507f1f77bcf86cd799439011';
@@ -295,19 +293,16 @@ describe('adminBumpPlan controller unit tests:', () => {
   beforeEach(async () => {
     jest.resetModules();
 
-    mockSubscriptionRepository = {
-      findByOrganization: jest.fn().mockResolvedValue({ _id: subId, plan: 'free', organization: orgId }),
-      adminUpdatePlanOnly: jest.fn().mockResolvedValue({ _id: subId, plan: 'pro' }),
-    };
-
-    mockOrganizationRepository = {
-      setPlan: jest.fn().mockResolvedValue({}),
-    };
-
-    mockLogger = {
-      info: jest.fn(),
-      error: jest.fn(),
-      warn: jest.fn(),
+    // Controller delegates entirely to BillingAdminService.bumpOrgPlan — mock the service.
+    mockBillingAdminService = {
+      bumpOrgPlan: jest.fn().mockResolvedValue({ _id: subId, plan: 'pro' }),
+      getCustomerStatus: jest.fn(),
+      syncOrgFromStripe: jest.fn(),
+      replayWebhookEvent: jest.fn(),
+      listDeadLetters: jest.fn(),
+      purgeDeadLetter: jest.fn(),
+      cancelSubscription: jest.fn(),
+      creditDisputeReinstated: jest.fn(),
     };
 
     mockResponses = {
@@ -315,35 +310,28 @@ describe('adminBumpPlan controller unit tests:', () => {
       error: jest.fn(() => jest.fn()),
     };
 
-    jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
-      default: mockSubscriptionRepository,
-    }));
-
-    jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
-      default: mockOrganizationRepository,
-    }));
-
-    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
-      default: mockLogger,
+    jest.unstable_mockModule('../services/billing.admin.service.js', () => ({
+      default: mockBillingAdminService,
     }));
 
     jest.unstable_mockModule('../../../lib/helpers/responses.js', () => ({
       default: mockResponses,
     }));
 
-    // Stripe not needed for adminBumpPlan but imported at module level
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
+    }));
+
+    // Stripe imported at module level but not used by adminBumpPlan anymore
     jest.unstable_mockModule('../lib/stripe.js', () => ({ default: jest.fn(() => null) }));
 
-    // Mock admin service to prevent deep import chain touching mongoose models
-    jest.unstable_mockModule('../services/billing.admin.service.js', () => ({
-      default: {
-        getCustomerStatus: jest.fn(),
-        syncOrgFromStripe: jest.fn(),
-        replayWebhookEvent: jest.fn(),
-        listDeadLetters: jest.fn(),
-        purgeDeadLetter: jest.fn(),
-        cancelSubscription: jest.fn(),
-      },
+    // AdminDeadLettersQuery imported at module level
+    jest.unstable_mockModule('../models/billing.subscription.schema.js', () => ({
+      AdminDeadLettersQuery: { safeParse: jest.fn().mockReturnValue({ success: true, data: { page: 1, limit: 20 } }) },
+      AdminRefundRequest: {},
+      AdminBumpPlanRequest: {},
+      AdminWebhookReplayRequest: {},
+      AdminDisputeCreditRequest: {},
     }));
 
     const mod = await import('../controllers/billing.admin.controller.js');
@@ -354,42 +342,44 @@ describe('adminBumpPlan controller unit tests:', () => {
     jest.restoreAllMocks();
   });
 
-  test('returns 422 when req.user._id is missing', async () => {
+  test('returns 422 when req.user._id is missing (service throws 422)', async () => {
+    mockBillingAdminService.bumpOrgPlan.mockRejectedValue(
+      Object.assign(new Error('invalid argument: authenticated user id is missing'), { status: 422 }),
+    );
     const req = { body: { orgId, planId: 'pro' }, user: {} };
     const res = makeRes();
 
     await adminBumpPlan(req, res);
 
     expect(mockResponses.error).toHaveBeenCalledWith(res, 422, 'Unprocessable Entity', 'Failed to bump plan');
-    expect(mockSubscriptionRepository.findByOrganization).not.toHaveBeenCalled();
   });
 
-  test('returns 404 when no subscription found for org', async () => {
-    mockSubscriptionRepository.findByOrganization.mockResolvedValue(null);
+  test('returns 404 when no subscription found for org (service throws 404)', async () => {
+    mockBillingAdminService.bumpOrgPlan.mockRejectedValue(
+      Object.assign(new Error(`subscription not found for orgId=${orgId}`), { status: 404 }),
+    );
     const req = { body: { orgId, planId: 'pro' }, user: { _id: adminId } };
     const res = makeRes();
 
     await adminBumpPlan(req, res);
 
-    expect(mockResponses.error).toHaveBeenCalledWith(res, 404, 'Not Found', 'Subscription not found for organization');
-    expect(mockSubscriptionRepository.adminUpdatePlanOnly).not.toHaveBeenCalled();
+    expect(mockResponses.error).toHaveBeenCalledWith(res, 404, 'Not Found', 'Failed to bump plan');
   });
 
-  test('returns 200 on happy path', async () => {
+  test('returns 200 on happy path — delegates to BillingAdminService.bumpOrgPlan', async () => {
     const req = { body: { orgId, planId: 'pro' }, user: { _id: adminId } };
     const res = makeRes();
 
     await adminBumpPlan(req, res);
 
-    expect(mockSubscriptionRepository.adminUpdatePlanOnly).toHaveBeenCalledWith(subId, 'pro', adminId);
-    expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
+    expect(mockBillingAdminService.bumpOrgPlan).toHaveBeenCalledWith(orgId, 'pro', adminId);
     expect(mockResponses.success).toHaveBeenCalledWith(res, 'subscription plan bumped');
   });
 
-  test('returns 422 on Mongoose ValidationError', async () => {
+  test('returns 422 on Mongoose ValidationError from service', async () => {
     const validationErr = new Error('plan is invalid');
     validationErr.name = 'ValidationError';
-    mockSubscriptionRepository.adminUpdatePlanOnly.mockRejectedValue(validationErr);
+    mockBillingAdminService.bumpOrgPlan.mockRejectedValue(validationErr);
     const req = { body: { orgId, planId: 'pro' }, user: { _id: adminId } };
     const res = makeRes();
 
@@ -398,8 +388,8 @@ describe('adminBumpPlan controller unit tests:', () => {
     expect(mockResponses.error).toHaveBeenCalledWith(res, 422, 'Unprocessable Entity', 'Failed to bump plan');
   });
 
-  test('returns 500 on unexpected error', async () => {
-    mockSubscriptionRepository.adminUpdatePlanOnly.mockRejectedValue(new Error('db timeout'));
+  test('returns 500 on unexpected error from service', async () => {
+    mockBillingAdminService.bumpOrgPlan.mockRejectedValue(new Error('db timeout'));
     const req = { body: { orgId, planId: 'pro' }, user: { _id: adminId } };
     const res = makeRes();
 

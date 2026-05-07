@@ -321,9 +321,13 @@ const adminUpdatePlanOnly = (id, planId, adminUserId) => {
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const findPageForReconciliation = (statuses, page, limit) =>
   Subscription.find(
-    { status: { $in: statuses }, stripeSubscriptionId: { $ne: null } },
+    {
+      status: { $in: statuses },
+      stripeSubscriptionId: { $exists: true, $ne: null },
+    },
     { _id: 1, organization: 1, stripeSubscriptionId: 1, stripeCustomerId: 1, plan: 1, status: 1, currentPeriodStart: 1 },
   )
+    .sort({ _id: 1 })
     .skip(page * limit)
     .limit(limit)
     .lean()

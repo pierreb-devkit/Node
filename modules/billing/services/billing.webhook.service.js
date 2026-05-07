@@ -1029,16 +1029,31 @@ const handleSubscriptionCreated = async (subscription, event) => {
       organizationId,
       eventId: event?.id,
     });
-    await SubscriptionRepository.create({
-      organization: organizationId,
-      stripeCustomerId: subscription.customer,
-      stripeSubscriptionId: subscription.id,
-      plan: newPlan,
-      status: subscription.status,
-      lastSubscriptionEventCreatedAt: event.created,
-      lastSubscriptionEventId: event.id,
-      ...(newPeriodStart ? { currentPeriodStart: newPeriodStart } : {}),
-    });
+    try {
+      await SubscriptionRepository.create({
+        organization: organizationId,
+        stripeCustomerId: subscription.customer,
+        stripeSubscriptionId: subscription.id,
+        plan: newPlan,
+        status: subscription.status,
+        lastSubscriptionEventCreatedAt: event.created,
+        lastSubscriptionEventId: event.id,
+        ...(newPeriodStart ? { currentPeriodStart: newPeriodStart } : {}),
+      });
+    } catch (err) {
+      if (err.code === 11000) {
+        // Duplicate key — a concurrent subscription.created delivery (or checkout.session.completed
+        // racing ahead) already inserted the row. Skip creation gracefully; the existing row
+        // carries the correct state and withIdempotency will not dead-letter this event.
+        logger.warn('[billing.webhook] secondary subscription detected for org, skipping duplicate creation', {
+          organizationId,
+          stripeSubscriptionId: subscription.id,
+          eventId: event?.id,
+        });
+        return { skipped: true, reason: 'duplicate' };
+      }
+      throw err;
+    }
     await syncOrganizationPlan(organizationId, newPlan);
     return;
   }
