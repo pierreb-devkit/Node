@@ -634,6 +634,62 @@ describe('Billing webhook subscription unit tests:', () => {
         expect.objectContaining({ organizationId: orgId, source: 'dunning_recovery' }),
       );
     });
+
+    test('V8.1 — sync_failed listener throws: inner evtErr catch is non-fatal', async () => {
+      const existing = {
+        _id: subId,
+        organization: orgId,
+        pastDueSince: new Date('2026-04-01'),
+        status: 'unpaid',
+        plan: 'free',
+      };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockStripe.subscriptions.retrieve.mockResolvedValue({
+        items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
+      });
+      // Make syncOrganizationPlan throw so we enter the syncErr catch
+      mockOrganizationRepository.setPlan.mockRejectedValue(new Error('DB write failed'));
+      // Make billingEvents.emit throw so we enter the inner evtErr catch
+      mockEvents.emit.mockImplementation(() => { throw new Error('listener crash'); });
+
+      const { default: mockLogger } = await import('../../../lib/services/logger.js');
+
+      await expect(
+        BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_456' }, makeEvent()),
+      ).resolves.not.toThrow();
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        '[billing.webhook] billing.organization.sync_failed listener error (non-fatal)',
+        expect.objectContaining({ error: 'listener crash' }),
+      );
+    });
+
+    test('V8.1 — validatePlan warns on unrecognized non-empty planId (falls back to free)', async () => {
+      const existing = {
+        _id: subId,
+        organization: orgId,
+        pastDueSince: new Date('2026-04-01'),
+        status: 'past_due',
+        plan: 'free',
+      };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      // Return an unrecognized planId (e.g. a Stripe product ID instead of a plan slug)
+      mockStripe.subscriptions.retrieve.mockResolvedValue({
+        items: { data: [{ price: { metadata: { planId: 'prod_unknownXYZ' } } }] },
+      });
+
+      const { default: mockLogger } = await import('../../../lib/services/logger.js');
+
+      await expect(
+        BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_456' }, makeEvent()),
+      ).resolves.not.toThrow();
+
+      // validatePlan should have logged a warning for the unrecognized plan
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        '[billing.webhook] validatePlan: unrecognized planId',
+        expect.objectContaining({ raw: 'prod_unknownXYZ' }),
+      );
+    });
   });
 
   describe('handleInvoicePaymentFailed', () => {
