@@ -107,13 +107,18 @@ const signup = async (req, res) => {
       throw orgErr;
     }
 
-    // Analytics identify — fire-and-forget, never break signup flow
+    // Analytics — fire-and-forget, never break signup flow
     try {
       AnalyticsService.identify(String(user.id), {
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
         provider: user.provider,
+      });
+      AnalyticsService.capture({
+        distinctId: String(user.id),
+        event: 'user_signed_up',
+        properties: { email: user.email, plan: user.plan, createdAt: user.createdAt },
       });
     } catch (_) { /* analytics must not break auth */ }
 
@@ -193,7 +198,7 @@ const signin = async (req, res) => {
     );
   }
 
-  // Analytics identify — fire-and-forget, never break signin flow
+  // Analytics — fire-and-forget, never break signin flow
   try {
     AnalyticsService.identify(String(user.id || user._id), {
       email: user.email,
@@ -201,6 +206,7 @@ const signin = async (req, res) => {
       lastName: user.lastName,
       lastLoginAt: user.lastLoginAt,
     });
+    AnalyticsService.capture({ distinctId: String(user.id || user._id), event: 'user_signed_in' });
   } catch (_) { /* analytics must not break auth */ }
 
   const token = jwt.sign({ userId: user.id }, config.jwt.secret, {

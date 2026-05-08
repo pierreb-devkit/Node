@@ -85,8 +85,12 @@ const config = {
     enabled: false,
   },
   posthog: {
+    enabled: false, // set to true + apiKey to activate (default off, no breakage on unconfigured projects)
     // apiKey: process.env.DEVKIT_NODE_posthog_apiKey ?? '',
-    // host: process.env.DEVKIT_NODE_posthog_host ?? 'https://us.i.posthog.com',
+    // host: process.env.DEVKIT_NODE_posthog_host ?? 'https://eu.i.posthog.com',
+    // appTag: process.env.DEVKIT_NODE_posthog_appTag ?? '', // e.g. 'trawl', 'comes' — auto-injected on every capture
+    flushAt: 20,
+    flushInterval: 10000,
     errorTracking: false, // opt-in: capture exceptions to PostHog (default: off)
     autoCapture: false, // opt-in: auto-capture api_request events (default: off)
   },
