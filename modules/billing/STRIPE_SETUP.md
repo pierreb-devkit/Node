@@ -1,5 +1,11 @@
 # Stripe Dashboard Setup
 
+## Requirements
+
+- **MongoDB ≥ 5.2** — the billing module uses `$sortArray` (added in 5.2). On older versions (e.g. 5.0.x) the `billing.extraBalance.listLedger.perf.integration.tests.js` suite fails with `Unrecognized expression '$sortArray'`. CI runs `mongo:7` and is unaffected.
+
+---
+
 Configuration steps required in the Stripe Dashboard before going LIVE. All steps apply to both test mode (staging validation) and LIVE mode (production).
 
 ---
