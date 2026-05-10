@@ -163,7 +163,7 @@ const getReadinessStatus = () => {
   });
 
   // analytics — PostHog
-  const posthogConfigured = isSet(config.posthog?.apiKey);
+  const posthogConfigured = isSet(config.analytics?.posthog?.key);
   checks.push({
     category: 'analytics',
     status: posthogConfigured ? 'ok' : 'warning',
@@ -171,11 +171,11 @@ const getReadinessStatus = () => {
   });
 
   // errorTracking — PostHog
-  const errorTrackingEnabled = posthogConfigured && config.posthog?.errorTracking === true;
+  const errorTrackingEnabled = posthogConfigured && config.analytics?.posthog?.errorTracking === true;
   checks.push({
     category: 'errorTracking',
     status: errorTrackingEnabled ? 'ok' : 'warning',
-    message: errorTrackingEnabled ? 'PostHog $exception capture enabled' : 'PostHog Error Tracking not enabled (set posthog.errorTracking=true)',
+    message: errorTrackingEnabled ? 'PostHog $exception capture enabled' : 'PostHog Error Tracking not enabled (set analytics.posthog.errorTracking=true)',
   });
 
   return checks;
