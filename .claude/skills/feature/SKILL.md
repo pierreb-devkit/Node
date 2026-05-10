@@ -12,6 +12,51 @@ description: >
 
 # Feature Skill
 
+## Phase 0.0 — Issue Claim (if invoked with `#N`)
+
+**When this section runs:** only if the invocation provides a GitHub issue number, e.g. `/feature #1153`. Skip entirely for `/feature <freeform-spec>` (no issue to claim — proceed directly to Phase 0).
+
+### 1. Read the issue state
+
+```bash
+gh issue view <N> --json number,title,state,assignees,comments
+```
+
+If `state` is `closed` → STOP, ask the user (working on a closed issue is almost always wrong).
+
+### 2. Detect collision
+
+Inspect `assignees[]` and the most recent comment whose body starts with `WIP —`:
+
+| Situation | Action |
+|-----------|--------|
+| `assignees` empty AND no recent `WIP —` comment | Proceed to claim (step 3) |
+| `assignees` contains `@me` (current GitHub user) | Continue silently — resuming own work |
+| `assignees` contains user ≠ `@me` | **STOP** — surface "Issue #N already assigned to <user>. Take over? (y/N)". Wait for explicit user confirmation. |
+| Most recent `WIP —` comment by user ≠ `@me` AND `<24h` old | **STOP** — surface "Issue #N has fresh WIP from <user> (started <ts>). Collision likely. Continue anyway? (y/N)". Wait. |
+| Most recent `WIP —` comment by anyone AND `>24h` old | Stale claim — surface "Issue #N has stale WIP from <user> (started <ts>, >24h). Reclaim? (y/N)". Wait. |
+| Most recent `WIP —` comment by `@me` AND any age | Continue silently — resuming own work |
+
+"Current GitHub user" = `gh api user --jq .login`. Cache once per session.
+
+### 3. Claim
+
+If detection passed (or user confirmed override), run **both** commands:
+
+```bash
+gh issue edit <N> --add-assignee @me
+
+gh issue comment <N> --body "WIP — session $(date -u +%Y%m%dT%H%M%SZ)-${RANDOM}, branch <branch-name>, started $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+
+Where `<branch-name>` is the branch this `/feature` invocation will use (planned name, even if not yet created). If the branch isn't decided yet, use `branch TBD` and update via a follow-up comment once `/pull-request` creates it.
+
+### 4. Proceed to Phase 0
+
+Continue to scope analysis below.
+
+---
+
 ## Phase 0 — Scope Analysis (interactive, before coding)
 
 ### 1. Identify target module
