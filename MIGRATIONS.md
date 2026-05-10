@@ -4,6 +4,35 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Sentry removed — PostHog Error Tracking is now sole source (2026-05-10)
+
+The `@sentry/node` integration shipped in 2026-03-26 (still documented below as **PostHog Analytics (2026-03-26)** + the now-removed Sentry monitoring section) is dropped. Error capture moves entirely to PostHog Error Tracking via `posthog.capture('$exception', ...)`.
+
+### What changed
+
+- **Deleted** : `lib/services/sentry.js` + its unit tests + the `@sentry/node` dependency.
+- **`lib/services/errorTracker.js`** simplified to PostHog-only path. The `captureExceptionPostHogOnly` fan-out helper is removed (collapsed into `captureException` since there is no longer a double-reporting risk from a parallel Sentry Express handler).
+- **`lib/app.js`** — Sentry init/shutdown calls removed from bootstrap and shutdown paths.
+- **`config/defaults/{development,production,test}.config.js`** — `sentry: { ... }` blocks deleted.
+- **`config/defaults/development.config.js` + `production.config.js`** — `posthog.errorTracking` default flipped from `false` → `true`. Error capture is now enabled by default whenever `posthog.apiKey` is set.
+- **`modules/home/services/home.service.js`** `getReadinessStatus()` — the `monitoring` row (Sentry presence) is replaced by an `errorTracking` row that gates on `posthog.apiKey && posthog.errorTracking === true`.
+- **NEW `lib/middlewares/posthog-context.middleware.js`** — parses the `User-Agent` header, attaches `req.posthogContext = { source: 'cli'|'web', cli_version? }` for CLI-source attribution. Wired in `lib/services/express.js` after CORS / before routes.
+- **`lib/services/analytics.js`** `capture()` accepts an optional `req` param. When provided, `req.posthogContext` is merged into event defaults so that CLI-originated requests carry `source` + `cli_version` automatically. Backward-compatible: callers that omit `req` see no behaviour change.
+
+### Action required for downstream projects (`/update-project`)
+
+1. **Drop env vars** `SENTRY_DSN` + any `SENTRY_*` references from `.env`, K8s manifests (`clusters/*/apps/*-node.yaml`), `.env.example`, deploy scripts, and CI secrets — they are no longer read.
+2. **Drop `@sentry/*` deps** from project `package.json` if pinned downstream. Run `npm install` to regen lockfile.
+3. **Remove project `config/defaults/*.config.js` overrides** of the `sentry: { ... }` block — they were either referencing the now-removed config path (no-op merge) or overriding fields that no longer exist.
+4. **Confirm `posthog.errorTracking`** : if downstream config explicitly sets `posthog.errorTracking: false` to suppress capture, that override still wins via deepmerge. To opt into error tracking, set it to `true` (or rely on the new default if you remove the override).
+5. **Optional — wire `req` into existing `capture()` callers** : if you want CLI-source attribution on existing events, change `capture({ distinctId, event, properties })` → `capture({ distinctId, event, properties, req })`. Without this opt-in, events still capture correctly but lack the `source`/`cli_version` properties.
+
+### Why
+
+Cf `infra/docs/superpowers/plans/2026-05-10-posthog-observability-followups.md` (decision matrix). PostHog Error Tracking is GA, free tier covers 100k exceptions/mo, and the single-tracker setup eliminates dual-config drift + cross-tool funnel friction.
+
+---
+
 ## Test DB isolation: per-pid Mongo database default + globalTeardown (2026-04-24)
 
 Default test database is now `mongodb://127.0.0.1:27017/NodeTest_${process.pid}` instead of the shared `NodeTest`. Concurrent jest invocations (e.g. multiple agent worktrees running `npm run test:coverage` in parallel) get isolated databases, eliminating the 401 / 404 / 422 / `MongoPoolClosedError` flake patterns documented in trawl_node#980.

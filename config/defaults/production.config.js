@@ -55,11 +55,6 @@ const config = {
     json: true,
     level: 'info',
   },
-  sentry: {
-    dsn: process.env.DEVKIT_NODE_sentry_dsn || '',
-    environment: 'production',
-    enabled: !!process.env.DEVKIT_NODE_sentry_dsn,
-  },
 };
 
 export default config;

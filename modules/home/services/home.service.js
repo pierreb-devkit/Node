@@ -170,12 +170,12 @@ const getReadinessStatus = () => {
     message: posthogConfigured ? 'PostHog configured' : 'PostHog not configured',
   });
 
-  // monitoring — Sentry
-  const sentryConfigured = isSet(config.sentry?.dsn);
+  // errorTracking — PostHog
+  const errorTrackingEnabled = posthogConfigured && config.posthog?.errorTracking === true;
   checks.push({
-    category: 'monitoring',
-    status: sentryConfigured ? 'ok' : 'warning',
-    message: sentryConfigured ? 'Sentry configured' : 'Sentry not configured',
+    category: 'errorTracking',
+    status: errorTrackingEnabled ? 'ok' : 'warning',
+    message: errorTrackingEnabled ? 'PostHog $exception capture enabled' : 'PostHog Error Tracking not enabled (set posthog.errorTracking=true)',
   });
 
   return checks;

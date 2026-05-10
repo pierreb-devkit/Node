@@ -230,7 +230,7 @@ describe('Home integration tests:', () => {
 
     test('should return correct shape for each readiness check', async () => {
       const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
-      const expectedCategories = ['config', 'security', 'auth', 'mail', 'billing', 'analytics', 'monitoring'];
+      const expectedCategories = ['config', 'security', 'auth', 'mail', 'billing', 'analytics', 'errorTracking'];
       const categories = result.body.data.map((c) => c.category);
       expect(categories).toEqual(expectedCategories);
       result.body.data.forEach((item) => {
@@ -249,15 +249,13 @@ describe('Home integration tests:', () => {
       const origOAuth = config.oAuth;
       const origStripe = config.stripe;
       const origPosthog = config.posthog;
-      const origSentry = config.sentry;
       const mailerSpy = jest.spyOn(mailer, 'isConfigured').mockReturnValue(true);
       try {
         config.domain = 'example.com';
         config.jwt.secret = 'a-real-custom-secret-key';
         config.oAuth = { google: { clientID: 'google-id' }, apple: { clientID: 'apple-id' } };
         config.stripe = { secretKey: 'sk_test_123' };
-        config.posthog = { apiKey: 'phk_123' };
-        config.sentry = { dsn: 'https://sentry.io/123' };
+        config.posthog = { apiKey: 'phk_123', errorTracking: true };
 
         const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
         result.body.data.forEach((item) => {
@@ -273,7 +271,6 @@ describe('Home integration tests:', () => {
         config.oAuth = origOAuth;
         config.stripe = origStripe;
         config.posthog = origPosthog;
-        config.sentry = origSentry;
         mailerSpy.mockRestore();
       }
     });

@@ -79,11 +79,6 @@ const config = {
   trust: {
     proxy: false,
   },
-  sentry: {
-    dsn: process.env.DEVKIT_NODE_sentry_dsn || '',
-    environment: process.env.DEVKIT_NODE_sentry_environment || 'development',
-    enabled: false,
-  },
   posthog: {
     enabled: false, // set to true + apiKey to activate (default off, no breakage on unconfigured projects)
     // apiKey: process.env.DEVKIT_NODE_posthog_apiKey ?? '',
@@ -91,7 +86,7 @@ const config = {
     // appTag: process.env.DEVKIT_NODE_posthog_appTag ?? '', // e.g. 'trawl', 'comes' — auto-injected on every capture
     flushAt: 20,
     flushInterval: 10000,
-    errorTracking: false, // opt-in: capture exceptions to PostHog (default: off)
+    errorTracking: true, // PostHog Error Tracking — active when posthog.apiKey is set
     autoCapture: false, // opt-in: auto-capture api_request events (default: off)
   },
   domain: '',
