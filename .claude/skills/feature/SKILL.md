@@ -12,6 +12,53 @@ description: >
 
 # Feature Skill
 
+## Phase 0.0 — Issue Claim (if invoked with `#N`)
+
+**When this section runs:** only if the invocation provides a GitHub issue number, e.g. `/feature #1153`. Skip entirely for `/feature <freeform-spec>` (no issue to claim — proceed directly to Phase 0).
+
+### 1. Read the issue state
+
+```bash
+gh issue view <N> --json number,title,state,assignees,comments
+```
+
+If the command fails (issue not found, network down, missing scope) → **STOP** and surface the error to the user before proceeding. Do not silently fall through to the claim step.
+
+If `state` is `closed` → **STOP**, ask the user (working on a closed issue is almost always wrong).
+
+### 2. Detect collision
+
+Inspect `assignees[]` and the most recent comment whose body starts with `WIP —` (em dash U+2014, not a hyphen — only the canonical em-dash form is detected; hyphen variants `WIP -` are silently ignored):
+
+| Situation | Action |
+|-----------|--------|
+| `assignees` contains `@me` (current GitHub user) | Continue silently — resuming own work |
+| Most recent `WIP —` comment by `@me` (any age) | Continue silently — resuming own work |
+| `assignees` empty AND no `WIP —` comment from anyone | Proceed to claim (step 3) |
+| `assignees` contains user ≠ `@me` | **STOP** — surface "Issue #N already assigned to <user>. Take over? (y/N)". Wait for explicit user confirmation. |
+| Most recent `WIP —` comment by user ≠ `@me` AND `<24h` old | **STOP** — surface "Issue #N has fresh WIP from <user> (started <ts>). Collision likely. Continue anyway? (y/N)". Wait. |
+| Most recent `WIP —` comment by user ≠ `@me` AND `>24h` old | Stale claim — surface "Issue #N has stale WIP from <user> (started <ts>, >24h). Reclaim? (y/N)". Wait. |
+
+"Current GitHub user" = `gh api user --jq .login`. Run inline each time `@me` is compared (the call is fast and read-only).
+
+### 3. Claim
+
+If detection passed (or user confirmed override), run **both** commands:
+
+```bash
+gh issue edit <N> --add-assignee @me
+
+gh issue comment <N> --body "WIP — session $(date -u +%Y%m%dT%H%M%SZ)-$(uuidgen | head -c 8), branch <branch-name>, started $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+
+Where `<branch-name>` is the branch this `/feature` invocation will use (planned name, even if not yet created). If the branch isn't decided yet, use `branch TBD`. Posting a follow-up comment with the real branch name after `/pull-request` creates it is best-effort manual — the linked PR superseding the WIP comment is what matters in practice.
+
+### 4. Proceed to Phase 0
+
+Continue to scope analysis below.
+
+---
+
 ## Phase 0 — Scope Analysis (interactive, before coding)
 
 ### 1. Identify target module
