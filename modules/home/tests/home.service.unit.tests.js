@@ -42,7 +42,7 @@ describe('HomeService.getReadinessStatus unit tests:', () => {
         jwt: { secret: 'WaosSecretKeyExampleToChnageAbsolutely' },
         oAuth: {},
         stripe: {},
-        posthog: {},
+        analytics: { posthog: {} },
         ...configOverride,
       },
     }));
@@ -59,9 +59,9 @@ describe('HomeService.getReadinessStatus unit tests:', () => {
   });
 
   describe('errorTracking row', () => {
-    test('ok when posthog.apiKey is set AND errorTracking=true', async () => {
+    test('ok when analytics.posthog.key is set AND errorTracking=true', async () => {
       const HomeService = await withConfig({
-        posthog: { apiKey: 'ph_test_key', errorTracking: true },
+        analytics: { posthog: { key: 'ph_test_key', errorTracking: true } },
       });
       const checks = HomeService.getReadinessStatus();
       const row = checks.find((c) => c.category === 'errorTracking');
@@ -69,19 +69,19 @@ describe('HomeService.getReadinessStatus unit tests:', () => {
       expect(row.message).toBe('PostHog $exception capture enabled');
     });
 
-    test('warning when posthog.apiKey is set but errorTracking=false', async () => {
+    test('warning when analytics.posthog.key is set but errorTracking=false', async () => {
       const HomeService = await withConfig({
-        posthog: { apiKey: 'ph_test_key', errorTracking: false },
+        analytics: { posthog: { key: 'ph_test_key', errorTracking: false } },
       });
       const checks = HomeService.getReadinessStatus();
       const row = checks.find((c) => c.category === 'errorTracking');
       expect(row.status).toBe('warning');
-      expect(row.message).toContain('posthog.errorTracking=true');
+      expect(row.message).toContain('analytics.posthog.errorTracking=true');
     });
 
-    test('warning when posthog.apiKey is missing (even if errorTracking=true)', async () => {
+    test('warning when analytics.posthog.key is missing (even if errorTracking=true)', async () => {
       const HomeService = await withConfig({
-        posthog: { errorTracking: true },
+        analytics: { posthog: { errorTracking: true } },
       });
       const checks = HomeService.getReadinessStatus();
       const row = checks.find((c) => c.category === 'errorTracking');
@@ -89,7 +89,7 @@ describe('HomeService.getReadinessStatus unit tests:', () => {
     });
 
     test('warning when posthog is not configured at all', async () => {
-      const HomeService = await withConfig({ posthog: {} });
+      const HomeService = await withConfig({ analytics: { posthog: {} } });
       const checks = HomeService.getReadinessStatus();
       const row = checks.find((c) => c.category === 'errorTracking');
       expect(row.status).toBe('warning');
@@ -97,9 +97,9 @@ describe('HomeService.getReadinessStatus unit tests:', () => {
   });
 
   describe('analytics row', () => {
-    test('ok when posthog.apiKey is set', async () => {
+    test('ok when analytics.posthog.key is set', async () => {
       const HomeService = await withConfig({
-        posthog: { apiKey: 'ph_test_key' },
+        analytics: { posthog: { key: 'ph_test_key' } },
       });
       const checks = HomeService.getReadinessStatus();
       const row = checks.find((c) => c.category === 'analytics');
@@ -107,8 +107,8 @@ describe('HomeService.getReadinessStatus unit tests:', () => {
       expect(row.message).toContain('PostHog configured');
     });
 
-    test('warning when posthog.apiKey is missing', async () => {
-      const HomeService = await withConfig({ posthog: {} });
+    test('warning when analytics.posthog.key is missing', async () => {
+      const HomeService = await withConfig({ analytics: { posthog: {} } });
       const checks = HomeService.getReadinessStatus();
       const row = checks.find((c) => c.category === 'analytics');
       expect(row.status).toBe('warning');

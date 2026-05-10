@@ -248,14 +248,14 @@ describe('Home integration tests:', () => {
       const origJwt = config.jwt.secret;
       const origOAuth = config.oAuth;
       const origStripe = config.stripe;
-      const origPosthog = config.posthog;
+      const origAnalytics = config.analytics;
       const mailerSpy = jest.spyOn(mailer, 'isConfigured').mockReturnValue(true);
       try {
         config.domain = 'example.com';
         config.jwt.secret = 'a-real-custom-secret-key';
         config.oAuth = { google: { clientID: 'google-id' }, apple: { clientID: 'apple-id' } };
         config.stripe = { secretKey: 'sk_test_123' };
-        config.posthog = { apiKey: 'phk_123', errorTracking: true };
+        config.analytics = { posthog: { key: 'phk_123', errorTracking: true } };
 
         const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
         result.body.data.forEach((item) => {
@@ -270,7 +270,7 @@ describe('Home integration tests:', () => {
         config.jwt.secret = origJwt;
         config.oAuth = origOAuth;
         config.stripe = origStripe;
-        config.posthog = origPosthog;
+        config.analytics = origAnalytics;
         mailerSpy.mockRestore();
       }
     });

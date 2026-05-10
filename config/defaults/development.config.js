@@ -79,15 +79,17 @@ const config = {
   trust: {
     proxy: false,
   },
-  posthog: {
-    enabled: false, // set to true + apiKey to activate (default off, no breakage on unconfigured projects)
-    // apiKey: process.env.DEVKIT_NODE_posthog_apiKey ?? '',
-    // host: process.env.DEVKIT_NODE_posthog_host ?? 'https://eu.i.posthog.com',
-    // appTag: process.env.DEVKIT_NODE_posthog_appTag ?? '', // e.g. 'trawl', 'comes' — auto-injected on every capture
-    flushAt: 20,
-    flushInterval: 10000,
-    errorTracking: true, // PostHog Error Tracking — active when posthog.apiKey is set
-    autoCapture: false, // opt-in: auto-capture api_request events (default: off)
+  analytics: {
+    posthog: {
+      enabled: process.env.DEVKIT_NODE_analytics_posthog_enabled === 'true',
+      key: process.env.DEVKIT_NODE_analytics_posthog_key ?? '',
+      host: process.env.DEVKIT_NODE_analytics_posthog_host ?? 'https://eu.i.posthog.com',
+      appTag: process.env.DEVKIT_NODE_analytics_posthog_appTag ?? '',
+      flushAt: 20,
+      flushInterval: 10000,
+      errorTracking: process.env.DEVKIT_NODE_analytics_posthog_errorTracking === 'true',
+      autoCapture: process.env.DEVKIT_NODE_analytics_posthog_autoCapture === 'true',
+    },
   },
   domain: '',
   cookie: {
