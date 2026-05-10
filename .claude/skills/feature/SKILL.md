@@ -22,22 +22,24 @@ description: >
 gh issue view <N> --json number,title,state,assignees,comments
 ```
 
-If `state` is `closed` → STOP, ask the user (working on a closed issue is almost always wrong).
+If the command fails (issue not found, network down, missing scope) → **STOP** and surface the error to the user before proceeding. Do not silently fall through to the claim step.
+
+If `state` is `closed` → **STOP**, ask the user (working on a closed issue is almost always wrong).
 
 ### 2. Detect collision
 
-Inspect `assignees[]` and the most recent comment whose body starts with `WIP —`:
+Inspect `assignees[]` and the most recent comment whose body starts with `WIP —` (em dash U+2014, not a hyphen — only the canonical em-dash form is detected; hyphen variants `WIP -` are silently ignored):
 
 | Situation | Action |
 |-----------|--------|
-| `assignees` empty AND no recent `WIP —` comment | Proceed to claim (step 3) |
 | `assignees` contains `@me` (current GitHub user) | Continue silently — resuming own work |
+| Most recent `WIP —` comment by `@me` (any age) | Continue silently — resuming own work |
+| `assignees` empty AND no `WIP —` comment from anyone | Proceed to claim (step 3) |
 | `assignees` contains user ≠ `@me` | **STOP** — surface "Issue #N already assigned to <user>. Take over? (y/N)". Wait for explicit user confirmation. |
 | Most recent `WIP —` comment by user ≠ `@me` AND `<24h` old | **STOP** — surface "Issue #N has fresh WIP from <user> (started <ts>). Collision likely. Continue anyway? (y/N)". Wait. |
-| Most recent `WIP —` comment by anyone AND `>24h` old | Stale claim — surface "Issue #N has stale WIP from <user> (started <ts>, >24h). Reclaim? (y/N)". Wait. |
-| Most recent `WIP —` comment by `@me` AND any age | Continue silently — resuming own work |
+| Most recent `WIP —` comment by user ≠ `@me` AND `>24h` old | Stale claim — surface "Issue #N has stale WIP from <user> (started <ts>, >24h). Reclaim? (y/N)". Wait. |
 
-"Current GitHub user" = `gh api user --jq .login`. Cache once per session.
+"Current GitHub user" = `gh api user --jq .login`. Run inline each time `@me` is compared (the call is fast and read-only).
 
 ### 3. Claim
 
@@ -46,10 +48,10 @@ If detection passed (or user confirmed override), run **both** commands:
 ```bash
 gh issue edit <N> --add-assignee @me
 
-gh issue comment <N> --body "WIP — session $(date -u +%Y%m%dT%H%M%SZ)-${RANDOM}, branch <branch-name>, started $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+gh issue comment <N> --body "WIP — session $(date -u +%Y%m%dT%H%M%SZ)-$(uuidgen | head -c 8), branch <branch-name>, started $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 ```
 
-Where `<branch-name>` is the branch this `/feature` invocation will use (planned name, even if not yet created). If the branch isn't decided yet, use `branch TBD` and update via a follow-up comment once `/pull-request` creates it.
+Where `<branch-name>` is the branch this `/feature` invocation will use (planned name, even if not yet created). If the branch isn't decided yet, use `branch TBD`. Posting a follow-up comment with the real branch name after `/pull-request` creates it is best-effort manual — the linked PR superseding the WIP comment is what matters in practice.
 
 ### 4. Proceed to Phase 0
 
