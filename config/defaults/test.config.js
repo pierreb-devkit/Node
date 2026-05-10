@@ -26,10 +26,6 @@ const config = {
     enabled: true,
     ttlDays: 1,
   },
-  sentry: {
-    dsn: '',
-    enabled: false,
-  },
   organizations: {
     enabled: false,
     domainMatching: false,
