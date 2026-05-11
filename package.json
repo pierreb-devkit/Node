@@ -50,7 +50,7 @@
   },
   "dependencies": {
     "@casl/ability": "^6.8.1",
-    "@jest/globals": "^30.3.0",
+    "@jest/globals": "^30.4.1",
     "axios": "^1.16.0",
     "bcrypt": "^6.0.0",
     "bson": "^7.2.0",
