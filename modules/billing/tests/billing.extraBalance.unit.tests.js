@@ -777,5 +777,177 @@ describe('BillingExtraBalance unit tests:', () => {
         ).rejects.toThrow('invalid argument: refId must be a non-empty string');
       });
     });
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // creditGrant — signup grant (no stripeSessionId)
+    // ─────────────────────────────────────────────────────────────────────────────
+    describe('creditGrant:', () => {
+      test('should apply grant with topup kind and return applied:true', async () => {
+        const updatedDoc = makeDoc({
+          cachedBalance: 500,
+          ledger: [{ kind: 'topup', amount: 500, refId: 'signup_grant-507f1f77bcf86cd799439011' }],
+        });
+        // Step 1: getOrCreate; Step 2: idempotency-guarded credit
+        mockModel.findOneAndUpdate
+          .mockResolvedValueOnce(makeDoc())
+          .mockResolvedValueOnce(updatedDoc);
+
+        const result = await BillingExtraBalanceRepository.creditGrant(orgId, 500, 'signup_grant');
+
+        expect(result.applied).toBe(true);
+        expect(result.doc.cachedBalance).toBe(500);
+        expect(mockModel.findOneAndUpdate).toHaveBeenCalledTimes(2);
+      });
+
+      test('should return applied:false with reason duplicate_grant when idempotency key already used', async () => {
+        // Step 1: getOrCreate; Step 2: idempotency filter excludes → null (already credited)
+        mockModel.findOneAndUpdate
+          .mockResolvedValueOnce(makeDoc())
+          .mockResolvedValueOnce(null);
+
+        const result = await BillingExtraBalanceRepository.creditGrant(orgId, 500, 'signup_grant');
+
+        expect(result.applied).toBe(false);
+        expect(result.reason).toBe('duplicate_grant');
+        expect(result.doc).toBeNull();
+      });
+
+      test('step 2 filter uses refId derived from source+orgId for idempotency', async () => {
+        const updatedDoc = makeDoc({ cachedBalance: 500 });
+        let step2Filter;
+        mockModel.findOneAndUpdate
+          .mockResolvedValueOnce(makeDoc())
+          .mockImplementation((filter) => {
+            step2Filter = filter;
+            return Promise.resolve(updatedDoc);
+          });
+
+        await BillingExtraBalanceRepository.creditGrant(orgId, 500, 'signup_grant');
+
+        expect(step2Filter).toMatchObject({
+          organization: orgId,
+          'ledger.refId': { $ne: `signup_grant-${orgId}` },
+        });
+      });
+
+      test('step 1 issues upsert getOrCreate (fresh org support)', async () => {
+        let step1Options;
+        let step1Update;
+        const updatedDoc = makeDoc({ cachedBalance: 500 });
+        mockModel.findOneAndUpdate.mockImplementation((filter, update, options) => {
+          if (!step1Options) {
+            step1Options = options;
+            step1Update = update;
+            return Promise.resolve(null);
+          }
+          return Promise.resolve(updatedDoc);
+        });
+
+        await BillingExtraBalanceRepository.creditGrant(orgId, 500, 'signup_grant');
+
+        expect(step1Options?.upsert).toBe(true);
+        expect(step1Update.$setOnInsert).toMatchObject({ organization: orgId, ledger: [], cachedBalance: 0 });
+      });
+
+      test('step 2 does NOT include upsert (doc guaranteed by step 1)', async () => {
+        let step2Options;
+        mockModel.findOneAndUpdate
+          .mockResolvedValueOnce(makeDoc())
+          .mockImplementation((filter, update, options) => {
+            step2Options = options;
+            return Promise.resolve(makeDoc({ cachedBalance: 500 }));
+          });
+
+        await BillingExtraBalanceRepository.creditGrant(orgId, 500, 'signup_grant');
+
+        expect(step2Options?.upsert).toBeFalsy();
+      });
+
+      test('should throw on zero amount', async () => {
+        await expect(
+          BillingExtraBalanceRepository.creditGrant(orgId, 0, 'signup_grant'),
+        ).rejects.toThrow('invalid argument: amount must be a positive finite number');
+      });
+
+      test('should throw on negative amount', async () => {
+        await expect(
+          BillingExtraBalanceRepository.creditGrant(orgId, -100, 'signup_grant'),
+        ).rejects.toThrow('invalid argument: amount must be a positive finite number');
+      });
+
+      test('should throw on empty source', async () => {
+        await expect(
+          BillingExtraBalanceRepository.creditGrant(orgId, 500, ''),
+        ).rejects.toThrow('invalid argument: source must be a non-empty string');
+      });
+
+      test('should return null doc with applied:false for invalid orgId', async () => {
+        const { default: mongoose } = await import('mongoose');
+        mongoose.Types.ObjectId.isValid = jest.fn(() => false);
+
+        const result = await BillingExtraBalanceRepository.creditGrant('bad-id', 500, 'signup_grant');
+        expect(result).toEqual({ doc: null, applied: false });
+        expect(mockModel.findOneAndUpdate).not.toHaveBeenCalled();
+      });
+    });
+  });
+});
+
+// ─── ExtraBalanceCreditGrant schema tests ───────────────────────────────────────
+describe('ExtraBalanceCreditGrant schema:', () => {
+  let schema;
+
+  beforeEach(async () => {
+    jest.resetModules();
+    const mod = await import('../models/billing.extraBalance.schema.js');
+    schema = mod.default;
+  });
+
+  test('should be valid without stripeSessionId', () => {
+    const result = schema.ExtraBalanceCreditGrant.safeParse({
+      orgId: '507f1f77bcf86cd799439011',
+      amount: 500,
+      source: 'signup_grant',
+    });
+    expect(result.error).toBeFalsy();
+    expect(result.data.source).toBe('signup_grant');
+  });
+
+  test('should accept valid source values', () => {
+    for (const source of ['signup_grant', 'adjustment']) {
+      const result = schema.ExtraBalanceCreditGrant.safeParse({
+        orgId: '507f1f77bcf86cd799439011',
+        amount: 500,
+        source,
+      });
+      expect(result.error).toBeFalsy();
+    }
+  });
+
+  test('should reject amount of 0', () => {
+    const result = schema.ExtraBalanceCreditGrant.safeParse({
+      orgId: '507f1f77bcf86cd799439011',
+      amount: 0,
+      source: 'signup_grant',
+    });
+    expect(result.error).toBeDefined();
+  });
+
+  test('should reject invalid orgId', () => {
+    const result = schema.ExtraBalanceCreditGrant.safeParse({
+      orgId: 'not-valid',
+      amount: 500,
+      source: 'signup_grant',
+    });
+    expect(result.error).toBeDefined();
+  });
+
+  test('should reject unknown source value', () => {
+    const result = schema.ExtraBalanceCreditGrant.safeParse({
+      orgId: '507f1f77bcf86cd799439011',
+      amount: 500,
+      source: 'freebie',
+    });
+    expect(result.error).toBeDefined();
   });
 });

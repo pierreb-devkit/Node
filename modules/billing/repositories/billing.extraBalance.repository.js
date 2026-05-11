@@ -163,6 +163,58 @@ const debit = async (orgId, amount, refId) => {
 };
 
 /**
+ * @function creditGrant
+ * @description Atomically credit extra meter units for a non-Stripe grant (e.g. signup free tier).
+ *              Idempotent: if a ledger entry with the same synthetic refId
+ *              (`<source>-<orgId>`) already exists, the update is a no-op and
+ *              applied=false is returned.
+ *              2-step pattern aligned with creditPack:
+ *                Step 1 — ensure doc exists (atomic getOrCreate, no-op on replay).
+ *                Step 2 — idempotency-guarded credit (no upsert).
+ *              Synthetic idempotency key: `<source>-<orgId>` stored as ledger.refId.
+ *              No stripeSessionId required.
+ * @param {string} orgId - The organization ObjectId (string).
+ * @param {number} amount - Meter units to credit (must be > 0).
+ * @param {string} source - Grant source tag (e.g. 'signup_grant').
+ * @returns {Promise<{doc: Object|null, applied: boolean, reason?: string}>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const creditGrant = async (orgId, amount, source) => {
+  if (!isValidOrgId(orgId)) return { doc: null, applied: false };
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('invalid argument: amount must be a positive finite number');
+  if (typeof source !== 'string' || source.trim() === '') throw new Error('invalid argument: source must be a non-empty string');
+
+  const idempotencyKey = `${source}-${orgId}`;
+  const entry = {
+    kind: 'topup',
+    amount,
+    source,
+    refId: idempotencyKey,
+    at: new Date(),
+  };
+
+  // Step 1: ensure the document exists (atomic getOrCreate, no-op if already present).
+  await getOrCreate(orgId);
+
+  // Step 2: idempotency-guarded credit (no upsert — doc is guaranteed to exist after step 1).
+  const doc = await BillingExtraBalance().findOneAndUpdate(
+    {
+      organization: orgId,
+      'ledger.refId': { $ne: idempotencyKey },
+    },
+    {
+      $push: { ledger: entry },
+      $inc: { cachedBalance: amount },
+      $set: { cachedBalanceAt: new Date() },
+    },
+    { returnDocument: 'after' },
+  );
+
+  if (doc) return { doc, applied: true };
+  return { doc: null, applied: false, reason: 'duplicate_grant' };
+};
+
+/**
  * @function creditCompensation
  * @description Atomically push a positive 'adjustment' ledger entry for dispute/ops compensation.
  *              Idempotent: if a ledger entry with the same refId already exists the update
@@ -482,6 +534,7 @@ const sumDebitsByWindow = async (orgId, windowStart, windowEnd) => {
 export default {
   getOrCreate,
   creditPack,
+  creditGrant,
   creditCompensation,
   debit,
   addExpirationEntries,
