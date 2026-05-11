@@ -263,6 +263,30 @@ git merge devkit-node/master
 
 > Caution: resolve conflicts manually to preserve downstream customizations before pushing.
 
+## :bar_chart: Analytics (PostHog)
+
+The devkit ships an `analyticsService` backed by `posthog-node`. Enable via `config.analytics.posthog.enabled = true` + a valid `key`.
+
+### Source attribution convention
+
+Every `analytics.capture()` and `analytics.captureException()` event gets a `source` property. The lookup order is:
+
+1. Explicit `source` param: `analytics.capture({ ..., source: 'cron' })`
+2. `properties.source` legacy/inline form
+3. `req.posthogContext.source` (auto-set by `posthogContextMiddleware`)
+4. `'system'` default
+
+Canonical sources used downstream:
+
+| Source | Meaning |
+|---|---|
+| `web` | Request from browser (UA not matched as CLI) |
+| `cli` | Request from `@trawlme/cli/<version>` (UA-parsed) |
+| `stripe-webhook` | Stripe POST `/api/billing/webhook` |
+| `worker-callback` | worker-puppeteer scrap completion callback |
+| `cron` | Scheduled background job |
+| `system` | Server-side fallback (no req, no caller override) |
+
 ## :pencil2: Contribute
 
 Open issues and pull requests on [GitHub](https://github.com/pierreb-devkit/Node).
