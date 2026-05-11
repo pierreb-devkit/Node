@@ -31,6 +31,7 @@ describe('Billing extras controller unit tests:', () => {
     jest.resetModules();
 
     mockBillingService = {
+      createCheckout: jest.fn(),
       createExtrasCheckout: jest.fn(),
       getLocalSubscription: jest.fn(),
       getSubscription: jest.fn(),
@@ -142,6 +143,28 @@ describe('Billing extras controller unit tests:', () => {
       mockBillingService.createExtrasCheckout.mockRejectedValue(new Error('Invalid redirect URL'));
 
       await BillingController.extrasCheckout(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(422);
+    });
+  });
+
+  // ── checkout (main subscription) ───────────────────────────────────────────
+
+  describe('checkout', () => {
+    test('should return 502 and log the error when Stripe call fails with generic error', async () => {
+      req.body = { priceId: 'price_growth_m', successUrl: 'http://ok', cancelUrl: 'http://cancel' };
+      mockBillingService.createCheckout.mockRejectedValue(new Error('Network error'));
+
+      await BillingController.checkout(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(502);
+    });
+
+    test('should return 422 when priceId is invalid (no logger.error on 422 path)', async () => {
+      req.body = { priceId: 'price_unknown', successUrl: 'http://ok', cancelUrl: 'http://cancel' };
+      mockBillingService.createCheckout.mockRejectedValue(new Error('Invalid priceId: price not found'));
+
+      await BillingController.checkout(req, res);
 
       expect(res.status).toHaveBeenCalledWith(422);
     });
