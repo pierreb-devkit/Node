@@ -58,7 +58,8 @@ const _ensureStripeCustomer = async (stripe, organization) => {
     );
   } catch (err) {
     logger.error('[billing.service] stripe.customers.create failed', {
-      error: err,
+      error: err?.message ?? String(err),
+      stack: err?.stack,
       organizationId: String(organization._id),
     });
     throw err;
@@ -205,7 +206,8 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
     session = await stripe.checkout.sessions.create(checkoutParams);
   } catch (err) {
     logger.error('[billing.service] stripe.checkout.sessions.create failed', {
-      error: err,
+      error: err?.message ?? String(err),
+      stack: err?.stack,
       organizationId: String(organization._id),
       priceId,
       plan: matchedPlan.planId,
@@ -299,7 +301,8 @@ const createExtrasCheckout = async (organization, packId, successUrl, cancelUrl,
     );
   } catch (err) {
     logger.error('[billing.service] stripe.checkout.sessions.create (extras) failed', {
-      error: err,
+      error: err?.message ?? String(err),
+      stack: err?.stack,
       organizationId: orgId,
       packId,
     });

@@ -873,7 +873,10 @@ describe('Billing service unit tests:', () => {
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         '[billing.service] stripe.customers.create failed',
-        expect.objectContaining({ organizationId: orgId }),
+        expect.objectContaining({
+          organizationId: orgId,
+          error: 'Stripe Test: customer creation blocked',
+        }),
       );
     });
 
@@ -897,7 +900,11 @@ describe('Billing service unit tests:', () => {
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         '[billing.service] stripe.checkout.sessions.create failed',
-        expect.objectContaining({ organizationId: orgId, priceId: 'price_starter_m' }),
+        expect.objectContaining({
+          organizationId: orgId,
+          priceId: 'price_starter_m',
+          error: 'Stripe Test: session creation blocked',
+        }),
       );
     });
 
@@ -929,7 +936,11 @@ describe('Billing service unit tests:', () => {
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         '[billing.service] stripe.checkout.sessions.create (extras) failed',
-        expect.objectContaining({ organizationId: orgId, packId: 'pack_500k' }),
+        expect.objectContaining({
+          organizationId: orgId,
+          packId: 'pack_500k',
+          error: 'Stripe Test: extras session blocked',
+        }),
       );
     });
   });

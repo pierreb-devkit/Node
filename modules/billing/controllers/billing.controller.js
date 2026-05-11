@@ -27,7 +27,8 @@ const checkout = async (req, res) => {
     const status = err.message?.startsWith('Invalid') || err.message?.includes('not found') ? 422 : 502;
     if (status === 502) {
       logger.error('[billing.checkout] createCheckout failed', {
-        error: err,
+        error: err?.message ?? String(err),
+        stack: err?.stack,
         organizationId: req.organization?._id,
         priceId: req.body?.priceId,
         source: 'web',
@@ -149,7 +150,8 @@ const extrasCheckout = async (req, res) => {
     const status = err.message?.startsWith('Invalid') || err.message?.includes('not found') ? 422 : 502;
     if (status === 502) {
       logger.error('[billing.checkout] createExtrasCheckout failed', {
-        error: err,
+        error: err?.message ?? String(err),
+        stack: err?.stack,
         organizationId: req.organization?._id,
         packId: req.body?.packId,
         source: 'web',
