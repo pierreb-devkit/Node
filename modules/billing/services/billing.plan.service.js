@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import config from '../../../config/index.js';
+import logger from '../../../lib/services/logger.js';
 
 /**
  * @desc Resolve a plan definition from config.billing.planDefinitions.
@@ -29,9 +30,19 @@ const getPlanFromConfig = (planId) => {
     ratios: def.ratios ?? {},
   };
 
-  // N2 signup-grant fields — only present when configured (optional on the def)
-  if (def.signupGrant !== undefined) plan.signupGrant = def.signupGrant;
-  if (def.oneShot !== undefined) plan.oneShot = def.oneShot;
+  // N2 signup-grant fields — only present when configured (optional on the def).
+  // Guard: signupGrant and oneShot must be defined together (co-presence invariant).
+  // This mirrors the Zod schema refine() and catches misconfigured planDefinitions at runtime.
+  const hasGrant = def.signupGrant !== undefined;
+  const hasOneShot = def.oneShot !== undefined;
+  if (hasGrant !== hasOneShot) {
+    logger.warn(
+      '[billing.plan] signupGrant and oneShot must be defined together — check planDefinitions config',
+      { planId: def.planId, signupGrant: def.signupGrant, oneShot: def.oneShot },
+    );
+  }
+  if (hasGrant) plan.signupGrant = def.signupGrant;
+  if (hasOneShot) plan.oneShot = def.oneShot;
 
   return plan;
 };

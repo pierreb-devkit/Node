@@ -9,6 +9,7 @@ import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globa
 describe('BillingPlanService unit tests:', () => {
   let BillingPlanService;
   let mockConfig;
+  let mockLogger;
 
   beforeEach(async () => {
     jest.resetModules();
@@ -27,8 +28,13 @@ describe('BillingPlanService unit tests:', () => {
       },
     };
 
+    mockLogger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: mockConfig,
+    }));
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: mockLogger,
     }));
 
     const mod = await import('../services/billing.plan.service.js');
@@ -100,6 +106,44 @@ describe('BillingPlanService unit tests:', () => {
       const result = BillingPlanService.getActivePlan('growth');
       expect(result.signupGrant).toBeUndefined();
       expect(result.oneShot).toBeUndefined();
+    });
+
+    test('warns when signupGrant is set without oneShot (co-presence invariant)', () => {
+      mockConfig.billing.planDefinitions = [
+        { planId: 'free', meterQuota: 0, signupGrant: 500, ratios: {} },
+      ];
+      BillingPlanService.getActivePlan('free');
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('signupGrant and oneShot must be defined together'),
+        expect.objectContaining({ planId: 'free' }),
+      );
+    });
+
+    test('warns when oneShot is set without signupGrant (co-presence invariant)', () => {
+      mockConfig.billing.planDefinitions = [
+        { planId: 'free', meterQuota: 0, oneShot: true, ratios: {} },
+      ];
+      BillingPlanService.getActivePlan('free');
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('signupGrant and oneShot must be defined together'),
+        expect.objectContaining({ planId: 'free' }),
+      );
+    });
+
+    test('does not warn when both signupGrant and oneShot are set', () => {
+      mockConfig.billing.planDefinitions = [
+        { planId: 'free', meterQuota: 0, signupGrant: 500, oneShot: true, ratios: {} },
+      ];
+      BillingPlanService.getActivePlan('free');
+      expect(mockLogger.warn).not.toHaveBeenCalled();
+    });
+
+    test('does not warn when neither signupGrant nor oneShot are set', () => {
+      mockConfig.billing.planDefinitions = [
+        { planId: 'pro', meterQuota: 8000, ratios: {} },
+      ];
+      BillingPlanService.getActivePlan('pro');
+      expect(mockLogger.warn).not.toHaveBeenCalled();
     });
   });
 
