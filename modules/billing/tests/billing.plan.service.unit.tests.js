@@ -145,6 +145,47 @@ describe('BillingPlanService unit tests:', () => {
       BillingPlanService.getActivePlan('pro');
       expect(mockLogger.warn).not.toHaveBeenCalled();
     });
+
+    test('does not attach lone signupGrant when oneShot is missing (co-presence guard early return)', () => {
+      mockConfig.billing.planDefinitions = [
+        { planId: 'free', meterQuota: 0, signupGrant: 500, ratios: {} },
+      ];
+      const result = BillingPlanService.getActivePlan('free');
+      expect(result.signupGrant).toBeUndefined();
+      expect(result.oneShot).toBeUndefined();
+    });
+
+    test('does not attach lone oneShot when signupGrant is missing (co-presence guard early return)', () => {
+      mockConfig.billing.planDefinitions = [
+        { planId: 'free', meterQuota: 0, oneShot: true, ratios: {} },
+      ];
+      const result = BillingPlanService.getActivePlan('free');
+      expect(result.signupGrant).toBeUndefined();
+      expect(result.oneShot).toBeUndefined();
+    });
+  });
+
+  describe('getSignupGrant', () => {
+    test('returns signupGrant for a plan with both signupGrant and oneShot set', () => {
+      mockConfig.billing.planDefinitions = [
+        { planId: 'free', meterQuota: 0, signupGrant: 500, oneShot: true, ratios: {} },
+      ];
+      const grant = BillingPlanService.getSignupGrant('free');
+      expect(grant).toBe(500);
+    });
+
+    test('returns undefined for plans without signupGrant', () => {
+      mockConfig.billing.planDefinitions = [
+        { planId: 'pro', meterQuota: 8000, ratios: {} },
+      ];
+      const grant = BillingPlanService.getSignupGrant('pro');
+      expect(grant).toBeUndefined();
+    });
+
+    test('returns undefined for unknown planId', () => {
+      const grant = BillingPlanService.getSignupGrant('nonexistent');
+      expect(grant).toBeUndefined();
+    });
   });
 
   describe('getPlanByVersion', () => {
