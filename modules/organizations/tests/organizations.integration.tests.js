@@ -145,6 +145,49 @@ describe('Organizations integration tests:', () => {
     });
   });
 
+  describe('N2 — signup grant credited on org creation', () => {
+    let grantUser;
+    let BillingExtraBalanceRepository;
+
+    beforeAll(async () => {
+      config.organizations = { enabled: false };
+      BillingExtraBalanceRepository = (await import(path.resolve('./modules/billing/repositories/billing.extraBalance.repository.js'))).default;
+
+      // Reuse the top-level agent (same bootstrap instance) — no duplicate Express app.
+      const res = await agent
+        .post('/api/auth/signup')
+        .send({
+          firstName: 'Grant',
+          lastName: 'Test',
+          email: 'signup-grant-test@test.com',
+          password: 'W@os.jsI$Aw3$0m3',
+          provider: 'local',
+        })
+        .expect(200);
+      grantUser = res.body.user;
+    });
+
+    test('credits 500 compute to the org ExtraBalance ledger at signup', async () => {
+      // Resolve the org created for this user
+      const memberships = await MembershipRepository.list({ userId: grantUser._id || grantUser.id });
+      expect(memberships.length).toBeGreaterThan(0);
+      const orgId = (memberships[0].organizationId._id || memberships[0].organizationId).toString();
+
+      const balance = await BillingExtraBalanceRepository.getBalance(orgId);
+      expect(balance).toBe(500);
+
+      const ledger = await BillingExtraBalanceRepository.findLedgerByOrg(orgId);
+      expect(ledger).not.toBeNull();
+      const grantEntry = ledger.find((e) => e.source === 'signup_grant');
+      expect(grantEntry).toBeDefined();
+      expect(grantEntry.amount).toBe(500);
+    });
+
+    afterAll(async () => {
+      await cleanupUser(grantUser);
+    });
+  });
+
   // Mongoose disconnect
   afterAll(async () => {
     config.organizations = { ...originalOrganizations };
