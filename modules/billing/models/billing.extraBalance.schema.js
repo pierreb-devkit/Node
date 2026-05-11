@@ -15,6 +15,18 @@ const objectIdRegex = /^[a-f\d]{24}$/i;
 const LedgerKind = z.enum(['topup', 'debit', 'refund', 'expiration', 'adjustment']);
 
 /**
+ * Allowed grant sources — mirrors the Mongoose enum on LedgerEntrySchema.source.
+ * 'signup_grant' — one-shot free tier grant on org creation (kind='topup').
+ * 'adjustment'   — reserved for future non-Stripe manual credits.
+ * NOTE: 'adjustment' here is a source tag (provenance), distinct from
+ * LedgerKind 'adjustment' (balance mutation type). Existing creditCompensation()
+ * writes kind='adjustment' entries WITHOUT setting source — source is only set by
+ * creditGrant() and future grant methods. Do not assume kind='adjustment' implies
+ * source='adjustment'.
+ */
+const GrantSource = z.enum(['signup_grant', 'adjustment']);
+
+/**
  * Single ledger entry schema.
  * Enforces:
  *   - amount !== 0 (zero is always a bug)
@@ -39,6 +51,12 @@ const LedgerEntry = z
       .optional()
       .nullable(),
     refId: z.string().trim().optional().nullable(),
+    /**
+     * Credit source tag — set only by creditGrant() (and future grant methods).
+     * Absent on Stripe topup entries (creditPack) and creditCompensation entries.
+     * Mirrors LedgerEntrySchema.source in billing.extraBalance.model.mongoose.js.
+     */
+    source: GrantSource.optional().nullable(),
     at: z.coerce.date().optional(),
     expiresAt: z.coerce.date().optional().nullable(),
   })
@@ -92,10 +110,23 @@ const ExtraBalanceDebit = z.object({
   refId: z.string().trim().min(1, 'refId is required'),
 });
 
+/**
+ * Schema for creditGrant input.
+ * Unlike creditPack, no stripeSessionId is required — idempotency is
+ * derived from `source + orgId` (synthetic key stored as refId).
+ */
+const ExtraBalanceCreditGrant = z.object({
+  orgId: z.string().trim().regex(objectIdRegex, 'orgId must be a valid ObjectId'),
+  amount: z.number().int().min(1, 'amount must be >= 1'),
+  source: GrantSource,
+});
+
 export default {
   LedgerKind,
+  GrantSource,
   LedgerEntry,
   BillingExtraBalance,
   ExtraBalanceCreditPack,
   ExtraBalanceDebit,
+  ExtraBalanceCreditGrant,
 };

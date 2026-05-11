@@ -60,10 +60,20 @@ const LedgerEntrySchema = new Schema(
     /**
      * Generic external reference string.
      * Used for: debit idempotency key, expiration ref ('expire-<entryId>'),
-     * or adjustment memo.
+     * adjustment memo, or grant idempotency key ('signup_grant-<orgId>').
      */
     refId: {
       type: String,
+    },
+    /**
+     * Credit source tag — discriminates pack purchases from grants.
+     * 'signup_grant' — one-shot free tier grant on org creation.
+     * 'adjustment'   — manual ops credit (non-Stripe).
+     * Omitted for kind='topup' entries created by creditPack (Stripe path).
+     */
+    source: {
+      type: String,
+      enum: ['signup_grant', 'adjustment'],
     },
     at: {
       type: Date,
@@ -127,6 +137,16 @@ ExtraBalanceMongoose.index({ 'ledger.historyId': 1 }, { sparse: true });
  * Index for expiration sweeps — find topup entries with expiresAt in the past.
  */
 ExtraBalanceMongoose.index({ 'ledger.expiresAt': 1 }, { sparse: true });
+
+/**
+ * Index for grant analytics + idempotency support.
+ * refId is the leading key for analytics and admin queries that filter grant entries by refId prefix.
+ * source is a trailing key for filtering entries by grant type (e.g. all signup_grant entries).
+ * Note: the creditGrant idempotency guard (`ledger.refId: {$ne: key}`) is an exclusion predicate
+ * scoped by the unique `organization` field — it does not use tight index bounds, but the sparse
+ * index still reduces the scan set to grant entries only.
+ */
+ExtraBalanceMongoose.index({ 'ledger.refId': 1, 'ledger.source': 1 }, { sparse: true });
 
 /**
  * Returns the hex string representation of the document ObjectId.
