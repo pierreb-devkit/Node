@@ -48,6 +48,17 @@ describe('requireQuota middleware:', () => {
       default: mockConfig,
     }));
 
+    // billing.plan.service.js imports logger at module load time; the logger reads
+    // config.log.fileLogger which is absent from this suite's minimal config fixture.
+    // Mock the service to avoid loading the real logger with an incomplete config.
+    jest.unstable_mockModule('../services/billing.plan.service.js', () => ({
+      default: {
+        getActivePlan: jest.fn().mockReturnValue(null),
+        getPlanByVersion: jest.fn().mockReturnValue(null),
+        getSignupGrant: jest.fn().mockReturnValue(undefined),
+      },
+    }));
+
     const mod = await import('../middlewares/billing.requireQuota.js');
     requireQuota = mod.default;
 

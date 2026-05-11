@@ -2,13 +2,15 @@
  * Module dependencies
  */
 import config from '../../../config/index.js';
+import logger from '../../../lib/services/logger.js';
 
 /**
  * @desc Resolve a plan definition from config.billing.planDefinitions.
  *       Returns a plan-like object compatible with the previous DB-backed API.
  *
  * @param {string} planId - The logical plan identifier (e.g. "pro").
- * @returns {Object|null} Plan object with meterQuota, ratios, version fields, or null.
+ * @returns {Object|null} Plan object with meterQuota, ratios, version, and optional
+ *          signupGrant / oneShot fields (N2 signup-grant feature), or null.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const getPlanFromConfig = (planId) => {
@@ -21,12 +23,30 @@ const getPlanFromConfig = (planId) => {
     ?? config?.billing?.meter?.ratioVersion
     ?? 'v1';
 
-  return {
+  const plan = {
     planId: def.planId,
     version,
     meterQuota: def.meterQuota ?? 0,
     ratios: def.ratios ?? {},
   };
+
+  // N2 signup-grant fields — only present when configured (optional on the def).
+  // Guard: signupGrant and oneShot must be defined together (co-presence invariant).
+  // This mirrors the Zod schema refine() and catches misconfigured planDefinitions at runtime.
+  const hasSignupGrant = def.signupGrant !== undefined;
+  const hasOneShotFlag = def.oneShot !== undefined;
+  if (hasSignupGrant !== hasOneShotFlag) {
+    logger.warn(
+      '[billing.plan] signupGrant and oneShot must be defined together — check planDefinitions config',
+      { planId: def.planId, signupGrant: def.signupGrant, oneShot: def.oneShot },
+    );
+    // Do not attach partial/broken grant fields — return plan without them.
+    return plan;
+  }
+  if (hasSignupGrant) plan.signupGrant = def.signupGrant;
+  if (hasOneShotFlag) plan.oneShot = def.oneShot;
+
+  return plan;
 };
 
 /**
@@ -57,7 +77,22 @@ const getPlanByVersion = (planId, version) => {
   return plan;
 };
 
+/**
+ * @desc Get the signup grant amount for a given planId (N2 Free Tier Grant feature).
+ *       Returns the signupGrant value if the plan definition has it, or undefined.
+ *       Callers must handle undefined as "no grant configured for this plan".
+ *
+ * @param {string} planId - The logical plan identifier (e.g. "free").
+ * @returns {number|undefined} The signupGrant value, or undefined.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const getSignupGrant = (planId) => {
+  const plan = getPlanFromConfig(planId);
+  return plan?.signupGrant;
+};
+
 export default {
   getActivePlan,
   getPlanByVersion,
+  getSignupGrant,
 };
