@@ -4,6 +4,7 @@
 import { activeStatuses } from '../lib/constants.js';
 import config from '../../../config/index.js';
 import responses from '../../../lib/helpers/responses.js';
+import logger from '../../../lib/services/logger.js';
 import BillingService from '../services/billing.service.js';
 import BillingUsageService from '../services/billing.usage.service.js';
 import BillingExtraService from '../services/billing.extra.service.js';
@@ -24,6 +25,15 @@ const checkout = async (req, res) => {
       return res.status(409).json({ type: 'error', message: err.message, code: 'subscription_already_active', portalUrl: err.portalUrl });
     }
     const status = err.message?.startsWith('Invalid') || err.message?.includes('not found') ? 422 : 502;
+    if (status === 502) {
+      logger.error('[billing.checkout] createCheckout failed', {
+        error: err?.message ?? String(err),
+        stack: err?.stack,
+        organizationId: req.organization?._id,
+        priceId: req.body?.priceId,
+        source: 'web',
+      });
+    }
     const title = status === 422 ? 'Unprocessable Entity' : 'Bad Gateway';
     responses.error(res, status, title, 'Failed to create checkout session')(err);
   }
@@ -138,6 +148,15 @@ const extrasCheckout = async (req, res) => {
     responses.success(res, 'extras checkout session created')(result);
   } catch (err) {
     const status = err.message?.startsWith('Invalid') || err.message?.includes('not found') ? 422 : 502;
+    if (status === 502) {
+      logger.error('[billing.checkout] createExtrasCheckout failed', {
+        error: err?.message ?? String(err),
+        stack: err?.stack,
+        organizationId: req.organization?._id,
+        packId: req.body?.packId,
+        source: 'web',
+      });
+    }
     const title = status === 422 ? 'Unprocessable Entity' : 'Bad Gateway';
     responses.error(res, status, title, 'Failed to create extras checkout session')(err);
   }

@@ -63,6 +63,12 @@ describe('Billing service unit tests:', () => {
     jest.unstable_mockModule('../services/billing.plans.service.js', () => ({
       default: mockPlansService,
     }));
+
+    // Mock logger to prevent logger.js from reading config at import time.
+    // Tests in the "error logging" describe override this with a tracked mock.
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
+    }));
   });
 
   afterEach(() => {
@@ -827,6 +833,115 @@ describe('Billing service unit tests:', () => {
       const result = await BillingService.fetchSubscriptionDetails('sub_cancel');
 
       expect(result.nextRenewalDate).toEqual(new Date(cancelAt * 1000));
+    });
+  });
+
+  // ── Error logging regression (fix-checkout-502) ──────────────────────────
+  // Ensures that stripe.customers.create and stripe.checkout.sessions.create
+  // errors are logged via logger.error before being re-thrown.
+  // Without this, production 502s have no stack trace in pod logs.
+
+  describe('error logging on Stripe failure', () => {
+    let mockLogger;
+
+    beforeEach(() => {
+      // Re-register logger mock with tracked jest.fn() instances so we can assert on calls.
+      // The parent beforeEach already registers a silent mock; this overrides it with tracked ones.
+      mockLogger = { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() };
+      jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+        default: mockLogger,
+      }));
+    });
+
+    test('logs error and re-throws when stripe.customers.create rejects', async () => {
+      const stripeError = new Error('Stripe Test: customer creation blocked');
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_log_cus' } },
+      }));
+
+      mockSubscriptionRepository.findByOrganization
+        .mockResolvedValueOnce(null)   // block guard: no active sub
+        .mockResolvedValueOnce(null);  // _ensureStripeCustomer: no existing sub → create
+      mockStripeInstance.customers.create.mockRejectedValue(stripeError);
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      await expect(
+        BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel'),
+      ).rejects.toThrow('Stripe Test: customer creation blocked');
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        '[billing.service] stripe.customers.create failed',
+        expect.objectContaining({
+          organizationId: orgId,
+          error: 'Stripe Test: customer creation blocked',
+        }),
+      );
+    });
+
+    test('logs error and re-throws when stripe.checkout.sessions.create rejects', async () => {
+      const stripeError = new Error('Stripe Test: session creation blocked');
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_log_sess' } },
+      }));
+
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        stripeCustomerId: 'cus_existing',
+      });
+      mockStripeInstance.checkout.sessions.create.mockRejectedValue(stripeError);
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      await expect(
+        BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel'),
+      ).rejects.toThrow('Stripe Test: session creation blocked');
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        '[billing.service] stripe.checkout.sessions.create failed',
+        expect.objectContaining({
+          organizationId: orgId,
+          priceId: 'price_starter_m',
+          error: 'Stripe Test: session creation blocked',
+        }),
+      );
+    });
+
+    test('logs error and re-throws when extras stripe.checkout.sessions.create rejects', async () => {
+      const stripeError = new Error('Stripe Test: extras session blocked');
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: {
+          stripe: {
+            secretKey: 'sk_test_log_extras',
+            prices: { packs: { pack_500k: 'price_pack500' } },
+          },
+          billing: {
+            packs: [{ packId: 'pack_500k', meterUnits: 500000 }],
+          },
+        },
+      }));
+
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        stripeCustomerId: 'cus_existing',
+      });
+      mockStripeInstance.checkout.sessions.create.mockRejectedValue(stripeError);
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      await expect(
+        BillingService.createExtrasCheckout(mockOrganization, 'pack_500k', 'http://ok', 'http://cancel'),
+      ).rejects.toThrow('Stripe Test: extras session blocked');
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        '[billing.service] stripe.checkout.sessions.create (extras) failed',
+        expect.objectContaining({
+          organizationId: orgId,
+          packId: 'pack_500k',
+          error: 'Stripe Test: extras session blocked',
+        }),
+      );
     });
   });
 });

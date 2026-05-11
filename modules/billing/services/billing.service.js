@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import config from '../../../config/index.js';
+import logger from '../../../lib/services/logger.js';
 import getStripe from '../lib/stripe.js';
 import BillingPlansService from './billing.plans.service.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
@@ -46,13 +47,23 @@ const _ensureStripeCustomer = async (stripe, organization) => {
   let subscription = await SubscriptionRepository.findByOrganization(organization._id);
   if (subscription?.stripeCustomerId) return subscription;
 
-  const customer = await stripe.customers.create(
-    {
-      name: organization.name,
-      metadata: { organizationId: String(organization._id) },
-    },
-    { idempotencyKey: `cus_create_${String(organization._id)}` },
-  );
+  let customer;
+  try {
+    customer = await stripe.customers.create(
+      {
+        name: organization.name,
+        metadata: { organizationId: String(organization._id) },
+      },
+      { idempotencyKey: `cus_create_${String(organization._id)}` },
+    );
+  } catch (err) {
+    logger.error('[billing.service] stripe.customers.create failed', {
+      error: err?.message ?? String(err),
+      stack: err?.stack,
+      organizationId: String(organization._id),
+    });
+    throw err;
+  }
 
   if (subscription) {
     subscription = await SubscriptionRepository.update({
@@ -190,7 +201,19 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
   // the day yields the same expired session URL, silently killing conversion.
   // Same-tab double-clicks are prevented in this function by the active-
   // subscription guard above (both the DB check and the live Stripe lookup).
-  const session = await stripe.checkout.sessions.create(checkoutParams);
+  let session;
+  try {
+    session = await stripe.checkout.sessions.create(checkoutParams);
+  } catch (err) {
+    logger.error('[billing.service] stripe.checkout.sessions.create failed', {
+      error: err?.message ?? String(err),
+      stack: err?.stack,
+      organizationId: String(organization._id),
+      priceId,
+      plan: matchedPlan.planId,
+    });
+    throw err;
+  }
 
   return session.url;
 };
@@ -270,10 +293,21 @@ const createExtrasCheckout = async (organization, packId, successUrl, cancelUrl,
     extrasCheckoutParams.automatic_tax = { enabled: true };
     extrasCheckoutParams.customer_update = { address: 'auto', name: 'auto' };
   }
-  const session = await stripe.checkout.sessions.create(
-    extrasCheckoutParams,
-    { idempotencyKey },
-  );
+  let session;
+  try {
+    session = await stripe.checkout.sessions.create(
+      extrasCheckoutParams,
+      { idempotencyKey },
+    );
+  } catch (err) {
+    logger.error('[billing.service] stripe.checkout.sessions.create (extras) failed', {
+      error: err?.message ?? String(err),
+      stack: err?.stack,
+      organizationId: orgId,
+      packId,
+    });
+    throw err;
+  }
 
   return { url: session.url };
 };
