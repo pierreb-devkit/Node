@@ -19,7 +19,7 @@ import { z } from 'zod';
 const billingPlanDefinitionSchema = z.object({
   planId: z.string().min(1),
   meterQuota: z.number().int().nonnegative(),
-  ratios: z.record(z.string(), z.number()).default({}),
+  ratios: z.record(z.string(), z.number()).default(() => ({})),
   version: z.string().optional(),
   signupGrant: z.number().int().nonnegative().optional(),
   oneShot: z.boolean().optional(),

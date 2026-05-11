@@ -29,12 +29,16 @@ describe('billing planDefinitions config:', () => {
       expect(free.meterQuota).toBe(0);
     });
 
-    it('Growth and Pro plans do not have signupGrant', () => {
+    it('Paid plans (starter, pro, enterprise) do not have signupGrant', () => {
       const definitions = config?.billing?.planDefinitions ?? [];
-      const growth = definitions.find((p) => p.planId === 'growth');
-      const pro = definitions.find((p) => p.planId === 'pro');
-      if (growth) expect(growth.signupGrant).toBeUndefined();
-      if (pro) expect(pro.signupGrant).toBeUndefined();
+      const paidPlanIds = ['starter', 'pro', 'enterprise'];
+      for (const planId of paidPlanIds) {
+        const plan = definitions.find((p) => p.planId === planId);
+        // Assert the plan exists so this test cannot pass vacuously if IDs change
+        expect(plan).toBeDefined();
+        expect(plan.signupGrant).toBeUndefined();
+        expect(plan.oneShot).toBeUndefined();
+      }
     });
 
     it('Free plan signupGrant is a non-negative integer', () => {
