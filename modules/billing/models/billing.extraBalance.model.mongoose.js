@@ -139,9 +139,12 @@ ExtraBalanceMongoose.index({ 'ledger.historyId': 1 }, { sparse: true });
 ExtraBalanceMongoose.index({ 'ledger.expiresAt': 1 }, { sparse: true });
 
 /**
- * Index for grant idempotency — supports creditGrant duplicate-check via refId filter.
- * refId is the leading key so the `ledger.refId: {$ne: key}` query uses index bounds directly.
- * source is a trailing key for analytics queries filtering grant entries by source.
+ * Index for grant analytics + idempotency support.
+ * refId is the leading key for analytics and admin queries that filter grant entries by refId prefix.
+ * source is a trailing key for filtering entries by grant type (e.g. all signup_grant entries).
+ * Note: the creditGrant idempotency guard (`ledger.refId: {$ne: key}`) is an exclusion predicate
+ * scoped by the unique `organization` field — it does not use tight index bounds, but the sparse
+ * index still reduces the scan set to grant entries only.
  */
 ExtraBalanceMongoose.index({ 'ledger.refId': 1, 'ledger.source': 1 }, { sparse: true });
 

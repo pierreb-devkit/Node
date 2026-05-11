@@ -16,12 +16,13 @@ const LedgerKind = z.enum(['topup', 'debit', 'refund', 'expiration', 'adjustment
 
 /**
  * Allowed grant sources — mirrors the Mongoose enum on LedgerEntrySchema.source.
- * 'signup_grant' — one-shot free tier grant on org creation.
- * 'adjustment'   — manual ops credit (non-Stripe, no Stripe session).
- * NOTE: 'adjustment' here is a source tag (who credited it), distinct from
- * LedgerKind 'adjustment' (how the balance was changed). They share the string
- * literal by convention: a manual adjustment uses kind='adjustment' + source='adjustment'.
- * Grant entries use kind='topup' + source='signup_grant'.
+ * 'signup_grant' — one-shot free tier grant on org creation (kind='topup').
+ * 'adjustment'   — reserved for future non-Stripe manual credits.
+ * NOTE: 'adjustment' here is a source tag (provenance), distinct from
+ * LedgerKind 'adjustment' (balance mutation type). Existing creditCompensation()
+ * writes kind='adjustment' entries WITHOUT setting source — source is only set by
+ * creditGrant() and future grant methods. Do not assume kind='adjustment' implies
+ * source='adjustment'.
  */
 const GrantSource = z.enum(['signup_grant', 'adjustment']);
 
@@ -51,7 +52,8 @@ const LedgerEntry = z
       .nullable(),
     refId: z.string().trim().optional().nullable(),
     /**
-     * Credit source tag — set on grant/adjustment entries; absent on Stripe topup entries.
+     * Credit source tag — set only by creditGrant() (and future grant methods).
+     * Absent on Stripe topup entries (creditPack) and creditCompensation entries.
      * Mirrors LedgerEntrySchema.source in billing.extraBalance.model.mongoose.js.
      */
     source: GrantSource.optional().nullable(),

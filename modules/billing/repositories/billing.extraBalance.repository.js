@@ -3,6 +3,7 @@
  */
 import mongoose from 'mongoose';
 import AppError from '../../../lib/helpers/AppError.js';
+import BillingExtraBalanceSchema from '../models/billing.extraBalance.schema.js';
 
 /**
  * Validate that orgId is a syntactically valid MongoDB ObjectId.
@@ -183,12 +184,14 @@ const creditGrant = async (orgId, amount, source) => {
   if (!isValidOrgId(orgId)) return { doc: null, applied: false };
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('invalid argument: amount must be a positive finite number');
   if (typeof source !== 'string' || source.trim() === '') throw new Error('invalid argument: source must be a non-empty string');
+  // Validate source against the enum before writing — findOneAndUpdate does not run validators.
+  BillingExtraBalanceSchema.ExtraBalanceCreditGrant.parse({ orgId, amount, source: source.trim() });
 
-  const idempotencyKey = `${source}-${orgId}`;
+  const idempotencyKey = `${source.trim()}-${orgId}`;
   const entry = {
     kind: 'topup',
     amount,
-    source,
+    source: source.trim(),
     refId: idempotencyKey,
     at: new Date(),
   };

@@ -881,6 +881,13 @@ describe('BillingExtraBalance unit tests:', () => {
         ).rejects.toThrow('invalid argument: source must be a non-empty string');
       });
 
+      test('should throw (Zod) on source value not in allowed enum', async () => {
+        await expect(
+          BillingExtraBalanceRepository.creditGrant(orgId, 500, 'freebie'),
+        ).rejects.toThrow();
+        expect(mockModel.findOneAndUpdate).not.toHaveBeenCalled();
+      });
+
       test('should return null doc with applied:false for invalid orgId', async () => {
         const { default: mongoose } = await import('mongoose');
         mongoose.Types.ObjectId.isValid = jest.fn(() => false);
