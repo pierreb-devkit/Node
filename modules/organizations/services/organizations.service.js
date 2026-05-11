@@ -12,6 +12,7 @@ import MembershipService from './organizations.membership.service.js';
 import UserService from '../../users/services/users.service.js';
 import { slugify, generateOrganizationSlug } from '../helpers/organizations.slug.js';
 import { MEMBERSHIP_ROLES } from '../lib/constants.js';
+import BillingSignupGrantService from '../../billing/services/billing.signupGrant.service.js';
 
 /**
  * @desc Strip sensitive fields from an organization document before returning to public flows.
@@ -79,6 +80,7 @@ const createOrganizationForUser = async ({ name, slug, domain, user, slugGenerat
     let membership;
     const currentSlug = attempt === 0 ? slug : `${slug}-${attempt}`;
 
+    let created = false;
     try {
       organization = await OrganizationsRepository.create({
         name,
@@ -95,8 +97,7 @@ const createOrganizationForUser = async ({ name, slug, domain, user, slugGenerat
       });
 
       await UserService.updateById(userId, { currentOrganization: organization._id });
-
-      return { organization, membership };
+      created = true;
     } catch (err) {
       // Clean up any partially created artifacts to avoid orphaned records
       if (membership) {
@@ -110,6 +111,13 @@ const createOrganizationForUser = async ({ name, slug, domain, user, slugGenerat
         continue;
       }
       throw err;
+    }
+
+    if (created) {
+      // N2: best-effort signup grant — called outside the try/catch so billing failure
+      // never triggers org/membership rollback. grantOnSignup always resolves (never throws).
+      await BillingSignupGrantService.grantOnSignup({ orgId: organization._id.toString(), planId: 'free' });
+      return { organization, membership };
     }
   }
 
