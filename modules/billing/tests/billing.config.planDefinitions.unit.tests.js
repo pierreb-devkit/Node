@@ -41,12 +41,12 @@ describe('billing planDefinitions config:', () => {
       }
     });
 
-    it('Free plan signupGrant is a non-negative integer', () => {
+    it('Free plan signupGrant is a positive integer (> 0)', () => {
       const definitions = config?.billing?.planDefinitions ?? [];
       const free = definitions.find((p) => p.planId === 'free');
       expect(free).toBeDefined();
       expect(Number.isInteger(free.signupGrant)).toBe(true);
-      expect(free.signupGrant).toBeGreaterThanOrEqual(0);
+      expect(free.signupGrant).toBeGreaterThan(0);
     });
 
     it('Free plan oneShot is a boolean', () => {
@@ -86,6 +86,19 @@ describe('billing planDefinitions config:', () => {
         planId: 'free',
         meterQuota: 0,
         signupGrant: -1,
+        oneShot: true,
+        ratios: {},
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects zero signupGrant (meaningless no-op grant)', async () => {
+      const { billingPlanDefinitionSchema } = await import('../config/billing.config.zod.js');
+      const result = billingPlanDefinitionSchema.safeParse({
+        planId: 'free',
+        meterQuota: 0,
+        signupGrant: 0,
+        oneShot: true,
         ratios: {},
       });
       expect(result.success).toBe(false);
@@ -97,6 +110,29 @@ describe('billing planDefinitions config:', () => {
         planId: 'free',
         meterQuota: 0,
         signupGrant: 500.5,
+        oneShot: true,
+        ratios: {},
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects oneShot without signupGrant', async () => {
+      const { billingPlanDefinitionSchema } = await import('../config/billing.config.zod.js');
+      const result = billingPlanDefinitionSchema.safeParse({
+        planId: 'free',
+        meterQuota: 0,
+        oneShot: true,
+        ratios: {},
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects signupGrant without oneShot', async () => {
+      const { billingPlanDefinitionSchema } = await import('../config/billing.config.zod.js');
+      const result = billingPlanDefinitionSchema.safeParse({
+        planId: 'free',
+        meterQuota: 0,
+        signupGrant: 500,
         ratios: {},
       });
       expect(result.success).toBe(false);
