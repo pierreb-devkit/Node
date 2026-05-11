@@ -8,7 +8,8 @@ import config from '../../../config/index.js';
  *       Returns a plan-like object compatible with the previous DB-backed API.
  *
  * @param {string} planId - The logical plan identifier (e.g. "pro").
- * @returns {Object|null} Plan object with meterQuota, ratios, version fields, or null.
+ * @returns {Object|null} Plan object with meterQuota, ratios, version, and optional
+ *          signupGrant / oneShot fields (N2 signup-grant feature), or null.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const getPlanFromConfig = (planId) => {
@@ -21,12 +22,18 @@ const getPlanFromConfig = (planId) => {
     ?? config?.billing?.meter?.ratioVersion
     ?? 'v1';
 
-  return {
+  const plan = {
     planId: def.planId,
     version,
     meterQuota: def.meterQuota ?? 0,
     ratios: def.ratios ?? {},
   };
+
+  // N2 signup-grant fields — only present when configured (optional on the def)
+  if (def.signupGrant !== undefined) plan.signupGrant = def.signupGrant;
+  if (def.oneShot !== undefined) plan.oneShot = def.oneShot;
+
+  return plan;
 };
 
 /**

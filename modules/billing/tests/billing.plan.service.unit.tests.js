@@ -83,6 +83,24 @@ describe('BillingPlanService unit tests:', () => {
       expect(result).not.toBeInstanceOf(Promise);
       expect(typeof result).toBe('object');
     });
+
+    test('passes through signupGrant when present on plan definition', () => {
+      mockConfig.billing.planDefinitions = [
+        { planId: 'free', meterQuota: 0, signupGrant: 500, oneShot: true, ratios: {} },
+      ];
+      const result = BillingPlanService.getActivePlan('free');
+      expect(result.signupGrant).toBe(500);
+      expect(result.oneShot).toBe(true);
+    });
+
+    test('does not include signupGrant on plans without the field', () => {
+      mockConfig.billing.planDefinitions = [
+        { planId: 'growth', meterQuota: 1600, ratios: {} },
+      ];
+      const result = BillingPlanService.getActivePlan('growth');
+      expect(result.signupGrant).toBeUndefined();
+      expect(result.oneShot).toBeUndefined();
+    });
   });
 
   describe('getPlanByVersion', () => {

@@ -47,7 +47,7 @@ const config = {
     /**
      * Plan definitions — DOWNSTREAM-OVERRIDE-REQUIRED for meter mode.
      * Used by BillingPlanService.ensureSeeded() at boot to upsert BillingPlan docs.
-     * Array of objects: { planId, meterQuota: units/week, ratios: { featureKey: multiplier }, version? }.
+     * Array of objects: { planId, meterQuota: units/week, ratios: { featureKey: multiplier }, version?, signupGrant?, oneShot? }.
      * billing.plans enum is derived at boot from planDefinitions.map(p => p.planId) — do NOT
      * declare billing.plans manually. This is the single source of truth for plan identifiers.
      *
@@ -55,7 +55,12 @@ const config = {
      * Downstream projects that use YYYY.MM versioning should set this (or set ratioVersion).
      */
     planDefinitions: [
-      { planId: 'free', meterQuota: 0, ratios: { default: 1 } },
+      /**
+       * signupGrant: one-time credit given to fresh orgs at signup (N2 feature).
+       * oneShot: true = grant does not renew on weekly/monthly reset.
+       * DOWNSTREAM-OVERRIDE: set meterQuota + signupGrant per project's actual unit economics.
+       */
+      { planId: 'free', meterQuota: 0, signupGrant: 500, oneShot: true, ratios: { default: 1 } },
       { planId: 'starter', meterQuota: 50000, ratios: { default: 1 } },
       { planId: 'pro', meterQuota: 500000, ratios: { default: 1 } },
       { planId: 'enterprise', meterQuota: 2000000, ratios: { default: 1 } },
