@@ -71,6 +71,15 @@ describe('Billing extras routes integration tests:', () => {
       activeStatuses: ['active', 'trialing'],
     }));
 
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: {
+        error: jest.fn(),
+        warn: jest.fn(),
+        info: jest.fn(),
+        debug: jest.fn(),
+      },
+    }));
+
     const mod = await import('../controllers/billing.controller.js');
     BillingController = mod.default;
 
