@@ -77,6 +77,12 @@ describe('Billing extras controller unit tests:', () => {
       activeStatuses: ['active', 'trialing'],
     }));
 
+    // Mock logger: billing.controller.js imports logger, which reads config at module init.
+    // Without this mock, tests that supply a minimal config object cause logger.js to throw.
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
+    }));
+
     const mod = await import('../controllers/billing.controller.js');
     BillingController = mod.default;
 
