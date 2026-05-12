@@ -8,6 +8,7 @@ import logger from '../../../lib/services/logger.js';
 import BillingService from '../services/billing.service.js';
 import BillingUsageService from '../services/billing.usage.service.js';
 import BillingExtraService from '../services/billing.extra.service.js';
+import BillingPlanService from '../services/billing.plan.service.js';
 
 /**
  * @desc Endpoint to create a Stripe Checkout session
@@ -93,13 +94,18 @@ const getUsage = async (req, res) => {
       const extrasRemaining = await BillingExtraService.getOrgBalanceContext(req.organization._id.toString());
       const packsAvailable = config.billing?.packs ?? [];
 
+      // Derive meterQuota from the live plan config — DB snapshot is stale after a plan upgrade
+      // (free → growth) until the next incrementMeter call. Live config is authoritative.
+      const livePlan = BillingPlanService.getActivePlan(plan);
+      const liveQuota = livePlan?.meterQuota ?? meter?.meterQuota ?? 0;
+
       return responses.success(res, 'billing usage')({
         plan,
         planVersion: meter?.planVersion ?? null,
         weekKey: meter?.weekKey ?? BillingUsageService.currentWeekKey(),
         weekResetAt: meter?.resetAt ?? null,
         meterUsed: meter?.meterUsed ?? 0,
-        meterQuota: meter?.meterQuota ?? 0,
+        meterQuota: liveQuota,
         meterBreakdown: meter?.meterBreakdown ?? {},
         extrasRemaining,
         packsAvailable,
