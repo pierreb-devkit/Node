@@ -61,7 +61,7 @@
     "cross-env": "^10.1.0",
     "enhanced-resolve": "^5.21.3",
     "express": "^5.2.1",
-    "express-rate-limit": "^8.5.1",
+    "express-rate-limit": "^8.5.2",
     "generate-password": "^1.7.1",
     "glob": "^13.0.6",
     "handlebars": "^4.7.9",
