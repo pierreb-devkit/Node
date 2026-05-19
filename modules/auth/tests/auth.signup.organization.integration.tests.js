@@ -167,6 +167,19 @@ describe('Auth signup organization integration tests:', () => {
         // Abilities should be present (with org context — user is owner of their own org)
         expect(result2.body.abilities).toBeDefined();
         expect(result2.body.abilities).toBeInstanceOf(Array);
+
+        // A2b: suggestedJoin must be forwarded from the service through the controller response.
+        // Shape is name-only { orgId: string, orgName: string } — no extra keys (domain, size, etc.)
+        expect(result2.body.suggestedJoin).toBeDefined();
+        expect(result2.body.suggestedJoin).not.toBeNull();
+        expect(typeof result2.body.suggestedJoin.orgId).toBe('string');
+        expect(typeof result2.body.suggestedJoin.orgName).toBe('string');
+        expect(result2.body.suggestedJoin.orgId).toBe(String(firstOrg._id));
+        // name-only: no leaked fields
+        expect(result2.body.suggestedJoin).not.toHaveProperty('domain');
+        expect(result2.body.suggestedJoin).not.toHaveProperty('memberCount');
+        expect(result2.body.suggestedJoin).not.toHaveProperty('membership');
+        expect(result2.body.suggestedJoin).not.toHaveProperty('plan');
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -324,6 +337,9 @@ describe('Auth signup organization integration tests:', () => {
         expect(result.body).toHaveProperty('tokenExpiresIn');
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('Sign up');
+        // A2b: no domain match / orgs disabled → suggestedJoin is present-as-null (not absent)
+        expect(result.body).toHaveProperty('suggestedJoin');
+        expect(result.body.suggestedJoin).toBeNull();
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
