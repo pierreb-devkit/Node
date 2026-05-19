@@ -116,13 +116,13 @@ describe('Auth signup organization integration tests:', () => {
   });
 
   describe('Signup with organizations enabled + autoCreate + domainMatching', () => {
-    test('should create pending join request when domain matches existing org', async () => {
+    test('spec D5: second user with same domain gets own workspace + suggestedJoin hint (no pending request)', async () => {
+      // Spec D5 always-create: domain-match no longer creates a pending join request.
+      // Both users get their own active workspace; the second receives a suggestedJoin hint.
       config.organizations = { enabled: true, autoCreate: true, domainMatching: true };
 
-      // First, create an existing organization with a specific domain
       let firstUser;
       let secondUser;
-      // clean up stale users from previous runs on shared databases
       await purgeUser('first@matchdomain.com');
       await purgeUser('second@matchdomain.com');
       try {
@@ -143,7 +143,7 @@ describe('Auth signup organization integration tests:', () => {
         expect(firstOrg).toBeDefined();
         expect(firstOrg.domain).toBe('matchdomain.com');
 
-        // Sign up second user with same domain — should get pending join request
+        // Sign up second user with same domain — spec D5: gets own workspace, not a join request
         const result2 = await agent
           .post('/api/auth/signup')
           .send({
@@ -157,13 +157,14 @@ describe('Auth signup organization integration tests:', () => {
 
         secondUser = result2.body.user;
 
-        // Should reference the same org but with pending flag
+        // Second user gets their OWN active workspace, not a reference to firstOrg
         expect(result2.body.organization).toBeDefined();
-        expect(result2.body.organization._id).toBe(firstOrg._id);
-        expect(result2.body.pendingJoin).toBe(true);
-        expect(result2.body.organizationSetupRequired).toBe(false);
+        expect(result2.body.organization).not.toBeNull();
+        expect(result2.body.organization._id).not.toBe(firstOrg._id);
+        expect(result2.body.pendingJoin).toBeFalsy();
+        expect(result2.body.organizationSetupRequired).toBeFalsy();
 
-        // Abilities should be present (without org context)
+        // Abilities should be present (with org context — user is owner of their own org)
         expect(result2.body.abilities).toBeDefined();
         expect(result2.body.abilities).toBeInstanceOf(Array);
       } catch (err) {
@@ -215,11 +216,10 @@ describe('Auth signup organization integration tests:', () => {
   });
 
   describe('Signup with organizations enabled + autoCreate + no domainMatching', () => {
-    test('should create a personal organization for the user', async () => {
+    test('should create a personal organization for the user (domainMatching off = personal name)', async () => {
       config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
 
       let user;
-      // clean up stale users from previous runs on shared databases
       await purgeUser('personal@somecompany.com');
       try {
         const result = await agent
@@ -235,12 +235,12 @@ describe('Auth signup organization integration tests:', () => {
 
         user = result.body.user;
 
-        // A personal organization should be created (no domain matching)
+        // domainMatching off → personal workspace name regardless of domain
         expect(result.body.organization).toBeDefined();
         expect(result.body.organization).not.toBeNull();
         expect(result.body.organization.name).toBe("Personal's organization");
         expect(result.body.organization.domain).toBe('');
-        expect(result.body.organizationSetupRequired).toBe(false);
+        expect(result.body.organizationSetupRequired).toBeFalsy();
 
         // Abilities should be present
         expect(result.body.abilities).toBeDefined();
@@ -254,12 +254,13 @@ describe('Auth signup organization integration tests:', () => {
     });
   });
 
-  describe('Signup with organizations enabled + no autoCreate', () => {
-    test('should not create an organization and flag setup as required', async () => {
+  describe('Signup with organizations enabled + no autoCreate (spec D5: autoCreate is deprecated no-op)', () => {
+    test('spec D5: autoCreate:false is a no-op — workspace always provisioned', async () => {
+      // Spec D5: config.organizations.autoCreate is a deprecated no-op.
+      // Signup ALWAYS provisions a workspace; organizationSetupRequired is never returned.
       config.organizations = { enabled: true, autoCreate: false, domainMatching: true };
 
       let user;
-      // clean up stale users from previous runs on shared databases
       await purgeUser('manual@setup.com');
       try {
         const result = await agent
@@ -275,11 +276,13 @@ describe('Auth signup organization integration tests:', () => {
 
         user = result.body.user;
 
-        // No organization should be created
-        expect(result.body.organization).toBeNull();
-        expect(result.body.organizationSetupRequired).toBe(true);
+        // Workspace is always created now (spec D5)
+        expect(result.body.organization).not.toBeNull();
+        expect(result.body.organization).toBeDefined();
+        // organizationSetupRequired defaults to false (auth controller || false)
+        expect(result.body.organizationSetupRequired).toBeFalsy();
 
-        // Abilities should still be present (guest-level for org context)
+        // Abilities should be present (user is owner of their new workspace)
         expect(result.body.abilities).toBeDefined();
         expect(result.body.abilities).toBeInstanceOf(Array);
       } catch (err) {
@@ -312,11 +315,12 @@ describe('Auth signup organization integration tests:', () => {
 
         user = result.body.user;
 
-        // Verify response structure includes the new fields
+        // Verify response structure includes the expected fields
         expect(result.body).toHaveProperty('user');
         expect(result.body).toHaveProperty('organization');
         expect(result.body).toHaveProperty('abilities');
-        expect(result.body).toHaveProperty('organizationSetupRequired');
+        // organizationSetupRequired is always false (auth controller || false default)
+        expect(result.body.organizationSetupRequired).toBeFalsy();
         expect(result.body).toHaveProperty('tokenExpiresIn');
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('Sign up');

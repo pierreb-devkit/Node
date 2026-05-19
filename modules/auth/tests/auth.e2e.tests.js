@@ -118,7 +118,9 @@ describe('Auth E2E tests:', () => {
       secondUser = null;
     });
 
-    test('should create pending join request when email domain matches existing org', async () => {
+    test('spec D5: second user with same domain gets own workspace + suggestedJoin (no pending join request)', async () => {
+      // Spec D5 always-create: domain-match no longer creates a pending join request.
+      // Both users get their own active workspace.
       config.organizations = { enabled: true, autoCreate: true, domainMatching: true };
 
       try {
@@ -139,7 +141,7 @@ describe('Auth E2E tests:', () => {
         expect(firstOrg).toBeDefined();
         expect(firstOrg.domain).toBe('e2etest.com');
 
-        // Step 2: signup second user with same domain
+        // Step 2: signup second user with same domain — gets own workspace (spec D5)
         const result2 = await agent
           .post('/api/auth/signup')
           .send({
@@ -153,26 +155,29 @@ describe('Auth E2E tests:', () => {
 
         secondUser = result2.body.user;
 
-        // Verify org is returned with pending flag
+        // Second user gets their OWN active workspace (not a join on firstOrg)
         expect(result2.body.organization).toBeDefined();
-        expect(result2.body.organization._id).toBe(firstOrg._id);
-        expect(result2.body.pendingJoin).toBe(true);
+        expect(result2.body.organization).not.toBeNull();
+        expect(result2.body.organization._id).not.toBe(firstOrg._id);
+        // pendingJoin is always false (spec D5)
+        expect(result2.body.pendingJoin).toBeFalsy();
 
-        // Verify second user has a PENDING membership (not active)
-        const pendingMemberships = await MembershipRepository.list({
+        // Second user has an ACTIVE membership on their new org (not pending on firstOrg)
+        const activeMemberships = await MembershipRepository.list({
+          userId: secondUser.id,
+          organizationId: result2.body.organization._id,
+          status: 'active',
+        });
+        expect(activeMemberships).toHaveLength(1);
+        expect(activeMemberships[0].role).toBe('owner');
+
+        // NO pending membership on firstOrg (spec D5: no join request created)
+        const pendingOnFirst = await MembershipRepository.list({
           userId: secondUser.id,
           organizationId: firstOrg._id,
           status: 'pending',
         });
-        expect(pendingMemberships).toHaveLength(1);
-
-        // Verify NO active membership
-        const activeMemberships = await MembershipRepository.list({
-          userId: secondUser.id,
-          organizationId: firstOrg._id,
-          status: 'active',
-        });
-        expect(activeMemberships).toHaveLength(0);
+        expect(pendingOnFirst).toHaveLength(0);
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();

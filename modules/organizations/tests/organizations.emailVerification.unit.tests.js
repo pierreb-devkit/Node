@@ -91,8 +91,8 @@ describe('Email verification gates:', () => {
       expect(result.organization).toBeNull();
       expect(result.membership).toBeNull();
       expect(result.emailVerificationRequired).toBe(true);
-      expect(result.organizationSetupRequired).toBe(true);
-      expect(result.pendingJoin).toBe(false);
+      // organizationSetupRequired and pendingJoin removed — spec D5: service no longer
+      // returns these keys; signup always provisions a workspace post-verification.
     });
 
     test('should proceed normally when mailer is not configured', async () => {
