@@ -10,7 +10,7 @@ import OrganizationsRepository from '../repositories/organizations.repository.js
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
 import UserService from '../../users/services/users.service.js';
 import { slugify, generateOrganizationSlug } from '../helpers/organizations.slug.js';
-import { MEMBERSHIP_ROLES } from '../lib/constants.js';
+import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../lib/constants.js';
 import BillingSignupGrantService from '../../billing/services/billing.signupGrant.service.js';
 import { isPublicDomain, normalizeEmailDomain } from './organizations.domain.js';
 
@@ -141,6 +141,28 @@ const handleSignupOrganization = async (user) => {
       membership: null,
       abilities: [],
       emailVerificationRequired: true,
+    };
+  }
+
+  // A4: Idempotent convergence guard — retry-safe provisioning.
+  // If the user already has an active membership (e.g. partial failure on a previous signup
+  // attempt that succeeded at the DB layer but threw before returning), converge to that
+  // existing workspace WITHOUT calling createOrganizationForUser again. This prevents:
+  //   - Duplicate workspaces on retried signups
+  //   - Double-crediting signupGrant (which lives inside createOrganizationForUser)
+  // Canonical lookup: MembershipRepository.findOne with userId + ACTIVE status —
+  // same pattern as autoSetCurrentOrganization and membership service active checks.
+  // MembershipRepository.defaultPopulate includes organizationId, so membership.organizationId
+  // is the full org document after the query.
+  const userId = user.id || user._id;
+  const existingMembership = await MembershipRepository.findOne({ userId, status: MEMBERSHIP_STATUSES.ACTIVE });
+  if (existingMembership) {
+    const existingOrg = existingMembership.organizationId;
+    const ability = await policy.defineAbilityFor(user, existingMembership);
+    return {
+      organization: existingOrg,
+      membership: existingMembership,
+      abilities: serializeAbilities(ability),
     };
   }
 

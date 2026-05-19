@@ -40,12 +40,13 @@ jest.unstable_mockModule('../repositories/organizations.repository.js', () => ({
 }));
 
 const mockMembershipCreate = jest.fn();
+const mockMembershipFindOne = jest.fn().mockResolvedValue(null);
 jest.unstable_mockModule('../repositories/organizations.membership.repository.js', () => ({
   default: {
     create: mockMembershipCreate,
     deleteMany: jest.fn().mockResolvedValue({}),
     list: jest.fn().mockResolvedValue([]),
-    findOne: jest.fn().mockResolvedValue(null),
+    findOne: mockMembershipFindOne,
   },
 }));
 
@@ -60,12 +61,14 @@ jest.unstable_mockModule('../services/organizations.membership.service.js', () =
   default: { createJoinRequest: mockCreateJoinRequest },
 }));
 
+const mockDefineAbilityFor = jest.fn().mockResolvedValue({ rules: [] });
 jest.unstable_mockModule('../../../lib/middlewares/policy.js', () => ({
-  default: { defineAbilityFor: jest.fn().mockResolvedValue({ rules: [] }) },
+  default: { defineAbilityFor: mockDefineAbilityFor },
 }));
 
+const mockSerializeAbilities = jest.fn().mockReturnValue(['ability-stub']);
 jest.unstable_mockModule('../../../lib/helpers/abilities.js', () => ({
-  default: jest.fn().mockReturnValue(['ability-stub']),
+  default: mockSerializeAbilities,
 }));
 
 jest.unstable_mockModule('../helpers/organizations.slug.js', () => ({
@@ -160,6 +163,11 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
     mockOrgExists.mockResolvedValue(false);
     mockUpdateById.mockResolvedValue({});
     mockGrantOnSignup.mockResolvedValue(null);
+    // Default: no active membership exists (fresh user — normal always-create path)
+    mockMembershipFindOne.mockResolvedValue(null);
+    // Re-establish policy + abilities mocks wiped by resetAllMocks
+    mockDefineAbilityFor.mockResolvedValue({ rules: [] });
+    mockSerializeAbilities.mockReturnValue(['ability-stub']);
   });
 
   // ─── Core invariant: always returns a real org + membership ──────────────
@@ -458,6 +466,125 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
 
       expect(result.suggestedJoin).toBeUndefined();
       expect(result.organization).not.toBeNull();
+    });
+  });
+
+  // ─── A4: idempotent retry-safe convergence ────────────────────────────────
+  //
+  // RED: current code (no guard) always calls createOrganizationForUser even when
+  // an active membership already exists → duplicate org + double-credit grant.
+  // GREEN: guard detects existing active membership → converges to it, skips create.
+
+  describe('A4 — idempotent convergence (retry-safe signup provisioning):', () => {
+    test('user already has active membership → returns existing org+membership, NO new org created, NO grant', async () => {
+      setupConfig({ enabled: true, autoCreate: false, domainMatching: false });
+      const existingOrg = makeFakeOrg({ name: 'Existing Corp', domain: 'acme.com' });
+      const existingMembership = {
+        _id: new mongoose.Types.ObjectId(),
+        role: 'owner',
+        status: 'active',
+        organizationId: existingOrg,
+      };
+      // Simulate: user has an active membership already (retry scenario)
+      mockMembershipFindOne.mockResolvedValue(existingMembership);
+      const user = makeUser('alice@acme.com');
+
+      const result = await OrganizationsService.handleSignupOrganization(user);
+
+      // Converges to existing workspace
+      expect(result.organization).toBe(existingOrg);
+      expect(result.membership).toBe(existingMembership);
+      // No duplicate org created
+      expect(mockOrgCreate).not.toHaveBeenCalled();
+      // No double-credit on convergence path
+      expect(mockGrantOnSignup).not.toHaveBeenCalled();
+      // No footgun keys
+      expect(result).not.toHaveProperty('organizationSetupRequired');
+      expect(result).not.toHaveProperty('pendingJoin');
+    });
+
+    test('user already has active membership (enabled:false disabled orgs) → converges, no new org', async () => {
+      setupConfig({ enabled: false });
+      const existingOrg = makeFakeOrg({ name: "Alice's organization" });
+      const existingMembership = {
+        _id: new mongoose.Types.ObjectId(),
+        role: 'owner',
+        status: 'active',
+        organizationId: existingOrg,
+      };
+      mockMembershipFindOne.mockResolvedValue(existingMembership);
+      const user = makeUser('alice@acme.com');
+
+      const result = await OrganizationsService.handleSignupOrganization(user);
+
+      expect(result.organization).toBe(existingOrg);
+      expect(result.membership).toBe(existingMembership);
+      expect(mockOrgCreate).not.toHaveBeenCalled();
+      expect(mockGrantOnSignup).not.toHaveBeenCalled();
+    });
+
+    test('genuinely new user (no existing membership) → org IS created, grant credited once', async () => {
+      setupConfig({ enabled: true, autoCreate: false, domainMatching: false });
+      // No active membership exists (default from beforeEach)
+      mockMembershipFindOne.mockResolvedValue(null);
+      const user = makeUser('bob@acme.com');
+
+      const result = await OrganizationsService.handleSignupOrganization(user);
+
+      expect(result.organization).not.toBeNull();
+      expect(result.membership).not.toBeNull();
+      expect(mockOrgCreate).toHaveBeenCalledTimes(1);
+      expect(mockGrantOnSignup).toHaveBeenCalledTimes(1);
+    });
+
+    test('converge path returns abilities from policy (same shape as fresh-signup path)', async () => {
+      setupConfig({ enabled: true, autoCreate: false, domainMatching: false });
+      const existingOrg = makeFakeOrg();
+      const existingMembership = { _id: new mongoose.Types.ObjectId(), role: 'owner', status: 'active', organizationId: existingOrg };
+      mockMembershipFindOne.mockResolvedValue(existingMembership);
+      const user = makeUser('alice@acme.com');
+
+      const result = await OrganizationsService.handleSignupOrganization(user);
+
+      // abilities must be present (same contract as normal signup path)
+      expect(result.abilities).toBeDefined();
+      expect(Array.isArray(result.abilities)).toBe(true);
+    });
+
+    test('email-verification early-return precedes idempotent guard (no membership lookup when mailer gates)', async () => {
+      setupConfig({ enabled: true, autoCreate: false, domainMatching: false });
+      mockIsConfigured.mockReturnValue(true);
+      // Even if an active membership existed, the email-verification guard fires first
+      const existingMembership = {
+        _id: new mongoose.Types.ObjectId(),
+        role: 'owner',
+        status: 'active',
+        organizationId: makeFakeOrg(),
+      };
+      mockMembershipFindOne.mockResolvedValue(existingMembership);
+      const user = makeUser('alice@acme.com');
+      user.emailVerified = false;
+
+      const result = await OrganizationsService.handleSignupOrganization(user);
+
+      // Email-verification path: organization null, no org created
+      expect(result.organization).toBeNull();
+      expect(result.emailVerificationRequired).toBe(true);
+      expect(mockOrgCreate).not.toHaveBeenCalled();
+      expect(mockGrantOnSignup).not.toHaveBeenCalled();
+    });
+
+    test('converge path does NOT return suggestedJoin (retry, not fresh corporate signup)', async () => {
+      setupConfig({ enabled: true, autoCreate: false, domainMatching: true });
+      const existingOrg = makeFakeOrg({ domain: 'acme.com' });
+      const existingMembership = { _id: new mongoose.Types.ObjectId(), role: 'owner', status: 'active', organizationId: existingOrg };
+      mockMembershipFindOne.mockResolvedValue(existingMembership);
+      const user = makeUser('alice@acme.com');
+
+      const result = await OrganizationsService.handleSignupOrganization(user);
+
+      expect(result.suggestedJoin).toBeUndefined();
+      expect(result.organization).toBe(existingOrg);
     });
   });
 });
