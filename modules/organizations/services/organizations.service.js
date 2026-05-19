@@ -154,16 +154,19 @@ const handleSignupOrganization = async (user) => {
   // same pattern as autoSetCurrentOrganization and membership service active checks.
   // MembershipRepository.defaultPopulate includes organizationId, so membership.organizationId
   // is the full org document after the query.
+  // Shared result builder — all three signup exit-paths return the same {organization,membership,abilities} shape.
+  const buildResult = async (organization, membership) => ({
+    organization,
+    membership,
+    abilities: serializeAbilities(await policy.defineAbilityFor(user, membership)),
+  });
+
   const userId = user.id || user._id;
   const existingMembership = await MembershipRepository.findOne({ userId, status: MEMBERSHIP_STATUSES.ACTIVE });
   if (existingMembership) {
+    // organizationId is populated (name+slug+_id) via MembershipRepository.findOne defaultPopulate — trusted shape, same contract as autoSetCurrentOrganization
     const existingOrg = existingMembership.organizationId;
-    const ability = await policy.defineAbilityFor(user, existingMembership);
-    return {
-      organization: existingOrg,
-      membership: existingMembership,
-      abilities: serializeAbilities(ability),
-    };
+    return buildResult(existingOrg, existingMembership);
   }
 
   // Case 1: Organizations disabled — create a silent default org
@@ -179,13 +182,7 @@ const handleSignupOrganization = async (user) => {
       user,
     });
 
-    const ability = await policy.defineAbilityFor(user, membership);
-
-    return {
-      organization,
-      membership,
-      abilities: serializeAbilities(ability),
-    };
+    return buildResult(organization, membership);
   }
 
   // Case 2: Organizations enabled — always provision a workspace for the user.
@@ -239,12 +236,8 @@ const handleSignupOrganization = async (user) => {
     user,
   });
 
-  const ability = await policy.defineAbilityFor(user, membership);
-
   return {
-    organization,
-    membership,
-    abilities: serializeAbilities(ability),
+    ...(await buildResult(organization, membership)),
     ...(suggestedJoin ? { suggestedJoin } : {}),
   };
 };

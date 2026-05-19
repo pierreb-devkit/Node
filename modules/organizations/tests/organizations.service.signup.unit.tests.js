@@ -570,6 +570,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
       // Email-verification path: organization null, no org created
       expect(result.organization).toBeNull();
       expect(result.emailVerificationRequired).toBe(true);
+      expect(mockMembershipFindOne).not.toHaveBeenCalled();
       expect(mockOrgCreate).not.toHaveBeenCalled();
       expect(mockGrantOnSignup).not.toHaveBeenCalled();
     });
