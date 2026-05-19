@@ -127,8 +127,9 @@ const createOrganizationForUser = async ({ name, slug, domain, user, slugGenerat
  * exactly once per real new org — no double-credit possible.
  *
  * @param {Object} user - The user object returned by UserService.create (with id, email, firstName, lastName).
- * @returns {Promise<{organization: Object, membership: Object, abilities: Array, emailVerificationRequired?: boolean, suggestedJoin?: {orgId: string, orgName: string}}>}
+ * @returns {Promise<{organization: Object|null, membership: Object|null, abilities: Array, emailVerificationRequired?: boolean, suggestedJoin?: {orgId: string, orgName: string}}>}
  *   An object containing the organization context for the signup response.
+ *   `organization` and `membership` are null when `emailVerificationRequired` is true (mailer path).
  *   NEVER returns `organizationSetupRequired` or `pendingJoin`.
  */
 const handleSignupOrganization = async (user) => {
@@ -155,6 +156,12 @@ const handleSignupOrganization = async (user) => {
   // MembershipRepository.defaultPopulate includes organizationId, so membership.organizationId
   // is the full org document after the query.
   // Shared result builder — all three signup exit-paths return the same {organization,membership,abilities} shape.
+  /**
+   * Build the signup organization payload with serialized abilities.
+   * @param {Object} organization - Organization document.
+   * @param {Object} membership - Membership document.
+   * @returns {Promise<{organization: Object, membership: Object, abilities: Array}>}
+   */
   const buildResult = async (organization, membership) => ({
     organization,
     membership,

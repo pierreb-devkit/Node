@@ -15,6 +15,9 @@ describe('organizations.domain', () => {
       expect(normalizeEmailDomain('')).toBeNull();
       expect(normalizeEmailDomain(null)).toBeNull();
     });
+    it('returns null for multiple-@ addresses', () => {
+      expect(normalizeEmailDomain('a@b@acme.com')).toBeNull();
+    });
   });
   describe('isPublicDomain', () => {
     it('flags common public providers', () => {

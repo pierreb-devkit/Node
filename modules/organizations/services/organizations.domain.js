@@ -18,7 +18,7 @@ export const PUBLIC_DOMAINS = new Set([
 export function normalizeEmailDomain(email) {
   if (typeof email !== 'string') return null;
   const at = email.indexOf('@');
-  if (at === -1) return null;
+  if (at === -1 || at !== email.lastIndexOf('@')) return null;
   const domain = email.slice(at + 1).trim().toLowerCase();
   return domain.length > 0 && domain.includes('.') ? domain : null;
 }

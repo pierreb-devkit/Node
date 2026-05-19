@@ -152,10 +152,16 @@ describe('Organizations domain join E2E tests:', () => {
         expect(activeMemberships).toHaveLength(1);
         expect(activeMemberships[0].role).toBe('owner');
 
-        // suggestedJoin hint returned (name-only) pointing to owner's org
-        // controller still emits suggestedOrganization (always null post-footgun-removal);
-        // suggestedJoin is wired to the response in a follow-up (A2b).
+        // suggestedJoin hint (name-only shape) pointing to owner's org — wired in A2b
+        // controller still emits suggestedOrganization (always null post-footgun-removal)
         expect(result.body.suggestedOrganization).toBeNull();
+        expect(result.body.suggestedJoin).toBeDefined();
+        expect(result.body.suggestedJoin).toEqual(
+          expect.objectContaining({
+            orgId: String(org._id),
+            orgName: org.name,
+          }),
+        );
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();

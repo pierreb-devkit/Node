@@ -10,7 +10,7 @@
  *  - signupGrant credited exactly once per real new org creation (via BillingSignupGrantService.grantOnSignup);
  *    not double-credited on any path.
  *
- * RED: written before A2 implementation — current code fails these assertions.
+ * All assertions pass with the A2 implementation shipped in this PR.
  */
 import mongoose from 'mongoose';
 import { jest, describe, test, expect, beforeEach } from '@jest/globals';
