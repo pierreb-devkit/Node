@@ -385,4 +385,79 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
       }
     });
   });
+
+  // ─── A3: domain normalization on write + exact-match read ────────────────
+
+  describe('A3 — domain normalization (write + read, exact-match, no subdomain recursion):', () => {
+    test('org created with mixed-case email → domain persisted normalized (lowercase)', async () => {
+      // RED: current code uses extractDomain which lowercases, but normalizeEmailDomain
+      // is the canonical path. We assert the create call receives the normalized domain.
+      setupConfig({ enabled: true, autoCreate: false, domainMatching: true, publicDomains: [] });
+      mockOrgList.mockResolvedValue([]);
+      const user = makeUser('dave@ACME.com');
+
+      await OrganizationsService.handleSignupOrganization(user);
+
+      // The org create call must receive domain: 'acme.com' (normalized)
+      expect(mockOrgCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ domain: 'acme.com' }),
+      );
+    });
+
+    test('mixed-case email matches existing org with stored lowercase domain (case-insensitive match)', async () => {
+      // RED: signup from Dave@Acme.COM should match existing org stored as 'acme.com'
+      setupConfig({ enabled: true, autoCreate: false, domainMatching: true, publicDomains: [] });
+      const existingOrg = makeFakeOrg({ name: 'Acme Corp', domain: 'acme.com' });
+      mockOrgList.mockResolvedValue([existingOrg]);
+      const user = makeUser('Dave@Acme.COM');
+
+      const result = await OrganizationsService.handleSignupOrganization(user);
+
+      // suggestedJoin must be present — the normalized domain 'acme.com' matches
+      expect(result.suggestedJoin).toBeDefined();
+      expect(result.suggestedJoin.orgName).toBe('Acme Corp');
+      // Always-create contract still holds
+      expect(result.organization).not.toBeNull();
+      expect(result.membership).not.toBeNull();
+      expect(result).not.toHaveProperty('organizationSetupRequired');
+      expect(result).not.toHaveProperty('pendingJoin');
+      // mockOrgList must have been called with the normalized domain
+      expect(mockOrgList).toHaveBeenCalledWith(expect.objectContaining({ domain: 'acme.com' }));
+    });
+
+    test('subdomain email does NOT match org with base domain (no subdomain recursion)', async () => {
+      // RED: erin@eu.acme.com must NOT match an org stored with domain 'acme.com'
+      // Exact equality only — 'eu.acme.com' !== 'acme.com'
+      setupConfig({ enabled: true, autoCreate: false, domainMatching: true, publicDomains: [] });
+      // Even if the repo returns a result (simulate loose DB query), the service must not suggest
+      // In practice with exact-equality the repo won't be called with 'acme.com' at all —
+      // it'll be called with 'eu.acme.com'. Return [] to simulate no exact match.
+      mockOrgList.mockResolvedValue([]);
+      const user = makeUser('erin@eu.acme.com');
+
+      const result = await OrganizationsService.handleSignupOrganization(user);
+
+      // No suggestedJoin — 'eu.acme.com' !== 'acme.com'
+      expect(result.suggestedJoin).toBeUndefined();
+      // Always-create still holds
+      expect(result.organization).not.toBeNull();
+      expect(result.membership).not.toBeNull();
+      expect(result).not.toHaveProperty('organizationSetupRequired');
+      // The lookup must have been called with the exact subdomain, not the base domain
+      expect(mockOrgList).toHaveBeenCalledWith(expect.objectContaining({ domain: 'eu.acme.com' }));
+    });
+
+    test('public domain still skipped even with mixed-case email (no suggestedJoin)', async () => {
+      setupConfig({ enabled: true, autoCreate: false, domainMatching: true, publicDomains: [] });
+      // gmail.com is in A1 PUBLIC_DOMAINS hardcoded list
+      const existingOrg = makeFakeOrg({ name: 'Gmail Users', domain: 'gmail.com' });
+      mockOrgList.mockResolvedValue([existingOrg]);
+      const user = makeUser('alice@Gmail.COM');
+
+      const result = await OrganizationsService.handleSignupOrganization(user);
+
+      expect(result.suggestedJoin).toBeUndefined();
+      expect(result.organization).not.toBeNull();
+    });
+  });
 });

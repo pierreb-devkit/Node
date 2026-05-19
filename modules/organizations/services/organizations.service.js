@@ -12,7 +12,7 @@ import UserService from '../../users/services/users.service.js';
 import { slugify, generateOrganizationSlug } from '../helpers/organizations.slug.js';
 import { MEMBERSHIP_ROLES } from '../lib/constants.js';
 import BillingSignupGrantService from '../../billing/services/billing.signupGrant.service.js';
-import { isPublicDomain } from './organizations.domain.js';
+import { isPublicDomain, normalizeEmailDomain } from './organizations.domain.js';
 
 /**
  * Extract the domain part from an email address.
@@ -176,13 +176,17 @@ const handleSignupOrganization = async (user) => {
   // Case 2: Organizations enabled — always provision a workspace for the user.
   // config.organizations.autoCreate is a deprecated no-op (spec D5): signup always provisions
   // a workspace regardless of its value.
-  const domain = extractDomain(user.email);
+  //
+  // A3: use normalizeEmailDomain (A1) as the single canonical path — lowercased/trimmed,
+  // null-safe. extractDomain is kept for non-signup callers (exported public API).
+  const domain = normalizeEmailDomain(user.email);
   const publicDomains = orgConfig.publicDomains || [];
   // Use A1's isPublicDomain for the hardcoded public-provider list, then fall through to
   // the config publicDomains list for project-level overrides.
-  const domainIsPublic = isPublicDomain(domain) || publicDomains.includes(domain.toLowerCase());
+  const domainIsPublic = isPublicDomain(domain) || publicDomains.includes(domain?.toLowerCase() ?? '');
   // True when domain-matching is active AND the domain belongs to a corporate (non-public) email.
-  const isCorporateDomain = orgConfig.domainMatching && !domainIsPublic;
+  // domain is null only on malformed email (normalizeEmailDomain returns null) — treat as non-corporate.
+  const isCorporateDomain = Boolean(domain) && orgConfig.domainMatching && !domainIsPublic;
 
   // Domain matching: when on, non-public domain, and an existing org matches → suggestedJoin hint.
   // The user still always gets their own new workspace (no join-request, no pendingJoin).
