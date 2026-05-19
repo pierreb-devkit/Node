@@ -390,8 +390,8 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
 
   describe('A3 — domain normalization (write + read, exact-match, no subdomain recursion):', () => {
     test('org created with mixed-case email → domain persisted normalized (lowercase)', async () => {
-      // RED: current code uses extractDomain which lowercases, but normalizeEmailDomain
-      // is the canonical path. We assert the create call receives the normalized domain.
+      // Asserts the canonical-normalization contract: normalizeEmailDomain (A1) is the single
+      // path, so the org create call must receive a lowercased, trimmed domain.
       setupConfig({ enabled: true, autoCreate: false, domainMatching: true, publicDomains: [] });
       mockOrgList.mockResolvedValue([]);
       const user = makeUser('dave@ACME.com');

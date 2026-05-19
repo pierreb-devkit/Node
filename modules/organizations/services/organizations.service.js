@@ -15,13 +15,6 @@ import BillingSignupGrantService from '../../billing/services/billing.signupGran
 import { isPublicDomain, normalizeEmailDomain } from './organizations.domain.js';
 
 /**
- * Extract the domain part from an email address.
- * @param {string} email - A valid email address.
- * @returns {string} The domain portion (e.g. "acme.com").
- */
-const extractDomain = (email) => email.split('@')[1].toLowerCase();
-
-/**
  * Derive a human-readable organization name from an email domain.
  * Strips the TLD and capitalizes the first letter (e.g. "acme.com" → "Acme").
  * @param {string} domain - The email domain.
@@ -177,13 +170,13 @@ const handleSignupOrganization = async (user) => {
   // config.organizations.autoCreate is a deprecated no-op (spec D5): signup always provisions
   // a workspace regardless of its value.
   //
-  // A3: use normalizeEmailDomain (A1) as the single canonical path — lowercased/trimmed,
-  // null-safe. extractDomain is kept for non-signup callers (exported public API).
+  // normalizeEmailDomain (A1): single canonical path — lowercased/trimmed, null-safe.
+  // Returns null on malformed email; the isCorporateDomain Boolean guard below excludes null.
   const domain = normalizeEmailDomain(user.email);
   const publicDomains = orgConfig.publicDomains || [];
-  // Use A1's isPublicDomain for the hardcoded public-provider list, then fall through to
-  // the config publicDomains list for project-level overrides.
-  const domainIsPublic = isPublicDomain(domain) || publicDomains.includes(domain?.toLowerCase() ?? '');
+  // isPublicDomain covers the hardcoded public-provider list; publicDomains covers project-level overrides.
+  // domain is either a lowercased non-empty string or null — no defensive ?. needed here.
+  const domainIsPublic = isPublicDomain(domain) || publicDomains.includes(domain ?? '');
   // True when domain-matching is active AND the domain belongs to a corporate (non-public) email.
   // domain is null only on malformed email (normalizeEmailDomain returns null) — treat as non-corporate.
   const isCorporateDomain = Boolean(domain) && orgConfig.domainMatching && !domainIsPublic;
@@ -236,7 +229,6 @@ const handleSignupOrganization = async (user) => {
 
 export default {
   handleSignupOrganization,
-  extractDomain,
   nameFromDomain,
   generateSlugFromDomain,
   createOrganizationForUser,
