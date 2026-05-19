@@ -144,7 +144,9 @@ const signup = async (req, res) => {
         abilities: orgResult.abilities || [],
         organizationSetupRequired: orgResult.organizationSetupRequired || false,
         emailVerificationRequired: orgResult.emailVerificationRequired || false,
+        // deprecated: always null since always-create (A2); superseded by suggestedJoin — remove next release
         suggestedOrganization: orgResult.suggestedOrganization || null,
+        suggestedJoin: orgResult.suggestedJoin || null,
         type: 'success',
         message: 'Sign up',
       });

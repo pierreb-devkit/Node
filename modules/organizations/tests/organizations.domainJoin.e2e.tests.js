@@ -116,7 +116,9 @@ describe('Organizations domain join E2E tests:', () => {
       }
     });
 
-    test('second user signs up with same domain — pending join request, not auto-joined', async () => {
+    test('second user signs up with same domain — always gets own workspace + suggestedJoin hint (spec D5)', async () => {
+      // Spec D5: signup always provisions a workspace. Domain-match no longer creates a pending
+      // join request — instead, a suggestedJoin hint is returned alongside the user's new org.
       config.organizations = { enabled: true, autoCreate: true, domainMatching: true, publicDomains: ['gmail.com'] };
       agentMember = request.agent(agent.app);
 
@@ -134,55 +136,59 @@ describe('Organizations domain join E2E tests:', () => {
 
         memberUser = result.body.user;
 
-        // Verify the org is returned but join is pending (not active)
+        // Spec D5: always-create — member gets their OWN active workspace
         expect(result.body.organization).toBeDefined();
-        expect(result.body.organization._id).toBe(org._id);
-        expect(result.body.pendingJoin).toBe(true);
+        expect(result.body.organization).not.toBeNull();
+        // pendingJoin is gone — service never returns it (controller defaults to false)
+        expect(result.body.pendingJoin).toBeFalsy();
         expect(result.body.joined).toBeFalsy();
 
-        // Verify NO active membership — only a pending request
+        // Member has their own active membership (not a pending request on owner's org)
         const activeMemberships = await MembershipRepository.list({
           userId: memberUser.id,
-          organizationId: org._id,
+          organizationId: result.body.organization._id,
           status: 'active',
         });
-        expect(activeMemberships).toHaveLength(0);
+        expect(activeMemberships).toHaveLength(1);
+        expect(activeMemberships[0].role).toBe('owner');
 
-        // Verify pending request exists
-        const pendingMemberships = await MembershipRepository.list({
-          userId: memberUser.id,
-          organizationId: org._id,
-          status: 'pending',
-        });
-        expect(pendingMemberships).toHaveLength(1);
-        expect(pendingMemberships[0].role).toBe('member');
+        // suggestedJoin hint (name-only shape) pointing to owner's org — wired in A2b
+        // controller still emits suggestedOrganization (always null post-footgun-removal)
+        expect(result.body.suggestedOrganization).toBeNull();
+        expect(result.body.suggestedJoin).toBeDefined();
+        expect(result.body.suggestedJoin).toEqual(
+          expect.objectContaining({
+            orgId: String(org._id),
+            orgName: org.name,
+          }),
+        );
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
       }
     });
 
-    test('owner can list pending requests and sees the new joiner — 200', async () => {
+    test('owner pending requests list — no pending requests from member (member has own org)', async () => {
+      // After spec D5: domain-match no longer creates join requests.
+      // Member got their own org instead of a pending request on owner's org.
       try {
         const result = await agentOwner
           .get(`/api/organizations/${org._id}/requests`)
           .expect(200);
 
         expect(result.body.data).toBeInstanceOf(Array);
-        expect(result.body.data.length).toBeGreaterThanOrEqual(1);
-        // The pending request should be from the member user
-        const pendingRequest = result.body.data.find(
-          (r) => String(r.userId?._id || r.userId) === String(memberUser.id),
+        // No pending requests — member did not create a join request (spec D5)
+        const pendingFromMember = result.body.data.filter(
+          (r) => String(r.userId?._id || r.userId) === String(memberUser?.id),
         );
-        expect(pendingRequest).toBeDefined();
-        expect(pendingRequest.status).toBe('pending');
+        expect(pendingFromMember).toHaveLength(0);
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
       }
     });
 
-    test('member cannot list pending requests — returns empty array — 200', async () => {
+    test('member cannot list pending requests on owner org — returns empty array — 200', async () => {
       try {
         const result = await agentMember
           .get(`/api/organizations/${org._id}/requests`)

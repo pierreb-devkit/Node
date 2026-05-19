@@ -8,30 +8,11 @@ import policy from '../../../lib/middlewares/policy.js';
 import serializeAbilities from '../../../lib/helpers/abilities.js';
 import OrganizationsRepository from '../repositories/organizations.repository.js';
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
-import MembershipService from './organizations.membership.service.js';
 import UserService from '../../users/services/users.service.js';
 import { slugify, generateOrganizationSlug } from '../helpers/organizations.slug.js';
-import { MEMBERSHIP_ROLES } from '../lib/constants.js';
+import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../lib/constants.js';
 import BillingSignupGrantService from '../../billing/services/billing.signupGrant.service.js';
-
-/**
- * @desc Strip sensitive fields from an organization document before returning to public flows.
- * @param {Object} org - Organization document (Mongoose or plain).
- * @returns {Object} Safe projection without createdBy or plan.
- */
-const sanitizeOrg = (org) => {
-  const obj = org.toJSON ? org.toJSON() : { ...org };
-  delete obj.createdBy;
-  delete obj.plan;
-  return obj;
-};
-
-/**
- * Extract the domain part from an email address.
- * @param {string} email - A valid email address.
- * @returns {string} The domain portion (e.g. "acme.com").
- */
-const extractDomain = (email) => email.split('@')[1].toLowerCase();
+import { isPublicDomain, normalizeEmailDomain } from './organizations.domain.js';
 
 /**
  * Derive a human-readable organization name from an email domain.
@@ -132,16 +113,24 @@ const createOrganizationForUser = async ({ name, slug, domain, user, slugGenerat
 /**
  * Handle organization provisioning during the signup flow.
  *
- * Behaviour depends on the organizations configuration flags:
+ * Spec D5 — always-create: every successful signup provisions a workspace for the user.
+ * The `autoCreate` config flag is a deprecated no-op (spec D5): signup always provisions
+ * a workspace regardless of its value. Domain-matching is a hint mechanism only.
+ *
+ * Behaviour:
  * - **!enabled**: Creates a silent/default org named "{firstName}'s organization".
- * - **enabled**: Never auto-creates or auto-joins. Returns information for the
- *   frontend to handle organization setup as step 2. If domainMatching is on and
- *   the user's email domain is not in the publicDomains blocklist, a matching
- *   existing org is returned as `suggestedOrganization`.
+ * - **enabled**: Always calls createOrganizationForUser — user always gets an active workspace.
+ *   If domainMatching is on, the user's email domain is not public, and an existing org matches,
+ *   a `suggestedJoin: { orgId, orgName }` hint (name-only) is returned alongside the new org.
+ *
+ * signupGrant: credited inside createOrganizationForUser (best-effort, never throws). Called
+ * exactly once per real new org — no double-credit possible.
  *
  * @param {Object} user - The user object returned by UserService.create (with id, email, firstName, lastName).
- * @returns {Promise<{organization: Object|null, membership: Object|null, abilities: Array, organizationSetupRequired: boolean, emailVerificationRequired: boolean|undefined, suggestedOrganization: Object|null}>}
+ * @returns {Promise<{organization: Object|null, membership: Object|null, abilities: Array, emailVerificationRequired?: boolean, suggestedJoin?: {orgId: string, orgName: string}}>}
  *   An object containing the organization context for the signup response.
+ *   `organization` and `membership` are null when `emailVerificationRequired` is true (mailer path).
+ *   NEVER returns `organizationSetupRequired` or `pendingJoin`.
  */
 const handleSignupOrganization = async (user) => {
   const orgConfig = config.organizations || {};
@@ -152,11 +141,39 @@ const handleSignupOrganization = async (user) => {
       organization: null,
       membership: null,
       abilities: [],
-      organizationSetupRequired: true,
       emailVerificationRequired: true,
-      pendingJoin: false,
-      suggestedOrganization: null,
     };
+  }
+
+  // A4: Idempotent convergence guard — retry-safe provisioning.
+  // If the user already has an active membership (e.g. partial failure on a previous signup
+  // attempt that succeeded at the DB layer but threw before returning), converge to that
+  // existing workspace WITHOUT calling createOrganizationForUser again. This prevents:
+  //   - Duplicate workspaces on retried signups
+  //   - Double-crediting signupGrant (which lives inside createOrganizationForUser)
+  // Canonical lookup: MembershipRepository.findOne with userId + ACTIVE status —
+  // same pattern as autoSetCurrentOrganization and membership service active checks.
+  // MembershipRepository.defaultPopulate includes organizationId, so membership.organizationId
+  // is the full org document after the query.
+  // Shared result builder — all three signup exit-paths return the same {organization,membership,abilities} shape.
+  /**
+   * Build the signup organization payload with serialized abilities.
+   * @param {Object} organization - Organization document.
+   * @param {Object} membership - Membership document.
+   * @returns {Promise<{organization: Object, membership: Object, abilities: Array}>}
+   */
+  const buildResult = async (organization, membership) => ({
+    organization,
+    membership,
+    abilities: serializeAbilities(await policy.defineAbilityFor(user, membership)),
+  });
+
+  const userId = user.id || user._id;
+  const existingMembership = await MembershipRepository.findOne({ userId, status: MEMBERSHIP_STATUSES.ACTIVE });
+  if (existingMembership) {
+    // organizationId is populated (name+slug+_id) via MembershipRepository.findOne defaultPopulate — trusted shape, same contract as autoSetCurrentOrganization
+    const existingOrg = existingMembership.organizationId;
+    return buildResult(existingOrg, existingMembership);
   }
 
   // Case 1: Organizations disabled — create a silent default org
@@ -172,91 +189,68 @@ const handleSignupOrganization = async (user) => {
       user,
     });
 
-    const ability = await policy.defineAbilityFor(user, membership);
-
-    return {
-      organization,
-      membership,
-      abilities: serializeAbilities(ability),
-      organizationSetupRequired: false,
-    };
+    return buildResult(organization, membership);
   }
 
-  // Case 2: Organizations enabled
-  const domain = extractDomain(user.email);
+  // Case 2: Organizations enabled — always provision a workspace for the user.
+  // config.organizations.autoCreate is a deprecated no-op (spec D5): signup always provisions
+  // a workspace regardless of its value.
+  //
+  // normalizeEmailDomain (A1): single canonical path — lowercased/trimmed, null-safe.
+  // Returns null on malformed email; the isCorporateDomain Boolean guard below excludes null.
+  const domain = normalizeEmailDomain(user.email);
   const publicDomains = orgConfig.publicDomains || [];
-  const isPublic = publicDomains.includes(domain.toLowerCase());
+  // isPublicDomain covers the hardcoded public-provider list; publicDomains covers project-level overrides.
+  // domain is either a lowercased non-empty string or null — no defensive ?. needed here.
+  const domainIsPublic = isPublicDomain(domain) || publicDomains.includes(domain ?? '');
+  // True when domain-matching is active AND the domain belongs to a corporate (non-public) email.
+  // domain is null only on malformed email (normalizeEmailDomain returns null) — treat as non-corporate.
+  const isCorporateDomain = Boolean(domain) && orgConfig.domainMatching && !domainIsPublic;
 
-  // Case 2a: autoCreate enabled — automatically provision or join an organization
-  if (orgConfig.autoCreate) {
-    // Try domain matching first if enabled and domain is not public
-    if (orgConfig.domainMatching && !isPublic) {
-      const existingOrgs = await OrganizationsRepository.list({ domain });
-      if (existingOrgs.length > 0) {
-        // Create a pending join request — admin must approve
-        const organization = sanitizeOrg(existingOrgs[0]);
-        await MembershipService.createJoinRequest(user.id || user._id, existingOrgs[0]._id);
-        const ability = await policy.defineAbilityFor(user, null);
-        return {
-          organization,
-          membership: null,
-          abilities: serializeAbilities(ability),
-          organizationSetupRequired: false,
-          pendingJoin: true,
-        };
-      }
-      // No existing org — create a new one with the domain
-      const name = nameFromDomain(domain);
-      const slug = await generateSlugFromDomain(domain);
-      const { organization, membership } = await createOrganizationForUser({ name, slug, domain, user });
-      const ability = await policy.defineAbilityFor(user, membership);
-      return {
-        organization,
-        membership,
-        abilities: serializeAbilities(ability),
-        organizationSetupRequired: false,
-      };
-    }
-    // No domain matching — create a personal organization
-    const firstName = user.firstName || 'User';
-    const name = `${firstName}'s organization`;
-    const slug = await generateOrganizationSlug(firstName, user.lastName || '');
-    const { organization, membership } = await createOrganizationForUser({ name, slug, domain: '', user });
-    const ability = await policy.defineAbilityFor(user, membership);
-    return {
-      organization,
-      membership,
-      abilities: serializeAbilities(ability),
-      organizationSetupRequired: false,
-    };
-  }
-
-  // Case 2b: autoCreate disabled — require step 2
-  let suggestedOrganization = null;
-
-  // If domain matching enabled and domain is NOT public, suggest existing org
-  if (orgConfig.domainMatching && !isPublic) {
+  // Domain matching: when on, non-public domain, and an existing org matches → suggestedJoin hint.
+  // The user still always gets their own new workspace (no join-request, no pendingJoin).
+  let suggestedJoin;
+  if (isCorporateDomain) {
     const existingOrgs = await OrganizationsRepository.list({ domain });
     if (existingOrgs.length > 0) {
-      suggestedOrganization = sanitizeOrg(existingOrgs[0]);
+      // Return name-only hint — no size/domain/membership/plan disclosure
+      const matched = existingOrgs[0];
+      suggestedJoin = {
+        orgId: (matched._id || matched.id).toString(),
+        orgName: matched.name,
+      };
     }
   }
 
-  // Compute abilities without org context (user has no org yet)
-  const ability = await policy.defineAbilityFor(user, null);
+  // Derive org name/slug: use domain-based name only when domainMatching is on AND
+  // the domain is corporate (non-public). Otherwise fall back to a personal workspace name.
+  // This preserves the original naming convention from the autoCreate:true/domainMatching paths.
+  let name;
+  let slug;
+  if (isCorporateDomain) {
+    name = nameFromDomain(domain);
+    slug = await generateSlugFromDomain(domain);
+  } else {
+    const firstName = user.firstName || 'User';
+    name = `${firstName}'s organization`;
+    slug = await generateOrganizationSlug(firstName, user.lastName || '');
+  }
+
+  const { organization, membership } = await createOrganizationForUser({
+    name,
+    slug,
+    domain: isCorporateDomain ? domain : '',
+    user,
+  });
 
   return {
-    organization: null,
-    membership: null,
-    abilities: serializeAbilities(ability),
-    organizationSetupRequired: true,
-    suggestedOrganization, // null or { _id, name, slug, domain }
+    ...(await buildResult(organization, membership)),
+    ...(suggestedJoin ? { suggestedJoin } : {}),
   };
 };
 
 export default {
   handleSignupOrganization,
-  extractDomain,
   nameFromDomain,
   generateSlugFromDomain,
   createOrganizationForUser,
