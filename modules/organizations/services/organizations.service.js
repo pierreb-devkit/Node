@@ -8,24 +8,11 @@ import policy from '../../../lib/middlewares/policy.js';
 import serializeAbilities from '../../../lib/helpers/abilities.js';
 import OrganizationsRepository from '../repositories/organizations.repository.js';
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
-import MembershipService from './organizations.membership.service.js';
 import UserService from '../../users/services/users.service.js';
 import { slugify, generateOrganizationSlug } from '../helpers/organizations.slug.js';
 import { MEMBERSHIP_ROLES } from '../lib/constants.js';
 import BillingSignupGrantService from '../../billing/services/billing.signupGrant.service.js';
 import { isPublicDomain } from './organizations.domain.js';
-
-/**
- * @desc Strip sensitive fields from an organization document before returning to public flows.
- * @param {Object} org - Organization document (Mongoose or plain).
- * @returns {Object} Safe projection without createdBy or plan.
- */
-const sanitizeOrg = (org) => {
-  const obj = org.toJSON ? org.toJSON() : { ...org };
-  delete obj.createdBy;
-  delete obj.plan;
-  return obj;
-};
 
 /**
  * Extract the domain part from an email address.
@@ -194,11 +181,13 @@ const handleSignupOrganization = async (user) => {
   // Use A1's isPublicDomain for the hardcoded public-provider list, then fall through to
   // the config publicDomains list for project-level overrides.
   const domainIsPublic = isPublicDomain(domain) || publicDomains.includes(domain.toLowerCase());
+  // True when domain-matching is active AND the domain belongs to a corporate (non-public) email.
+  const isCorporateDomain = orgConfig.domainMatching && !domainIsPublic;
 
   // Domain matching: when on, non-public domain, and an existing org matches → suggestedJoin hint.
   // The user still always gets their own new workspace (no join-request, no pendingJoin).
   let suggestedJoin;
-  if (orgConfig.domainMatching && !domainIsPublic) {
+  if (isCorporateDomain) {
     const existingOrgs = await OrganizationsRepository.list({ domain });
     if (existingOrgs.length > 0) {
       // Return name-only hint — no size/domain/membership/plan disclosure
@@ -215,7 +204,7 @@ const handleSignupOrganization = async (user) => {
   // This preserves the original naming convention from the autoCreate:true/domainMatching paths.
   let name;
   let slug;
-  if (orgConfig.domainMatching && !domainIsPublic) {
+  if (isCorporateDomain) {
     name = nameFromDomain(domain);
     slug = await generateSlugFromDomain(domain);
   } else {
@@ -227,7 +216,7 @@ const handleSignupOrganization = async (user) => {
   const { organization, membership } = await createOrganizationForUser({
     name,
     slug,
-    domain: (orgConfig.domainMatching && !domainIsPublic) ? domain : '',
+    domain: isCorporateDomain ? domain : '',
     user,
   });
 

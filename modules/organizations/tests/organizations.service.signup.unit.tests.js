@@ -151,7 +151,15 @@ function setupConfig(orgConfig) {
 
 describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    // resetAllMocks clears both call counts AND mockReturnValue/mockResolvedValue implementations
+    // set by individual tests — prevents state leaking between describes (e.g. mockIsConfigured
+    // set to true in signupGrant tests bleeding into suggestedJoin describe).
+    jest.resetAllMocks();
+    // Re-establish module-level defaults that resetAllMocks wipes.
+    mockIsConfigured.mockReturnValue(false);
+    mockOrgExists.mockResolvedValue(false);
+    mockUpdateById.mockResolvedValue({});
+    mockGrantOnSignup.mockResolvedValue(null);
   });
 
   // ─── Core invariant: always returns a real org + membership ──────────────

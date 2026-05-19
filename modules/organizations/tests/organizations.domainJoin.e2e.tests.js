@@ -153,10 +153,9 @@ describe('Organizations domain join E2E tests:', () => {
         expect(activeMemberships[0].role).toBe('owner');
 
         // suggestedJoin hint returned (name-only) pointing to owner's org
-        expect(result.body.suggestedOrganization).toBeNull(); // old key gone
-        // Note: suggestedJoin is a service-level key; the auth controller serializes it
-        // as suggestedOrganization:null (old shape kept for API compat until client updated).
-        // The service-level suggestedJoin is tested in organizations.service.signup unit tests.
+        // controller still emits suggestedOrganization (always null post-footgun-removal);
+        // suggestedJoin is wired to the response in a follow-up (A2b).
+        expect(result.body.suggestedOrganization).toBeNull();
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
