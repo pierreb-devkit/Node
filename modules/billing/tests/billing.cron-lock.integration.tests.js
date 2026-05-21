@@ -4,10 +4,10 @@
 import { describe, beforeAll, beforeEach, afterAll, test, expect } from '@jest/globals';
 
 import mongooseService from '../../../lib/services/mongoose.js';
-import { acquireLock, releaseLock, CronLock } from '../../../lib/distributedLock.js';
+import { acquireLock, releaseLock, CronLock } from '../../../lib/services/distributedLock.js';
 
 /**
- * Integration tests for lib/distributedLock.js — real MongoDB.
+ * Integration tests for lib/services/distributedLock.js — real MongoDB.
  *
  * Verifies the acquire / release / contention / expiry contract end-to-end.
  * The cron scripts themselves are top-level-await CLI entry points that cannot

@@ -29,7 +29,7 @@ const [
   import('../../../lib/services/logger.js'),
   import('../lib/billing.cron-utils.js'),
   import('../lib/billing.constants.js'),
-  import('../../../lib/distributedLock.js'),
+  import('../../../lib/services/distributedLock.js'),
 ]);
 
 if (!config?.billing?.meterMode) {
@@ -86,10 +86,10 @@ try {
       try {
         await releaseLock({ name: LOCK_NAME, holder: lockHolder });
       } catch (releaseErr) {
-        logger.error(
-          { err: releaseErr, cron: LOCK_NAME },
-          '[cron.extrasExpiration] failed to release lock — will auto-expire on TTL',
-        );
+        logger.error('[cron.extrasExpiration] failed to release lock — will auto-expire on TTL', {
+          err: releaseErr,
+          cron: LOCK_NAME,
+        });
       }
     }
   }

@@ -121,7 +121,7 @@ All scripts check `config.billing.meterMode` at startup. Downstream projects mus
 
 ## Concurrency control
 
-All billing crons acquire a distributed lock (`lib/distributedLock.js`) before
+All billing crons acquire a distributed lock (`lib/services/distributedLock.js`) before
 mutating state. The lock auto-expires after TTL (5–15 min depending on cron)
 so that pod crashes don't permanently block scheduling.
 
@@ -135,5 +135,5 @@ Lock names and TTLs:
 
 If you see `lock held by another pod, skipping` in logs, that is expected when
 two pods race after a K8s `concurrencyPolicy` bypass (e.g. pod crash after
-jitter but before finalize). See the runbook entry `## Cron lock stuck` in
+jitter but before finalize). See the runbook entry `## 6 — Cron lock stuck` in
 `modules/billing/RUNBOOKS.md` for manual resolution.
