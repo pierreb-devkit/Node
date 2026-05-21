@@ -175,3 +175,36 @@ Operational runbooks for the billing module. Each runbook references real endpoi
 4. Monitor `billing.plans.stale` event frequency — if the stale cache is 24h+, alert the on-call to decide whether to take the plans endpoint down entirely or serve a static fallback.
 5. Once Stripe recovers: `POST /api/admin/billing/sync/:orgId` on any org that attempted a subscription change during the outage.
 6. Check dead-letter queue for events that exhausted retries during the outage window: `GET /api/admin/billing/dead-letters`.
+
+---
+
+## 6 — Cron lock stuck
+
+**Symptom:** All billing crons emit `lock held by another pod, skipping` for longer than the lock TTL duration, meaning no billing cron is running at all.
+
+**Cause:** A pod crashed mid-job without reaching the `finally` block that calls `releaseLock`. The TTL has not yet expired on the stale lock doc in `cron_locks`.
+
+**Wait first:** Lock TTLs are sized 2–3× typical exec time. Wait for the TTL to expire (max 15 min for `dunningSweep`). MongoDB's TTL monitor runs every 60 seconds, so actual cleanup may lag up to 60 s after expiry.
+
+**If urgent — drop the stale lock manually:**
+
+```js
+// weeklyReset
+db.cron_locks.deleteOne({ _id: "billing.weeklyReset" })
+
+// dunningSweep
+db.cron_locks.deleteOne({ _id: "billing.dunningSweep" })
+
+// extrasExpiration
+db.cron_locks.deleteOne({ _id: "billing.extrasExpiration" })
+```
+
+Or via `kubectl exec` on the mongo pod:
+
+```bash
+kubectl exec -n pierreb-projects mongo-0 -- mongosh \
+  "mongodb://localhost:27017/<your-db>" \
+  --eval 'db.cron_locks.deleteOne({ _id: "billing.weeklyReset" })'
+```
+
+**Prevention:** Lock TTLs are intentionally conservative. If you see frequent stuck-lock incidents, investigate cron duration (slow query? tenant scale?) rather than lower the TTL — a TTL too short defeats the mutual-exclusion guarantee.
