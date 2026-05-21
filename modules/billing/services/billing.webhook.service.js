@@ -13,6 +13,15 @@ import BillingExtraService from './billing.extra.service.js';
 import BillingResetService from './billing.reset.service.js';
 import billingEvents from '../lib/events.js';
 import { SENTINEL_PENDING } from '../lib/billing.constants.js';
+import { retryWithBackoff } from '../lib/billing.retry.js';
+
+/**
+ * Lazily resolves the BillingFailedBackfill Mongoose model.
+ * Deferred to keep unit tests importable before model registration.
+ * @returns {import('mongoose').Model} The registered BillingFailedBackfill model.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const BillingFailedBackfill = () => mongoose.model('BillingFailedBackfill');
 
 /**
  * Treats a stripeSessionId as "unresolved" when absent, empty, or still the
@@ -311,21 +320,36 @@ const handleCheckoutPaymentCompleted = async (session) => {
     const stripe = getStripe();
     if (stripe) {
       try {
-        await stripe.paymentIntents.update(paymentIntentId, {
-          metadata: {
-            organizationId,
-            packId,
-            kind: 'extras',
-            stripeSessionId,  // real cs_* ID (replaces SENTINEL_PENDING)
-          },
-        });
+        await retryWithBackoff(
+          () =>
+            stripe.paymentIntents.update(paymentIntentId, {
+              metadata: {
+                organizationId,
+                packId,
+                kind: 'extras',
+                stripeSessionId,  // real cs_* ID (replaces SENTINEL_PENDING)
+              },
+            }),
+          { attempts: 3, baseMs: 200 },
+        );
       } catch (err) {
-        // Log but don't fail — refund correlation may use the backfill resolver path
-        logger.warn('[billing.webhook] PaymentIntent metadata update failed', {
-          paymentIntentId,
-          error: err?.message ?? String(err),
-          stack: err?.stack,
-        });
+        logger.error(
+          '[billing.webhook] PI metadata backfill failed after retries — refund correlation at risk',
+          { paymentIntentId, sessionId: stripeSessionId, error: err?.message ?? String(err) },
+        );
+        try {
+          await BillingFailedBackfill().create({
+            paymentIntentId,
+            stripeSessionId,
+            error: err?.message ?? String(err),
+            failedAt: new Date(),
+          });
+        } catch (dlqErr) {
+          logger.error(
+            '[billing.webhook] dead-letter write failed — manual reconciliation required',
+            { paymentIntentId, sessionId: stripeSessionId, error: dlqErr?.message ?? String(dlqErr) },
+          );
+        }
       }
     }
   }
