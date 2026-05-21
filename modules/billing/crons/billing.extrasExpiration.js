@@ -82,10 +82,15 @@ try {
       process.exitCode = errors > 0 ? 1 : 0;
     } finally {
       // releaseLock failure is non-fatal: lock auto-expires on TTL.
-      // If this throws, the outer catch logs "failed" and sets exitCode=1
-      // (misleading — the cron's actual work succeeded). Operators can grep
-      // for "failed to release lock" to distinguish.
-      await releaseLock({ name: LOCK_NAME, holder: lockHolder });
+      // Log separately to preserve any original work error.
+      try {
+        await releaseLock({ name: LOCK_NAME, holder: lockHolder });
+      } catch (releaseErr) {
+        logger.error(
+          { err: releaseErr, cron: LOCK_NAME },
+          '[cron.extrasExpiration] failed to release lock — will auto-expire on TTL',
+        );
+      }
     }
   }
 } catch (err) {
