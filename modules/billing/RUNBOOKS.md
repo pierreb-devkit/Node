@@ -188,6 +188,16 @@ Operational runbooks for the billing module. Each runbook references real endpoi
 
 **If urgent — drop the stale lock manually:**
 
+**Before drop:** verify the holder and TTL window first to avoid kicking a running cron.
+
+```js
+db.cron_locks.findOne({ _id: "billing.weeklyReset" })
+// If lockedUntil is in the past → safe to drop.
+// If in the future → the lock is genuinely held; wait for TTL unless the holder pod is confirmed dead.
+```
+
+Then drop:
+
 ```js
 // weeklyReset
 db.cron_locks.deleteOne({ _id: "billing.weeklyReset" })

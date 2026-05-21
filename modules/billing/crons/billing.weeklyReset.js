@@ -51,7 +51,7 @@ try {
   lockHolder = `${process.env.HOSTNAME ?? 'unknown'}:${randomUUID()}`;
   const acquired = await acquireLock({ name: LOCK_NAME, ttlMs: LOCK_TTL_MS, holder: lockHolder });
   if (!acquired) {
-    logger.info({ cron: LOCK_NAME }, 'lock held by another pod, skipping');
+    logger.info('[cron.weeklyReset] lock held by another pod, skipping');
     process.exitCode = 0;
   } else {
     try {
@@ -61,6 +61,10 @@ try {
       logger.info('[cron.weeklyReset] complete', { processed: result.processed, errors: result.errors, durationMs: Date.now() - startMs });
       process.exitCode = result.errors > 0 ? 1 : 0;
     } finally {
+      // releaseLock failure is non-fatal: lock auto-expires on TTL.
+      // If this throws, the outer catch logs "failed" and sets exitCode=1
+      // (misleading — the cron's actual work succeeded). Operators can grep
+      // for "failed to release lock" to distinguish.
       await releaseLock({ name: LOCK_NAME, holder: lockHolder });
     }
   }

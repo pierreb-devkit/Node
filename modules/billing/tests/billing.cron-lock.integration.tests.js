@@ -71,7 +71,9 @@ describe('distributedLock integration — acquire / release contract:', () => {
     expect(gone).toBeNull();
   });
 
-  test('concurrent acquires: only one pod wins (Promise.all race)', async () => {
+  test('only one of N concurrent in-process acquires wins via E11000', async () => {
+    // Node event loop: 3 Promise.all fires hit Mongo concurrently (not serialized by await).
+    // Real inter-pod race uses the same E11000 path; this exercises the same mechanism.
     const results = await Promise.all([
       acquireLock({ name: 'billing.dunningSweep', ttlMs: 60_000, holder: 'pod-A' }),
       acquireLock({ name: 'billing.dunningSweep', ttlMs: 60_000, holder: 'pod-B' }),
