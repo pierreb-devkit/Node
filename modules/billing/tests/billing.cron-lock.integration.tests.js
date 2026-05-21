@@ -1,7 +1,6 @@
 /**
  * Module dependencies.
  */
-import mongoose from 'mongoose';
 import { describe, beforeAll, beforeEach, afterAll, test, expect } from '@jest/globals';
 
 import mongooseService from '../../../lib/services/mongoose.js';
