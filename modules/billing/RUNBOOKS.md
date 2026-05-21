@@ -180,7 +180,7 @@ Operational runbooks for the billing module. Each runbook references real endpoi
 
 ## 6 — Refund Correlation Backfill Failure
 
-**Symptom:** ERROR log `PI metadata backfill failed after retries — refund correlation at risk`.
+**Symptom:** ERROR log `[billing.webhook] PI metadata backfill failed after retries — refund correlation at risk`.
 A later refund webhook may additionally log `refund unresolved — no stripeSessionId on charge metadata`.
 
 **Cause:** `stripe.paymentIntents.update` failed for all 3 retry attempts during

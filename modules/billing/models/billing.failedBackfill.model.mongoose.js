@@ -64,14 +64,13 @@ const BillingFailedBackfillMongoose = new Schema(
   },
 );
 
-/**
- * Partial index to support the runbook query "find unresolved entries".
- * Uses a sparse index on resolvedAt so the null check stays efficient as the
- * collection grows (only unresolved documents are indexed).
- */
+// Partial index — only unresolved documents are indexed, so this stays small
+// even after the collection accumulates many resolved entries.
+// (Sparse would be a no-op here: resolvedAt has default: null, so every document
+// has the field present — sparse skips only docs where the field is absent.)
 BillingFailedBackfillMongoose.index(
   { resolvedAt: 1 },
-  { sparse: true },
+  { partialFilterExpression: { resolvedAt: null } },
 );
 
 /**

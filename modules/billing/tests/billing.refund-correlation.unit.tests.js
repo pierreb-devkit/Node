@@ -49,10 +49,9 @@ describe('checkout.session.completed — metadata backfill retry:', () => {
       },
     };
 
-    // BillingFailedBackfill is resolved lazily via mongoose.model('BillingFailedBackfill').
-    // Provide a mock implementation on the model registry.
+    // BillingFailedBackfillRepository.record() is the repository boundary used by the service.
     mockBillingFailedBackfill = {
-      create: jest.fn().mockResolvedValue({}),
+      record: jest.fn().mockResolvedValue({}),
     };
 
     jest.unstable_mockModule('../lib/stripe.js', () => ({
@@ -103,16 +102,8 @@ describe('checkout.session.completed — metadata backfill retry:', () => {
       default: { billing: { plans: ['free', 'starter', 'pro', 'enterprise'] } },
     }));
 
-    // mongoose.model() is called lazily: 'BillingFailedBackfill' must resolve to the mock.
-    jest.unstable_mockModule('mongoose', () => ({
-      default: {
-        Types: { ObjectId: { isValid: (id) => /^[a-f\d]{24}$/i.test(id) } },
-        model: (name) => {
-          if (name === 'BillingFailedBackfill') return mockBillingFailedBackfill;
-          return {};
-        },
-        models: {},
-      },
+    jest.unstable_mockModule('../repositories/billing.failedBackfill.repository.js', () => ({
+      default: mockBillingFailedBackfill,
     }));
 
     const mod = await import('../services/billing.webhook.service.js');
@@ -141,7 +132,7 @@ describe('checkout.session.completed — metadata backfill retry:', () => {
     // 3 total calls (2 retries + 1 success)
     expect(mockStripeInstance.paymentIntents.update).toHaveBeenCalledTimes(3);
     // No dead-letter record created because the third attempt succeeded.
-    expect(mockBillingFailedBackfill.create).not.toHaveBeenCalled();
+    expect(mockBillingFailedBackfill.record).not.toHaveBeenCalled();
     // No error log — outcome was successful.
     expect(mockLogger.error).not.toHaveBeenCalled();
   });
@@ -167,7 +158,7 @@ describe('checkout.session.completed — metadata backfill retry:', () => {
     );
 
     // Dead-letter record created with the right shape.
-    expect(mockBillingFailedBackfill.create).toHaveBeenCalledWith(
+    expect(mockBillingFailedBackfill.record).toHaveBeenCalledWith(
       expect.objectContaining({
         paymentIntentId,
         stripeSessionId,
@@ -178,7 +169,7 @@ describe('checkout.session.completed — metadata backfill retry:', () => {
 
   test('handler does not throw when dead-letter write itself fails', async () => {
     mockStripeInstance.paymentIntents.update.mockRejectedValue(new Error('Stripe down'));
-    mockBillingFailedBackfill.create.mockRejectedValue(new Error('Mongo down'));
+    mockBillingFailedBackfill.record.mockRejectedValue(new Error('Mongo down'));
 
     const promise = BillingWebhookService.handleCheckoutPaymentCompleted(makeSession());
     await jest.runAllTimersAsync();

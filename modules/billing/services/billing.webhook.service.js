@@ -9,19 +9,12 @@ import logger from '../../../lib/services/logger.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import ProcessedStripeEventRepository from '../repositories/billing.processedStripeEvent.repository.js';
 import OrganizationRepository from '../../organizations/repositories/organizations.repository.js';
+import BillingFailedBackfillRepository from '../repositories/billing.failedBackfill.repository.js';
 import BillingExtraService from './billing.extra.service.js';
 import BillingResetService from './billing.reset.service.js';
 import billingEvents from '../lib/events.js';
 import { SENTINEL_PENDING } from '../lib/billing.constants.js';
 import { retryWithBackoff } from '../lib/billing.retry.js';
-
-/**
- * Lazily resolves the BillingFailedBackfill Mongoose model.
- * Deferred to keep unit tests importable before model registration.
- * @returns {import('mongoose').Model} The registered BillingFailedBackfill model.
- */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const BillingFailedBackfill = () => mongoose.model('BillingFailedBackfill');
 
 /**
  * Treats a stripeSessionId as "unresolved" when absent, empty, or still the
@@ -338,7 +331,7 @@ const handleCheckoutPaymentCompleted = async (session) => {
           { paymentIntentId, sessionId: stripeSessionId, error: err?.message ?? String(err) },
         );
         try {
-          await BillingFailedBackfill().create({
+          await BillingFailedBackfillRepository.record({
             paymentIntentId,
             stripeSessionId,
             error: err?.message ?? String(err),
