@@ -175,3 +175,47 @@ Operational runbooks for the billing module. Each runbook references real endpoi
 4. Monitor `billing.plans.stale` event frequency — if the stale cache is 24h+, alert the on-call to decide whether to take the plans endpoint down entirely or serve a static fallback.
 5. Once Stripe recovers: `POST /api/admin/billing/sync/:orgId` on any org that attempted a subscription change during the outage.
 6. Check dead-letter queue for events that exhausted retries during the outage window: `GET /api/admin/billing/dead-letters`.
+
+---
+
+## 6 — Refund Correlation Backfill Failure
+
+**Symptom:** ERROR log `PI metadata backfill failed after retries — refund correlation at risk`.
+A later refund webhook may additionally log `refund unresolved — no stripeSessionId on charge metadata`.
+
+**Cause:** `stripe.paymentIntents.update` failed for all 3 retry attempts during
+`checkout.session.completed` handling. Likely cause: transient Stripe API outage.
+
+**Triage:**
+
+1. Query unresolved entries:
+
+   ```bash
+   db.billing_failed_backfills.find({ resolvedAt: null })
+   ```
+
+   Each document contains `paymentIntentId`, `stripeSessionId`, `error`, and `failedAt`.
+
+2. For each entry, manually patch the PI via Stripe CLI or Dashboard:
+
+   ```bash
+   stripe payment_intents update pi_xxx \
+     --metadata stripeSessionId=cs_xxx
+   ```
+
+   Verify in Stripe Dashboard → Payments → PaymentIntent → Metadata.
+
+3. Mark the record resolved to close the loop:
+
+   ```bash
+   db.billing_failed_backfills.updateOne(
+     { _id: ObjectId('...') },
+     { $set: { resolvedAt: new Date(), resolvedBy: 'admin' } }
+   )
+   ```
+
+4. Confirm refund correlation: if a refund was already processed while the PI metadata was missing,
+   check for `billing.refund.unresolved` alerts and follow **Runbook #2** (Dead-Letter Investigation)
+   to replay the refund event after the PI metadata is patched.
+
+**Escalate if:** frequency exceeds 1 per week → promote to cron-based auto-retry.
