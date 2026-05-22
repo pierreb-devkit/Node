@@ -48,7 +48,22 @@ describe('retryWithBackoff', () => {
       retryWithBackoff(fn, {
         attempts: 3,
         baseMs: 200,
-        shouldRetry: (e) => e?.type !== 'invalid_request_error',
+        shouldRetry: (e) => e?.type !== 'StripeInvalidRequestError' && e?.type !== 'invalid_request_error',
+      }),
+    ).rejects.toThrow('bad params');
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  test('short-circuits on the StripeInvalidRequestError class-name type too', async () => {
+    // stripe-node exposes the error class name on .type in some SDK versions and the
+    // raw API type string in others; the call-site predicate guards both, so cover both.
+    const err = Object.assign(new Error('bad params'), { type: 'StripeInvalidRequestError' });
+    const fn = jest.fn().mockRejectedValue(err);
+    await expect(
+      retryWithBackoff(fn, {
+        attempts: 3,
+        baseMs: 200,
+        shouldRetry: (e) => e?.type !== 'StripeInvalidRequestError' && e?.type !== 'invalid_request_error',
       }),
     ).rejects.toThrow('bad params');
     expect(fn).toHaveBeenCalledTimes(1);
