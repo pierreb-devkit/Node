@@ -11,6 +11,7 @@ Breaking changes and upgrade notes for downstream projects.
 ### What changed (this repo)
 
 - **`lib/middlewares/policy.js`** — v7 renames `PureAbility` to `Ability` and **drops its default conditions matcher**, so the `Ability` export no longer does MongoDB-style condition matching out of the box (`createMongoAbility` is the replacement for the old behavior). `defineAbilityFor()` now builds via `createMongoAbility`:
+
   ```js
   // before (v6)
   const { AbilityBuilder, Ability } = await import('@casl/ability');
@@ -19,6 +20,7 @@ Breaking changes and upgrade notes for downstream projects.
   const { AbilityBuilder, createMongoAbility } = await import('@casl/ability');
   const { can, cannot, build } = new AbilityBuilder(createMongoAbility);
   ```
+
   Without this, conditions like `can('manage', 'Organization', { _id })` stop matching → authorization silently denies → endpoints return 403/422.
 - **JSDoc type refs** `import('@casl/ability').Ability` → `MongoAbility` (`lib/middlewares/policy.js`, `lib/helpers/abilities.js`).
 - **`package.json`** — `@casl/ability` `^6.8.1` → `^7.0.0`.
