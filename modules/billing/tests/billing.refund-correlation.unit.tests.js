@@ -2,6 +2,7 @@
  * Module dependencies.
  */
 import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globals';
+import { retryWithBackoff } from '../lib/billing.retry.js';
 
 /**
  * Unit tests — checkout.session.completed PaymentIntent metadata backfill retry
@@ -23,6 +24,10 @@ describe('checkout.session.completed — metadata backfill retry:', () => {
   const stripeSessionId = 'cs_test_session_abc';
   const paymentIntentId = 'pi_test_retry_001';
 
+  /**
+   * Build a minimal Stripe checkout.session fixture for backfill tests.
+   * @returns {{ id: string, payment_status: string, payment_intent: string, metadata: { organizationId: string, packId: string, kind: string } }}
+   */
   const makeSession = () => ({
     id: stripeSessionId,
     payment_status: 'paid',
@@ -187,5 +192,15 @@ describe('checkout.session.completed — metadata backfill retry:', () => {
       expect.stringContaining('dead-letter write failed'),
       expect.objectContaining({ paymentIntentId }),
     );
+  });
+});
+
+describe('retryWithBackoff guards:', () => {
+  test('throws TypeError when attempts < 1', async () => {
+    await expect(retryWithBackoff(async () => 'x', { attempts: 0 })).rejects.toThrow(TypeError);
+  });
+
+  test('throws TypeError when baseMs is negative', async () => {
+    await expect(retryWithBackoff(async () => 'x', { baseMs: -1 })).rejects.toThrow(TypeError);
   });
 });

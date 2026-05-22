@@ -15,6 +15,12 @@
  * @returns {Promise<T>}
  */
 export async function retryWithBackoff(fn, { attempts = 3, baseMs = 200 } = {}) {
+  if (!Number.isInteger(attempts) || attempts < 1) {
+    throw new TypeError(`retryWithBackoff: attempts must be a positive integer, received ${attempts}`);
+  }
+  if (!Number.isFinite(baseMs) || baseMs < 0) {
+    throw new TypeError(`retryWithBackoff: baseMs must be a non-negative finite number, received ${baseMs}`);
+  }
   let lastErr;
   for (let i = 0; i < attempts; i++) {
     try {
