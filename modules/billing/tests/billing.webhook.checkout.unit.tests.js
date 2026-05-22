@@ -104,6 +104,7 @@ describe('Billing webhook checkout unit tests:', () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     jest.restoreAllMocks();
   });
 
@@ -284,17 +285,21 @@ describe('Billing webhook checkout unit tests:', () => {
     });
 
     test('should not throw when paymentIntents.update fails (non-fatal fallback)', async () => {
+      jest.useFakeTimers();
       const paymentIntentId = 'pi_test_failing';
       mockStripeInstance.paymentIntents.update.mockRejectedValue(new Error('Stripe API error'));
 
-      await expect(
-        BillingWebhookService.handleCheckoutPaymentCompleted({
-          id: stripeSessionId,
-          payment_status: 'paid',
-          payment_intent: paymentIntentId,
-          metadata: { organizationId: orgId, packId: 'pack_500k', kind: 'extras' },
-        }),
-      ).resolves.toBeUndefined();
+      const promise = BillingWebhookService.handleCheckoutPaymentCompleted({
+        id: stripeSessionId,
+        payment_status: 'paid',
+        payment_intent: paymentIntentId,
+        metadata: { organizationId: orgId, packId: 'pack_500k', kind: 'extras' },
+      });
+      // handleCheckoutPaymentCompleted catches the retry exhaustion internally (non-fatal),
+      // so the promise resolves; advance the backoff timers while it is pending.
+      const assertion = expect(promise).resolves.toBeUndefined();
+      await jest.runAllTimersAsync();
+      await assertion;
 
       // creditPack should still have run despite the PI update failure
       expect(mockExtraService.creditPack).toHaveBeenCalledWith(orgId, 'pack_500k', stripeSessionId);
