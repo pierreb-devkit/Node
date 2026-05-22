@@ -320,10 +320,18 @@ const handleCheckoutPaymentCompleted = async (session) => {
                 organizationId,
                 packId,
                 kind: 'extras',
-                stripeSessionId,  // real cs_* ID (replaces SENTINEL_PENDING)
+                stripeSessionId, // real cs_* ID (replaces SENTINEL_PENDING)
               },
             }),
-          { attempts: 3, baseMs: 200 },
+          {
+            attempts: 3,
+            baseMs: 200,
+            // Skip retries on deterministic Stripe client errors (bad params / auth) — they
+            // never succeed on retry and only delay the dead-letter path. Same classification
+            // as billing.admin.controller.js.
+            shouldRetry: (err) =>
+              err?.type !== 'StripeInvalidRequestError' && err?.type !== 'invalid_request_error',
+          },
         );
       } catch (err) {
         logger.error(
