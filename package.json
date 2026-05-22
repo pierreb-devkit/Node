@@ -49,7 +49,7 @@
     "release:auto": "npx semantic-release"
   },
   "dependencies": {
-    "@casl/ability": "^6.8.1",
+    "@casl/ability": "^7.0.0",
     "@jest/globals": "^30.4.1",
     "axios": "^1.16.1",
     "bcrypt": "^6.0.0",
