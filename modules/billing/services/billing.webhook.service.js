@@ -328,7 +328,7 @@ const handleCheckoutPaymentCompleted = async (session) => {
       } catch (err) {
         logger.error(
           '[billing.webhook] PI metadata backfill failed after retries — refund correlation at risk',
-          { paymentIntentId, sessionId: stripeSessionId, error: err?.message ?? String(err) },
+          { paymentIntentId, stripeSessionId, error: err?.message ?? String(err), stack: err?.stack },
         );
         try {
           await BillingFailedBackfillRepository.record({
@@ -340,7 +340,7 @@ const handleCheckoutPaymentCompleted = async (session) => {
         } catch (dlqErr) {
           logger.error(
             '[billing.webhook] dead-letter write failed — manual reconciliation required',
-            { paymentIntentId, sessionId: stripeSessionId, error: dlqErr?.message ?? String(dlqErr) },
+            { paymentIntentId, stripeSessionId, error: dlqErr?.message ?? String(dlqErr), stack: dlqErr?.stack },
           );
         }
       }

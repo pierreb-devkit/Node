@@ -9,7 +9,7 @@ import { retryWithBackoff } from '../lib/billing.retry.js';
  *
  * Covers:
  *   - retryWithBackoff: 3 attempts on Stripe API failure before escalating
- *   - Dead-letter: BillingFailedBackfill.create called after 3 consecutive failures
+ *   - Dead-letter: BillingFailedBackfillRepository.record called after 3 consecutive failures
  *   - Dead-letter write failure: logger.error emitted, handler does not throw
  */
 
