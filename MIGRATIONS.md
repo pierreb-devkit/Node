@@ -10,7 +10,7 @@ Breaking changes and upgrade notes for downstream projects.
 
 ### What changed (this repo)
 
-- **`lib/middlewares/policy.js`** — v7 renames `PureAbility` to `Ability` and **drops the default conditions matcher** from it; the historical MongoDB-matching `Ability` class no longer exists. `defineAbilityFor()` now builds via `createMongoAbility`:
+- **`lib/middlewares/policy.js`** — v7 renames `PureAbility` to `Ability` and **drops its default conditions matcher**, so the `Ability` export no longer does MongoDB-style condition matching out of the box (`createMongoAbility` is the replacement for the old behavior). `defineAbilityFor()` now builds via `createMongoAbility`:
   ```js
   // before (v6)
   const { AbilityBuilder, Ability } = await import('@casl/ability');
