@@ -178,7 +178,50 @@ Operational runbooks for the billing module. Each runbook references real endpoi
 
 ---
 
-## 6 — Refund Correlation Backfill Failure
+## 6 — Cron lock stuck
+
+**Symptom:** All billing crons emit `lock held by another pod, skipping` for longer than the lock TTL duration, meaning no billing cron is running at all.
+
+**Cause:** A pod crashed mid-job without reaching the `finally` block that calls `releaseLock`. The TTL has not yet expired on the stale lock doc in `cron_locks`.
+
+**Wait first:** Lock TTLs are sized 2–3× typical exec time. Wait for the TTL to expire (max 15 min for `dunningSweep`). MongoDB's TTL monitor runs every 60 seconds, so actual cleanup may lag up to 60 s after expiry.
+
+**If urgent — drop the stale lock manually:**
+
+**Before drop:** verify the holder and TTL window first to avoid kicking a running cron.
+
+```js
+db.cron_locks.findOne({ _id: "billing.weeklyReset" })
+// If lockedUntil is in the past → safe to drop.
+// If in the future → the lock is genuinely held; wait for TTL unless the holder pod is confirmed dead.
+```
+
+Then drop:
+
+```js
+// weeklyReset
+db.cron_locks.deleteOne({ _id: "billing.weeklyReset" })
+
+// dunningSweep
+db.cron_locks.deleteOne({ _id: "billing.dunningSweep" })
+
+// extrasExpiration
+db.cron_locks.deleteOne({ _id: "billing.extrasExpiration" })
+```
+
+Or via `kubectl exec` on the mongo pod:
+
+```bash
+kubectl exec -n pierreb-projects mongo-0 -- mongosh \
+  "mongodb://localhost:27017/<your-db>" \
+  --eval 'db.cron_locks.deleteOne({ _id: "billing.weeklyReset" })'
+```
+
+**Prevention:** Lock TTLs are intentionally conservative. If you see frequent stuck-lock incidents, investigate cron duration (slow query? tenant scale?) rather than lower the TTL — a TTL too short defeats the mutual-exclusion guarantee.
+
+---
+
+## 7 — Refund Correlation Backfill Failure
 
 **Symptom:** ERROR log `[billing.webhook] PI metadata backfill failed after retries — refund correlation at risk`.
 A later refund webhook may additionally log `refund unresolved — no stripeSessionId on charge metadata`.
