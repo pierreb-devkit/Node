@@ -4,6 +4,37 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## @casl/ability v6 → v7 (2026-05-22)
+
+`@casl/ability` upgraded from `^6.8.1` to `^7.0.0`.
+
+### What changed (this repo)
+
+- **`lib/middlewares/policy.js`** — v7 renames `PureAbility` to `Ability` and **drops the default conditions matcher** from it; the historical MongoDB-matching `Ability` class no longer exists. `defineAbilityFor()` now builds via `createMongoAbility`:
+  ```js
+  // before (v6)
+  const { AbilityBuilder, Ability } = await import('@casl/ability');
+  const { can, cannot, build } = new AbilityBuilder(Ability);
+  // after (v7)
+  const { AbilityBuilder, createMongoAbility } = await import('@casl/ability');
+  const { can, cannot, build } = new AbilityBuilder(createMongoAbility);
+  ```
+  Without this, conditions like `can('manage', 'Organization', { _id })` stop matching → authorization silently denies → endpoints return 403/422.
+- **JSDoc type refs** `import('@casl/ability').Ability` → `MongoAbility` (`lib/middlewares/policy.js`, `lib/helpers/abilities.js`).
+- **`package.json`** — `@casl/ability` `^6.8.1` → `^7.0.0`.
+
+### Downstream action required
+
+The `policy.js` fix is a devkit-owned file → it arrives via `/update-stack` (`--theirs`). The **dependency bump does not auto-propagate** (`package.json` is `--ours`):
+
+1. Bump `@casl/ability` to `^7.0.0` in `package.json` and reinstall.
+2. After `/update-stack`, verify `lib/middlewares/policy.js` (~line 95) reads `new AbilityBuilder(createMongoAbility)`.
+3. **Module policy files need no change** — they use `can`/`cannot` closures, never the `Ability` class.
+4. The serialized rules format is **unchanged** (`createMongoAbility` keeps the MongoQuery rule shape), so Node→client rule packing stays compatible.
+5. Run unit + integration + e2e to confirm authorization paths still pass.
+
+---
+
 ## Sentry removed — PostHog Error Tracking is now sole source (2026-05-10)
 
 The `@sentry/node` integration shipped in 2026-03-26 (still documented below as **PostHog Analytics (2026-03-26)** + the now-removed Sentry monitoring section) is dropped. Error capture moves entirely to PostHog Error Tracking via `posthog.capture('$exception', ...)`.
