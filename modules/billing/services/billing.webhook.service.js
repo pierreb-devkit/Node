@@ -320,14 +320,22 @@ const handleCheckoutPaymentCompleted = async (session) => {
                 organizationId,
                 packId,
                 kind: 'extras',
-                stripeSessionId,  // real cs_* ID (replaces SENTINEL_PENDING)
+                stripeSessionId, // real cs_* ID (replaces SENTINEL_PENDING)
               },
             }),
-          { attempts: 3, baseMs: 200 },
+          {
+            attempts: 3,
+            baseMs: 200,
+            // Skip retries on Stripe invalid-request errors (invalid_request_error /
+            // StripeInvalidRequestError) — these are deterministic client errors that never
+            // succeed on retry and only delay the dead-letter path.
+            shouldRetry: (err) =>
+              err?.type !== 'StripeInvalidRequestError' && err?.type !== 'invalid_request_error',
+          },
         );
       } catch (err) {
         logger.error(
-          '[billing.webhook] PI metadata backfill failed after retries — refund correlation at risk',
+          '[billing.webhook] PI metadata backfill failed (retries exhausted or skipped) — refund correlation at risk',
           { paymentIntentId, stripeSessionId, error: err?.message ?? String(err), stack: err?.stack },
         );
         try {
