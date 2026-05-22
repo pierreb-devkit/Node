@@ -158,7 +158,7 @@ describe('checkout.session.completed — metadata backfill retry:', () => {
 
     // logger.error should be called for the final failure.
     expect(mockLogger.error).toHaveBeenCalledWith(
-      expect.stringContaining('backfill failed after retries'),
+      expect.stringContaining('backfill failed (retries exhausted or skipped)'),
       expect.objectContaining({ paymentIntentId }),
     );
 
@@ -185,7 +185,7 @@ describe('checkout.session.completed — metadata backfill retry:', () => {
     // Both error paths should be logged.
     expect(mockLogger.error).toHaveBeenCalledTimes(2);
     expect(mockLogger.error).toHaveBeenCalledWith(
-      expect.stringContaining('backfill failed after retries'),
+      expect.stringContaining('backfill failed (retries exhausted or skipped)'),
       expect.objectContaining({ paymentIntentId }),
     );
     expect(mockLogger.error).toHaveBeenCalledWith(

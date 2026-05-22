@@ -326,16 +326,16 @@ const handleCheckoutPaymentCompleted = async (session) => {
           {
             attempts: 3,
             baseMs: 200,
-            // Skip retries on deterministic Stripe client errors (bad params / auth) — they
-            // never succeed on retry and only delay the dead-letter path. Same classification
-            // as billing.admin.controller.js.
+            // Skip retries on Stripe invalid-request errors (invalid_request_error /
+            // StripeInvalidRequestError) — these are deterministic client errors that never
+            // succeed on retry and only delay the dead-letter path.
             shouldRetry: (err) =>
               err?.type !== 'StripeInvalidRequestError' && err?.type !== 'invalid_request_error',
           },
         );
       } catch (err) {
         logger.error(
-          '[billing.webhook] PI metadata backfill failed after retries — refund correlation at risk',
+          '[billing.webhook] PI metadata backfill failed (retries exhausted or skipped) — refund correlation at risk',
           { paymentIntentId, stripeSessionId, error: err?.message ?? String(err), stack: err?.stack },
         );
         try {
