@@ -49,6 +49,10 @@ describe('Billing usage endpoint unit tests:', () => {
       default: { getOrgBalanceContext: jest.fn().mockResolvedValue(0) },
     }));
 
+    jest.unstable_mockModule('../services/billing.plan.service.js', () => ({
+      default: { getActivePlan: jest.fn().mockReturnValue(null) },
+    }));
+
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: mockConfig,
     }));
@@ -231,5 +235,134 @@ describe('Billing usage endpoint unit tests:', () => {
       type: 'error',
       message: 'Internal Server Error',
     }));
+  });
+
+  describe('meterMode — meterQuota live override', () => {
+    let mockBillingPlanService;
+    let mockMeterUsageService;
+    let mockLogger;
+
+    beforeEach(async () => {
+      jest.resetModules();
+
+      mockBillingService = {
+        getLocalSubscription: jest.fn(),
+        getSubscription: jest.fn(),
+      };
+
+      mockMeterUsageService = {
+        getMeter: jest.fn(),
+        currentWeekKey: jest.fn().mockReturnValue('2026-W20'),
+      };
+
+      mockBillingPlanService = {
+        getActivePlan: jest.fn(),
+      };
+
+      jest.unstable_mockModule('../services/billing.service.js', () => ({
+        default: mockBillingService,
+      }));
+
+      jest.unstable_mockModule('../services/billing.usage.service.js', () => ({
+        default: mockMeterUsageService,
+      }));
+
+      jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
+        default: { getOrgBalanceContext: jest.fn().mockResolvedValue(0) },
+      }));
+
+      jest.unstable_mockModule('../services/billing.plan.service.js', () => ({
+        default: mockBillingPlanService,
+      }));
+
+      mockLogger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
+      jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+        default: mockLogger,
+      }));
+      jest.unstable_mockModule('../lib/events.js', () => ({
+        default: { emit: jest.fn() },
+      }));
+
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: {
+          billing: {
+            meterMode: true,
+            packs: [],
+          },
+        },
+      }));
+
+      const mod = await import('../controllers/billing.controller.js');
+      billingController = mod.default;
+
+      res = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn().mockReturnThis(),
+      };
+    });
+
+    test('returns growth plan quota (1600) from live config when DB snapshot shows old free quota (10)', async () => {
+      // DB snapshot baked when user was on free (meterQuota = 10)
+      mockBillingService.getLocalSubscription.mockResolvedValue({ plan: 'growth', status: 'active' });
+      mockMeterUsageService.getMeter.mockResolvedValue({
+        meterUsed: 46,
+        meterQuota: 10,
+        meterBreakdown: {},
+        planVersion: 'v1',
+        weekKey: '2026-W20',
+        resetAt: null,
+      });
+      // Live config knows growth = 1600
+      mockBillingPlanService.getActivePlan.mockReturnValue({ meterQuota: 1600 });
+
+      const req = { organization: { _id: orgId } };
+      await billingController.getUsage(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      const payload = res.json.mock.calls[0][0].data;
+      expect(payload.meterQuota).toBe(1600); // live plan config, not stale DB snapshot
+      expect(payload.meterUsed).toBe(46);
+      expect(payload.plan).toBe('growth');
+      expect(mockLogger.warn).not.toHaveBeenCalled(); // live plan present — no fallback warn
+    });
+
+    test('falls back to DB snapshot quota when live plan config returns null (unknown plan)', async () => {
+      mockBillingService.getLocalSubscription.mockResolvedValue({ plan: 'legacy', status: 'active' });
+      mockMeterUsageService.getMeter.mockResolvedValue({
+        meterUsed: 5,
+        meterQuota: 50,
+        meterBreakdown: {},
+        planVersion: 'v1',
+        weekKey: '2026-W20',
+        resetAt: null,
+      });
+      mockBillingPlanService.getActivePlan.mockReturnValue(null);
+
+      const req = { organization: { _id: orgId } };
+      await billingController.getUsage(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      const payload = res.json.mock.calls[0][0].data;
+      expect(payload.meterQuota).toBe(50); // falls back to DB snapshot
+      // Fallback path masks a plan/config mismatch — warn for ops visibility.
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('no live plan definition'),
+        expect.objectContaining({ planId: 'legacy', snapshotQuota: 50 }),
+      );
+    });
+
+    test('returns 0 meterQuota when no DB snapshot and no live config plan', async () => {
+      mockBillingService.getLocalSubscription.mockResolvedValue(null);
+      mockMeterUsageService.getMeter.mockResolvedValue(null);
+      mockBillingPlanService.getActivePlan.mockReturnValue(null);
+
+      const req = { organization: { _id: orgId } };
+      await billingController.getUsage(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      const payload = res.json.mock.calls[0][0].data;
+      expect(payload.meterQuota).toBe(0);
+      expect(payload.meterUsed).toBe(0);
+    });
   });
 });
