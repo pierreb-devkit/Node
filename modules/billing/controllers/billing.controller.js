@@ -94,9 +94,21 @@ const getUsage = async (req, res) => {
       const extrasRemaining = await BillingExtraService.getOrgBalanceContext(req.organization._id.toString());
       const packsAvailable = config.billing?.packs ?? [];
 
-      // Derive meterQuota from the live plan config — DB snapshot is stale after a plan upgrade
-      // (free → growth) until the next incrementMeter call. Live config is authoritative.
+      // Derive meterQuota from the live plan config — the DB snapshot is stale after a
+      // plan upgrade (free → growth) until the next incrementMeter call, so live config
+      // is authoritative when present. When it is absent (legacy plan dropped from config,
+      // or seeding / version bump in progress) this is a read-only display endpoint, not a
+      // gate: billing.requireQuota already fails safe with 503 on the work path, so here we
+      // degrade gracefully to the DB snapshot (or 0) and warn for ops visibility rather than
+      // failing the usage page.
       const livePlan = BillingPlanService.getActivePlan(plan);
+      if (!livePlan) {
+        logger.warn('[billing.getUsage] no live plan definition for planId — falling back to DB snapshot quota', {
+          planId: plan,
+          organizationId: req.organization._id.toString(),
+          snapshotQuota: meter?.meterQuota ?? null,
+        });
+      }
       const liveQuota = livePlan?.meterQuota ?? meter?.meterQuota ?? 0;
 
       return responses.success(res, 'billing usage')({

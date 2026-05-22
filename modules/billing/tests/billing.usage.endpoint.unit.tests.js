@@ -240,6 +240,7 @@ describe('Billing usage endpoint unit tests:', () => {
   describe('meterMode — meterQuota live override', () => {
     let mockBillingPlanService;
     let mockMeterUsageService;
+    let mockLogger;
 
     beforeEach(async () => {
       jest.resetModules();
@@ -274,8 +275,9 @@ describe('Billing usage endpoint unit tests:', () => {
         default: mockBillingPlanService,
       }));
 
+      mockLogger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
       jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
-        default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
+        default: mockLogger,
       }));
       jest.unstable_mockModule('../lib/events.js', () => ({
         default: { emit: jest.fn() },
@@ -321,6 +323,7 @@ describe('Billing usage endpoint unit tests:', () => {
       expect(payload.meterQuota).toBe(1600); // live plan config, not stale DB snapshot
       expect(payload.meterUsed).toBe(46);
       expect(payload.plan).toBe('growth');
+      expect(mockLogger.warn).not.toHaveBeenCalled(); // live plan present — no fallback warn
     });
 
     test('falls back to DB snapshot quota when live plan config returns null (unknown plan)', async () => {
@@ -341,6 +344,11 @@ describe('Billing usage endpoint unit tests:', () => {
       expect(res.status).toHaveBeenCalledWith(200);
       const payload = res.json.mock.calls[0][0].data;
       expect(payload.meterQuota).toBe(50); // falls back to DB snapshot
+      // Fallback path masks a plan/config mismatch — warn for ops visibility.
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('no live plan definition'),
+        expect.objectContaining({ planId: 'legacy', snapshotQuota: 50 }),
+      );
     });
 
     test('returns 0 meterQuota when no DB snapshot and no live config plan', async () => {
