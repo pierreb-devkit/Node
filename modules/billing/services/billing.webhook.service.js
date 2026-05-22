@@ -9,10 +9,12 @@ import logger from '../../../lib/services/logger.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import ProcessedStripeEventRepository from '../repositories/billing.processedStripeEvent.repository.js';
 import OrganizationRepository from '../../organizations/repositories/organizations.repository.js';
+import BillingFailedBackfillRepository from '../repositories/billing.failedBackfill.repository.js';
 import BillingExtraService from './billing.extra.service.js';
 import BillingResetService from './billing.reset.service.js';
 import billingEvents from '../lib/events.js';
 import { SENTINEL_PENDING } from '../lib/billing.constants.js';
+import { retryWithBackoff } from '../lib/billing.retry.js';
 
 /**
  * Treats a stripeSessionId as "unresolved" when absent, empty, or still the
@@ -311,21 +313,36 @@ const handleCheckoutPaymentCompleted = async (session) => {
     const stripe = getStripe();
     if (stripe) {
       try {
-        await stripe.paymentIntents.update(paymentIntentId, {
-          metadata: {
-            organizationId,
-            packId,
-            kind: 'extras',
-            stripeSessionId,  // real cs_* ID (replaces SENTINEL_PENDING)
-          },
-        });
+        await retryWithBackoff(
+          () =>
+            stripe.paymentIntents.update(paymentIntentId, {
+              metadata: {
+                organizationId,
+                packId,
+                kind: 'extras',
+                stripeSessionId,  // real cs_* ID (replaces SENTINEL_PENDING)
+              },
+            }),
+          { attempts: 3, baseMs: 200 },
+        );
       } catch (err) {
-        // Log but don't fail — refund correlation may use the backfill resolver path
-        logger.warn('[billing.webhook] PaymentIntent metadata update failed', {
-          paymentIntentId,
-          error: err?.message ?? String(err),
-          stack: err?.stack,
-        });
+        logger.error(
+          '[billing.webhook] PI metadata backfill failed after retries — refund correlation at risk',
+          { paymentIntentId, stripeSessionId, error: err?.message ?? String(err), stack: err?.stack },
+        );
+        try {
+          await BillingFailedBackfillRepository.record({
+            paymentIntentId,
+            stripeSessionId,
+            error: err?.message ?? String(err),
+            failedAt: new Date(),
+          });
+        } catch (dlqErr) {
+          logger.error(
+            '[billing.webhook] dead-letter write failed — manual reconciliation required',
+            { paymentIntentId, stripeSessionId, error: dlqErr?.message ?? String(dlqErr), stack: dlqErr?.stack },
+          );
+        }
       }
     }
   }
