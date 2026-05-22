@@ -46,6 +46,7 @@ logger.info('[cron.extrasExpiration] start');
 let lockHolder = null;
 try {
   await applyJitter(getCronJitterMaxMs());
+  await mongooseService.loadModels();
   await mongooseService.connect();
 
   lockHolder = `${process.env.HOSTNAME ?? 'unknown'}:${randomUUID()}`;

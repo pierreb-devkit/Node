@@ -43,7 +43,7 @@ describe('distributedLock integration — acquire / release contract:', () => {
     expect(ok).toBe(false);
   });
 
-  test('allows acquire when previous lock has expired (ttlMs < 0)', async () => {
+  test('allows acquire when the existing lock has expired (lockedUntil < now)', async () => {
     // Seed an already-expired lock: lockedUntil in the past
     await CronLock.create({
       _id: 'billing.extrasExpiration',
