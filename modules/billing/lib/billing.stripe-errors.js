@@ -9,14 +9,17 @@
 
 const NON_TRANSIENT_STRIPE_ERROR_CLASSES = new Set([
   'StripeInvalidRequestError', // 400/404 — bad params, deterministic
+  'StripeIdempotencyError', // 400 — idempotency key reused with conflicting params, deterministic
   'StripeAuthenticationError', // 401 — bad/missing API key, deterministic
   'StripePermissionError', // 403 — key lacks permission for the resource, deterministic
 ]);
 
 /**
  * True when a Stripe error is deterministic and will never succeed on retry
- * (invalid request, authentication, or permission failures). Transient errors
- * (api_error/500, connection, rate_limit/429) return false so they keep retrying.
+ * (invalid request, idempotency, authentication, or permission failures). Transient
+ * errors (api_error/500, connection, rate_limit/429) return false so they keep
+ * retrying. StripeCardError (402) is intentionally excluded — some decline codes
+ * (processing_error, issuer_unavailable) are transient.
  *
  * @param {unknown} err
  * @returns {boolean}
