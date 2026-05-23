@@ -15,6 +15,7 @@ import BillingResetService from './billing.reset.service.js';
 import billingEvents from '../lib/events.js';
 import { SENTINEL_PENDING } from '../lib/billing.constants.js';
 import { retryWithBackoff } from '../lib/billing.retry.js';
+import { isNonTransientStripeError } from '../lib/billing.stripe-errors.js';
 
 /**
  * Treats a stripeSessionId as "unresolved" when absent, empty, or still the
@@ -326,11 +327,9 @@ const handleCheckoutPaymentCompleted = async (session) => {
           {
             attempts: 3,
             baseMs: 200,
-            // Skip retries on Stripe invalid-request errors (invalid_request_error /
-            // StripeInvalidRequestError) — these are deterministic client errors that never
-            // succeed on retry and only delay the dead-letter path.
-            shouldRetry: (err) =>
-              err?.type !== 'StripeInvalidRequestError' && err?.type !== 'invalid_request_error',
+            // Skip retries on deterministic Stripe errors (invalid request / auth / permission) —
+            // they never succeed on retry and only delay the dead-letter path. See billing.stripe-errors.js.
+            shouldRetry: (err) => !isNonTransientStripeError(err),
           },
         );
       } catch (err) {
