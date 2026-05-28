@@ -108,6 +108,13 @@ const remove = async (user) => {
 const stats = () => User.estimatedDocumentCount().exec();
 
 /**
+ * @desc Exact document count (countDocuments, not estimated) for cap enforcement
+ * @param {Object} [filter] - optional Mongoose filter
+ * @returns {Promise<number>} exact matching document count
+ */
+const count = (filter = {}) => User.countDocuments(filter).exec();
+
+/**
  * @desc Function to push list of users in db
  * @param {[Object]} users
  * @param {[String]} filters
@@ -219,6 +226,7 @@ export default {
   update,
   remove,
   stats,
+  count,
   push,
   searchByNameOrEmail,
   findByEmail,

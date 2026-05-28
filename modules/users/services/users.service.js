@@ -145,6 +145,13 @@ const stats = async () => {
 };
 
 /**
+ * @desc Exact user count (delegates to repository.count)
+ * @param {Object} [filter] - optional Mongoose filter
+ * @returns {Promise<number>} exact matching user count
+ */
+const count = (filter = {}) => UserRepository.count(filter);
+
+/**
  * @desc Function to update a user by ID with a partial update object
  * @param {String} id - The user ID
  * @param {Object} data - Fields to update
@@ -206,6 +213,7 @@ export default {
   terms,
   remove,
   stats,
+  count,
   updateById,
   findWithFilter,
   findByIdAndUpdatePopulated,
