@@ -437,7 +437,11 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
     // Short-circuit count() when cap is not set (null = unlimited).
     const oauthCap = config.sign.cap != null ? Number(config.sign.cap) : null;
     const capReached = oauthCap != null && Number.isFinite(oauthCap) && (await UserService.count()) >= oauthCap;
-    const oauthInvite = config.sign.up ? null : await InvitationService.findValidByEmail(profil.email);
+    // Only honor an OAuth invite when the provider verified the email — otherwise a
+    // provider returning an arbitrary unverified email could open the gate on an
+    // invite meant for someone else.
+    const hasVerifiedProviderEmail = !!(profil.email && profil.emailVerifiedByProvider);
+    const oauthInvite = config.sign.up || !hasVerifiedProviderEmail ? null : await InvitationService.findValidByEmail(profil.email);
     if (capReached || (!config.sign.up && !oauthInvite)) {
       // Mirror the local signup endpoint's error shape so clients see the same
       // `message`/`description` regardless of signup method (see `signup` above).

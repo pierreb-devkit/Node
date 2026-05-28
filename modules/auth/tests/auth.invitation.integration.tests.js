@@ -257,7 +257,7 @@ describe('Signup invitations:', () => {
       config.sign.up = originalUp;
       config.sign.cap = originalCap;
       // Clean up any OAuth gate test users
-      for (const email of ['oauth-gate-blocked@test.com', 'oauth-gate-invited@test.com']) {
+      for (const email of ['oauth-gate-blocked@test.com', 'oauth-gate-invited@test.com', 'oauthunverified@example.com']) {
         try {
           const existing = await UserService.getBrut({ email });
           if (existing) await UserService.remove(existing);
@@ -288,6 +288,44 @@ describe('Signup invitations:', () => {
       // Ensure no user was persisted
       const users = await UserService.search({ email: 'oauth-gate-blocked@test.com' });
       expect(users.length).toBe(0);
+    });
+
+    test('signup disabled + invite for provider email but email NOT verified by provider → OAuth signup rejected (gate bypass blocked)', async () => {
+      // Create admin and invitation while signup is still open
+      const adminAgent = await createAdminAndSignin();
+      const invEmail = 'oauthunverified@example.com';
+      const created = await adminAgent.post('/api/auth/invitations').send({ email: invEmail });
+      expect(created.status).toBe(200);
+
+      // Close public signup — an unverified provider email must NOT open the gate
+      config.sign.up = false;
+      config.sign.cap = null;
+
+      const profil = {
+        firstName: 'Unverified',
+        lastName: 'OAuth',
+        email: invEmail,
+        avatar: '',
+        providerData: { sub: 'google-unverified-sub' },
+        emailVerifiedByProvider: false, // unverified — should NOT match invite
+      };
+
+      await expect(
+        AuthController.checkOAuthUserProfile(profil, 'sub', 'google'),
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_ERROR',
+        details: { message: 'Registration is currently deactivated' },
+      });
+
+      // Ensure no user was persisted
+      const users = await UserService.search({ email: invEmail });
+      expect(users.length).toBe(0);
+
+      // Clean up the invitation
+      try {
+        const existing = await UserService.getBrut({ email: invEmail });
+        if (existing) await UserService.remove(existing);
+      } catch (_) { /* cleanup */ }
     });
 
     test('signup disabled + valid invite for provider email → OAuth signup succeeds and invite consumed', async () => {
