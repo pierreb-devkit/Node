@@ -128,7 +128,8 @@ const remove = async (user) => {
         // Step 3: For each affected co-member, switch to their next available org or set null
         await Promise.all(affectedUsers.map(async (u) => {
           const remaining = await MembershipRepository.list({ userId: u._id, status: MEMBERSHIP_STATUSES.ACTIVE });
-          const nextOrg = remaining.length > 0 ? (remaining[0].organizationId._id || remaining[0].organizationId) : null;
+          const liveMemberships = remaining.filter((m) => m.organizationId != null);
+          const nextOrg = liveMemberships.length > 0 ? (liveMemberships[0].organizationId._id || liveMemberships[0].organizationId) : null;
           await UserRepository.updateById(u._id, { currentOrganization: nextOrg });
         }));
         // Step 4: Delete the org (bare remove — org-scoped tasks are intentionally not deleted here)
