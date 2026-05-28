@@ -253,13 +253,16 @@ const autoSetCurrentOrganization = async (user) => {
       organizationId: user.currentOrganization._id || user.currentOrganization,
       status: MEMBERSHIP_STATUSES.ACTIVE,
     });
-    if (stillActive) return user;
-    // Membership gone — clear stale reference and fall through to find another
+    // Guard: populated organizationId may be null when the org was hard-deleted
+    if (stillActive && stillActive.organizationId != null) return user;
+    // Membership gone or org deleted — clear stale reference and fall through to find another
     user.currentOrganization = null;
   }
   const memberships = await MembershipRepository.list({ userId: user._id || user.id, status: MEMBERSHIP_STATUSES.ACTIVE });
-  if (memberships.length > 0) {
-    const orgId = memberships[0].organizationId._id || memberships[0].organizationId;
+  // Filter out memberships whose org was deleted (Mongoose populate sets organizationId to null)
+  const liveMemberships = memberships.filter((m) => m.organizationId != null);
+  if (liveMemberships.length > 0) {
+    const orgId = liveMemberships[0].organizationId._id || liveMemberships[0].organizationId;
     await UserService.updateById(user._id || user.id, { currentOrganization: orgId });
     user.currentOrganization = orgId;
   } else {

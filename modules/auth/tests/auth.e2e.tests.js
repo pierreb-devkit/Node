@@ -237,6 +237,42 @@ describe('Auth E2E tests:', () => {
         expect(err).toBeFalsy();
       }
     });
+
+    test('should return 200 on signin even when autoSetCurrentOrganization would encounter a data-integrity anomaly', async () => {
+      config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
+
+      // Signup user, then directly corrupt their currentOrganization to a non-existent ObjectId
+      // to simulate a pre-existing dangling ref in prod
+      try {
+        const signupRes = await agent
+          .post('/api/auth/signup')
+          .send({
+            firstName: 'Danglingref',
+            lastName: 'User',
+            email: 'e2e-dangling-ref-3709@test.com',
+            password: 'W@os.jsI$Aw3$0m3',
+            provider: 'local',
+          })
+          .expect(200);
+
+        user = signupRes.body.user;
+        // Directly write a bogus ObjectId as currentOrganization (simulates pre-existing corruption)
+        const mongoose = (await import('mongoose')).default;
+        const User = mongoose.model('User');
+        await User.updateOne({ _id: user.id }, { currentOrganization: new mongoose.Types.ObjectId() });
+
+        // Signin must NOT 500
+        const signinRes = await agent
+          .post('/api/auth/signin')
+          .send({ email: 'e2e-dangling-ref-3709@test.com', password: 'W@os.jsI$Aw3$0m3' })
+          .expect(200);
+
+        expect(signinRes.body.type).toBe('success');
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
   });
 
   // Mongoose disconnect
