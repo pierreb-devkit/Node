@@ -41,7 +41,7 @@ const consume = (id) =>
  * @desc List all invitations (admin), newest first
  * @returns {Promise<Array>}
  */
-const list = () => Invitation.find({}).populate('invitedBy', 'email firstName lastName').sort('-createdAt').exec();
+const list = () => Invitation.find({}).select('-token').populate('invitedBy', 'email firstName lastName').sort('-createdAt').exec();
 
 /**
  * @desc Get one invitation by id

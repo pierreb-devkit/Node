@@ -207,6 +207,17 @@ describe('Signup invitations:', () => {
       const res = await request(app).post('/api/auth/signup').send({ email: 'open@example.com', password: 'Sup3rStr0ng!' });
       expect(res.status).toBe(200);
     });
+
+    test('signup disabled + valid token but NO email in body → 404, invite not consumed (email-pin not bypassable)', async () => {
+      config.sign.up = false; config.sign.cap = null;
+      const adminAgent = await createAdminAndSignin();
+      const created = await adminAgent.post('/api/auth/invitations').send({ email: 'pinned2@example.com' });
+      const { token } = created.body.data;
+      const res = await request(app).post(`/api/auth/signup?inviteToken=${token}`).send({ password: 'Sup3rStr0ng!' });
+      expect(res.status).toBe(404);
+      const recheck = await request(app).get(`/api/auth/invitations/verify/${token}`);
+      expect(recheck.body.data.valid).toBe(true); // not consumed
+    });
   });
 
   describe('OAuth signup gate (cap + email-matched invite)', () => {

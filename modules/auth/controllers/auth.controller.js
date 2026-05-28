@@ -70,7 +70,14 @@ const signup = async (req, res) => {
     // invite token (read from query: model.isValid strips unknown body keys).
     const total = await UserService.count();
     const capReached = config.sign.cap != null && total >= config.sign.cap;
-    const invite = req.query?.inviteToken ? await InvitationService.findValid(req.query.inviteToken, req.body.email) : null;
+    let invite = null;
+    if (req.query?.inviteToken) {
+      invite = await InvitationService.findValid(req.query.inviteToken, req.body.email);
+      // An invite is bound to its email; never honor it for a signup that supplies
+      // no email to match. findValid stays lenient on a falsy email because the
+      // public verify endpoint reuses it, so enforce the pin here.
+      if (invite && invite.email && !req.body.email) invite = null;
+    }
     if (capReached || (!config.sign.up && !invite)) {
       return responses.error(res, 404, 'Signup error', 'Registration is currently deactivated')();
     }
