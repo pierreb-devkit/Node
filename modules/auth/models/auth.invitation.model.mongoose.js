@@ -12,7 +12,7 @@ const Schema = mongoose.Schema;
 const InvitationMongoose = new Schema(
   {
     email: { type: String, required: true, lowercase: true, trim: true },
-    token: { type: String, required: true, unique: true },
+    token: { type: String, required: true },
     invitedBy: { type: Schema.ObjectId, ref: 'User', default: null },
     expiresAt: { type: Date, required: true },
     usedAt: { type: Date, default: null },
