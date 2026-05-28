@@ -7,7 +7,8 @@ import config from '../../../config/index.js';
 import AuthService from '../../auth/services/auth.service.js';
 import UserRepository from '../repositories/users.repository.js';
 import MembershipService from '../../organizations/services/organizations.membership.service.js';
-import OrganizationsCrudService from '../../organizations/services/organizations.crud.service.js';
+import OrganizationsRepository from '../../organizations/repositories/organizations.repository.js';
+import MembershipRepository from '../../organizations/repositories/organizations.membership.repository.js';
 import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../../organizations/lib/constants.js';
 import { removeSensitive } from '../utils/sanitizeUser.js';
 
@@ -119,12 +120,20 @@ const remove = async (user) => {
       // Check if this user is the only owner of the org
       const ownerCount = await MembershipService.count({ organizationId: orgId, role: MEMBERSHIP_ROLES.OWNER, status: MEMBERSHIP_STATUSES.ACTIVE });
       if (ownerCount <= 1) {
-        // Sole owner — delete the entire org and its memberships
-        // Clear currentOrganization for affected users
-        await UserRepository.updateMany({ currentOrganization: orgId }, { currentOrganization: null });
+        // Sole owner — delete org and cascade: repair co-member currentOrganization
+        // Step 1: Collect co-members whose currentOrganization points to this org
+        const affectedUsers = await UserRepository.findWithFilter({ currentOrganization: orgId }, '_id');
+        // Step 2: Delete all memberships for this org (including this user's and all co-members')
         await MembershipService.deleteMany({ organizationId: orgId });
-        await OrganizationsCrudService.removeById(orgId);
-        continue; // membership already deleted above
+        // Step 3: For each affected co-member, switch to their next available org or set null
+        await Promise.all(affectedUsers.map(async (u) => {
+          const remaining = await MembershipRepository.list({ userId: u._id, status: MEMBERSHIP_STATUSES.ACTIVE });
+          const nextOrg = remaining.length > 0 ? (remaining[0].organizationId._id || remaining[0].organizationId) : null;
+          await UserRepository.updateById(u._id, { currentOrganization: nextOrg });
+        }));
+        // Step 4: Delete the org (bare remove — org-scoped tasks are intentionally not deleted here)
+        await OrganizationsRepository.remove({ _id: orgId });
+        continue; // memberships for this org already cleaned up
       }
     }
     // Delete this user's membership
