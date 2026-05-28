@@ -8,6 +8,7 @@ import model from '../../../lib/middlewares/model.js';
 import UsersSchema from '../../users/models/users.schema.js';
 import auth from '../controllers/auth.controller.js';
 import authPassword from '../controllers/auth.password.controller.js';
+import invitationRoutes from './auth.invitation.routes.js';
 
 /**
  * Register authentication routes on the Express application.
@@ -16,6 +17,10 @@ import authPassword from '../controllers/auth.password.controller.js';
  */
 export default (app) => {
   const authLimiter = limiters.auth;
+
+  // Invitation routes must be registered before the /api/auth/:strategy wildcard
+  // (glob loads auth.routes.js before auth.invitation.routes.js on this platform)
+  invitationRoutes(app);
 
   // Auth config — optional JWT: public fields for everyone, org details for authenticated users
   /**
