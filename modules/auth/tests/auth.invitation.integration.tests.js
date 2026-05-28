@@ -4,7 +4,7 @@
 import request from 'supertest';
 import path from 'path';
 
-import { beforeAll, afterAll, describe, test, expect } from '@jest/globals';
+import { beforeAll, afterAll, beforeEach, afterEach, describe, test, expect } from '@jest/globals';
 import { bootstrap } from '../../../lib/app.js';
 import config from '../../../config/index.js';
 
@@ -206,6 +206,87 @@ describe('Signup invitations:', () => {
       config.sign.up = true; config.sign.cap = null;
       const res = await request(app).post('/api/auth/signup').send({ email: 'open@example.com', password: 'Sup3rStr0ng!' });
       expect(res.status).toBe(200);
+    });
+  });
+
+  describe('OAuth signup gate (cap + email-matched invite)', () => {
+    let AuthController;
+    let originalUp; let originalCap;
+
+    beforeAll(async () => {
+      AuthController = (await import(path.resolve('./modules/auth/controllers/auth.controller.js'))).default;
+    });
+
+    beforeEach(() => {
+      originalUp = config.sign.up;
+      originalCap = config.sign.cap;
+    });
+
+    afterEach(async () => {
+      config.sign.up = originalUp;
+      config.sign.cap = originalCap;
+      // Clean up any OAuth gate test users
+      for (const email of ['oauth-gate-blocked@test.com', 'oauth-gate-invited@test.com']) {
+        try {
+          const existing = await UserService.getBrut({ email });
+          if (existing) await UserService.remove(existing);
+        } catch (_) { /* cleanup */ }
+      }
+    });
+
+    test('signup disabled + no invite for provider email → OAuth signup rejected (VALIDATION_ERROR)', async () => {
+      config.sign.up = false;
+      config.sign.cap = null;
+
+      const profil = {
+        firstName: 'Blocked',
+        lastName: 'OAuth',
+        email: 'oauth-gate-blocked@test.com',
+        avatar: '',
+        providerData: { sub: 'google-gate-blocked-sub' },
+        emailVerifiedByProvider: true,
+      };
+
+      await expect(
+        AuthController.checkOAuthUserProfile(profil, 'sub', 'google'),
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_ERROR',
+        details: { message: 'Registration is currently deactivated' },
+      });
+
+      // Ensure no user was persisted
+      const users = await UserService.search({ email: 'oauth-gate-blocked@test.com' });
+      expect(users.length).toBe(0);
+    });
+
+    test('signup disabled + valid invite for provider email → OAuth signup succeeds and invite consumed', async () => {
+      // Create admin and invitation while signup is still open
+      const adminAgent = await createAdminAndSignin();
+      const invEmail = 'oauth-gate-invited@test.com';
+      const created = await adminAgent.post('/api/auth/invitations').send({ email: invEmail });
+      expect(created.status).toBe(200);
+      const { token } = created.body.data;
+
+      // Now close public signup — the email-matched invite path must still allow creation
+      config.sign.up = false;
+      config.sign.cap = null;
+
+      const profil = {
+        firstName: 'Invited',
+        lastName: 'OAuth',
+        email: invEmail,
+        avatar: '',
+        providerData: { sub: 'google-gate-invited-sub' },
+        emailVerifiedByProvider: true,
+      };
+
+      const createdUser = await AuthController.checkOAuthUserProfile(profil, 'sub', 'google');
+      expect(createdUser).toBeDefined();
+      expect(createdUser.email).toBe(invEmail);
+
+      // Invite must be consumed — verify token is no longer valid
+      const recheck = await request(app).get(`/api/auth/invitations/verify/${token}`);
+      expect(recheck.body.data.valid).toBe(false);
     });
   });
 });

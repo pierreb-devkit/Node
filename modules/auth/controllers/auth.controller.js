@@ -416,7 +416,12 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
   }
   // 4. No match → create new user
   try {
-    if (!config.sign.up) {
+    // Same two gates as local signup. OAuth can't carry an invite token through
+    // the redirect, so the invite is matched on the provider's verified email.
+    const total = await UserService.count();
+    const capReached = config.sign.cap != null && total >= config.sign.cap;
+    const oauthInvite = config.sign.up ? null : await InvitationService.findValidByEmail(profil.email);
+    if (capReached || (!config.sign.up && !oauthInvite)) {
       // Mirror the local signup endpoint's error shape so clients see the same
       // `message`/`description` regardless of signup method (see `signup` above).
       throw new AppError('Signup error', {
@@ -438,7 +443,9 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
     const error = model.checkError(result);
     if (error) throw new AppError('Schema validation error', { code: 'VALIDATION_ERROR', details: { message: error } });
     // else return req.body with the data after Zod validation
-    return await UserService.create(result.value);
+    const createdUser = await UserService.create(result.value);
+    if (oauthInvite) await InvitationService.consume(oauthInvite.id);
+    return createdUser;
   } catch (err) {
     if (err instanceof AppError) throw err;
     throw new AppError('oAuth', { code: 'CONTROLLER_ERROR', details: err.details || err });
