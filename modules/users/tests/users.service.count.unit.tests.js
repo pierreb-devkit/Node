@@ -38,6 +38,38 @@ jest.unstable_mockModule('../../organizations/services/organizations.crud.servic
   default: { create: jest.fn(), get: jest.fn(), remove: jest.fn() },
 }));
 
+// Mock repositories directly so mongoose.model('Organization') / mongoose.model('Membership')
+// are never called at module-evaluation time (the service-level mocks above intercept call
+// paths but ESM static imports on the real service files are still resolved by the V8 VM
+// module linker in some Node/Jest versions — mocking at repository layer is the safe guard).
+jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
+  default: {
+    list: jest.fn(),
+    create: jest.fn(),
+    get: jest.fn(),
+    remove: jest.fn(),
+    removeById: jest.fn(),
+    findOne: jest.fn(),
+    exists: jest.fn(),
+    update: jest.fn(),
+    updateById: jest.fn(),
+    setPlan: jest.fn(),
+    deleteMany: jest.fn(),
+  },
+}));
+
+jest.unstable_mockModule('../../organizations/repositories/organizations.membership.repository.js', () => ({
+  default: {
+    list: jest.fn(),
+    create: jest.fn(),
+    get: jest.fn(),
+    remove: jest.fn(),
+    count: jest.fn(),
+    deleteMany: jest.fn(),
+    aggregateCountByOrganizations: jest.fn(),
+  },
+}));
+
 jest.unstable_mockModule('../../organizations/lib/constants.js', () => ({
   MEMBERSHIP_ROLES: { OWNER: 'owner', MEMBER: 'member' },
   MEMBERSHIP_STATUSES: { ACTIVE: 'active', PENDING: 'pending' },
