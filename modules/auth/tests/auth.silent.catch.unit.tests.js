@@ -35,6 +35,19 @@ describe('auth.controller silent-catch error logging:', () => {
           getBrut: jest.fn().mockResolvedValue({ id: 'u1' }),
           update: jest.fn().mockResolvedValue({}),
           remove: jest.fn(),
+          count: jest.fn().mockResolvedValue(0),
+        },
+      }));
+
+      jest.unstable_mockModule('../../../modules/auth/services/auth.invitation.service.js', () => ({
+        default: {
+          findValid: jest.fn().mockResolvedValue(null),
+          findValidByEmail: jest.fn().mockResolvedValue(null),
+          consume: jest.fn().mockResolvedValue(null),
+          create: jest.fn(),
+          list: jest.fn(),
+          get: jest.fn(),
+          revoke: jest.fn(),
         },
       }));
 
@@ -121,7 +134,7 @@ describe('auth.controller silent-catch error logging:', () => {
 
       const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
 
-      const req = { body: { email: 'x@y.com', firstName: 'A', lastName: 'B', password: 'P@ss1234!' } };
+      const req = { body: { email: 'x@y.com', firstName: 'A', lastName: 'B', password: 'P@ss1234!' }, query: {} };
       const res = {
         status: jest.fn().mockReturnThis(),
         cookie: jest.fn().mockReturnThis(),

@@ -35,7 +35,10 @@ describe('auth.controller getConfig:', () => {
       default: mockConfig,
     }));
     jest.unstable_mockModule('../../../modules/users/services/users.service.js', () => ({
-      default: { create: jest.fn(), getBrut: jest.fn(), update: jest.fn(), remove: jest.fn(), search: jest.fn() },
+      default: { create: jest.fn(), getBrut: jest.fn(), update: jest.fn(), remove: jest.fn(), search: jest.fn(), count: jest.fn().mockResolvedValue(0) },
+    }));
+    jest.unstable_mockModule('../../../modules/auth/services/auth.invitation.service.js', () => ({
+      default: { findValid: jest.fn().mockResolvedValue(null), consume: jest.fn().mockResolvedValue(null) },
     }));
     jest.unstable_mockModule('../../../modules/users/repositories/users.repository.js', () => ({
       default: { update: jest.fn() },

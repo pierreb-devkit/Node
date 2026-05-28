@@ -36,6 +36,7 @@ Designed to be cloned into downstream projects and kept up-to-date via `git merg
 - **User data privacy** : delete all - get all - send all by mail
 - **Admin** : list users - get user - edit user - delete user
 - **Organizations** : multi-tenant organization management - create, update, delete orgs - member invite, role management (owner/admin/member) - platform admin org listing
+- **Signup access control** : invite-only signup (single-use token links) + hard account cap (beta gating) - admin-managed invitations, public signup auto-locks at the cap
 - **CASL v2 Authorization** : document-level permission checks via [@casl/ability](https://casl.js.org/) - replaces route-level role rules with per-document conditions (ownership, org scope)
 - **Migration System** : automatic database migrations at boot - tracks executed scripts in MongoDB - idempotent reruns
 
@@ -196,6 +197,33 @@ Both file types are optional and can be used independently or together. Per-modu
 | `DELETE` | `/api/admin/organizations/:organizationId`              | JWT+Admin | Delete any organization     |
 
 > See [MIGRATIONS.md](MIGRATIONS.md) for the full migration guide from route-level CASL to document-level CASL v2.
+
+## :lock: Signup Access Control (cap + invitations)
+
+Signup is governed by two AND-ed gates in `auth.controller.js`:
+
+- **Capacity** — `config.sign.cap` is a hard ceiling on the **total** number of accounts (invited users included). Once reached, *all* signup is locked.
+- **Eligibility** — `config.sign.up` (public self-serve) **OR** a valid invitation re-opens signup for a specific email.
+
+Invitations are **single-use** and **expiring** (`config.sign.inviteExpiresInDays`, default 14). Local signup carries the token as a query param (`/signup?inviteToken=…`); OAuth signup matches the invite on the provider's verified email.
+
+| Key | Default | Effect |
+|-----|---------|--------|
+| `sign.up` | `true` | Public self-serve signup enabled |
+| `sign.cap` | `null` | `null` = unlimited; integer = hard ceiling on total accounts (invited included) |
+| `sign.inviteExpiresInDays` | `14` | Invite link validity (days) |
+
+Common setups:
+- **Invite-only:** `sign.up = false` → only invitation holders can sign up.
+- **Beta cap (e.g. 50):** `sign.cap = 50` → open self-serve until 50 accounts, then locked.
+
+| Method   | Endpoint                                  | Auth      | Description                          |
+| -------- | ----------------------------------------- | --------- | ------------------------------------ |
+| `POST`   | `/api/auth/invitations`                   | JWT+Admin | Create + email a signup invitation   |
+| `GET`    | `/api/auth/invitations`                   | JWT+Admin | List invitations                     |
+| `DELETE` | `/api/auth/invitations/:invitationId`     | JWT+Admin | Revoke an invitation                 |
+| `GET`    | `/api/auth/invitations/verify/:token`     | Public    | Check a token → `{ valid, email }`   |
+| `POST`   | `/api/auth/signup?inviteToken=…`          | Public    | Signup; a valid token bypasses closed signup |
 
 ## :credit_card: Billing — Version Namespace Contract
 

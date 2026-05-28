@@ -13,6 +13,8 @@ const config = {
   sign: {
     in: true, // disable signin
     up: true, // disable signup
+    cap: null, // null = unlimited; integer = hard ceiling on TOTAL accounts (invited included)
+    inviteExpiresInDays: 14, // signup invite link validity
   },
   // jwt is for token authentication
   jwt: {

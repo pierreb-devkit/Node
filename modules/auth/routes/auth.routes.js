@@ -5,9 +5,12 @@ import passport from 'passport';
 
 import limiters from '../../../lib/middlewares/rateLimiter.js';
 import model from '../../../lib/middlewares/model.js';
+import policy from '../../../lib/middlewares/policy.js';
 import UsersSchema from '../../users/models/users.schema.js';
 import auth from '../controllers/auth.controller.js';
 import authPassword from '../controllers/auth.password.controller.js';
+import invitations from '../controllers/auth.invitation.controller.js';
+import InvitationSchema from '../models/auth.invitation.schema.js';
 
 /**
  * Register authentication routes on the Express application.
@@ -16,6 +19,21 @@ import authPassword from '../controllers/auth.password.controller.js';
  */
 export default (app) => {
   const authLimiter = limiters.auth;
+
+  // Signup invitations — public verify + admin CRUD. MUST be declared before the
+  // greedy `/api/auth/:strategy` wildcard below, which would otherwise capture
+  // `/api/auth/invitations`.
+  app.route('/api/auth/invitations/verify/:token').get(authLimiter, invitations.verify);
+  app
+    .route('/api/auth/invitations')
+    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
+    .get(invitations.list)
+    .post(model.isValid(InvitationSchema.Invitation), invitations.create);
+  app
+    .route('/api/auth/invitations/:invitationId')
+    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
+    .delete(invitations.remove);
+  app.param('invitationId', invitations.invitationByID);
 
   // Auth config — optional JWT: public fields for everyone, org details for authenticated users
   /**
