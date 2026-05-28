@@ -6,6 +6,7 @@ import passport from 'passport';
 import jwt from 'jsonwebtoken';
 
 import UserService from '../../users/services/users.service.js';
+import InvitationService from '../services/auth.invitation.service.js';
 import config from '../../../config/index.js';
 import model from '../../../lib/middlewares/model.js';
 import mails from '../../../lib/helpers/mailer/index.js';
@@ -64,7 +65,15 @@ const sendVerificationEmail = async (user, verificationToken) => {
  */
 const signup = async (req, res) => {
   try {
-    if (!config.sign.up) return responses.error(res, 404, 'Signup error', 'Registration is currently deactivated')();
+    // Two AND-ed gates: (1) capacity — a hard ceiling on total accounts,
+    // invited users included; (2) eligibility — public signup open OR a valid
+    // invite token (read from query: model.isValid strips unknown body keys).
+    const total = await UserService.count();
+    const capReached = config.sign.cap != null && total >= config.sign.cap;
+    const invite = req.query.inviteToken ? await InvitationService.findValid(req.query.inviteToken, req.body.email) : null;
+    if (capReached || (!config.sign.up && !invite)) {
+      return responses.error(res, 404, 'Signup error', 'Registration is currently deactivated')();
+    }
     // Force default role on public signup — clients must not self-assign admin
     const safeBody = { ...req.body, roles: ['user'] };
     const user = await UserService.create(safeBody);
@@ -121,6 +130,9 @@ const signup = async (req, res) => {
         properties: { email: user.email, plan: user.plan, createdAt: user.createdAt },
       });
     } catch (_) { /* analytics must not break auth */ }
+
+    // Single-use: consume only after the account is fully provisioned (best-effort)
+    if (invite) await InvitationService.consume(invite.id);
 
     const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
       expiresIn: config.jwt.expiresIn,

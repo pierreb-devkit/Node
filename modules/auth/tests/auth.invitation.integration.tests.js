@@ -144,4 +144,68 @@ describe('Signup invitations:', () => {
       expect(bad.body.data.valid).toBe(false);
     });
   });
+
+  describe('Local signup gate (cap + invite)', () => {
+    let originalUp; let originalCap;
+    beforeEach(() => { originalUp = config.sign.up; originalCap = config.sign.cap; });
+    afterEach(() => { config.sign.up = originalUp; config.sign.cap = originalCap; });
+
+    test('signup disabled + no invite → 404', async () => {
+      config.sign.up = false; config.sign.cap = null;
+      const res = await request(app).post('/api/auth/signup').send({ email: 'nope@example.com', password: 'Sup3rStr0ng!' });
+      expect(res.status).toBe(404);
+    });
+
+    test('signup disabled + valid invite token → account created and invite consumed', async () => {
+      // Create admin while signup is still open (beforeEach saves/restores; we set false after admin creation)
+      const adminAgent = await createAdminAndSignin();
+      const created = await adminAgent.post('/api/auth/invitations').send({ email: 'guest@example.com' });
+      const { token } = created.body.data;
+
+      // Now close public signup — the invite path must still work
+      config.sign.up = false; config.sign.cap = null;
+
+      const res = await request(app)
+        .post(`/api/auth/signup?inviteToken=${token}`)
+        .send({ email: 'guest@example.com', password: 'Sup3rStr0ng!' });
+      expect(res.status).toBe(200);
+
+      const recheck = await request(app).get(`/api/auth/invitations/verify/${token}`);
+      expect(recheck.body.data.valid).toBe(false);
+    });
+
+    test('signup disabled + invite token but email mismatch → 404', async () => {
+      // Create admin and invitation while signup is open
+      const adminAgent = await createAdminAndSignin();
+      const created = await adminAgent.post('/api/auth/invitations').send({ email: 'pinned@example.com' });
+      const { token } = created.body.data;
+
+      // Now close public signup
+      config.sign.up = false; config.sign.cap = null;
+
+      const res = await request(app)
+        .post(`/api/auth/signup?inviteToken=${token}`)
+        .send({ email: 'someoneelse@example.com', password: 'Sup3rStr0ng!' });
+      expect(res.status).toBe(404);
+    });
+
+    test('cap reached → 404 even with a valid invite (invites count in the cap)', async () => {
+      config.sign.up = true;
+      const total = await UserService.count();
+      config.sign.cap = total; // total >= cap → blocked
+      const adminAgent = await createAdminAndSignin();
+      const created = await adminAgent.post('/api/auth/invitations').send({ email: 'capped@example.com' });
+      const { token } = created.body.data;
+      const res = await request(app)
+        .post(`/api/auth/signup?inviteToken=${token}`)
+        .send({ email: 'capped@example.com', password: 'Sup3rStr0ng!' });
+      expect(res.status).toBe(404);
+    });
+
+    test('under cap + signup open → normal signup works', async () => {
+      config.sign.up = true; config.sign.cap = null;
+      const res = await request(app).post('/api/auth/signup').send({ email: 'open@example.com', password: 'Sup3rStr0ng!' });
+      expect(res.status).toBe(200);
+    });
+  });
 });
