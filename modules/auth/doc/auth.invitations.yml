@@ -1,0 +1,140 @@
+tags:
+  - name: Auth — Invitations
+    description: Admin-managed signup invitations + access control (cap / invite-only)
+
+paths:
+  /api/auth/invitations:
+    get:
+      tags:
+        - Auth — Invitations
+      summary: List signup invitations (admin only — JWT cookie)
+      responses:
+        '200':
+          description: Invitation list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Invitation'
+        '401':
+          description: Not authenticated
+        '403':
+          description: Not an admin
+    post:
+      tags:
+        - Auth — Invitations
+      summary: Create + email a signup invitation (admin only — JWT cookie)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: guest@example.com
+      responses:
+        '200':
+          description: Invitation created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Invitation'
+        '401':
+          description: Not authenticated
+        '403':
+          description: Not an admin
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /api/auth/invitations/{invitationId}:
+    delete:
+      tags:
+        - Auth — Invitations
+      summary: Revoke a signup invitation (admin only — JWT cookie)
+      parameters:
+        - name: invitationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invitation deleted
+        '401':
+          description: Not authenticated
+        '403':
+          description: Not an admin
+        '404':
+          description: Invitation not found
+
+  /api/auth/invitations/verify/{token}:
+    get:
+      tags:
+        - Auth — Invitations
+      summary: Verify an invitation token (public)
+      description: Used by the signup page to reveal the form and prefill the invited email when public signup is closed.
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          valid:
+                            type: boolean
+                          email:
+                            type: string
+                            nullable: true
+
+components:
+  schemas:
+    Invitation:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        token:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        usedAt:
+          type: string
+          format: date-time
+          nullable: true
+        invitedBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
