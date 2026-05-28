@@ -27,6 +27,7 @@ describe('Signup invitations:', () => {
       'inv-admin@test.com',
       'inv-user@test.com',
       'inv-admin2@test.com',
+      'canon@example.com',
     ]) {
       try {
         const existing = await UserService.getBrut({ email });
@@ -222,6 +223,20 @@ describe('Signup invitations:', () => {
       expect(res.status).toBe(404);
       const recheck = await request(app).get(`/api/auth/invitations/verify/${token}`);
       expect(recheck.body.data.valid).toBe(true); // not consumed
+    });
+
+    test('invited signup canonicalizes account email to the invite (case-insensitive pin → lowercased)', async () => {
+      config.sign.up = false; config.sign.cap = null;
+      const adminAgent = await createAdminAndSignin();
+      const created = await adminAgent.post('/api/auth/invitations').send({ email: 'canon@example.com' });
+      const { token } = created.body.data;
+      // sign up with an UPPER-CASE variant of the invited email
+      const res = await request(app)
+        .post(`/api/auth/signup?inviteToken=${token}`)
+        .send({ email: 'CANON@Example.com', password: 'Sup3rStr0ng!' });
+      expect(res.status).toBe(200);
+      // account email must be the invite's canonical lowercased value, not the submitted case-variant
+      expect(res.body.user.email).toBe('canon@example.com');
     });
   });
 

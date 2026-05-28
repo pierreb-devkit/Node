@@ -85,6 +85,11 @@ const signup = async (req, res) => {
     }
     // Force default role on public signup — clients must not self-assign admin
     const safeBody = { ...req.body, roles: ['user'] };
+    // Invite-gated signup: canonicalize the account email to the invite's pinned
+    // (lowercased) email. Enforces the pin exactly AND makes the case-sensitive
+    // unique-email index a reliable single-use backstop — concurrent case-variant
+    // signups on the same invite collide on the index instead of creating two accounts.
+    if (invite) safeBody.email = invite.email;
     const user = await UserService.create(safeBody);
 
     // Handle email verification — rollback user on failure to avoid orphaned accounts
@@ -455,6 +460,7 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
     const error = model.checkError(result);
     if (error) throw new AppError('Schema validation error', { code: 'VALIDATION_ERROR', details: { message: error } });
     // else return req.body with the data after Zod validation
+    if (oauthInvite) result.value.email = oauthInvite.email;
     const createdUser = await UserService.create(result.value);
     if (oauthInvite) await InvitationService.consume(oauthInvite.id);
     return createdUser;
