@@ -70,7 +70,7 @@ const signup = async (req, res) => {
     // invite token (read from query: model.isValid strips unknown body keys).
     const total = await UserService.count();
     const capReached = config.sign.cap != null && total >= config.sign.cap;
-    const invite = req.query.inviteToken ? await InvitationService.findValid(req.query.inviteToken, req.body.email) : null;
+    const invite = req.query?.inviteToken ? await InvitationService.findValid(req.query.inviteToken, req.body.email) : null;
     if (capReached || (!config.sign.up && !invite)) {
       return responses.error(res, 404, 'Signup error', 'Registration is currently deactivated')();
     }

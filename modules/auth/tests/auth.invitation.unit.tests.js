@@ -11,8 +11,25 @@ jest.unstable_mockModule('../repositories/auth.invitation.repository.js', () => 
     get: jest.fn(),
   },
 }));
+
+const mockMailer = { isConfigured: jest.fn(() => false), sendMail: jest.fn() };
 jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
-  default: { isConfigured: jest.fn(() => false), sendMail: jest.fn() },
+  default: mockMailer,
+}));
+
+jest.unstable_mockModule('../../../config/index.js', () => ({
+  default: {
+    sign: { inviteExpiresInDays: 14 },
+    app: { title: 'Test App', contact: 'contact@test.com' },
+  },
+}));
+
+jest.unstable_mockModule('../../../lib/helpers/getBaseUrl.js', () => ({
+  default: jest.fn(() => 'http://localhost:3000'),
+}));
+
+jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+  default: { warn: jest.fn(), error: jest.fn(), info: jest.fn() },
 }));
 
 const InvitationRepository = (await import('../repositories/auth.invitation.repository.js')).default;
@@ -70,5 +87,78 @@ describe('InvitationService.consume', () => {
     InvitationRepository.consume.mockResolvedValue({ id: '1', usedAt: new Date() });
     await InvitationService.consume('1');
     expect(InvitationRepository.consume).toHaveBeenCalledWith('1');
+  });
+});
+
+describe('InvitationService.create — email sending branch', () => {
+  test('sends email when mailer is configured', async () => {
+    mockMailer.isConfigured.mockReturnValue(true);
+    mockMailer.sendMail.mockResolvedValue({});
+    InvitationRepository.create.mockImplementation((doc) => Promise.resolve({ ...doc, id: '2' }));
+    const inv = await InvitationService.create('user@example.com', { id: 'admin2' });
+    expect(inv.email).toBe('user@example.com');
+    // sendMail is best-effort (fire-and-forget), not awaited — just verify it was called
+    await Promise.resolve(); // flush microtask queue
+    expect(mockMailer.sendMail).toHaveBeenCalledTimes(1);
+    // reset for other tests
+    mockMailer.isConfigured.mockReturnValue(false);
+  });
+});
+
+describe('InvitationService.findValidByEmail', () => {
+  test('returns null when email is falsy', async () => {
+    expect(await InvitationService.findValidByEmail('')).toBeNull();
+    expect(await InvitationService.findValidByEmail(null)).toBeNull();
+  });
+  test('delegates to repository when email is provided', async () => {
+    const inv = { id: '3', email: 'a@b.co', usedAt: null, expiresAt: new Date(Date.now() + 3600000) };
+    InvitationRepository.findByEmail.mockResolvedValue(inv);
+    const result = await InvitationService.findValidByEmail('A@B.CO');
+    expect(InvitationRepository.findByEmail).toHaveBeenCalledWith('a@b.co');
+    expect(result).toBe(inv);
+  });
+});
+
+describe('InvitationService.list / get / revoke', () => {
+  test('list delegates to repository', async () => {
+    InvitationRepository.list.mockResolvedValue([]);
+    await InvitationService.list();
+    expect(InvitationRepository.list).toHaveBeenCalledTimes(1);
+  });
+  test('get delegates to repository', async () => {
+    InvitationRepository.get.mockResolvedValue(null);
+    await InvitationService.get('id-1');
+    expect(InvitationRepository.get).toHaveBeenCalledWith('id-1');
+  });
+  test('revoke delegates remove to repository', async () => {
+    InvitationRepository.remove.mockResolvedValue({ deletedCount: 1 });
+    await InvitationService.revoke('id-1');
+    expect(InvitationRepository.remove).toHaveBeenCalledWith('id-1');
+  });
+});
+
+describe('invitationAbilities / invitationSubjectRegistration', () => {
+  test('invitationSubjectRegistration registers the /api/auth/invitations path', async () => {
+    const { invitationSubjectRegistration } = await import('../policies/auth.invitation.policy.js');
+    const registerPathSubject = jest.fn();
+    invitationSubjectRegistration({ registerPathSubject });
+    expect(registerPathSubject).toHaveBeenCalledTimes(1);
+    const predicate = registerPathSubject.mock.calls[0][0];
+    expect(predicate('/api/auth/invitations')).toBe(true);
+    expect(predicate('/api/auth/invitations/abc')).toBe(true);
+    expect(predicate('/api/other')).toBe(false);
+    expect(registerPathSubject.mock.calls[0][1]).toBe('Invitation');
+  });
+  test('invitationAbilities grants manage all for admin', async () => {
+    const { invitationAbilities } = await import('../policies/auth.invitation.policy.js');
+    const can = jest.fn();
+    invitationAbilities({ roles: ['admin'] }, null, { can });
+    expect(can).toHaveBeenCalledWith('manage', 'all');
+  });
+  test('invitationAbilities grants nothing for non-admin', async () => {
+    const { invitationAbilities } = await import('../policies/auth.invitation.policy.js');
+    const can = jest.fn();
+    invitationAbilities({ roles: ['user'] }, null, { can });
+    expect(can).not.toHaveBeenCalled();
   });
 });
