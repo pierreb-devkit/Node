@@ -41,6 +41,7 @@ describe('Signup invitations:', () => {
    *   1. signup via /api/auth/signup
    *   2. promote to admin via UserService.update (roles stripped on signup)
    *   3. signin so the agent cookie jar holds the fresh JWT reflecting the new role
+   * @returns {Promise<import('supertest').SuperAgentTest>} Supertest agent with admin JWT cookie
    */
   async function createAdminAndSignin() {
     const email = 'inv-admin@test.com';
@@ -75,6 +76,7 @@ describe('Signup invitations:', () => {
 
   /**
    * Helper: create a regular user and return a bound supertest agent with the auth cookie.
+   * @returns {Promise<import('supertest').SuperAgentTest>} Supertest agent with user JWT cookie
    */
   async function createUserAndSignin() {
     const email = 'inv-user@test.com';
@@ -190,16 +192,19 @@ describe('Signup invitations:', () => {
     });
 
     test('cap reached → 404 even with a valid invite (invites count in the cap)', async () => {
-      config.sign.up = true;
-      const total = await UserService.count();
-      config.sign.cap = total; // total >= cap → blocked
+      // Create admin and issue invite BEFORE setting cap so the helper signup
+      // is not blocked. Then snapshot the user count and set cap = total.
+      config.sign.up = true; config.sign.cap = null;
       const adminAgent = await createAdminAndSignin();
       const created = await adminAgent.post('/api/auth/invitations').send({ email: 'capped@example.com' });
       const { token } = created.body.data;
+      // Freeze the cap at the current total — next signup must be blocked
+      config.sign.cap = await UserService.count(); // total >= cap → blocked
       const res = await request(app)
         .post(`/api/auth/signup?inviteToken=${token}`)
         .send({ email: 'capped@example.com', password: 'Sup3rStr0ng!' });
       expect(res.status).toBe(404);
+      config.sign.cap = null;
     });
 
     test('under cap + signup open → normal signup works', async () => {

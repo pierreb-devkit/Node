@@ -21,7 +21,7 @@ paths:
                       data:
                         type: array
                         items:
-                          $ref: '#/components/schemas/Invitation'
+                          $ref: '#/components/schemas/InvitationListItem'
         '401':
           description: Not authenticated
         '403':
@@ -115,6 +115,28 @@ paths:
 
 components:
   schemas:
+    InvitationListItem:
+      type: object
+      description: Invitation as returned by the admin list endpoint (token omitted)
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        expiresAt:
+          type: string
+          format: date-time
+        usedAt:
+          type: string
+          format: date-time
+          nullable: true
+        invitedBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
     Invitation:
       type: object
       properties:

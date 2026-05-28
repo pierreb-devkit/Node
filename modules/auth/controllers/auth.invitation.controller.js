@@ -5,7 +5,14 @@ import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
 import InvitationService from '../services/auth.invitation.service.js';
 
-/** @function create — Admin: create + email a signup invitation. */
+/**
+ * @desc Admin: create + email a signup invitation
+ * @param {Object} req - Express request object
+ * @param {string} req.body.email - Email address to invite
+ * @param {Object} req.user - Authenticated admin user
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} Sends HTTP 200 with created invitation or 422 on error
+ */
 const create = async (req, res) => {
   try {
     const invitation = await InvitationService.create(req.body.email, req.user);
@@ -15,7 +22,12 @@ const create = async (req, res) => {
   }
 };
 
-/** @function list — Admin: list all signup invitations. */
+/**
+ * @desc Admin: list all signup invitations
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} Sends HTTP 200 with invitation array or 422 on error
+ */
 const list = async (req, res) => {
   try {
     const invitations = await InvitationService.list();
@@ -25,7 +37,14 @@ const list = async (req, res) => {
   }
 };
 
-/** @function remove — Admin: revoke an invitation. */
+/**
+ * @desc Admin: revoke an invitation
+ * @param {Object} req - Express request object
+ * @param {Object} req.invitation - Loaded invitation document (set by invitationByID middleware)
+ * @param {string} req.invitation.id - Invitation id
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} Sends HTTP 200 with deleted id or 422 on error
+ */
 const remove = async (req, res) => {
   try {
     await InvitationService.revoke(req.invitation.id);
@@ -35,7 +54,13 @@ const remove = async (req, res) => {
   }
 };
 
-/** @function verify — Public: report whether a token is a valid invite (+ email). */
+/**
+ * @desc Public: report whether a token is a valid invite (+ prefill email)
+ * @param {Object} req - Express request object
+ * @param {string} req.params.token - Invitation token to verify
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} Sends HTTP 200 with { valid, email } or 422 on error
+ */
 const verify = async (req, res) => {
   try {
     const invite = await InvitationService.findValid(req.params.token);
@@ -45,7 +70,14 @@ const verify = async (req, res) => {
   }
 };
 
-/** @function invitationByID — Middleware to load an invitation into req.invitation. */
+/**
+ * @desc Middleware to load an invitation into req.invitation by id param
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ * @param {string} id - Invitation id from URL param
+ * @returns {Promise<void>} Calls next() with invitation on req, or sends 404
+ */
 const invitationByID = async (req, res, next, id) => {
   try {
     const invitation = await InvitationService.get(id);

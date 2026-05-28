@@ -23,6 +23,11 @@ const InvitationMongoose = new Schema(
 InvitationMongoose.index({ token: 1 }, { unique: true });
 InvitationMongoose.index({ email: 1 });
 
+/**
+ * @desc Return document id as hex string
+ * @this {Object} Mongoose Invitation document
+ * @returns {String} hex string id
+ */
 function addID() {
   return this._id.toHexString();
 }

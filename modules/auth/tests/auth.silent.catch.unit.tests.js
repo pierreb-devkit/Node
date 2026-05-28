@@ -40,7 +40,15 @@ describe('auth.controller silent-catch error logging:', () => {
       }));
 
       jest.unstable_mockModule('../../../modules/auth/services/auth.invitation.service.js', () => ({
-        default: { findValid: jest.fn().mockResolvedValue(null), consume: jest.fn().mockResolvedValue(null) },
+        default: {
+          findValid: jest.fn().mockResolvedValue(null),
+          findValidByEmail: jest.fn().mockResolvedValue(null),
+          consume: jest.fn().mockResolvedValue(null),
+          create: jest.fn(),
+          list: jest.fn(),
+          get: jest.fn(),
+          revoke: jest.fn(),
+        },
       }));
 
       jest.unstable_mockModule('../../../modules/organizations/services/organizations.service.js', () => ({

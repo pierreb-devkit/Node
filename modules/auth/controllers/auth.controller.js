@@ -68,8 +68,10 @@ const signup = async (req, res) => {
     // Two AND-ed gates: (1) capacity — a hard ceiling on total accounts,
     // invited users included; (2) eligibility — public signup open OR a valid
     // invite token (read from query: model.isValid strips unknown body keys).
-    const total = await UserService.count();
-    const capReached = config.sign.cap != null && total >= config.sign.cap;
+    // Short-circuit count() when cap is not set (null = unlimited) to avoid a
+    // collection-wide count on every signup request for uncapped deployments.
+    const cap = config.sign.cap != null ? Number(config.sign.cap) : null;
+    const capReached = cap != null && Number.isFinite(cap) && (await UserService.count()) >= cap;
     let invite = null;
     if (req.query?.inviteToken) {
       invite = await InvitationService.findValid(req.query.inviteToken, req.body.email);
@@ -138,8 +140,10 @@ const signup = async (req, res) => {
       });
     } catch (_) { /* analytics must not break auth */ }
 
-    // Single-use: consume only after the account is fully provisioned (best-effort)
-    if (invite) await InvitationService.consume(invite.id);
+    // Single-use: consume only when the invite actually opened the gate (signup
+    // was closed, so the invite was required). When signup is open, a token can
+    // be presented but is not required — consuming it would silently burn it.
+    if (invite && !config.sign.up) await InvitationService.consume(invite.id);
 
     const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
       expiresIn: config.jwt.expiresIn,
@@ -425,8 +429,9 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
   try {
     // Same two gates as local signup. OAuth can't carry an invite token through
     // the redirect, so the invite is matched on the provider's verified email.
-    const total = await UserService.count();
-    const capReached = config.sign.cap != null && total >= config.sign.cap;
+    // Short-circuit count() when cap is not set (null = unlimited).
+    const oauthCap = config.sign.cap != null ? Number(config.sign.cap) : null;
+    const capReached = oauthCap != null && Number.isFinite(oauthCap) && (await UserService.count()) >= oauthCap;
     const oauthInvite = config.sign.up ? null : await InvitationService.findValidByEmail(profil.email);
     if (capReached || (!config.sign.up && !oauthInvite)) {
       // Mirror the local signup endpoint's error shape so clients see the same
