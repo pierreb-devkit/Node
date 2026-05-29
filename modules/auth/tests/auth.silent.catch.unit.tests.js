@@ -184,7 +184,7 @@ describe('auth.password.controller silent-catch error logging:', () => {
       }));
 
       jest.unstable_mockModule('../../../modules/auth/services/auth.service.js', () => ({
-        default: { hashPassword: jest.fn().mockResolvedValue('hashed') },
+        default: { checkPassword: jest.fn().mockReturnValue('NewP@ss1!'), hashPassword: jest.fn().mockResolvedValue('hashed') },
       }));
 
       // sendMail rejects
