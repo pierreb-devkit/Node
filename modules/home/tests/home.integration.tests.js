@@ -74,14 +74,13 @@ describe('Home integration tests:', () => {
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('team list');
         expect(result.body.data).toBeInstanceOf(Array);
-        // Verify no sensitive fields are exposed
+        // Assert the strict public-field allowlist: every key must be one of these,
+        // so no unexpected field (incl. _id / id / sensitive data) can ever leak.
+        const ALLOWED_FIELDS = new Set(['firstName', 'lastName', 'bio', 'position', 'avatar']);
         result.body.data.forEach((member) => {
-          expect(member).not.toHaveProperty('email');
-          expect(member).not.toHaveProperty('emailVerified');
-          expect(member).not.toHaveProperty('lastLoginAt');
-          expect(member).not.toHaveProperty('roles');
-          expect(member).not.toHaveProperty('password');
-          expect(member).not.toHaveProperty('providerData');
+          Object.keys(member).forEach((key) => {
+            expect(ALLOWED_FIELDS.has(key)).toBe(true);
+          });
         });
       } catch (err) {
         expect(err).toBeFalsy();

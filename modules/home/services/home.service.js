@@ -36,12 +36,10 @@ const page = async (name) => {
 
 /**
  * @desc Function to get all admin users in db, returning only public-safe fields.
- * @returns {Promise<Array>} Public user profiles (firstName, lastName, bio, position, avatar)
+ * Uses a lean projection so no Mongoose virtuals (e.g. `id`) can re-introduce hidden fields.
+ * @returns {Promise<Array<{firstName: string, lastName: string, bio: string, position: string, avatar: string}>>} Public user profiles
  */
-const team = async () => {
-  const result = await HomeRepository.team();
-  return result.map((user) => (typeof user.toJSON === 'function' ? user.toJSON() : user));
-};
+const team = async () => HomeRepository.team();
 
 /**
  * @desc Build health status including database connectivity.
