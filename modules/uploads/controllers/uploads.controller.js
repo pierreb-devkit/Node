@@ -10,6 +10,18 @@ import responses from '../../../lib/helpers/responses.js';
 import UploadsService from '../services/uploads.service.js';
 
 /**
+ * Allowlisted MIME types for private download (get).
+ * Defense-in-depth: prevents stored-XSS when a downstream kind permits a dangerous MIME.
+ */
+const SAFE_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'application/pdf']);
+
+/**
+ * Allowlisted MIME types for public image serving (getSharp).
+ * Restricted to image types — the sharp pipeline only handles images.
+ */
+const SAFE_IMAGE_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']);
+
+/**
  * @desc Endpoint to get an upload by fileName
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
@@ -21,8 +33,10 @@ const get = async (req, res) => {
     stream.on('error', (err) => {
       responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
     });
-    const contentType = req.upload.contentType || req.upload.metadata?.contentType || 'application/octet-stream';
+    const raw = req.upload.contentType || req.upload.metadata?.contentType || 'application/octet-stream';
+    const contentType = SAFE_MIME.has(raw) ? raw : 'application/octet-stream';
     res.set('Content-Type', contentType);
+    res.set('Content-Disposition', 'attachment');
     if (req.upload.length) res.set('Content-Length', req.upload.length);
     stream.pipe(res);
   } catch (err) {
@@ -42,7 +56,8 @@ const getSharp = async (req, res) => {
     stream.on('error', (err) => {
       responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
     });
-    const contentType = req.upload.contentType || req.upload.metadata?.contentType || 'application/octet-stream';
+    const raw = req.upload.contentType || req.upload.metadata?.contentType || 'application/octet-stream';
+    const contentType = SAFE_IMAGE_MIME.has(raw) ? raw : 'image/jpeg';
     res.set('Content-Type', contentType);
     switch (req.sharpOption) {
       case 'blur':
