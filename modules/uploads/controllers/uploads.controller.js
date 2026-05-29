@@ -22,6 +22,15 @@ const SAFE_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 
 const SAFE_IMAGE_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']);
 
 /**
+ * Normalize a raw Content-Type value for safe allowlist comparison.
+ * MIME types are case-insensitive and may include parameters (e.g. `image/jpeg; charset=binary`).
+ * Strip any `;` parameter segment, lowercase, and trim before checking the allowlist.
+ * @param {string} raw - Raw content-type string.
+ * @returns {string} Normalized MIME type (e.g. `image/jpeg`).
+ */
+const normalizeMime = (raw) => String(raw).toLowerCase().split(';')[0].trim();
+
+/**
  * @desc Endpoint to get an upload by fileName
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
@@ -34,7 +43,8 @@ const get = async (req, res) => {
       responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
     });
     const raw = req.upload.contentType || req.upload.metadata?.contentType || 'application/octet-stream';
-    const contentType = SAFE_MIME.has(raw) ? raw : 'application/octet-stream';
+    const norm = normalizeMime(raw);
+    const contentType = SAFE_MIME.has(norm) ? norm : 'application/octet-stream';
     res.set('Content-Type', contentType);
     res.set('Content-Disposition', 'attachment');
     if (req.upload.length) res.set('Content-Length', req.upload.length);
@@ -48,6 +58,7 @@ const get = async (req, res) => {
  * @desc Endpoint to get an upload by fileName with sharp options
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
+ * @returns {Promise<void>} Resolves when the image stream has been piped to the response.
  */
 const getSharp = async (req, res) => {
   try {
@@ -57,7 +68,8 @@ const getSharp = async (req, res) => {
       responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
     });
     const raw = req.upload.contentType || req.upload.metadata?.contentType || 'application/octet-stream';
-    const contentType = SAFE_IMAGE_MIME.has(raw) ? raw : 'image/jpeg';
+    const norm = normalizeMime(raw);
+    const contentType = SAFE_IMAGE_MIME.has(norm) ? norm : 'image/jpeg';
     res.set('Content-Type', contentType);
     switch (req.sharpOption) {
       case 'blur':
