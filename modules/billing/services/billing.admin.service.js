@@ -94,8 +94,11 @@ const syncOrgFromStripe = async (orgId) => {
   const stripeSub = await stripe.subscriptions.retrieve(existing.stripeSubscriptionId);
   const newPlan = resolveStripePlan(stripeSub);
   const newStatus = stripeSub.status;
-  const newPeriodStart = stripeSub.current_period_start
-    ? new Date(stripeSub.current_period_start * 1000)
+  // Stripe API ≥ 2025-08-27 moved current_period_start to items.data[0].
+  // Read from items first, fall back to top-level for older API versions (mirrors webhook handler).
+  const rawPeriodStart = stripeSub.items?.data?.[0]?.current_period_start ?? stripeSub.current_period_start;
+  const newPeriodStart = rawPeriodStart
+    ? new Date(rawPeriodStart * 1000)
     : null;
 
   const previous = { plan: existing.plan, status: existing.status };
