@@ -65,7 +65,7 @@
     "glob": "^13.0.6",
     "handlebars": "^4.7.9",
     "helmet": "~8.2.0",
-    "inquirer": "^13.4.3",
+    "inquirer": "^14.0.0",
     "jest-environment-jsdom": "^30.4.1",
     "js-yaml": "^4.1.1",
     "jsonwebtoken": "^9.0.3",
