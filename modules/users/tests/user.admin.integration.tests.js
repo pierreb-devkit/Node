@@ -225,6 +225,46 @@ describe('User admin integration tests:', () => {
       }
     });
 
+    test('should not expose sensitive fields (password, tokens) in admin GET /users/:id', async () => {
+      try {
+        userEdited = await signupAndPromoteAdmin(agent, { ..._userEdited, roles: ['user', 'admin'] });
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      // Seed token fields so the regression test is meaningful — without this,
+      // the assertions pass vacuously because the fields are simply absent.
+      try {
+        await UserService.updateById(userEdited._id, {
+          resetPasswordToken: 'test-reset-token',
+          emailVerificationToken: 'test-verification-token',
+        });
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      try {
+        const result = await agent.get(`/api/admin/users/${userEdited._id}`).expect(200);
+        expect(result.body.data).toBeInstanceOf(Object);
+        expect(result.body.data.password).toBeUndefined();
+        expect(result.body.data.resetPasswordToken).toBeUndefined();
+        expect(result.body.data.emailVerificationToken).toBeUndefined();
+        expect(result.body.data.salt).toBeUndefined();
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      try {
+        await UserService.remove(userEdited);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
     test('should be able to update a single user details if admin', async () => {
       try {
         userEdited = await signupAndPromoteAdmin(agent, { ..._userEdited, roles: ['user', 'admin'] });
