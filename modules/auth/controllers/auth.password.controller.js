@@ -89,12 +89,14 @@ const reset = async (req, res) => {
   // check input
   if (!req.body.token || !req.body.newPassword) return responses.error(res, 400, 'Bad Request', 'Password or Token fields must not be blank')();
   const token = String(req.body.token);
+  const newPassword = String(req.body.newPassword);
   // get user by token, update with new password, login again
   try {
     user = await UserService.getBrut({ resetPasswordToken: token });
     if (!user || !user.email) return responses.error(res, 400, 'Bad Request', 'Password reset token is invalid or has expired.')();
+    const checkedPassword = AuthService.checkPassword(newPassword);
     const edit = {
-      password: await AuthService.hashPassword(req.body.newPassword),
+      password: await AuthService.hashPassword(checkedPassword),
       resetPasswordToken: null,
       resetPasswordExpires: null,
     };

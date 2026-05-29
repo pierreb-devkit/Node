@@ -1245,6 +1245,37 @@ describe('Auth integration tests:', () => {
       }
     });
 
+    test('should reject password reset with a weak password (zxcvbn strength gate)', async () => {
+      // Trigger forgot to generate a reset token (email send fails in test env, which is expected)
+      try {
+        await agent.post('/api/auth/forgot').send({ email: credentials[0].email }).expect(400);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      // Fetch the token directly via UserService
+      let resetToken;
+      try {
+        const userWithToken = await UserService.getBrut({ email: credentials[0].email });
+        resetToken = userWithToken.resetPasswordToken;
+        expect(resetToken).toBeDefined();
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      // Attempt reset with a weak password — must be rejected with 422
+      try {
+        const result = await agent.post('/api/auth/reset').send({ token: resetToken, newPassword: 'password' }).expect(422);
+        expect(result.body.message).toBe('Unprocessable Entity');
+        expect(result.body.description).toBe('Password too weak.');
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
     test('should successfully reset password with a valid token', async () => {
       // Trigger forgot to generate a reset token (email send fails in test env, which is expected)
       try {
