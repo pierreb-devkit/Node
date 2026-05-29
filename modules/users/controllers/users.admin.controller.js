@@ -41,7 +41,7 @@ const list = async (req, res) => {
  */
 const get = async (req, res) => {
   try {
-    const user = req.model ? req.model.toJSON() : {};
+    const user = req.model ? UserService.removeSensitive(req.model) : {};
     const memberships = await MembershipService.listByUser(user._id || user.id);
     user.memberships = memberships.map((m) => {
       const obj = m.toJSON ? m.toJSON() : { ...m };
