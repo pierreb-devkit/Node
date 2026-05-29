@@ -233,6 +233,18 @@ describe('User admin integration tests:', () => {
         expect(err).toBeFalsy();
       }
 
+      // Seed token fields so the regression test is meaningful — without this,
+      // the assertions pass vacuously because the fields are simply absent.
+      try {
+        await UserService.updateById(userEdited._id, {
+          resetPasswordToken: 'test-reset-token',
+          emailVerificationToken: 'test-verification-token',
+        });
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
       try {
         const result = await agent.get(`/api/admin/users/${userEdited._id}`).expect(200);
         expect(result.body.data).toBeInstanceOf(Object);
