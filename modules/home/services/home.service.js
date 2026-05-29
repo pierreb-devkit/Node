@@ -1,17 +1,14 @@
 /**
  * Module dependencies
  */
-import axios from 'axios';
 import path from 'path';
 import _ from 'lodash';
-import { Base64 } from 'js-base64';
 import { promises as fs } from 'fs';
 import mongoose from 'mongoose';
 
 import config from '../../../config/index.js';
 import mailer from '../../../lib/helpers/mailer/index.js';
 import HomeRepository from '../repositories/home.repository.js';
-import { removeSensitive } from '../../users/utils/sanitizeUser.js';
 
 /**
  * @desc Check whether a config value is meaningfully set (non-empty, not a DEVKIT placeholder).
@@ -38,61 +35,12 @@ const page = async (name) => {
 };
 
 /**
- * @desc Fetch releases from configured GitHub repos. Returns an empty array on API failure (graceful degradation).
- * @return {Promise<Array<{title: string, list: Array}>>} Releases grouped by repo, or [] on error
- */
-const releases = async () => {
-  try {
-    const requests = config.repos.map((item) =>
-      axios.get(`https://api.github.com/repos/${item.owner}/${item.repo}/releases`, {
-        headers: item.token ? { Authorization: `token ${item.token}` } : {},
-      }),
-    );
-    let results = await axios.all(requests);
-    results = results.map((result, i) => ({
-      title: config.repos[i].title,
-      list: result.data.map((release) => ({
-        name: release.name,
-        prerelease: release.prerelease,
-        published_at: release.published_at,
-      })),
-    }));
-    return results;
-  } catch (_err) {
-    return [];
-  }
-};
-
-/**
- * @desc Fetch changelogs from configured GitHub repos. Returns an empty array on API failure (graceful degradation).
- * @return {Promise<Array<{title: string, markdown: string}>>} Changelogs grouped by repo, or [] on error
- */
-const changelogs = async () => {
-  try {
-    const repos = _.filter(config.repos, (repo) => repo.changelog);
-    const requests = repos.map((item) =>
-      axios.get(`https://api.github.com/repos/${item.owner}/${item.repo}/contents/${item.changelog}`, {
-        headers: item.token ? { Authorization: `token ${item.token}` } : {},
-      }),
-    );
-    let results = await axios.all(requests);
-    results = results.map((result, i) => ({
-      title: repos[i].title,
-      markdown: Base64.decode(result.data.content),
-    }));
-    return results;
-  } catch (_err) {
-    return [];
-  }
-};
-
-/**
- * @desc Function to get all admin users in db
- * @returns {Promise<Array>} All users (sanitized)
+ * @desc Function to get all admin users in db, returning only public-safe fields.
+ * @returns {Promise<Array>} Public user profiles (firstName, lastName, bio, position, avatar)
  */
 const team = async () => {
   const result = await HomeRepository.team();
-  return result.map((user) => removeSensitive(user));
+  return result.map((user) => (typeof user.toJSON === 'function' ? user.toJSON() : user));
 };
 
 /**
@@ -183,8 +131,6 @@ const getReadinessStatus = () => {
 
 export default {
   page,
-  releases,
-  changelogs,
   team,
   getHealthStatus,
   getReadinessStatus,

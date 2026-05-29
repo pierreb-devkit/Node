@@ -25,10 +25,6 @@ describe('HomeService.getReadinessStatus unit tests:', () => {
       default: { team: jest.fn().mockResolvedValue([]) },
     }));
 
-    // Mock axios to avoid real network calls
-    jest.unstable_mockModule('axios', () => ({
-      default: { get: jest.fn().mockResolvedValue({ data: [] }), all: jest.fn().mockResolvedValue([]) },
-    }));
   });
 
   afterEach(() => {

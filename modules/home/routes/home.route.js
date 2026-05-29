@@ -27,11 +27,7 @@ const optionalAuth = (req, res, next) => {
 export default (app) => {
   // health check — public, enriched response for admins
   app.route('/api/health').get(optionalAuth, home.health);
-  // changelogs
-  app.route('/api/home/releases').all(policy.isAllowed).get(home.releases);
-  // changelogs
-  app.route('/api/home/changelogs').all(policy.isAllowed).get(home.changelogs);
-  // changelogs
+  // team — public staff page
   app.route('/api/home/team').all(policy.isAllowed).get(home.team);
   // markdown files
   app.route('/api/home/pages/:name').all(policy.isAllowed).get(home.page);

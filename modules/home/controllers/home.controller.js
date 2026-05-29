@@ -8,34 +8,6 @@ import responses from '../../../lib/helpers/responses.js';
 import HomeService from '../services/home.service.js';
 
 /**
- * @desc Endpoint to ask the service to get the releases
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- */
-const releases = async (req, res) => {
-  try {
-    const releases = await HomeService.releases();
-    responses.success(res, 'releases')(releases);
-  } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
-  }
-};
-
-/**
- * @desc Endpoint to ask the service to get the changelogs
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- */
-const changelogs = async (req, res) => {
-  try {
-    const changelogs = await HomeService.changelogs();
-    responses.success(res, 'changelogs')(changelogs);
-  } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
-  }
-};
-
-/**
  * @desc Endpoint to ask the service to get the list of users
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
@@ -112,8 +84,6 @@ const readiness = (req, res) => {
 };
 
 export default {
-  releases,
-  changelogs,
   team,
   page,
   pageByName,
