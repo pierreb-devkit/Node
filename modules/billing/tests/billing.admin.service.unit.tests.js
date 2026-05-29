@@ -239,6 +239,45 @@ describe('BillingAdminService unit tests:', () => {
     test('throws 422 for invalid orgId format', async () => {
       await expect(BillingAdminService.syncOrgFromStripe('bad-id')).rejects.toMatchObject({ status: 422 });
     });
+
+    test('writes non-null currentPeriodStart when period is only in items.data[0] (Stripe API ≥ 2025-08-27)', async () => {
+      // Simulate Stripe API ≥ 2025-08-27: top-level current_period_start is absent,
+      // period lives in items.data[0].current_period_start only.
+      const periodStart = 1750000000;
+      mockStripeInstance.subscriptions.retrieve.mockResolvedValue({
+        id: stripeSubId,
+        status: 'active',
+        current_period_start: undefined, // absent on new API
+        items: {
+          data: [{
+            current_period_start: periodStart,
+            price: { metadata: { planId: 'pro' } },
+          }],
+        },
+      });
+
+      await BillingAdminService.syncOrgFromStripe(orgId);
+
+      const updateCall = mockSubscriptionRepository.update.mock.calls[0][0];
+      expect(updateCall.currentPeriodStart).toEqual(new Date(periodStart * 1000));
+    });
+
+    test('falls back to top-level current_period_start when items.data[0] has none (legacy API)', async () => {
+      const periodStart = 1699000000;
+      mockStripeInstance.subscriptions.retrieve.mockResolvedValue({
+        id: stripeSubId,
+        status: 'active',
+        current_period_start: periodStart,
+        items: {
+          data: [{ price: { metadata: { planId: 'pro' } } }], // no current_period_start on item
+        },
+      });
+
+      await BillingAdminService.syncOrgFromStripe(orgId);
+
+      const updateCall = mockSubscriptionRepository.update.mock.calls[0][0];
+      expect(updateCall.currentPeriodStart).toEqual(new Date(periodStart * 1000));
+    });
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
