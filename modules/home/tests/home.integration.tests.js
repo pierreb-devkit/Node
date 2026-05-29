@@ -2,7 +2,6 @@
  * Module dependencies.
  */
 import { jest } from '@jest/globals';
-import axios from 'axios';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import path from 'path';
@@ -26,16 +25,6 @@ describe('Home integration tests:', () => {
 
   //  init
   beforeAll(async () => {
-    // Mock GitHub API calls to avoid real network requests in tests
-    jest.spyOn(axios, 'get').mockImplementation(async (url) => {
-      if (url.includes('/releases')) {
-        return { data: [{ name: 'v1.0.0', prerelease: false, published_at: '2024-01-01T00:00:00Z' }] };
-      }
-      if (url.includes('/contents/')) {
-        return { data: { content: Buffer.from('# Changelog\n## v1.0.0\n- First release').toString('base64') } };
-      }
-      throw new Error(`Unexpected GitHub API URL: ${url}`);
-    });
     try {
       originalOrganizationsEnabled = config.organizations.enabled;
       config.organizations.enabled = false;
@@ -79,26 +68,20 @@ describe('Home integration tests:', () => {
   // into later describes (#3472). Auth-required cases still use explicit
   // `set('Cookie', 'TOKEN=...')` headers derived from JWTs.
   describe('Logout', () => {
-    test('should be able to get releases', async () => {
-      const result = await request(app).get('/api/home/releases').expect(200);
-      expect(result.body.type).toBe('success');
-      expect(result.body.message).toBe('releases');
-      expect(result.body.data).toBeInstanceOf(Array);
-    });
-
-    test('should be able to get changelogs', async () => {
-      const result = await request(app).get('/api/home/changelogs').expect(200);
-      expect(result.body.type).toBe('success');
-      expect(result.body.message).toBe('changelogs');
-      expect(result.body.data).toBeInstanceOf(Array);
-    });
-
-    test('should be able to get team members', async () => {
+    test('should be able to get team members with public fields only', async () => {
       try {
         const result = await request(app).get('/api/home/team').expect(200);
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('team list');
         expect(result.body.data).toBeInstanceOf(Array);
+        // Assert the strict public-field allowlist: every key must be one of these,
+        // so no unexpected field (incl. _id / id / sensitive data) can ever leak.
+        const ALLOWED_FIELDS = new Set(['firstName', 'lastName', 'bio', 'position', 'avatar']);
+        result.body.data.forEach((member) => {
+          Object.keys(member).forEach((key) => {
+            expect(ALLOWED_FIELDS.has(key)).toBe(true);
+          });
+        });
       } catch (err) {
         expect(err).toBeFalsy();
         console.log(err);
@@ -129,51 +112,6 @@ describe('Home integration tests:', () => {
         console.log(err);
         expect(err).toBeFalsy();
       }
-    });
-
-    test('should return empty releases gracefully when GitHub API fails', async () => {
-      axios.get.mockRejectedValueOnce(new Error('GitHub API unavailable'));
-      const result = await request(app).get('/api/home/releases').expect(200);
-      expect(result.body.type).toBe('success');
-      expect(result.body.message).toBe('releases');
-      expect(result.body.data).toEqual([]);
-    });
-
-    test('should return empty changelogs gracefully when GitHub API fails', async () => {
-      axios.get.mockRejectedValueOnce(new Error('GitHub API unavailable'));
-      const result = await request(app).get('/api/home/changelogs').expect(200);
-      expect(result.body.type).toBe('success');
-      expect(result.body.message).toBe('changelogs');
-      expect(result.body.data).toEqual([]);
-    });
-
-    test('should use Authorization header when a token is configured for releases', async () => {
-      const originalRepos = config.repos;
-      axios.get.mockClear();
-      // Temporarily set a fake token to cover the token-truthy branch in home.service releases()
-      config.repos = originalRepos.map((repo) => ({ ...repo, token: 'fake-test-token' }));
-      const result = await request(app).get('/api/home/releases').expect(200);
-      expect(result.body.type).toBe('success');
-      const releaseCalls = axios.get.mock.calls.filter(([url]) => url.includes('/releases'));
-      expect(releaseCalls.length).toBeGreaterThan(0);
-      releaseCalls.forEach(([, options]) => {
-        expect(options.headers.Authorization).toBe('token fake-test-token');
-      });
-      config.repos = originalRepos;
-    });
-
-    test('should use Authorization header when a token is configured for changelogs', async () => {
-      const originalRepos = config.repos;
-      axios.get.mockClear();
-      config.repos = originalRepos.map((repo) => ({ ...repo, token: 'fake-test-token' }));
-      const result = await request(app).get('/api/home/changelogs').expect(200);
-      expect(result.body.type).toBe('success');
-      const changelogCalls = axios.get.mock.calls.filter(([url]) => url.includes('/contents/'));
-      expect(changelogCalls.length).toBeGreaterThan(0);
-      changelogCalls.forEach(([, options]) => {
-        expect(options.headers.Authorization).toBe('token fake-test-token');
-      });
-      config.repos = originalRepos;
     });
 
     test('should return minimal health status without auth', async () => {

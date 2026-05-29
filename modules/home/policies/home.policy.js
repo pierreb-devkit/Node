@@ -15,7 +15,7 @@ export function homeSubjectRegistration({ registerPathSubject }) {
 
 /**
  * Define home-related abilities for an authenticated user.
- * All authenticated users can read home content (releases, changelogs, team, pages).
+ * All authenticated users can read home content (team, pages).
  * @param {Object} user - The authenticated user
  * @param {Object|null} membership - Optional organization membership (reserved for future use)
  * @param {Object} builder - CASL AbilityBuilder helpers
@@ -30,7 +30,7 @@ export function homeAbilities(user, membership, { can }) {
 
 /**
  * Define home-related abilities for unauthenticated guests.
- * Guests can read all home content (releases, changelogs, team, pages).
+ * Guests can read all home content (team, pages).
  * @param {Object} builder - CASL AbilityBuilder helpers
  * @param {Function} builder.can - Grant an ability
  */
