@@ -307,6 +307,7 @@ const token = async (req, res) => {
       emailVerified: req.user.emailVerified,
       currentOrganization: req.user.currentOrganization,
       lastLoginAt: req.user.lastLoginAt,
+      complementary: req.user.complementary,
     };
   }
 
