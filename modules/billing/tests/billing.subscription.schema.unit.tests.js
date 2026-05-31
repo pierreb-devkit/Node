@@ -74,12 +74,15 @@ describe('Billing subscription schema — cancelAt lifecycle fields:', () => {
       expect(result.data.cancelAt.toISOString()).toBe('2026-06-30T00:00:00.000Z');
     });
 
-    test('should coerce a Unix-seconds Number to Date (Stripe cancel_at)', () => {
-      // Stripe's cancel_at field is Unix seconds (e.g. 1751241600 = 2025-06-30)
-      subscription.cancelAt = 1751241600;
+    test('should coerce a Number to Date (z.coerce.date treats numbers as ms, not seconds)', () => {
+      // z.coerce.date() treats numbers as MILLISECONDS — Stripe's cancel_at is Unix seconds.
+      // The webhook handler (C.2) must multiply by 1000: new Date(stripeEvent.cancel_at * 1000).
+      // This test confirms the schema accepts a number and coerces to Date (whatever the value).
+      subscription.cancelAt = 1751241600 * 1000; // ms → correct date: 2025-06-30
       const result = schema.Subscription.safeParse(subscription);
       expect(result.error).toBeFalsy();
       expect(result.data.cancelAt).toBeInstanceOf(Date);
+      expect(result.data.cancelAt.toISOString()).toBe('2025-06-30T00:00:00.000Z');
     });
 
     test('should accept null (no pending cancellation)', () => {
@@ -113,13 +116,13 @@ describe('Billing subscription schema — cancelAt lifecycle fields:', () => {
       expect(result.data.cancelAt).toBeInstanceOf(Date);
     });
 
-    test('should accept both fields as null (no pending cancel)', () => {
+    test('should reject null cancelAtPeriodEnd (not nullable — use undefined/omit to clear)', () => {
+      // cancelAtPeriodEnd is z.boolean().optional(), NOT .nullable().
+      // Passing null is rejected — callers must omit the field or pass true/false.
+      // cancelAt IS nullable (z.coerce.date().nullable().optional()) so null passes for it.
       subscription.cancelAtPeriodEnd = null;
       subscription.cancelAt = null;
-      // cancelAtPeriodEnd is z.boolean().optional() — null is not a valid boolean
-      // null → schema rejects it (only undefined passes optional(), not null)
       const result = schema.Subscription.safeParse(subscription);
-      // cancelAtPeriodEnd does not have .nullable() so null is rejected
       expect(result.error).toBeDefined();
     });
 
