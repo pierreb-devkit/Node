@@ -66,7 +66,10 @@ function requireQuota(resource, action) {
         if (details?.type === 'METER_EXHAUSTED') {
           return responses.error(res, 402, 'Payment Required', 'Meter exhausted')(details);
         }
-        return responses.error(res, 402, 'Payment Required', err.message)(details);
+        // Defensive: an unknown 402 sub-type would leak err.message verbatim.
+        // The service only throws known types today, so send the generic phrase
+        // instead — any future 402 type must be mapped explicitly above.
+        return responses.error(res, 402, 'Payment Required', 'Payment required')(details);
       }
       if (err.status === 429) {
         return responses.error(res, 429, 'Quota exceeded', 'You have reached the usage limit for this resource')(details);

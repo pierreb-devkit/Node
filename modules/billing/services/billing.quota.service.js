@@ -125,7 +125,7 @@ async function assertCanExecute({ orgId, organization, user, resource, action })
       // No BillingUsage doc yet — fall back to plan quota
       const planId = subscription?.plan ?? getDefaultPlanId();
       const activePlan = BillingPlanService.getActivePlan(planId);
-      if (activePlan === null || activePlan === undefined) {
+      if (!activePlan) {
         throw new AppError('Billing plan configuration is temporarily unavailable', {
           status: 503,
           details: { type: 'PLAN_NOT_CONFIGURED', planId },
