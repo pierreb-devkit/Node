@@ -135,8 +135,8 @@ const SubscriptionMongoose = new Schema(
       default: null,
     },
     /**
-     * Unix date when the subscription will actually be cancelled (null when no pending cancel).
-     * Sourced from Stripe's cancel_at (seconds) → converted to Date in the webhook handler.
+     * Date when the subscription will actually be cancelled (null when no pending cancel).
+     * Sourced from Stripe's cancel_at (Unix seconds) → converted to Date in the webhook handler.
      */
     cancelAt: {
       type: Date,
