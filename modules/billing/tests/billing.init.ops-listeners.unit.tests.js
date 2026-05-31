@@ -67,6 +67,11 @@ describe('billing.init ops-listeners unit tests:', () => {
       },
     }));
 
+    // Stub billing.email so ops-listener tests don't wire email listeners
+    jest.unstable_mockModule('../billing.email.js', () => ({
+      setupBillingEmails: jest.fn(),
+    }));
+
     // Import billing.init first — it registers listeners on the real billingEvents singleton.
     const mod = await import('../billing.init.js');
     billingInit = mod.default;

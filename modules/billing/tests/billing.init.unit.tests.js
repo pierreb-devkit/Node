@@ -58,6 +58,11 @@ describe('billing.init unit tests:', () => {
       default: { on: jest.fn(), emit: jest.fn() },
     }));
 
+    // Stub billing.email so boot validator tests don't wire real email listeners
+    jest.unstable_mockModule('../billing.email.js', () => ({
+      setupBillingEmails: jest.fn(),
+    }));
+
     jest.unstable_mockModule('mongoose', () => ({
       default: mockMongoose,
     }));

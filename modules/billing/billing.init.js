@@ -8,6 +8,7 @@ import logger from '../../lib/services/logger.js';
 import billingEvents from './lib/events.js';
 import BillingUsageRepository from './repositories/billing.usage.repository.js';
 import { getAlertThresholdPercents } from './lib/billing.constants.js';
+import { setupBillingEmails } from './billing.email.js';
 
 /**
  * Billing module initialisation.
@@ -39,6 +40,9 @@ export default async (app) => {
       }
     }
   }
+
+  // Wire billing email listeners (quota warnings + payment-failed notifications).
+  setupBillingEmails();
 
   // Update analytics group properties when a subscription plan changes
   billingEvents.on('plan.changed', ({ organizationId, newPlan }) => {
