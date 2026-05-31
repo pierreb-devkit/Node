@@ -58,16 +58,44 @@ const validatePlan = (plan) => {
 const planRanks = Object.fromEntries((config.billing?.plans || []).map((p, i) => [p, i]));
 
 /**
+ * Reverse-map from Stripe price ID → plan name, built from config.stripe.prices at boot.
+ * config.stripe.prices = { growth: { monthly: 'price_xxx', annual: 'price_yyy' }, pro: { ... } }
+ * This avoids relying on price.metadata.planId (empty on Stripe webhook payloads — planId
+ * lives on the Product, not the Price) and avoids a Stripe API call per webhook.
+ *
+ * Fix: resolvePlan no longer reads price.metadata (always empty in real Stripe webhook payloads).
+ */
+const buildPriceIdToPlanMap = () => {
+  const map = {};
+  const stripePrices = config.stripe?.prices || {};
+  for (const [planId, intervals] of Object.entries(stripePrices)) {
+    if (!validPlans.has(planId)) continue;
+    if (intervals.monthly) map[intervals.monthly] = planId;
+    if (intervals.annual) map[intervals.annual] = planId;
+  }
+  return map;
+};
+const priceIdToPlan = buildPriceIdToPlanMap();
+
+/**
  * @description Resolve the plan name from a Stripe subscription object.
- * In webhook payloads, price.product is typically a string ID (not expanded),
- * so we check price.metadata first, then fall back to plan.metadata.
+ * Strategy (most-specific first):
+ *   1. config price-ID map (price_xxx → planId) — robust, no metadata dependency.
+ *   2. price.metadata.planId legacy fallback (works only if metadata was explicitly set).
+ *   3. plan.metadata.planId further legacy fallback.
+ *   4. 'free' when nothing resolves.
  * @param {Object} subscription - Stripe subscription object
  * @returns {string} plan name
  */
 const resolvePlan = (subscription) => {
   const item = subscription.items?.data?.[0];
-  const raw = item?.price?.metadata?.planId || item?.plan?.metadata?.planId;
-  return validatePlan(raw) || 'free';
+  const priceId = item?.price?.id;
+  if (priceId && priceIdToPlan[priceId]) {
+    return priceIdToPlan[priceId];
+  }
+  // Legacy fallback: price metadata set explicitly (e.g. test fixtures or manual Stripe edits)
+  const rawMeta = item?.price?.metadata?.planId || item?.plan?.metadata?.planId;
+  return validatePlan(rawMeta) || 'free';
 };
 
 /**
@@ -386,6 +414,18 @@ const handleSubscriptionUpdated = async (subscription, event) => {
     status: subscription.status,
   };
   if (newPeriodStart) fields.currentPeriodStart = newPeriodStart;
+  // Pending cancellation — record cancel_at_period_end flag and cancel_at date
+  // so the UI can show the user when their plan actually ends instead of treating
+  // it as an immediate downgrade. Does NOT change `plan` — subscription stays on
+  // the current plan until cancel_at.
+  if (typeof subscription.cancel_at_period_end === 'boolean') {
+    fields.cancelAtPeriodEnd = subscription.cancel_at_period_end;
+  }
+  if (subscription.cancel_at) {
+    fields.cancelAt = new Date(subscription.cancel_at * 1000);
+  } else if (subscription.cancel_at === null) {
+    fields.cancelAt = null;
+  }
 
   const updated = await SubscriptionRepository.updateIfEventNewer(String(existing._id), event.created, event.id, fields, 'subscription');
   if (!updated) {
@@ -423,7 +463,9 @@ const handleSubscriptionUpdated = async (subscription, event) => {
   const previousItems = event?.data?.previous_attributes?.items?.data;
   let planChangeResetTriggered = false;
   if (previousItems) {
-    const previousPlan = previousItems[0]?.price?.metadata?.planId
+    const previousPriceId = previousItems[0]?.price?.id;
+    const previousPlan = (previousPriceId && priceIdToPlan[previousPriceId])
+      || previousItems[0]?.price?.metadata?.planId
       || previousItems[0]?.plan?.metadata?.planId
       || null;
     if (previousPlan && previousPlan !== newPlan) {
