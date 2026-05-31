@@ -175,6 +175,24 @@ describe('Uploads createFromBuffer unit tests:', () => {
     expect(filename).toMatch(/^[a-f0-9]{64}\.html$/);
   });
 
+  test('should resolve text/html to .html extension via built-in MIME_TO_EXT (no config.uploads.mimeTypes needed)', async () => {
+    // text/html is in the built-in MIME_TO_EXT map so downstream features that
+    // store rendered HTML snapshots in GridFS get a correct .html filename
+    // without requiring per-deployment mimeTypes config.
+    mockConfig.uploads.snapshot = {
+      kind: 'snapshot',
+      formats: ['text/html'],
+      limits: { fileSize: 1 * 1024 * 1024 },
+    };
+    mockGridfs.createFromBuffer.mockResolvedValue({ ...fakeFile, contentType: 'text/html' });
+
+    const buffer = Buffer.alloc(512);
+    await UploadsService.createFromBuffer(buffer, 'text/html', 'snapshot');
+
+    const [, filename] = mockGridfs.createFromBuffer.mock.calls[0];
+    expect(filename).toMatch(/^[a-f0-9]{64}\.html$/);
+  });
+
   test('should throw error when kind has no formats configured', async () => {
     // Adding 'broken' kind at runtime — service reads config dynamically via module reference
     mockConfig.uploads.broken = { kind: 'broken', limits: { fileSize: 1024 } };

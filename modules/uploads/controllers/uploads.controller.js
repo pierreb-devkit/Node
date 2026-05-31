@@ -6,6 +6,7 @@ import _ from 'lodash';
 
 import config from '../../../config/index.js';
 import errors from '../../../lib/helpers/errors.js';
+import logger from '../../../lib/services/logger.js';
 import responses from '../../../lib/helpers/responses.js';
 import UploadsService from '../services/uploads.service.js';
 
@@ -40,7 +41,19 @@ const get = async (req, res) => {
     const stream = await UploadsService.getStream({ _id: req.upload._id });
     if (!stream) responses.error(res, 404, 'Not Found', 'No Upload with that identifier can been found')();
     stream.on('error', (err) => {
-      responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+      // Guard against ERR_HTTP_HEADERS_SENT when GridFS fails mid-transfer:
+      // `res.set('Content-Type', ...)` below flushes response headers to the
+      // client before the stream starts. If the GridFS read then errors, a
+      // second status+body write would throw ERR_HTTP_HEADERS_SENT and crash
+      // the worker process. Pre-header errors still reach the client as 422;
+      // post-header errors destroy the socket so Express surfaces them via
+      // its default error handler instead of double-sending.
+      if (!res.headersSent) {
+        responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+      } else {
+        logger.error('uploads.get - stream error after headers sent', err);
+        res.destroy(err);
+      }
     });
     const raw = req.upload.contentType || req.upload.metadata?.contentType || 'application/octet-stream';
     const norm = normalizeMime(raw);
@@ -65,7 +78,17 @@ const getSharp = async (req, res) => {
     const stream = await UploadsService.getStream({ _id: req.upload._id });
     if (!stream) responses.error(res, 404, 'Not Found', 'No Upload with that identifier can been found')();
     stream.on('error', (err) => {
-      responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+      // Same headersSent guard as `get` above. A sharp pipeline error after
+      // `res.set('Content-Type', ...)` has flushed the response head cannot
+      // write a new status or body — attempting to do so throws
+      // ERR_HTTP_HEADERS_SENT. Destroy the socket instead so Express surfaces
+      // the error via its default handler without double-sending.
+      if (!res.headersSent) {
+        responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+      } else {
+        logger.error('uploads.getSharp - stream error after headers sent', err);
+        res.destroy(err);
+      }
     });
     const raw = req.upload.contentType || req.upload.metadata?.contentType || 'application/octet-stream';
     const norm = normalizeMime(raw);

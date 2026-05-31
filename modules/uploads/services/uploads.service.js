@@ -15,6 +15,9 @@ const MIME_TO_EXT = {
   'image/png': 'png',
   'image/gif': 'gif',
   'application/pdf': 'pdf',
+  // Allows downstream features that store rendered HTML snapshots in GridFS
+  // alongside binary uploads (e.g. error pages, scrap previews).
+  'text/html': 'html',
 };
 
 /**
