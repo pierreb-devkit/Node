@@ -32,6 +32,9 @@ const baseShape = {
   // Admin override audit trail
   adminUpdatedAt: z.coerce.date().nullable().optional(),
   adminUpdatedBy: z.string().regex(objectIdRegex).nullable().optional(),
+  // Pending cancellation — populated when customer schedules cancel-at-period-end
+  cancelAtPeriodEnd: z.boolean().optional(),
+  cancelAt: z.coerce.date().nullable().optional(),
 };
 
 const Subscription = z.object({

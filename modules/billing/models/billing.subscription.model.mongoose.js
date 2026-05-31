@@ -123,6 +123,25 @@ const SubscriptionMongoose = new Schema(
       ref: 'User',
       default: null,
     },
+
+    // ── Pending cancellation ─────────────────────────────────────────────────
+    /**
+     * Whether the subscription is set to cancel at the end of the current period.
+     * Populated from Stripe's cancel_at_period_end flag on customer.subscription.updated.
+     * Does NOT change `plan` — the sub stays on the current plan until cancel_at.
+     */
+    cancelAtPeriodEnd: {
+      type: Boolean,
+      default: null,
+    },
+    /**
+     * Date when the subscription will actually be cancelled (null when no pending cancel).
+     * Sourced from Stripe's cancel_at (Unix seconds) → converted to Date in the webhook handler.
+     */
+    cancelAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
