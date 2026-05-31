@@ -39,11 +39,11 @@ const normalizeMime = (raw) => String(raw).toLowerCase().split(';')[0].trim();
 const get = async (req, res) => {
   try {
     const stream = await UploadsService.getStream({ _id: req.upload._id });
-    if (!stream) responses.error(res, 404, 'Not Found', 'No Upload with that identifier can been found')();
+    if (!stream) return responses.error(res, 404, 'Not Found', 'No Upload with that identifier can been found')();
     stream.on('error', (err) => {
-      // Guard against ERR_HTTP_HEADERS_SENT when GridFS fails mid-transfer:
-      // `res.set('Content-Type', ...)` below flushes response headers to the
-      // client before the stream starts. If the GridFS read then errors, a
+      // Guard against ERR_HTTP_HEADERS_SENT when GridFS fails mid-transfer.
+      // Response headers are written when the first chunk is piped to res
+      // (`stream.pipe(res)` below). If GridFS errors after that point, a
       // second status+body write would throw ERR_HTTP_HEADERS_SENT and crash
       // the worker process. Pre-header errors still reach the client as 422;
       // post-header errors destroy the socket so Express surfaces them via
@@ -76,37 +76,45 @@ const get = async (req, res) => {
 const getSharp = async (req, res) => {
   try {
     const stream = await UploadsService.getStream({ _id: req.upload._id });
-    if (!stream) responses.error(res, 404, 'Not Found', 'No Upload with that identifier can been found')();
-    stream.on('error', (err) => {
-      // Same headersSent guard as `get` above. A sharp pipeline error after
-      // `res.set('Content-Type', ...)` has flushed the response head cannot
-      // write a new status or body — attempting to do so throws
-      // ERR_HTTP_HEADERS_SENT. Destroy the socket instead so Express surfaces
-      // the error via its default handler without double-sending.
+    if (!stream) return responses.error(res, 404, 'Not Found', 'No Upload with that identifier can been found')();
+    // headersSent guard for the GridFS source stream.
+    // pipe() does not forward 'error' events between streams; each stream in the
+    // chain needs its own listener. Source and Transform errors are handled below.
+    // Pre-header errors reach the client as 422; post-header errors destroy the
+    // socket so Express surfaces them via its default handler instead of
+    // attempting a second write that would throw ERR_HTTP_HEADERS_SENT.
+    const onStreamError = (label) => (err) => {
       if (!res.headersSent) {
         responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
       } else {
-        logger.error('uploads.getSharp - stream error after headers sent', err);
+        logger.error(`uploads.getSharp - ${label} error after headers sent`, err);
         res.destroy(err);
       }
-    });
+    };
+    stream.on('error', onStreamError('source stream'));
     const raw = req.upload.contentType || req.upload.metadata?.contentType || 'application/octet-stream';
     const norm = normalizeMime(raw);
     const contentType = SAFE_IMAGE_MIME.has(norm) ? norm : 'image/jpeg';
     res.set('Content-Type', contentType);
-    switch (req.sharpOption) {
-      case 'blur':
-        stream.pipe(sharp().resize(req.sharpSize).blur(config.uploads.sharp.blur)).pipe(res);
-        break;
-      case 'bw':
-        stream.pipe(sharp().resize(req.sharpSize).grayscale()).pipe(res);
-        break;
-      case 'blur&bw':
-        stream.pipe(sharp().resize(req.sharpSize).grayscale().blur(config.uploads.sharp.blur)).pipe(res);
-        break;
-      default:
-        stream.pipe(sharp().resize(req.sharpSize)).pipe(res);
-    }
+    const buildTransform = () => {
+      let transform;
+      switch (req.sharpOption) {
+        case 'blur':
+          transform = sharp().resize(req.sharpSize).blur(config.uploads.sharp.blur);
+          break;
+        case 'bw':
+          transform = sharp().resize(req.sharpSize).grayscale();
+          break;
+        case 'blur&bw':
+          transform = sharp().resize(req.sharpSize).grayscale().blur(config.uploads.sharp.blur);
+          break;
+        default:
+          transform = sharp().resize(req.sharpSize);
+      }
+      transform.on('error', onStreamError('sharp transform'));
+      return transform;
+    };
+    stream.pipe(buildTransform()).pipe(res);
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
   }

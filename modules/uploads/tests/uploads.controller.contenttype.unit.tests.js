@@ -36,6 +36,9 @@ describe('Uploads controller content-type allowlist unit tests:', () => {
   };
 
   let mockLogger;
+  // Captures the 'error' listener registered on the sharp Transform so tests
+  // can fire it manually to simulate a sharp-pipeline mid-stream failure.
+  let sharpListeners;
 
   beforeEach(async () => {
     jest.resetModules();
@@ -47,6 +50,7 @@ describe('Uploads controller content-type allowlist unit tests:', () => {
     };
 
     mockLogger = { error: jest.fn(), warn: jest.fn(), info: jest.fn() };
+    sharpListeners = {};
 
     jest.unstable_mockModule('../services/uploads.service.js', () => ({
       default: mockUploadsService,
@@ -60,12 +64,16 @@ describe('Uploads controller content-type allowlist unit tests:', () => {
     // sharp is a real dependency; mock it to avoid needing native bindings in unit context.
     // pipe must return `dest` (matching the real Stream.pipe contract) so that chained
     // calls stream.pipe(transform).pipe(res) work without throwing.
+    // on() captures listeners so tests can fire transform error events.
     jest.unstable_mockModule('sharp', () => ({
       default: jest.fn(() => ({
         resize: jest.fn().mockReturnThis(),
         blur: jest.fn().mockReturnThis(),
         grayscale: jest.fn().mockReturnThis(),
         pipe: jest.fn((dest) => dest),
+        on: jest.fn((event, handler) => {
+          sharpListeners[event] = handler;
+        }),
       })),
     }));
 
@@ -492,7 +500,7 @@ describe('Uploads controller content-type allowlist unit tests:', () => {
       expect(res.destroy).not.toHaveBeenCalled();
     });
 
-    test('calls res.destroy(err) and logger.error when stream errors after headers are sent', async () => {
+    test('calls res.destroy(err) and logger.error when source stream errors after headers are sent', async () => {
       const { listeners } = installStream();
       const { default: responses } = await import('../../../lib/helpers/responses.js');
       const res = buildRes();
@@ -500,8 +508,25 @@ describe('Uploads controller content-type allowlist unit tests:', () => {
       await UploadsController.getSharp(req, res);
 
       res.headersSent = true;
-      const err = new Error('sharp pipeline mid-stream abort');
+      const err = new Error('gridfs source mid-stream abort');
       listeners.error(err);
+
+      expect(responses.error).not.toHaveBeenCalled();
+      expect(res.destroy).toHaveBeenCalledWith(err);
+      expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining('uploads.getSharp'), err);
+    });
+
+    test('calls res.destroy(err) and logger.error when sharp transform errors after headers are sent', async () => {
+      installStream();
+      const { default: responses } = await import('../../../lib/helpers/responses.js');
+      const res = buildRes();
+
+      await UploadsController.getSharp(req, res);
+
+      // Simulate a sharp transform error mid-stream (after headers are flushed).
+      res.headersSent = true;
+      const err = new Error('sharp transform mid-stream abort');
+      sharpListeners.error(err);
 
       expect(responses.error).not.toHaveBeenCalled();
       expect(res.destroy).toHaveBeenCalledWith(err);
