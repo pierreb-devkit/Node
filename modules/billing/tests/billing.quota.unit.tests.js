@@ -207,7 +207,7 @@ describe('requireQuota middleware:', () => {
 
   test.each(['past_due', 'canceled', 'unpaid', 'incomplete', 'incomplete_expired', 'paused'])(
     'should handle %s subscription denial from service',
-    async (_status) => {
+    async () => {
       mockBillingQuotaService.assertCanExecute.mockRejectedValue(
         new AppError('You have reached the usage limit for this resource', {
           status: 429,
