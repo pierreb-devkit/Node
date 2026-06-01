@@ -16,6 +16,7 @@ import billingEvents from '../lib/events.js';
 import { SENTINEL_PENDING } from '../lib/billing.constants.js';
 import { retryWithBackoff } from '../lib/billing.retry.js';
 import { isNonTransientStripeError } from '../lib/billing.stripe-errors.js';
+import AnalyticsService from '../../../lib/services/analytics.js';
 
 /**
  * Treats a stripeSessionId as "unresolved" when absent, empty, or still the
@@ -504,6 +505,28 @@ const handleSubscriptionUpdated = async (subscription, event) => {
           error: evtErr?.message ?? String(evtErr),
           stack: evtErr?.stack,
         });
+      }
+
+      // Emit analytics observability event for downstreams running PostHog (no-op otherwise).
+      // Mirrors the internal billing.plan.changed event but lands in the analytics pipeline.
+      if (AnalyticsService.isConfigured()) {
+        try {
+          AnalyticsService.capture({
+            distinctId: organizationId,
+            event: 'subscription_changed',
+            source: 'stripe-webhook',
+            properties: {
+              previousPlan,
+              newPlan,
+              isDowngrade,
+            },
+          });
+        } catch (capErr) {
+          logger.error('[billing.webhook] analytics capture subscription_changed failed (non-fatal)', {
+            organizationId,
+            error: capErr?.message ?? String(capErr),
+          });
+        }
       }
 
       // Plan switch mid-cycle = refresh the active week snapshot to the new plan.
