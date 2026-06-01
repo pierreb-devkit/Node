@@ -88,6 +88,39 @@ BODY
 
 Proceed to Phase 2 and track the upstream fix separately — do not block downstream alignment on it.
 
+### 3ter. Block on undeclared drift
+
+After `/verify` passes, run a final diff sweep before starting Phase 2. Any stack file that diverges from upstream **and** is not declared in `DOWNSTREAM_PATCHES.md` blocks the flow.
+
+```bash
+git fetch devkit-node master --quiet
+
+drift_found=0
+while IFS= read -r f; do
+  upstream_blob=$(git ls-tree devkit-node/master -- "$f" 2>/dev/null | awk '{print $3}')
+  [ -z "$upstream_blob" ] && continue  # downstream-only file — skip
+  local_hash=$(git hash-object "$f" 2>/dev/null)
+  if [ "$upstream_blob" != "$local_hash" ]; then
+    if ! grep -qF "$f" DOWNSTREAM_PATCHES.md 2>/dev/null; then
+      echo "BLOCK: undeclared drift on stack file: $f"
+      echo "  Fix A — revert to upstream:  git checkout devkit-node/master -- $f"
+      echo "  Fix B — declare it:          add '$f' + rationale to DOWNSTREAM_PATCHES.md"
+      drift_found=1
+    fi
+  fi
+done < <(git ls-files modules/home modules/auth modules/users modules/tasks modules/uploads modules/billing lib config/defaults 2>/dev/null \
+  | grep -v "/tests/" | grep -vE "\.(test|spec)\.js$")
+
+[ "$drift_found" -eq 1 ] && exit 1
+echo "3ter: no undeclared drift — OK"
+```
+
+**Rules:**
+- Missing `DOWNSTREAM_PATCHES.md` = no declared divergences allowed (treat as empty).
+- `config/defaults/<project>.config.js` (downstream-only config file) will be absent from `devkit-node/master` → `upstream_blob` empty → auto-skipped.
+- This gate runs **after** `/verify` (never blocks on transient verify failures) and **before** Phase 2 (failure is recoverable — no merge commit yet).
+- Ref: plan `2026-05-30-trawl-devkit-perfect-alignment.md` Tasks E.1 + E.2.
+
 ---
 
 ## Phase 2 — Project alignment
