@@ -17,7 +17,7 @@ Two-phase workflow. Phase 1 brings the stack down ISO. Phase 2 aligns the projec
 
 **Goal: stack modules and lib exit this phase identical to upstream. Zero downstream logic in them.**
 
-Stack modules: `home`, `auth`, `users`, `tasks`, `uploads` — Stack core: `lib/` (existing files), `config/defaults/` (stack-owned files only)
+Stack modules: `home`, `auth`, `users`, `tasks`, `uploads`, `billing` — Stack core: `lib/` (existing files), `config/defaults/` (stack-owned files only)
 
 ### 1. Setup remote + merge
 
@@ -31,7 +31,7 @@ git merge devkit-node/master
 
 | File | Rule |
 |------|------|
-| Stack module (`modules/home\|auth\|users\|tasks\|uploads`) | `git checkout --theirs <file>` |
+| Stack module (`modules/home\|auth\|users\|tasks\|uploads\|billing`) | `git checkout --theirs <file>` |
 | `lib/<existing-file>` | `git checkout --theirs <file>` (existing stack framework files — always ISO) |
 | `config/defaults/development.js`, `production.js`, etc. | `git checkout --theirs <file>` (stack-owned defaults) |
 | `package-lock.json` | `git checkout --theirs package-lock.json` — regenerate after `package.json` is resolved |
@@ -109,7 +109,7 @@ while IFS= read -r f; do
     fi
   fi
 done < <(git ls-files modules/home modules/auth modules/users modules/tasks modules/uploads modules/billing lib config/defaults 2>/dev/null \
-  | grep -v "/tests/" | grep -vE "\.(test|spec)\.js$")
+  | grep -vE "/(tests|__tests__)/" | grep -vE "\.(test|spec)\.(js|jsx|ts|tsx)$")
 
 [ "$drift_found" -eq 1 ] && exit 1
 echo "3ter: no undeclared drift — OK"
