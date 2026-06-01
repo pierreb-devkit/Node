@@ -666,6 +666,21 @@ const verifyEmail = async (req, res) => {
       emailVerificationToken: null,
       emailVerificationExpires: null,
     }, 'recover');
+    // Mark verified on the local object so handleSignupOrganization sees emailVerified=true
+    user.emailVerified = true;
+
+    // Post-verification org setup — provision org/grant if not yet done (best-effort).
+    // handleSignupOrganization is idempotent: if the org already exists it converges
+    // without double-crediting. Failure must never block email verification success.
+    try {
+      await AuthOrganizationService.handleSignupOrganization(user);
+    } catch (orgErr) {
+      logger.warn('[auth.verifyEmail] org/grant provisioning failed (non-fatal)', {
+        userId: user.id,
+        error: orgErr?.message,
+      });
+    }
+
     return responses.success(res, 'Email verified successfully')({ emailVerified: true });
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
