@@ -30,10 +30,22 @@ describe('computeSignupCapacity', () => {
     expect(countFn).not.toHaveBeenCalled();
   });
 
-  test('cap = 0 → fully closed: {cap:0, remaining:0} and count IS called', async () => {
-    const countFn = jest.fn().mockResolvedValue(0);
+  test('empty string cap → treated as uncapped (not coerced to 0)', async () => {
+    const countFn = jest.fn();
+    await expect(computeSignupCapacity('', countFn)).resolves.toEqual({ cap: null, remaining: null });
+    expect(countFn).not.toHaveBeenCalled();
+  });
+
+  test('whitespace-only cap → treated as uncapped (not coerced to 0)', async () => {
+    const countFn = jest.fn();
+    await expect(computeSignupCapacity('   ', countFn)).resolves.toEqual({ cap: null, remaining: null });
+    expect(countFn).not.toHaveBeenCalled();
+  });
+
+  test('cap = 0 → fully closed: {cap:0, remaining:0} and count is NOT called (short-circuit)', async () => {
+    const countFn = jest.fn();
     await expect(computeSignupCapacity(0, countFn)).resolves.toEqual({ cap: 0, remaining: 0 });
-    expect(countFn).toHaveBeenCalled();
+    expect(countFn).not.toHaveBeenCalled();
   });
 
   test('numeric string cap ("42") → coerced: {cap:42, remaining:40}', async () => {

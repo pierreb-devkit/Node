@@ -1,14 +1,15 @@
 /**
  * @desc Compute the public beta-capacity view for the auth config endpoint:
  * the configured cap and how many seats remain. Skips the (collection-wide)
- * count entirely when uncapped, so the common case stays a no-op.
- * @param {number|string|null|undefined} rawCap - config.sign.cap (null/undefined/non-numeric = uncapped; 0 = fully closed, 0 seats)
+ * count entirely when uncapped or when cap ≤ 0 (remaining is deterministically 0).
+ * @param {number|string|null|undefined} rawCap - config.sign.cap (null/undefined/non-numeric/blank = uncapped; 0 = fully closed, 0 seats)
  * @param {() => Promise<number>} countFn - async total-account counter (UserService.count)
  * @returns {Promise<{cap: number|null, remaining: number|null}>}
  */
 export const computeSignupCapacity = async (rawCap, countFn) => {
-  const cap = rawCap != null ? Number(rawCap) : null;
+  const cap = rawCap != null && String(rawCap).trim() !== '' ? Number(rawCap) : null;
   if (cap == null || !Number.isFinite(cap)) return { cap: null, remaining: null };
+  if (cap <= 0) return { cap, remaining: 0 };
   const remaining = Math.max(0, cap - (await countFn()));
   return { cap, remaining };
 };
