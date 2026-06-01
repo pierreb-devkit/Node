@@ -68,7 +68,9 @@ const makeBaseSetup = (configOverride = {}) => {
       model: () => ({}),
     },
   }));
-  // Suppress retryWithBackoff delays in tests (replace setTimeout with immediate resolve)
+  // Mock the failed-backfill repository so the retry recorder is a no-op in unit tests
+  // (does not suppress the retryWithBackoff setTimeout delays themselves — tests that exercise
+  // retry pathways still pay the real delay, so keep retry attempt counts low in fixtures).
   jest.unstable_mockModule('../repositories/billing.failedBackfill.repository.js', () => ({
     default: { record: jest.fn().mockResolvedValue({}) },
   }));
