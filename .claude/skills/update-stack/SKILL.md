@@ -99,9 +99,9 @@ drift_found=0
 while IFS= read -r f; do
   upstream_blob=$(git ls-tree devkit-node/master -- "$f" 2>/dev/null | awk '{print $3}')
   [ -z "$upstream_blob" ] && continue  # downstream-only file — skip
-  local_hash=$(git hash-object "$f" 2>/dev/null)
-  if [ "$upstream_blob" != "$local_hash" ]; then
-    if ! grep -qF "$f" DOWNSTREAM_PATCHES.md 2>/dev/null; then
+  local_blob=$(git rev-parse "HEAD:$f" 2>/dev/null)
+  if [ "$upstream_blob" != "$local_blob" ]; then
+    if ! grep -qF "'$f'" DOWNSTREAM_PATCHES.md 2>/dev/null; then
       echo "BLOCK: undeclared drift on stack file: $f"
       echo "  Fix A — revert to upstream:  git checkout devkit-node/master -- $f"
       echo "  Fix B — declare it:          add '$f' + rationale to DOWNSTREAM_PATCHES.md"
@@ -117,7 +117,8 @@ echo "3ter: no undeclared drift — OK"
 
 **Rules:**
 - Missing `DOWNSTREAM_PATCHES.md` = no declared divergences allowed (treat as empty).
-- `config/defaults/<project>.config.js` (downstream-only config file) will be absent from `devkit-node/master` → `upstream_blob` empty → auto-skipped.
+- Declare diverging paths in `DOWNSTREAM_PATCHES.md` as `'path/to/file'` (single-quoted) — the gate matches on the quoted token to avoid substring collisions.
+- Downstream-only files (new modules, helpers, lib additions) are not scanned — the sweep only covers the stack directories listed above.
 - This gate runs **after** `/verify` (never blocks on transient verify failures) and **before** Phase 2 (failure is recoverable — no merge commit yet).
 - Ref: plan `2026-05-30-trawl-devkit-perfect-alignment.md` Tasks E.1 + E.2.
 
