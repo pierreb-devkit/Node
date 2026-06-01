@@ -100,10 +100,12 @@ const resolvePlan = (subscription) => {
   const rawMeta = item?.price?.metadata?.planId || item?.plan?.metadata?.planId;
   const fromMeta = validatePlan(rawMeta);
   if (fromMeta) return fromMeta;
-  // Last-resort fallback — warn so misconfigured config.stripe.prices is visible
-  // (otherwise this silently downgrades paid orgs to 'free', which is the exact bug #1250 fixed).
-  if (priceId) {
-    logger.warn('[billing.webhook] resolvePlan: priceId not in priceIdToPlan map and metadata empty — falling back to free', {
+  // Last-resort fallback — warn only when metadata is also absent so misconfigured
+  // config.stripe.prices is visible (otherwise this silently downgrades paid orgs to 'free',
+  // which is the exact bug #1250 fixed). When metadata is present but invalid, validatePlan()
+  // above already emitted an "unrecognized planId" warning — no double-warn needed.
+  if (priceId && !rawMeta) {
+    logger.warn('[billing.webhook] resolvePlan: priceId not in priceIdToPlan map and no metadata — falling back to free', {
       priceId,
       stripeSubscriptionId: subscription?.id,
     });
