@@ -17,7 +17,7 @@ Two-phase workflow. Phase 1 brings the stack down ISO. Phase 2 aligns the projec
 
 **Goal: stack modules and lib exit this phase identical to upstream. Zero downstream logic in them.**
 
-Stack modules: `home`, `auth`, `users`, `tasks`, `uploads` — Stack core: `lib/` (existing files), `config/defaults/` (stack-owned files only)
+Stack modules: `home`, `auth`, `users`, `tasks`, `uploads`, `billing` — Stack core: `lib/` (existing files), `config/defaults/` (stack-owned files only)
 
 ### 1. Setup remote + merge
 
@@ -31,7 +31,7 @@ git merge devkit-node/master
 
 | File | Rule |
 |------|------|
-| Stack module (`modules/home\|auth\|users\|tasks\|uploads`) | `git checkout --theirs <file>` |
+| Stack module (`modules/home\|auth\|users\|tasks\|uploads\|billing`) | `git checkout --theirs <file>` |
 | `lib/<existing-file>` | `git checkout --theirs <file>` (existing stack framework files — always ISO) |
 | `config/defaults/development.js`, `production.js`, etc. | `git checkout --theirs <file>` (stack-owned defaults) |
 | `package-lock.json` | `git checkout --theirs package-lock.json` — regenerate after `package.json` is resolved |
@@ -87,6 +87,40 @@ BODY
 ```
 
 Proceed to Phase 2 and track the upstream fix separately — do not block downstream alignment on it.
+
+### 3ter. Block on undeclared drift
+
+After `/verify` passes, run a final diff sweep before starting Phase 2. Any stack file that diverges from upstream **and** is not declared in `DOWNSTREAM_PATCHES.md` blocks the flow.
+
+```bash
+git fetch devkit-node master --quiet
+
+drift_found=0
+while IFS= read -r f; do
+  upstream_blob=$(git ls-tree devkit-node/master -- "$f" 2>/dev/null | awk '{print $3}')
+  [ -z "$upstream_blob" ] && continue  # downstream-only file — skip
+  local_blob=$(git rev-parse "HEAD:$f" 2>/dev/null)
+  if [ "$upstream_blob" != "$local_blob" ]; then
+    if ! grep -qF "'$f'" DOWNSTREAM_PATCHES.md 2>/dev/null; then
+      echo "BLOCK: undeclared drift on stack file: $f"
+      echo "  Fix A — revert to upstream:  git checkout devkit-node/master -- $f"
+      echo "  Fix B — declare it:          add '$f' + rationale to DOWNSTREAM_PATCHES.md"
+      drift_found=1
+    fi
+  fi
+done < <(git ls-files modules/home modules/auth modules/users modules/tasks modules/uploads modules/billing lib config/defaults 2>/dev/null \
+  | grep -vE "/(tests|__tests__)/" | grep -vE "\.(test|spec)\.(js|jsx|ts|tsx)$")
+
+[ "$drift_found" -eq 1 ] && exit 1
+echo "3ter: no undeclared drift — OK"
+```
+
+**Rules:**
+- Missing `DOWNSTREAM_PATCHES.md` = no declared divergences allowed (treat as empty).
+- Declare diverging paths in `DOWNSTREAM_PATCHES.md` as `'path/to/file'` (single-quoted) — the gate matches on the quoted token to avoid substring collisions.
+- Downstream-only files (new modules, helpers, lib additions) are not scanned — the sweep only covers the stack directories listed above.
+- This gate runs **after** `/verify` (never blocks on transient verify failures) and **before** Phase 2 (failure is recoverable — no merge commit yet).
+- Ref: plan `2026-05-30-trawl-devkit-perfect-alignment.md` Tasks E.1 + E.2.
 
 ---
 
