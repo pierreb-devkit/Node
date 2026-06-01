@@ -7,6 +7,7 @@ paths:
     get:
       tags:
         - Tasks
+      operationId: getTaskStats
       summary: Get task statistics
       description: Returns the estimated total number of tasks. Public endpoint — no authentication required.
       responses:
@@ -29,6 +30,7 @@ paths:
     get:
       tags:
         - Tasks
+      operationId: listTasks
       summary: List tasks
       description: Returns all tasks scoped to the current organization. Requires authentication.
       security:
@@ -59,6 +61,7 @@ paths:
     post:
       tags:
         - Tasks
+      operationId: createTask
       summary: Create a task
       description: Creates a new task scoped to the current organization. The requesting user is set as the task owner.
       security:
@@ -94,6 +97,7 @@ paths:
     get:
       tags:
         - Tasks
+      operationId: getTask
       summary: Get a task
       description: Returns a single task by ID. Ownership is enforced by CASL policy.
       security:
@@ -123,6 +127,7 @@ paths:
     put:
       tags:
         - Tasks
+      operationId: updateTask
       summary: Update a task
       description: Updates an existing task. All fields are optional — only provided fields are updated. Ownership is enforced by CASL policy.
       security:
@@ -160,6 +165,7 @@ paths:
     delete:
       tags:
         - Tasks
+      operationId: deleteTask
       summary: Delete a task
       description: Deletes a task by ID. Ownership is enforced by CASL policy.
       security:
