@@ -58,12 +58,15 @@ const validatePlan = (plan) => {
 const planRanks = Object.fromEntries((config.billing?.plans || []).map((p, i) => [p, i]));
 
 /**
- * Reverse-map from Stripe price ID → plan name, built from config.stripe.prices at boot.
- * config.stripe.prices = { growth: { monthly: 'price_xxx', annual: 'price_yyy' }, pro: { ... } }
- * This avoids relying on price.metadata.planId (empty on Stripe webhook payloads — planId
- * lives on the Product, not the Price) and avoids a Stripe API call per webhook.
+ * Build a reverse-map from Stripe price ID → plan name, sourced from `config.stripe.prices`
+ * at module load. Shape: `{ growth: { monthly: 'price_xxx', annual: 'price_yyy' }, pro: {...} }`.
  *
- * Fix: resolvePlan no longer reads price.metadata (always empty in real Stripe webhook payloads).
+ * Why: `price.metadata.planId` is empty on real Stripe webhook payloads — `planId` lives on
+ * the Product, not the Price exposed by `customer.subscription.updated`. The reverse-map gives
+ * a robust priceId→plan lookup without an extra Stripe API call per webhook. `resolvePlan`
+ * keeps `price.metadata.planId` as a legacy fallback (test fixtures, manual Stripe edits).
+ *
+ * @returns {Record<string, string>} priceId → planId map (built once at module init)
  */
 const buildPriceIdToPlanMap = () => {
   const map = {};
@@ -95,7 +98,19 @@ const resolvePlan = (subscription) => {
   }
   // Legacy fallback: price metadata set explicitly (e.g. test fixtures or manual Stripe edits)
   const rawMeta = item?.price?.metadata?.planId || item?.plan?.metadata?.planId;
-  return validatePlan(rawMeta) || 'free';
+  const fromMeta = validatePlan(rawMeta);
+  if (fromMeta) return fromMeta;
+  // Last-resort fallback — warn only when metadata is also absent so misconfigured
+  // config.stripe.prices is visible (otherwise this silently downgrades paid orgs to 'free',
+  // which is the exact bug #1250 fixed). When metadata is present but invalid, validatePlan()
+  // above already emitted an "unrecognized planId" warning — no double-warn needed.
+  if (priceId && !rawMeta) {
+    logger.warn('[billing.webhook] resolvePlan: priceId not in priceIdToPlan map and no metadata — falling back to free', {
+      priceId,
+      stripeSubscriptionId: subscription?.id,
+    });
+  }
+  return 'free';
 };
 
 /**
@@ -421,7 +436,7 @@ const handleSubscriptionUpdated = async (subscription, event) => {
   if (typeof subscription.cancel_at_period_end === 'boolean') {
     fields.cancelAtPeriodEnd = subscription.cancel_at_period_end;
   }
-  if (subscription.cancel_at) {
+  if (typeof subscription.cancel_at === 'number') {
     fields.cancelAt = new Date(subscription.cancel_at * 1000);
   } else if (subscription.cancel_at === null) {
     fields.cancelAt = null;
@@ -464,10 +479,13 @@ const handleSubscriptionUpdated = async (subscription, event) => {
   let planChangeResetTriggered = false;
   if (previousItems) {
     const previousPriceId = previousItems[0]?.price?.id;
-    const previousPlan = (previousPriceId && priceIdToPlan[previousPriceId])
+    const previousRaw = (previousPriceId && priceIdToPlan[previousPriceId])
       || previousItems[0]?.price?.metadata?.planId
       || previousItems[0]?.plan?.metadata?.planId
       || null;
+    // Validate against the canonical plan enum — legacy metadata can carry stale or invalid
+    // values that would otherwise emit plan.changed + trigger forceRotateForPlanChange with junk.
+    const previousPlan = validatePlan(previousRaw);
     if (previousPlan && previousPlan !== newPlan) {
       const prevRank = planRanks[previousPlan];
       const newRank = planRanks[newPlan];
