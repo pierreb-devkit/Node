@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 
 import UserService from '../../users/services/users.service.js';
 import InvitationService from '../services/auth.invitation.service.js';
+import { computeSignupCapacity } from '../services/auth.signupCapacity.js';
 import config from '../../../config/index.js';
 import model from '../../../lib/middlewares/model.js';
 import mails from '../../../lib/helpers/mailer/index.js';
@@ -601,43 +602,50 @@ const signout = (req, res) => {
  * @desc Endpoint to expose public auth configuration (sign flags and organizations settings)
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void} Sends the public auth configuration in the HTTP response
+ * @returns {Promise<void>} Sends the public auth configuration in the HTTP response
  */
-const getConfig = (req, res) => {
-  const data = {
-    sign: {
-      in: !!config.sign.in,
-      up: !!config.sign.up,
-    },
-    oAuth: {
-      google: !!config.oAuth?.google?.clientID,
-      apple: !!config.oAuth?.apple?.clientID,
-    },
-    organizations: {
-      enabled: !!config.organizations?.enabled,
-      domainMatching: !!config.organizations?.domainMatching,
-      autoCreate: !!config.organizations?.autoCreate,
-    },
-    mail: {
-      configured: isMailerConfigured(),
-    },
-  };
+const getConfig = async (req, res) => {
+  try {
+    const { cap, remaining } = await computeSignupCapacity(config.sign?.cap, UserService.count);
+    const data = {
+      sign: {
+        in: !!config.sign.in,
+        up: !!config.sign.up,
+        cap, // null = uncapped; numeric = hard ceiling on total accounts (invited included)
+        remaining, // null = uncapped; else max(0, cap - totalAccounts)
+      },
+      oAuth: {
+        google: !!config.oAuth?.google?.clientID,
+        apple: !!config.oAuth?.apple?.clientID,
+      },
+      organizations: {
+        enabled: !!config.organizations?.enabled,
+        domainMatching: !!config.organizations?.domainMatching,
+        autoCreate: !!config.organizations?.autoCreate,
+      },
+      mail: {
+        configured: isMailerConfigured(),
+      },
+    };
 
-  // Authenticated users get extended org config and billing config
-  if (req.user) {
-    data.organizations = {
-      ...data.organizations,
-      roles: config.organizations?.roles || [],
-      roleDescriptions: config.organizations?.roleDescriptions || {},
-    };
-    data.billing = {
-      enabled: !!config.billing?.enabled,
-      meterMode: !!config.billing?.meterMode,
-      equivalences: config.billing?.equivalences ?? null,
-    };
+    // Authenticated users get extended org config and billing config
+    if (req.user) {
+      data.organizations = {
+        ...data.organizations,
+        roles: config.organizations?.roles || [],
+        roleDescriptions: config.organizations?.roleDescriptions || {},
+      };
+      data.billing = {
+        enabled: !!config.billing?.enabled,
+        meterMode: !!config.billing?.meterMode,
+        equivalences: config.billing?.equivalences ?? null,
+      };
+    }
+
+    responses.success(res, 'Auth config')(data);
+  } catch (err) {
+    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
   }
-
-  responses.success(res, 'Auth config')(data);
 };
 
 /**

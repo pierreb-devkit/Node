@@ -106,11 +106,14 @@ describe('auth.controller getConfig:', () => {
     const req = {}; // no req.user
     const res = {};
 
-    AuthController.getConfig(req, res);
+    await AuthController.getConfig(req, res);
 
     expect(responses.success).toHaveBeenCalledWith(res, 'Auth config');
     const [data] = mockResponses.successCb.mock.calls[0];
     expect(data.billing).toBeUndefined();
+    // sign.cap / sign.remaining must be null when config.sign has no cap (uncapped path)
+    expect(data.sign.cap).toBeNull();
+    expect(data.sign.remaining).toBeNull();
   });
 
   test('data.billing defaults to false/false/null when config.billing is undefined (authenticated)', async () => {
@@ -120,7 +123,7 @@ describe('auth.controller getConfig:', () => {
     const req = { user: { id: '1' } };
     const res = {};
 
-    AuthController.getConfig(req, res);
+    await AuthController.getConfig(req, res);
 
     const [data] = mockResponses.successCb.mock.calls[0];
     expect(data.billing).toBeDefined();
@@ -137,7 +140,7 @@ describe('auth.controller getConfig:', () => {
     const req = { user: { id: '1' } };
     const res = {};
 
-    AuthController.getConfig(req, res);
+    await AuthController.getConfig(req, res);
 
     const [data] = mockResponses.successCb.mock.calls[0];
     expect(data.billing).toBeDefined();
@@ -160,7 +163,7 @@ describe('auth.controller getConfig:', () => {
     const req = { user: { id: '1' } };
     const res = {};
 
-    AuthController.getConfig(req, res);
+    await AuthController.getConfig(req, res);
 
     const [data] = mockResponses.successCb.mock.calls[0];
     expect(data.billing.equivalences).toEqual(equivalences);
