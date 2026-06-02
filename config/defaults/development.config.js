@@ -1,3 +1,11 @@
+import {
+  PRICING_VERSION,
+  PLAN_QUOTAS,
+  RATIOS,
+  STRIPE_PRICE_CENTS,
+  STRIPE_PACK_CENTS,
+} from './billing.pricing.constants.js';
+
 const config = {
   app: {
     title: 'Devkit Node - Development Environment',
@@ -141,6 +149,16 @@ const config = {
         roles: ['user', 'admin'],
       },
     },
+  },
+  billing: {
+    /**
+     * Pricing constants contract — safe devkit defaults.
+     * Downstream projects override these values in their own config file.
+     * These values are also directly importable from
+     * `config/defaults/billing.pricing.constants.js` for migrations and
+     * standalone tooling that cannot import the full config object.
+     */
+    pricing: { PRICING_VERSION, PLAN_QUOTAS, RATIOS, STRIPE_PRICE_CENTS, STRIPE_PACK_CENTS },
   },
 };
 
