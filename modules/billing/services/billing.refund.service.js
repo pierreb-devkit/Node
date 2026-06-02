@@ -18,7 +18,11 @@ import getStripe from '../lib/stripe.js';
  * @returns {Promise<Object>} The Stripe refund object.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const refundCharge = async (stripeChargeId, amountCents, { reason } = {}) => {
+const refundCharge = async (stripeChargeId, amountCents, options = {}) => {
+  if (options === null || typeof options !== 'object' || Array.isArray(options)) {
+    throw new Error('invalid argument: options must be a plain object');
+  }
+  const { reason } = options;
   if (typeof stripeChargeId !== 'string' || stripeChargeId.trim() === '') {
     throw new Error('invalid argument: stripeChargeId must be a non-empty string');
   }
