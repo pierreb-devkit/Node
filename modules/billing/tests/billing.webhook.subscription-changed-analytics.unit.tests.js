@@ -225,8 +225,8 @@ describe('billing.webhook.service — subscription_changed analytics emit:', () 
   });
 
   describe('when plan did not change', () => {
-    test('does not capture subscription_changed', async () => {
-      // No previous_attributes.items — no plan change detected
+    test('does not capture subscription_changed when previous_attributes.items is absent', async () => {
+      // No previous_attributes.items — plan-change branch is skipped entirely
       await BillingWebhookService.handleSubscriptionUpdated(
         _mkStripeSubscription(),
         _mkEvent({
@@ -239,15 +239,51 @@ describe('billing.webhook.service — subscription_changed analytics emit:', () 
       );
       expect(subscriptionChangedCalls).toHaveLength(0);
     });
+
+    test('does not capture subscription_changed when previousPlan === newPlan (same-plan guard)', async () => {
+      // previous_attributes.items IS present but the plan is the same — the
+      // `previousPlan !== newPlan` guard should prevent the emit.
+      await BillingWebhookService.handleSubscriptionUpdated(
+        _mkStripeSubscription({
+          items: {
+            data: [{ price: { id: 'price_growth', metadata: { planId: 'growth' } }, current_period_start: 1700000000 }],
+          },
+        }),
+        _mkEvent({
+          data: {
+            previous_attributes: {
+              items: { data: [{ price: { id: 'price_growth', metadata: { planId: 'growth' } } }] },
+            },
+          },
+        }),
+      );
+
+      const subscriptionChangedCalls = mockAnalyticsCapture.mock.calls.filter(
+        ([arg]) => arg.event === 'subscription_changed',
+      );
+      expect(subscriptionChangedCalls).toHaveLength(0);
+    });
   });
 
   describe('when event is stale (updateIfEventNewer returns null)', () => {
     test('does not capture subscription_changed', async () => {
+      // Fixture includes previous_attributes.items so the stale-event guard is what
+      // actually prevents capture (not the absence of a plan change).
       mockSubscriptionRepository.updateIfEventNewer.mockResolvedValue(null);
 
       await BillingWebhookService.handleSubscriptionUpdated(
-        _mkStripeSubscription(),
-        _mkEvent(),
+        _mkStripeSubscription({
+          items: {
+            data: [{ price: { id: 'price_growth', metadata: { planId: 'growth' } }, current_period_start: 1700000000 }],
+          },
+        }),
+        _mkEvent({
+          data: {
+            previous_attributes: {
+              items: { data: [{ price: { id: 'price_free', metadata: { planId: 'free' } } }] },
+            },
+          },
+        }),
       );
 
       const subscriptionChangedCalls = mockAnalyticsCapture.mock.calls.filter(

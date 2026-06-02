@@ -508,25 +508,19 @@ const handleSubscriptionUpdated = async (subscription, event) => {
       }
 
       // Emit analytics observability event for downstreams running PostHog (no-op otherwise).
-      // Mirrors the internal billing.plan.changed event but lands in the analytics pipeline.
+      // Mirrors the internal plan.changed event but lands in the analytics pipeline.
+      // AnalyticsService.capture() swallows its own errors — no outer try/catch needed.
       if (AnalyticsService.isConfigured()) {
-        try {
-          AnalyticsService.capture({
-            distinctId: organizationId,
-            event: 'subscription_changed',
-            source: 'stripe-webhook',
-            properties: {
-              previousPlan,
-              newPlan,
-              isDowngrade,
-            },
-          });
-        } catch (capErr) {
-          logger.error('[billing.webhook] analytics capture subscription_changed failed (non-fatal)', {
-            organizationId,
-            error: capErr?.message ?? String(capErr),
-          });
-        }
+        AnalyticsService.capture({
+          distinctId: organizationId,
+          event: 'subscription_changed',
+          source: 'stripe-webhook',
+          properties: {
+            previousPlan,
+            newPlan,
+            isDowngrade,
+          },
+        });
       }
 
       // Plan switch mid-cycle = refresh the active week snapshot to the new plan.
