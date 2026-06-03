@@ -97,17 +97,21 @@ git fetch devkit-node master --quiet
 
 drift_found=0
 while IFS= read -r f; do
-  upstream_blob=$(git ls-tree devkit-node/master -- "$f" 2>/dev/null | awk '{print $3}')
-  [ -z "$upstream_blob" ] && continue  # downstream-only file — skip
-  local_blob=$(git rev-parse "HEAD:$f" 2>/dev/null)
-  if [ "$upstream_blob" != "$local_blob" ]; then
-    echo "BLOCK: drift on shared stack file: $f"
+  # Both sides exist + differ → drift
+  if git cat-file -e "devkit-node/master:$f" 2>/dev/null && git cat-file -e "HEAD:$f" 2>/dev/null; then
+    echo "BLOCK: drift on shared file: $f"
     echo "  Fix A — revert to upstream: git checkout devkit-node/master -- $f"
     echo "  Fix B — promote upstream:   open a devkit PR with the change, merge, /update-stack here"
     echo "  Fix C — relocate:           move logic to a downstream-only module or config/defaults/<project>.config.js"
     drift_found=1
+  # Upstream has it, local doesn't → missing-locally
+  elif git cat-file -e "devkit-node/master:$f" 2>/dev/null; then
+    echo "BLOCK: missing locally (was on upstream): $f"
+    echo "  Fix — restore: git checkout devkit-node/master -- $f"
+    drift_found=1
   fi
-done < <(git ls-files modules lib config 2>/dev/null \
+  # Downstream-only file (not in upstream) → skip silently
+done < <(git diff --name-only devkit-node/master HEAD -- modules lib config 2>/dev/null \
   | grep -vE "/(tests|__tests__)/" | grep -vE "\.(test|spec)\.(js|jsx|ts|tsx)$")
 
 [ "$drift_found" -eq 1 ] && exit 1
@@ -116,7 +120,7 @@ echo "3ter: no drift — OK"
 
 **Rules:**
 - Block on ANY shared-file divergence. No "declare and skip" path — the `DOWNSTREAM_PATCHES.md` ledger model was abandoned 2026-06-02 (memory `feedback_no_dev_in_shared_modules`).
-- Scan covers the full stack tree (`modules`, `lib`, `config`) — auto-discovers every shared module. Per-file `git ls-tree` on upstream filters downstream-only files.
+- Scan source is `git diff --name-only devkit-node/master HEAD` (bidirectional) — catches both files that differ AND files present upstream but missing locally (deleted downstream). The previous `git ls-files` approach only saw locally-present files.
 - Test files (paths containing `/tests/` or `/__tests__/`, or filenames ending `.test.{js,jsx,ts,tsx}` / `.spec.{js,jsx,ts,tsx}`) are excluded — downstream test adaptations are acceptable.
 - This gate runs **after** `/verify` (never blocks on transient verify failures) and **before** Phase 2 (failure is recoverable — no merge commit yet).
 - Ref: plan `2026-05-30-trawl-devkit-perfect-alignment.md` Tasks E.1 + E.2.
