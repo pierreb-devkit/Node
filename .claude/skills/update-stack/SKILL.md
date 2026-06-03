@@ -17,7 +17,7 @@ Two-phase workflow. Phase 1 brings the stack down ISO. Phase 2 aligns the projec
 
 **Goal: stack modules and lib exit this phase identical to upstream. Zero downstream logic in them.**
 
-Stack modules: `home`, `auth`, `users`, `tasks`, `uploads`, `billing` — Stack core: `lib/` (existing files), `config/defaults/` (stack-owned files only)
+Stack scope = every file under `modules/`, `lib/`, `config/` (defaults, templates, assets) that exists in `devkit-node/master`. Auto-discovered by the step 3ter gate; do not enumerate by hand.
 
 ### 1. Setup remote + merge
 
@@ -60,7 +60,7 @@ Failures typically indicate regressions from conflict resolution — fix these b
 
 ### 3bis. Report stack issues
 
-If `/verify` failures originate from **stack module code** (`home`, `auth`, `users`, `tasks`, `uploads`) or **stack core** (`lib/`, `config/defaults/`) and not from conflict resolution mistakes, open a GitHub issue on `pierreb-devkit/Node`.
+If `/verify` failures originate from a **stack file** (any file under `modules/`, `lib/`, or `config/` present in `devkit-node/master`) and not from conflict resolution mistakes, open a GitHub issue on `pierreb-devkit/Node`.
 
 **How to determine the failure origin:**
 - **Stack code failure:** error occurs in unmodified stack module files (resolved with `--theirs`)
@@ -117,7 +117,7 @@ echo "3ter: no drift — OK"
 **Rules:**
 - Block on ANY shared-file divergence. No "declare and skip" path — the `DOWNSTREAM_PATCHES.md` ledger model was abandoned 2026-06-02 (memory `feedback_no_dev_in_shared_modules`).
 - Scan covers the full stack tree (`modules`, `lib`, `config`) — auto-discovers every shared module. Per-file `git ls-tree` on upstream filters downstream-only files.
-- Test files (`/tests*/`, `/__tests__/`, `*.test.*`, `*.spec.*`) are excluded — downstream test adaptations are acceptable.
+- Test files (paths containing `/tests/` or `/__tests__/`, or filenames ending `.test.{js,jsx,ts,tsx}` / `.spec.{js,jsx,ts,tsx}`) are excluded — downstream test adaptations are acceptable.
 - This gate runs **after** `/verify` (never blocks on transient verify failures) and **before** Phase 2 (failure is recoverable — no merge commit yet).
 - Ref: plan `2026-05-30-trawl-devkit-perfect-alignment.md` Tasks E.1 + E.2.
 
