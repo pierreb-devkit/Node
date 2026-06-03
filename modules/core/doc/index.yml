@@ -4,13 +4,21 @@ info:
 components:
   securitySchemes:
     bearerAuth:
-      type: "http"
-      scheme: "bearer"
-      bearerFormat: "JWT"
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Authenticate by sending an HTTP `Authorization: Bearer <token>` header.
+    apiKeyAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Legacy alias for `bearerAuth`. New integrations should use `bearerAuth`.
 
   schemas:
     SuccessResponse:
       type: object
+      description: Standard success envelope. data type varies by endpoint.
       properties:
         type:
           type: string
@@ -23,6 +31,7 @@ components:
 
     ErrorResponse:
       type: object
+      description: Standard error envelope returned on 4xx/5xx.
       properties:
         type:
           type: string
