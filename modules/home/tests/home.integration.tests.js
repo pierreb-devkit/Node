@@ -190,7 +190,7 @@ describe('Home integration tests:', () => {
       const mailerSpy = jest.spyOn(mailer, 'isConfigured').mockReturnValue(true);
       try {
         config.domain = 'example.com';
-        config.jwt.secret = 'a-real-custom-secret-key';
+        config.jwt.secret = 'a-real-custom-secret-key-well-over-32-characters-long';
         config.oAuth = { google: { clientID: 'google-id' }, apple: { clientID: 'apple-id' } };
         config.stripe = { secretKey: 'sk_test_123' };
         config.analytics = { posthog: { key: 'phk_123', errorTracking: true } };
