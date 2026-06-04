@@ -2,6 +2,12 @@
 
 Stripe-based billing with per-plan quota management and meter-based compute pricing.
 
+## Module boundary — the meter service is calc-agnostic
+
+`billing.meter.service.js` converts a feature-keyed **USD cost map → meter units** via config ratios (`dollarsToUnitRatio`, per-plan `ratios`) and applies config knobs (`runBase`, `maxUnitsPerOperation`). It does **not** know what a run costs.
+
+**Downstream cost semantics — what a scrap/op costs, per-run infra base, product-specific floors/caps — live in the downstream's own cost module + config (e.g. Trawl `modules/costs`), never inline in this service.** An inline downstream patch here is silently wiped by `/update-stack`: a tier0 run-base floor added downstream inside a `billing.meter.service.js` copy was lost on the next stack sync, zero-ing metering for free-tier scrapes (trawl `#1293` → `#1316`). If a behaviour must live in this service, add it as a **default-off config knob**, never a hardcoded downstream rule.
+
 ## Quota System
 
 ### Configuration
