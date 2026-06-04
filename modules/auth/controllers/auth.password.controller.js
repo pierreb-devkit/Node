@@ -25,16 +25,34 @@ const tokenCookieOptions = {
  * @returns {Promise<void>} Sends a JSON response with reset status.
  */
 const forgot = async (req, res) => {
-  let user;
+  // Uniform success message — never reveal whether an email is registered (anti-enumeration).
+  const uniformSuccess = () => responses.success(res, 'If that email exists, a reset link has been sent.')({ status: true });
+
   // check input
   if (!req.body.email) return responses.error(res, 422, 'Unprocessable Entity', 'Mail field must not be blank')();
   const email = String(req.body.email);
-  // get user generate and add token
+
+  let user;
   try {
     user = await UserService.getBrut({ email });
-    if (!user) return responses.error(res, 400, 'Bad Request', 'No account with that email has been found')();
-    if (user.provider !== 'local')
-      return responses.error(res, 400, 'Bad Request', `It seems like you signed up using your ${user.provider} account`)();
+  } catch (err) {
+    return responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+  }
+
+  // Unknown email or OAuth user — perform a dummy bcrypt compare to equalise
+  // response timing (anti-timing-oracle). The sentinel is a valid precomputed
+  // bcrypt hash (cost=10, 60 chars) so bcrypt runs the full KDF instead of
+  // short-circuiting on format validation.
+  if (!user || user.provider !== 'local') {
+    await AuthService.comparePassword(
+      'dummy-timing-equaliser',
+      '$2b$10$wotSb2xPb8VF8lpBkulk0.e2xvYvDedhjMyuG/7w3GdPl1vdvogY2',
+    );
+    return uniformSuccess();
+  }
+
+  // Known local user — generate token, persist, and send the reset email.
+  try {
     const edit = {
       resetPasswordToken: jwt.sign({ exp: Date.now() + 3600000 }, config.jwt.secret, { algorithm: 'HS256' }),
       resetPasswordExpires: Date.now() + 3600000,
@@ -43,7 +61,7 @@ const forgot = async (req, res) => {
   } catch (err) {
     return responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
   }
-  // send mail
+
   try {
     const mail = await mails.sendMail({
       template: 'reset-password-email',
@@ -57,7 +75,7 @@ const forgot = async (req, res) => {
       },
     });
     if (!mail || !mail.accepted) return responses.error(res, 400, 'Bad Request', 'Failure sending email')();
-    return responses.success(res, 'An email has been sent with further instructions')({ status: true });
+    return uniformSuccess();
   } catch (_mailErr) {
     return responses.error(res, 400, 'Bad Request', 'Failure sending email')();
   }
