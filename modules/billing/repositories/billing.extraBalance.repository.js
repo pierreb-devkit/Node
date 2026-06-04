@@ -388,13 +388,21 @@ const getBalance = async (orgId) => {
 /**
  * @function listLedgerPage
  * @description Return a paginated slice of the ledger array for an organization using
- *              MongoDB aggregation `$slice` — only the requested page is transferred over the
+ *              MongoDB aggregation — only the requested page is transferred over the
  *              wire, avoiding full-document fetches for large ledgers (1000+ entries).
  *
  *              Entries are sorted descending by `at` (newest first) at the aggregation layer.
  *              The aggregation pipeline is:
- *                1. $match   — find the org's document
- *                2. $project — sort + slice the ledger, plus cachedBalance and _id=0
+ *                1. $match    — find the org's document
+ *                2. $project  — capture total + cachedBalance, normalise ledger with $ifNull
+ *                3. $unwind   — explode ledger entries into individual documents
+ *                4. $sort     — sort by ledger.at descending (compatible with MongoDB ≥4.4)
+ *                5. $group    — reassemble into a single document, collecting sorted entries
+ *                6. $project  — apply skip+limit slice and reshape to final shape
+ *
+ *              Note: $sortArray (MongoDB ≥5.2) is intentionally avoided so the repository
+ *              works on MongoDB 5.0.x (mongodb-memory-server default in CI).
+ *              The $unwind + $sort + $group pattern is equivalent and fully portable.
  *
  *              Returns null when no document exists for the org yet (balance = 0).
  *
@@ -412,21 +420,40 @@ const listLedgerPage = async (orgId, skip, limit) => {
 
   const results = await BillingExtraBalance().aggregate([
     { $match: { organization: new mongoose.Types.ObjectId(orgId) } },
+    // Capture total count and cachedBalance before unwinding; normalise missing ledger to [].
+    {
+      $project: {
+        _id: 1,
+        cachedBalance: 1,
+        total: { $size: { $ifNull: ['$ledger', []] } },
+        ledger: { $ifNull: ['$ledger', []] },
+      },
+    },
+    // Preserve docs with an empty ledger (preserveNullAndEmptyArrays keeps the root doc).
+    { $unwind: { path: '$ledger', preserveNullAndEmptyArrays: true } },
+    // Sort entries descending by `at` (newest first). Compatible with MongoDB ≥4.4.
+    { $sort: { 'ledger.at': -1 } },
+    // Reassemble the sorted entries back into a single document per org.
+    {
+      $group: {
+        _id: '$_id',
+        cachedBalance: { $first: '$cachedBalance' },
+        total: { $first: '$total' },
+        // $push preserves the $sort order guaranteed by the preceding $sort stage.
+        sortedLedger: { $push: '$ledger' },
+      },
+    },
+    // Slice the sorted array to the requested page and drop internal fields.
+    // $filter removes the null sentinel emitted by $unwind when ledger was empty
+    // (preserveNullAndEmptyArrays keeps the parent doc alive but pushes null into $group).
     {
       $project: {
         _id: 0,
         cachedBalance: 1,
-        total: { $size: { $ifNull: ['$ledger', []] } },
-        // Sort descending by `at` then slice the requested page.
-        // $ifNull guards against missing/null ledger field on legacy docs.
+        total: 1,
         ledgerPage: {
           $slice: [
-            {
-              $sortArray: {
-                input: { $ifNull: ['$ledger', []] },
-                sortBy: { at: -1 },
-              },
-            },
+            { $filter: { input: '$sortedLedger', cond: { $ne: ['$$this', null] } } },
             skip,
             limit,
           ],

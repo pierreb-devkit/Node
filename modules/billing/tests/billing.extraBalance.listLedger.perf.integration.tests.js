@@ -79,6 +79,23 @@ describe('BillingExtraBalanceRepository.listLedgerPage performance integration t
     expect(result).toBeNull();
   });
 
+  test('listLedgerPage: returns empty ledgerPage (not [null]) for org with empty ledger', async () => {
+    // Regression guard: $unwind preserveNullAndEmptyArrays emits a null sentinel when the
+    // ledger array is empty. Without the $filter guard, ledgerPage would be [null] instead of [].
+    await BillingExtraBalance.create({
+      organization: orgId,
+      ledger: [],
+      cachedBalance: 0,
+      cachedBalanceAt: new Date(),
+    });
+
+    const result = await BillingExtraBalanceRepository.listLedgerPage(String(orgId), 0, 20);
+
+    expect(result).not.toBeNull();
+    expect(result.total).toBe(0);
+    expect(result.ledgerPage).toEqual([]);
+  });
+
   test('listLedgerPage: page 2 returns the correct slice (skip=20, limit=20)', async () => {
     const now = Date.now();
     const ledger = Array.from({ length: 50 }, (_, i) => ({
