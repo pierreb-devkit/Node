@@ -195,6 +195,9 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
     checkoutParams.automatic_tax = { enabled: true };
     checkoutParams.customer_update = { address: 'auto', name: 'auto' };
   }
+  if (config?.stripe?.allowPromotionCodes === true) {
+    checkoutParams.allow_promotion_codes = true;
+  }
   // No Stripe idempotency key here. Checkout sessions are ephemeral (24h TTL).
   // A static `sub_checkout_${orgId}_${priceId}` key locks the user into a
   // single session for 24h: if they abandon the first attempt, retrying within
