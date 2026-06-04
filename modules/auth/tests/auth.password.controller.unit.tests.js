@@ -5,8 +5,11 @@
  * Security regression guard:
  *   - Must return a UNIFORM response for both known and unknown emails (anti-enumeration, #3722).
  *   - Must run a dummy bcrypt hash on the unknown-user path to equalise timing (anti-timing-oracle, #3722).
+ *   - Mail-send failure must NOT re-introduce an enumeration oracle (#3722 follow-up).
  */
 import { jest, describe, test, expect, beforeEach } from '@jest/globals';
+
+const UNIFORM_MSG = 'If that email exists, a reset link has been sent.';
 
 describe('auth.password.controller.forgot — account enumeration + timing oracle (#3722):', () => {
   let mockGetBrut;
@@ -14,6 +17,7 @@ describe('auth.password.controller.forgot — account enumeration + timing oracl
   let mockSendMail;
   let mockBcryptCompare;
   let mockErrorFn;
+  let mockSuccessFn;
 
   beforeEach(() => {
     jest.resetModules();
@@ -23,6 +27,7 @@ describe('auth.password.controller.forgot — account enumeration + timing oracl
     mockSendMail = jest.fn();
     mockBcryptCompare = jest.fn().mockResolvedValue(false);
     mockErrorFn = jest.fn().mockReturnValue(jest.fn());
+    mockSuccessFn = jest.fn().mockReturnValue(jest.fn());
 
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
       default: { warn: jest.fn(), error: jest.fn(), info: jest.fn() },
@@ -58,7 +63,7 @@ describe('auth.password.controller.forgot — account enumeration + timing oracl
 
     jest.unstable_mockModule('../../../lib/helpers/responses.js', () => ({
       default: {
-        success: jest.fn().mockReturnValue(jest.fn()),
+        success: mockSuccessFn,
         error: mockErrorFn,
       },
     }));
@@ -91,8 +96,8 @@ describe('auth.password.controller.forgot — account enumeration + timing oracl
     );
     expect(enumLeakCall).toBeUndefined();
 
-    // Must call responses.success (uniform positive signal)
-    expect(responses.success).toHaveBeenCalled();
+    // Must call responses.success with the EXACT uniform message
+    expect(responses.success).toHaveBeenCalledWith(res, UNIFORM_MSG);
   });
 
   test('should perform a dummy hash on the unknown-user path to equalise timing', async () => {
@@ -133,7 +138,10 @@ describe('auth.password.controller.forgot — account enumeration + timing oracl
 
     await PasswordController.forgot(req, res);
 
-    expect(responses.success).toHaveBeenCalled();
+    // Must call responses.success with the EXACT uniform message — regression guard against distinct responses
+    expect(responses.success).toHaveBeenCalledWith(res, UNIFORM_MSG);
+    // Must NOT call responses.error (no 400/422 for known local user)
+    expect(responses.error).not.toHaveBeenCalled();
   });
 
   test('should NOT reveal OAuth provider in error response (no provider enumeration)', async () => {
@@ -161,7 +169,63 @@ describe('auth.password.controller.forgot — account enumeration + timing oracl
     );
     expect(providerLeakCall).toBeUndefined();
 
-    // Must call responses.success (uniform positive signal)
-    expect(responses.success).toHaveBeenCalled();
+    // Must call responses.success with the EXACT uniform message
+    expect(responses.success).toHaveBeenCalledWith(res, UNIFORM_MSG);
+  });
+
+  test('should return the UNIFORM success response even when sendMail throws (no enumeration oracle on mail failure)', async () => {
+    const knownUser = {
+      id: 'u3',
+      email: 'mailfail@example.com',
+      provider: 'local',
+      firstName: 'Mail',
+      lastName: 'Fail',
+      resetPasswordToken: 'tok456',
+    };
+    mockGetBrut.mockResolvedValueOnce(knownUser);
+    mockUpdate.mockResolvedValueOnce({ ...knownUser, resetPasswordToken: 'tok456', resetPasswordExpires: Date.now() + 3600000 });
+    // Simulate sendMail throwing (SMTP down, network error, etc.)
+    mockSendMail.mockRejectedValueOnce(new Error('ECONNREFUSED: cannot connect to SMTP server'));
+
+    const { default: PasswordController } = await import('../controllers/auth.password.controller.js');
+    const { default: responses } = await import('../../../lib/helpers/responses.js');
+
+    const req = { body: { email: 'mailfail@example.com' } };
+    const res = {};
+
+    await PasswordController.forgot(req, res);
+
+    // Must NOT call responses.error — mail failure must not be distinguishable from success
+    expect(responses.error).not.toHaveBeenCalled();
+    // Must still return the exact uniform success message
+    expect(responses.success).toHaveBeenCalledWith(res, UNIFORM_MSG);
+  });
+
+  test('should return the UNIFORM success response when sendMail returns a rejected result (not accepted)', async () => {
+    const knownUser = {
+      id: 'u4',
+      email: 'notaccepted@example.com',
+      provider: 'local',
+      firstName: 'Not',
+      lastName: 'Accepted',
+      resetPasswordToken: 'tok789',
+    };
+    mockGetBrut.mockResolvedValueOnce(knownUser);
+    mockUpdate.mockResolvedValueOnce({ ...knownUser, resetPasswordToken: 'tok789', resetPasswordExpires: Date.now() + 3600000 });
+    // Simulate sendMail returning a result without .accepted
+    mockSendMail.mockResolvedValueOnce({ rejected: ['notaccepted@example.com'] });
+
+    const { default: PasswordController } = await import('../controllers/auth.password.controller.js');
+    const { default: responses } = await import('../../../lib/helpers/responses.js');
+
+    const req = { body: { email: 'notaccepted@example.com' } };
+    const res = {};
+
+    await PasswordController.forgot(req, res);
+
+    // Must NOT call responses.error — mail rejection must not be distinguishable from success
+    expect(responses.error).not.toHaveBeenCalled();
+    // Must still return the exact uniform success message
+    expect(responses.success).toHaveBeenCalledWith(res, UNIFORM_MSG);
   });
 });

@@ -25,7 +25,9 @@ const tokenCookieOptions = {
  * @returns {Promise<void>} Sends a JSON response with reset status.
  */
 const forgot = async (req, res) => {
-  // Uniform success message — never reveal whether an email is registered (anti-enumeration).
+  /**
+   * @returns {void} Sends a uniform 200 response regardless of account existence or mail outcome.
+   */
   const uniformSuccess = () => responses.success(res, 'If that email exists, a reset link has been sent.')({ status: true });
 
   // check input
@@ -74,11 +76,13 @@ const forgot = async (req, res) => {
         appContact: config.app.contact,
       },
     });
-    if (!mail || !mail.accepted) return responses.error(res, 400, 'Bad Request', 'Failure sending email')();
-    return uniformSuccess();
-  } catch (_mailErr) {
-    return responses.error(res, 400, 'Bad Request', 'Failure sending email')();
+    if (!mail || !mail.accepted) {
+      logger.error('auth.password.forgot: mail not accepted', { email: user.email });
+    }
+  } catch (mailErr) {
+    logger.error('auth.password.forgot: sendMail threw', { message: mailErr?.message, stack: mailErr?.stack });
   }
+  return uniformSuccess();
 };
 
 /**

@@ -292,17 +292,20 @@ describe('Auth integration tests:', () => {
       }
     });
 
-    test('forgot password request for non-existent email should return 400', async () => {
+    test('forgot password request for non-existent email should return uniform 200 (no enumeration)', async () => {
       try {
         const result = await agent
           .post('/api/auth/forgot')
           .send({
             email: 'falseemail@gmail.com',
           })
-          .expect(400);
+          .expect(200);
 
-        expect(result.body.message).toBe('Bad Request');
-        expect(result.body.description).toBe('No account with that email has been found');
+        expect(result.body.type).toBe('success');
+        expect(result.body.message).toBe('If that email exists, a reset link has been sent.');
+        // Must NOT contain any hint of account existence
+        expect(JSON.stringify(result.body)).not.toContain('No account');
+        expect(JSON.stringify(result.body)).not.toContain('found');
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -342,7 +345,7 @@ describe('Auth integration tests:', () => {
       }
     });
 
-    test('forgot password request for non-local provider should return 400', async () => {
+    test('forgot password request for non-local provider should return uniform 200 (no provider enumeration)', async () => {
       _userEdited.provider = 'facebook';
 
       try {
@@ -359,9 +362,12 @@ describe('Auth integration tests:', () => {
           .send({
             email: userEdited.email,
           })
-          .expect(400);
-        expect(result.body.message).toBe('Bad Request');
-        expect(result.body.description).toBe(`It seems like you signed up using your ${userEdited.provider} account`);
+          .expect(200);
+        expect(result.body.type).toBe('success');
+        expect(result.body.message).toBe('If that email exists, a reset link has been sent.');
+        // Must NOT reveal the OAuth provider name
+        expect(JSON.stringify(result.body)).not.toContain('facebook');
+        expect(JSON.stringify(result.body)).not.toContain('signed up using');
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -375,16 +381,16 @@ describe('Auth integration tests:', () => {
       }
     });
 
-    test('should initiate password reset process for valid email', async () => {
+    test('should initiate password reset process for valid email and return uniform 200', async () => {
       try {
         const result = await agent
           .post('/api/auth/forgot')
           .send({
             email: user.email,
           })
-          .expect(400);
-        expect(result.body.message).toBe('Bad Request');
-        expect(result.body.description).toBe('Failure sending email');
+          .expect(200);
+        expect(result.body.type).toBe('success');
+        expect(result.body.message).toBe('If that email exists, a reset link has been sent.');
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -410,10 +416,10 @@ describe('Auth integration tests:', () => {
           .send({
             email: user.email,
           })
-          .expect(400);
+          .expect(200);
 
-        expect(result.body.message).toBe('Bad Request');
-        expect(result.body.description).toBe('Failure sending email');
+        expect(result.body.type).toBe('success');
+        expect(result.body.message).toBe('If that email exists, a reset link has been sent.');
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -447,10 +453,10 @@ describe('Auth integration tests:', () => {
           .send({
             email: user.email,
           })
-          .expect(400);
+          .expect(200);
 
-        expect(result.body.message).toBe('Bad Request');
-        expect(result.body.description).toBe('Failure sending email');
+        expect(result.body.type).toBe('success');
+        expect(result.body.message).toBe('If that email exists, a reset link has been sent.');
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -1246,9 +1252,9 @@ describe('Auth integration tests:', () => {
     });
 
     test('should reject password reset with a weak password (zxcvbn strength gate)', async () => {
-      // Trigger forgot to generate a reset token (email send fails in test env, which is expected)
+      // Trigger forgot to generate a reset token — returns uniform 200 regardless of mail outcome
       try {
-        await agent.post('/api/auth/forgot').send({ email: credentials[0].email }).expect(400);
+        await agent.post('/api/auth/forgot').send({ email: credentials[0].email }).expect(200);
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -1277,9 +1283,9 @@ describe('Auth integration tests:', () => {
     });
 
     test('should successfully reset password with a valid token', async () => {
-      // Trigger forgot to generate a reset token (email send fails in test env, which is expected)
+      // Trigger forgot to generate a reset token — returns uniform 200 regardless of mail outcome
       try {
-        await agent.post('/api/auth/forgot').send({ email: credentials[0].email }).expect(400);
+        await agent.post('/api/auth/forgot').send({ email: credentials[0].email }).expect(200);
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
