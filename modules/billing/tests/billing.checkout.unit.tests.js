@@ -311,6 +311,78 @@ describe('Billing service unit tests:', () => {
       expect(callArgs.customer_update).toBeUndefined();
     });
 
+    test('should NOT include allow_promotion_codes when config.stripe.allowPromotionCodes is absent', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_no_promo' } },
+      }));
+
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        stripeCustomerId: 'cus_no_promo',
+      });
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      await BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel');
+
+      const callArgs = mockStripeInstance.checkout.sessions.create.mock.calls[0][0];
+      expect(callArgs.allow_promotion_codes).toBeUndefined();
+    });
+
+    test('should NOT include allow_promotion_codes when config.stripe.allowPromotionCodes is false', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_promo_false', allowPromotionCodes: false } },
+      }));
+
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        stripeCustomerId: 'cus_promo_false',
+      });
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      await BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel');
+
+      const callArgs = mockStripeInstance.checkout.sessions.create.mock.calls[0][0];
+      expect(callArgs.allow_promotion_codes).toBeUndefined();
+    });
+
+    test('should include allow_promotion_codes: true when config.stripe.allowPromotionCodes is true', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_promo_on', allowPromotionCodes: true } },
+      }));
+
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        stripeCustomerId: 'cus_promo_on',
+      });
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      await BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel');
+
+      const callArgs = mockStripeInstance.checkout.sessions.create.mock.calls[0][0];
+      expect(callArgs.allow_promotion_codes).toBe(true);
+    });
+
+    test('should NOT include allow_promotion_codes when allowPromotionCodes is truthy but not strict true (e.g. 1)', async () => {
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_promo_truthy', allowPromotionCodes: 1 } },
+      }));
+
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue({
+        stripeCustomerId: 'cus_promo_truthy',
+      });
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      await BillingService.createCheckout(mockOrganization, 'price_starter_m', 'http://ok', 'http://cancel');
+
+      const callArgs = mockStripeInstance.checkout.sessions.create.mock.calls[0][0];
+      expect(callArgs.allow_promotion_codes).toBeUndefined();
+    });
+
     test('should throw 409 with portalUrl when active subscription exists', async () => {
       jest.unstable_mockModule('../../../config/index.js', () => ({
         default: { stripe: { secretKey: 'sk_test_block_active' } },
