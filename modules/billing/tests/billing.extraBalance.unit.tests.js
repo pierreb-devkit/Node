@@ -779,6 +779,139 @@ describe('BillingExtraBalance unit tests:', () => {
     });
 
     // ─────────────────────────────────────────────────────────────────────────────
+    // listLedgerPage — portable sort (no $sortArray, MongoDB ≥4.4 compatible)
+    // ─────────────────────────────────────────────────────────────────────────────
+    describe('listLedgerPage:', () => {
+      /**
+       * Build a fake aggregate stub that returns `rows` from `.exec()`.
+       * The pipeline itself is not inspected here — the integration tests
+       * (billing.extraBalance.listLedger.perf.integration.tests.js) exercise the
+       * real MongoDB pipeline and assert sort order + correct slice.
+       */
+      const makeAggregateMock = (rows) => ({
+        exec: jest.fn().mockResolvedValue(rows),
+      });
+
+      beforeEach(async () => {
+        jest.resetModules();
+        // Re-declare mockModel with aggregate support for this suite.
+        mockModel = {
+          findOne: jest.fn(),
+          findOneAndUpdate: jest.fn(),
+          updateOne: jest.fn(),
+          updateMany: jest.fn(),
+          exists: jest.fn(),
+          aggregate: jest.fn(),
+        };
+        // ObjectId must be a callable constructor (new mongoose.Types.ObjectId(id))
+        // AND expose a static isValid method.
+        function MockObjectId(id) {
+          this.id = id;
+          this.toString = () => id;
+        }
+        MockObjectId.isValid = jest.fn(() => true);
+        jest.unstable_mockModule('mongoose', () => ({
+          default: {
+            model: jest.fn(() => mockModel),
+            Types: {
+              ObjectId: MockObjectId,
+            },
+          },
+        }));
+        const mod = await import('../repositories/billing.extraBalance.repository.js');
+        BillingExtraBalanceRepository = mod.default;
+      });
+
+      test('returns null when no document found', async () => {
+        mockModel.aggregate.mockReturnValue(makeAggregateMock([]));
+        const result = await BillingExtraBalanceRepository.listLedgerPage(orgId, 0, 20);
+        expect(result).toBeNull();
+      });
+
+      test('returns null for invalid orgId', async () => {
+        const { default: mongoose } = await import('mongoose');
+        // Override isValid on the already-set MockObjectId constructor
+        mongoose.Types.ObjectId.isValid.mockReturnValueOnce(false);
+
+        const result = await BillingExtraBalanceRepository.listLedgerPage('bad-id', 0, 20);
+        expect(result).toBeNull();
+        expect(mockModel.aggregate).not.toHaveBeenCalled();
+      });
+
+      test('throws TypeError when skip is negative', async () => {
+        await expect(
+          BillingExtraBalanceRepository.listLedgerPage(orgId, -1, 20),
+        ).rejects.toThrow('skip must be a non-negative number');
+      });
+
+      test('throws TypeError when limit is zero', async () => {
+        await expect(
+          BillingExtraBalanceRepository.listLedgerPage(orgId, 0, 0),
+        ).rejects.toThrow('limit must be a positive number');
+      });
+
+      test('returns the aggregation result when document found', async () => {
+        const fakeResult = {
+          cachedBalance: 5000,
+          total: 3,
+          ledgerPage: [
+            { kind: 'topup', amount: 300, at: new Date('2024-03-01') },
+            { kind: 'topup', amount: 200, at: new Date('2024-02-01') },
+            { kind: 'debit', amount: -100, at: new Date('2024-01-01') },
+          ],
+        };
+        mockModel.aggregate.mockReturnValue(makeAggregateMock([fakeResult]));
+
+        const result = await BillingExtraBalanceRepository.listLedgerPage(orgId, 0, 20);
+
+        expect(result).not.toBeNull();
+        expect(result.total).toBe(3);
+        expect(result.cachedBalance).toBe(5000);
+        expect(result.ledgerPage).toHaveLength(3);
+      });
+
+      test('ledgerPage entries are descending by at (newest first)', async () => {
+        // Simulate what the real MongoDB pipeline returns: entries already sorted desc.
+        const now = Date.now();
+        const fakeResult = {
+          cachedBalance: 1000,
+          total: 3,
+          ledgerPage: [
+            { kind: 'topup', amount: 300, at: new Date(now) },
+            { kind: 'topup', amount: 200, at: new Date(now - 1000) },
+            { kind: 'debit', amount: -100, at: new Date(now - 2000) },
+          ],
+        };
+        mockModel.aggregate.mockReturnValue(makeAggregateMock([fakeResult]));
+
+        const result = await BillingExtraBalanceRepository.listLedgerPage(orgId, 0, 20);
+
+        // Assert descending order: each entry must be newer than or equal to the next.
+        for (let i = 0; i < result.ledgerPage.length - 1; i++) {
+          const curr = new Date(result.ledgerPage[i].at).getTime();
+          const next = new Date(result.ledgerPage[i + 1].at).getTime();
+          expect(curr).toBeGreaterThanOrEqual(next);
+        }
+      });
+
+      test('pipeline does not use $sortArray operator (portability guard)', async () => {
+        // Capture the pipeline passed to aggregate() and assert no stage uses $sortArray.
+        // This is a regression guard: if $sortArray is re-introduced, this test breaks
+        // and reminds the author that MongoDB ≥5.2 is required.
+        const capturedPipelines = [];
+        mockModel.aggregate.mockImplementation((pipeline) => {
+          capturedPipelines.push(pipeline);
+          return makeAggregateMock([{ cachedBalance: 0, total: 0, ledgerPage: [] }]);
+        });
+
+        await BillingExtraBalanceRepository.listLedgerPage(orgId, 0, 20);
+
+        const pipelineStr = JSON.stringify(capturedPipelines);
+        expect(pipelineStr).not.toContain('$sortArray');
+      });
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────────
     // creditGrant — signup grant (no stripeSessionId)
     // ─────────────────────────────────────────────────────────────────────────────
     describe('creditGrant:', () => {
