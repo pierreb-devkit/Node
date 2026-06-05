@@ -110,4 +110,29 @@ describe('HomeService.getReadinessStatus unit tests:', () => {
       expect(row.status).toBe('warning');
     });
   });
+
+  describe('security (JWT) row — uses shared isJwtSecretWeak', () => {
+    test('warning when jwt.secret is a known default placeholder', async () => {
+      const HomeService = await withConfig({ jwt: { secret: 'WaosSecretKeyExampleToChnageAbsolutely' } });
+      const checks = HomeService.getReadinessStatus();
+      const row = checks.find((c) => c.category === 'security');
+      expect(row.status).toBe('warning');
+      expect(row.message).toContain('known default');
+    });
+
+    test('warning when jwt.secret is too short', async () => {
+      const HomeService = await withConfig({ jwt: { secret: 'tooshort' } });
+      const checks = HomeService.getReadinessStatus();
+      const row = checks.find((c) => c.category === 'security');
+      expect(row.status).toBe('warning');
+    });
+
+    test('ok when jwt.secret is a strong (≥32-char, non-default) secret', async () => {
+      const HomeService = await withConfig({ jwt: { secret: 'a'.repeat(32) } });
+      const checks = HomeService.getReadinessStatus();
+      const row = checks.find((c) => c.category === 'security');
+      expect(row.status).toBe('ok');
+      expect(row.message).toBe('JWT secret is custom');
+    });
+  });
 });

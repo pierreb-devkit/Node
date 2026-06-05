@@ -7,8 +7,11 @@ import { promises as fs } from 'fs';
 import mongoose from 'mongoose';
 
 import config from '../../../config/index.js';
+import configHelper from '../../../lib/helpers/config.js';
 import mailer from '../../../lib/helpers/mailer/index.js';
 import HomeRepository from '../repositories/home.repository.js';
+
+const { isJwtSecretWeak } = configHelper;
 
 /**
  * @desc Check whether a config value is meaningfully set (non-empty, not a DEVKIT placeholder).
@@ -73,19 +76,8 @@ const getReadinessStatus = () => {
     message: domainSet ? 'Domain configured' : 'Domain not configured',
   });
 
-  // security — JWT secret
-  // Re-use the same weakness predicate as validateJwtSecret (config helper):
-  //   empty / whitespace / < 32 chars / known default placeholder.
-  const JWT_DEFAULTS = new Set([
-    'WaosSecretKeyExampleToChnageAbsolutely',
-    'TrawlNodeDevSecret',
-    'ComesNodeDevSecret',
-    'MontaineNodeDevSecret',
-    'PierrebNodeDevSecret',
-    'IsmNodeDevSecret',
-  ]);
-  const jwtSecret = config.jwt?.secret;
-  const jwtInsecure = !jwtSecret || jwtSecret.trim() === '' || jwtSecret.length < 32 || JWT_DEFAULTS.has(jwtSecret);
+  // security — JWT secret (uses shared isJwtSecretWeak from config helper)
+  const jwtInsecure = isJwtSecretWeak(config.jwt?.secret);
   checks.push({
     category: 'security',
     status: jwtInsecure ? 'warning' : 'ok',
