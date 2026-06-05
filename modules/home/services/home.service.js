@@ -74,12 +74,22 @@ const getReadinessStatus = () => {
   });
 
   // security — JWT secret
+  // Re-use the same weakness predicate as validateJwtSecret (config helper):
+  //   empty / whitespace / < 32 chars / known default placeholder.
+  const JWT_DEFAULTS = new Set([
+    'WaosSecretKeyExampleToChnageAbsolutely',
+    'TrawlNodeDevSecret',
+    'ComesNodeDevSecret',
+    'MontaineNodeDevSecret',
+    'PierrebNodeDevSecret',
+    'IsmNodeDevSecret',
+  ]);
   const jwtSecret = config.jwt?.secret;
-  const jwtInsecure = !jwtSecret || jwtSecret.trim() === '' || jwtSecret === 'WaosSecretKeyExampleToChnageAbsolutely';
+  const jwtInsecure = !jwtSecret || jwtSecret.trim() === '' || jwtSecret.length < 32 || JWT_DEFAULTS.has(jwtSecret);
   checks.push({
     category: 'security',
     status: jwtInsecure ? 'warning' : 'ok',
-    message: jwtInsecure ? 'JWT secret is missing or default — change it before production' : 'JWT secret is custom',
+    message: jwtInsecure ? 'JWT secret is missing, too short (< 32 chars), or a known default — change it before production' : 'JWT secret is custom',
   });
 
   // auth — OAuth providers
