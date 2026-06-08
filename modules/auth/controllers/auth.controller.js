@@ -626,6 +626,13 @@ const getConfig = async (req, res) => {
       mail: {
         configured: isMailerConfigured(),
       },
+      app: {
+        version: (() => {
+          const v = config.app?.version;
+          if (v && !String(v).startsWith('DEVKIT_NODE_')) return v;
+          return config.package?.version || 'dev';
+        })(),
+      },
     };
 
     // Authenticated users get extended org config and billing config
