@@ -1548,6 +1548,13 @@ describe('Auth integration tests:', () => {
       const result = await agent.get('/api/auth/config').expect(200);
       expect(result.body.data.billing).toBeUndefined();
     });
+
+    test('should expose app.version in the public config', async () => {
+      const result = await agent.get('/api/auth/config').expect(200);
+      expect(result.body.data.app).toBeDefined();
+      expect(typeof result.body.data.app.version).toBe('string');
+      expect(result.body.data.app.version.length).toBeGreaterThan(0);
+    });
   });
 
   describe('Config endpoint (authenticated)', () => {

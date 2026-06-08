@@ -13,6 +13,7 @@ const config = {
     keywords: 'node, express, mongo, jwt, stack, boilerplate',
     googleAnalyticsTrackingID: 'DEVKIT_NODE_app_googleAnalyticsTrackingID',
     contact: 'contact@example.com',
+    version: '', // app release version — overridden at build via DEVKIT_NODE_app_version (Layer 4 env override); getConfig falls back to package.json version
   },
   swagger: {
     enable: true,
