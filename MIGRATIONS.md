@@ -4,6 +4,24 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Invitations hardening: case-insensitive unique email index + two-phase invite claim (2026-06-10)
+
+Phase 3 of the invitations↔org decouple epic (#3811). Two downstream-relevant changes.
+
+### What changed (this repo)
+
+- **`users.email` is now lowercased + case-insensitively unique.** Inline `unique:true` removed; `lowercase:true` added; an explicit collation index `{ email:1 }, { unique:true, name:'email_ci_unique', collation:{ locale:'en', strength:2 } }` declared on the schema. Email inputs normalized to lowercase in `findByEmail` / get-by-email / `linkProviderByEmail` / `remove`. New migration **`modules/users/migrations/20260610120000-users-email-ci-unique-index.js`**: pre-checks for case-variant duplicate emails and **ABORTS boot if any exist** (no auto-merge), then creates the collation index FIRST and drops the legacy `email_1` (never a window without a unique index). `lib/helpers/errors.js` `getUniqueMessage` now derives the field from `err.keyPattern` (index-name-agnostic) so the collation index still yields a friendly "Email already exists." message.
+- **Invitation `consumingAt` two-phase claim** (new optional field on the `invitations` collection): the signup gate now atomically claims an invite before user creation and finalizes/releases after, with a lazy stale-claim sweep (15 min, no scheduler). Pure additive schema change — no data migration needed.
+
+### Action required for downstream projects (`/update-project`)
+
+1. The model/repository/migration changes are devkit-owned → arrive via `/update-stack` (`--theirs`).
+2. **🔴 Before the first boot that carries the new schema, pre-check prod for case-variant duplicate emails** (`db.users.aggregate([{$group:{_id:{$toLower:'$email'},n:{$sum:1}}},{$match:{n:{$gt:1}}}])`). If any exist, resolve them BEFORE deploy — otherwise the migration aborts boot. (Trawl: handled in epic Phase 9 / #3815.)
+3. Migrations run at boot before `listen()`; the index swap + the `consumingAt` field land automatically once the dupe pre-check passes.
+4. No client/contract change; existing 200/422 signup assertions pass unchanged.
+
+---
+
 ## @casl/ability v6 → v7 (2026-05-22)
 
 `@casl/ability` upgraded from `^6.8.1` to `^7.0.0`.
