@@ -11,7 +11,7 @@ Phase 4 of the invitations↔org decouple epic (#3812). The organization's **own
 ### What changed (this repo)
 
 - **Routes removed** (now 404): `POST /api/organizations/:organizationId/invites`, `GET /api/invites/:token`, `POST /api/invites/:token/accept`. Org **join-requests** (`/requests`, `/requests/:id/approve`, `/requests/:id/reject`, `/membership-requests/mine`) and member CRUD are **unchanged**.
-- **Service/controller** (`organizations.membership.{service,controller}.js`) — `invite` / `acceptInvite` / `getInvite` deleted.
+- **Service/controller** (`organizations.membership.service.js`, `organizations.membershipRequest.{controller,routes}.js`) — `invite` / `acceptInvite` / `getInvite` deleted.
 - **Membership model** (`organizations.membership.model.mongoose.js`) — dropped the `inviteToken` / `invitedEmail` / `inviteExpiresAt` fields, removed `'invited'` (and the never-written `'rejected'`) from the `status` enum, and removed the sparse `inviteToken_1` index. The partial-unique `(userId, organizationId)`, the `organizationId`, and the `(organizationId, status)` indexes are kept.
 - **Constants** — `MEMBERSHIP_STATUSES` now `{ ACTIVE, PENDING }` (`INVITED` and the dead `REJECTED` removed; `rejectRequest` hard-deletes the doc, so `rejected` was never written).
 - **Template** `config/templates/org-invite.html` deleted.

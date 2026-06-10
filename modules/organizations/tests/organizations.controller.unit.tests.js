@@ -5,6 +5,7 @@ import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 
 const mockCrudRemove = jest.fn();
 const mockListByUser = jest.fn();
+const mockLeave = jest.fn();
 
 jest.unstable_mockModule('../services/organizations.crud.service.js', () => ({
   default: {
@@ -15,6 +16,7 @@ jest.unstable_mockModule('../services/organizations.crud.service.js', () => ({
 jest.unstable_mockModule('../services/organizations.membership.service.js', () => ({
   default: {
     listByUser: mockListByUser,
+    leave: mockLeave,
   },
 }));
 
@@ -115,6 +117,41 @@ describe('Organizations controller unit tests:', () => {
       expect(mockListByUser).not.toHaveBeenCalled();
       expect(mockCrudRemove).toHaveBeenCalledTimes(1);
       expect(res.status).not.toHaveBeenCalledWith(422);
+    });
+  });
+
+  describe('leave', () => {
+    test('should call MembershipService.leave with user and org ids and return success', async () => {
+      mockLeave.mockResolvedValue({ success: true });
+      const req = mockReq();
+      const res = mockRes();
+
+      await organizationsController.leave(req, res);
+
+      expect(mockLeave).toHaveBeenCalledWith('u1', 'org1');
+      expect(res.status).not.toHaveBeenCalledWith(422);
+    });
+
+    test('should return 422 when the last owner tries to leave', async () => {
+      mockLeave.mockRejectedValue(new Error('Cannot remove the last owner'));
+      const req = mockReq();
+      const res = mockRes();
+
+      await organizationsController.leave(req, res);
+
+      expect(mockLeave).toHaveBeenCalledTimes(1);
+      expect(res.status).toHaveBeenCalledWith(422);
+    });
+
+    test('should return 422 when the user is not a member', async () => {
+      mockLeave.mockRejectedValue(new Error('You are not a member of this organization'));
+      const req = mockReq();
+      const res = mockRes();
+
+      await organizationsController.leave(req, res);
+
+      expect(mockLeave).toHaveBeenCalledTimes(1);
+      expect(res.status).toHaveBeenCalledWith(422);
     });
   });
 });
