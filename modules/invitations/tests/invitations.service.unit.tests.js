@@ -266,6 +266,17 @@ describe('InvitationService.accept (P8a — referral substrate seam)', () => {
       invitationEvents.removeListener('invitation.accepted', thrower);
     }
   });
+
+  test('returns null immediately when finalize() returns null — no side-effects fire', async () => {
+    // Covers: duplicate-accept / revoked / missing invite → finalize returns null.
+    // referredBy must NOT be written and invitation.accepted must NOT be emitted.
+    InvitationRepository.finalize.mockResolvedValue(null);
+    const invite = { id: 'i1', email: 'a@b.co', invitedBy: 'inviter1' };
+    const result = await InvitationService.accept(invite, 'u1');
+    expect(result).toBeNull();
+    expect(mockUserService.updateById).not.toHaveBeenCalled();
+    expect(emitSpy).not.toHaveBeenCalledWith('invitation.accepted', expect.anything());
+  });
 });
 
 describe('InvitationService.sweepStaleClaims (E2)', () => {

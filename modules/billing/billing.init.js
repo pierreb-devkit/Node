@@ -52,6 +52,12 @@ export default async (app) => {
   // seam works end-to-end (the payload arrives here on every invite acceptance); the
   // actual credit-grant logic lands in #5. Wrapped so a future grant impl can't crash
   // boot/signup. Mirrors the other cross-module listeners wired on this init.
+  /**
+   * @desc No-op referral seam listener for invitation acceptance events (P8a).
+   * Proves the cross-module event contract end-to-end; credit-grant logic lands in #5.
+   * @param {{invitationId: string, email: string, invitedBy: (string|null), acceptedUserId: string}} payload - Accepted invitation event payload.
+   * @returns {void}
+   */
   // eslint-disable-next-line no-unused-vars
   invitationEvents.on('invitation.accepted', (payload) => {
     // TODO(#5): grant referral credits to payload.invitedBy (skip when invitedBy is null).

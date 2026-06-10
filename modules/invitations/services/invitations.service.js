@@ -221,6 +221,9 @@ const finalize = async (id, userId) => {
  * in that case, but to SKIP the referredBy write when there is no inviter (leaving the
  * user's `referredBy` at its `default:null` — writing null is a redundant no-op).
  *
+ * If finalize() returns null (duplicate-accept / revoked / missing invite), the method
+ * returns null immediately — no referral side-effects fire for non-finalized invites.
+ *
  * Both side-effects are best-effort: a referredBy-write failure or a listener throw must
  * NOT roll back an already-burned invite or break the signup response (the invite is
  * finalized first; the referral wiring is downstream of account creation). Errors are
@@ -233,6 +236,12 @@ const finalize = async (id, userId) => {
  */
 const accept = async (invite, userId) => {
   const result = await finalize(invite.id, userId);
+  // Guard: only wire referral side-effects when the invite was actually finalized.
+  // finalize() returns null on duplicate-accept / revoked / missing — we must not
+  // emit a consumed-invite signal or stamp referredBy for an invite that did not land.
+  if (!result) {
+    return null;
+  }
   const invitedBy = invite.invitedBy || null;
   // Stamp the referral link server-side (skip the redundant null write).
   if (invitedBy) {

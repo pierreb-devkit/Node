@@ -87,9 +87,18 @@ export default async () => {
     // `finalize` so auth.controller relays it unchanged (auth never imports us); accept
     // is a superset of finalize. Fires on BOTH the token AND the OAuth path (both go
     // through this same closure), so OAuth-invited users are credited too.
+
+    /**
+     * @desc Finalize accepted invite and run referral side-effects (P8a).
+     * Delegates to InvitationsService.accept so auth stays import-free.
+     * @param {String} userId - the just-created user id
+     * @returns {Promise<Object|null>} finalized invitation document, or null if not finalized
+     */
+    const finalizeInvite = (userId) => InvitationsService.accept(invite, userId);
+
     return {
       invite,
-      finalize: (userId) => InvitationsService.accept(invite, userId),
+      finalize: finalizeInvite,
       release: () => InvitationsService.release(invite.id),
     };
   });
