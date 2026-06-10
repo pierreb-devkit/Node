@@ -14,7 +14,7 @@ const config = {
     in: true, // disable signin
     up: true, // disable signup
     cap: null, // null = unlimited; integer = hard ceiling on TOTAL accounts (invited included)
-    inviteExpiresInDays: 14, // signup invite link validity
+    // inviteExpiresInDays moved to modules/invitations/config (deep-merged into config.sign)
   },
   // jwt is for token authentication
   jwt: {

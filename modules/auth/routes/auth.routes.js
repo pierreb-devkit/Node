@@ -9,8 +9,13 @@ import policy from '../../../lib/middlewares/policy.js';
 import UsersSchema from '../../users/models/users.schema.js';
 import auth from '../controllers/auth.controller.js';
 import authPassword from '../controllers/auth.password.controller.js';
-import invitations from '../controllers/auth.invitation.controller.js';
-import InvitationSchema from '../models/auth.invitation.schema.js';
+// Deprecation alias only — the invitations feature lives in modules/invitations.
+// This block MUST stay here (before the greedy `/api/auth/:strategy` wildcard) so
+// the legacy `/api/auth/invitations*` paths the Vue admin store still calls keep
+// working; it points at the MOVED controller. Canonical mount: /api/invitations
+// (modules/invitations/routes/invitations.routes.js). Remove once Vue migrates (P6).
+import invitations from '../../invitations/controllers/invitations.controller.js';
+import InvitationSchema from '../../invitations/models/invitations.schema.js';
 
 /**
  * Register authentication routes on the Express application.
@@ -20,9 +25,13 @@ import InvitationSchema from '../models/auth.invitation.schema.js';
 export default (app) => {
   const authLimiter = limiters.auth;
 
-  // Signup invitations — public verify + admin CRUD. MUST be declared before the
-  // greedy `/api/auth/:strategy` wildcard below, which would otherwise capture
-  // `/api/auth/invitations`.
+  // Signup invitations — DEPRECATION ALIAS for the canonical /api/invitations mount
+  // (modules/invitations). MUST be declared before the greedy `/api/auth/:strategy`
+  // wildcard below, which would otherwise capture `/api/auth/invitations`. A separate
+  // glob-loaded module cannot guarantee it loads before that wildcard, so the alias
+  // stays here, pointing at the MOVED controller. The `invitationId` param callback is
+  // registered once (app-global) by the canonical invitations.routes.js, so it resolves
+  // for this alias route too — no need (and harmful: double DB lookup) to re-register it.
   app.route('/api/auth/invitations/verify/:token').get(authLimiter, invitations.verify);
   app
     .route('/api/auth/invitations')
@@ -33,7 +42,6 @@ export default (app) => {
     .route('/api/auth/invitations/:invitationId')
     .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
     .delete(invitations.remove);
-  app.param('invitationId', invitations.invitationByID);
 
   // Auth config — optional JWT: public fields for everyone, org details for authenticated users
   /**

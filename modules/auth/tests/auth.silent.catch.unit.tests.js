@@ -39,15 +39,13 @@ describe('auth.controller silent-catch error logging:', () => {
         },
       }));
 
-      jest.unstable_mockModule('../../../modules/auth/services/auth.invitation.service.js', () => ({
+      // auth.controller no longer imports invitation code — it runs the generic
+      // eligibility registry. Mock it inert (no checks registered ⇒ no invite stashed).
+      jest.unstable_mockModule('../../../modules/auth/services/auth.eligibility.js', () => ({
         default: {
-          findValid: jest.fn().mockResolvedValue(null),
-          findValidByEmail: jest.fn().mockResolvedValue(null),
-          consume: jest.fn().mockResolvedValue(null),
-          create: jest.fn(),
-          list: jest.fn(),
-          get: jest.fn(),
-          revoke: jest.fn(),
+          registerSignupEligibility: jest.fn(),
+          assertSignupEligible: jest.fn().mockResolvedValue(undefined),
+          _reset: jest.fn(),
         },
       }));
 

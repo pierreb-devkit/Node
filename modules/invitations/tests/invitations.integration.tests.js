@@ -105,16 +105,56 @@ describe('Signup invitations:', () => {
     return userAgent;
   }
 
-  describe('Signup invitations — admin CRUD', () => {
+  describe('Signup invitations — admin CRUD (canonical /api/invitations)', () => {
     test('admin can create, list, then revoke an invitation', async () => {
       const adminAgent = await createAdminAndSignin();
 
       const created = await adminAgent
-        .post('/api/auth/invitations')
+        .post('/api/invitations')
         .send({ email: 'Invitee@Example.com' });
       expect(created.status).toBe(200);
       expect(created.body.data.email).toBe('invitee@example.com');
       expect(created.body.data.token).toBeDefined();
+      const id = created.body.data.id;
+
+      const listed = await adminAgent.get('/api/invitations');
+      expect(listed.status).toBe(200);
+      expect(listed.body.data.some((i) => i.id === id)).toBe(true);
+
+      const removed = await adminAgent.delete(`/api/invitations/${id}`);
+      expect(removed.status).toBe(200);
+    });
+
+    test('non-admin is forbidden from creating invitations', async () => {
+      const userAgent = await createUserAndSignin();
+      const res = await userAgent.post('/api/invitations').send({ email: 'x@y.co' });
+      expect([401, 403]).toContain(res.status);
+    });
+  });
+
+  describe('Signup invitations — public verify (canonical /api/invitations)', () => {
+    test('verify returns { valid:true, email } for a fresh token and { valid:false } for garbage', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const created = await adminAgent.post('/api/invitations').send({ email: 'verify@example.com' });
+      const { token } = created.body.data;
+
+      const ok = await request(app).get(`/api/invitations/verify/${token}`);
+      expect(ok.status).toBe(200);
+      expect(ok.body.data).toEqual({ valid: true, email: 'verify@example.com' });
+
+      const bad = await request(app).get('/api/invitations/verify/deadbeef');
+      expect(bad.status).toBe(200);
+      expect(bad.body.data.valid).toBe(false);
+    });
+  });
+
+  describe('Deprecation alias — /api/auth/invitations still resolves (until Vue P6)', () => {
+    test('admin CRUD works through the legacy /api/auth/invitations alias', async () => {
+      const adminAgent = await createAdminAndSignin();
+
+      const created = await adminAgent.post('/api/auth/invitations').send({ email: 'alias@example.com' });
+      expect(created.status).toBe(200);
+      expect(created.body.data.email).toBe('alias@example.com');
       const id = created.body.data.id;
 
       const listed = await adminAgent.get('/api/auth/invitations');
@@ -125,26 +165,23 @@ describe('Signup invitations:', () => {
       expect(removed.status).toBe(200);
     });
 
-    test('non-admin is forbidden from creating invitations', async () => {
-      const userAgent = await createUserAndSignin();
-      const res = await userAgent.post('/api/auth/invitations').send({ email: 'x@y.co' });
-      expect([401, 403]).toContain(res.status);
-    });
-  });
-
-  describe('Signup invitations — public verify', () => {
-    test('verify returns { valid:true, email } for a fresh token and { valid:false } for garbage', async () => {
+    test('public verify works through the legacy alias, interchangeable with the canonical mount', async () => {
       const adminAgent = await createAdminAndSignin();
-      const created = await adminAgent.post('/api/auth/invitations').send({ email: 'verify@example.com' });
+      const created = await adminAgent.post('/api/invitations').send({ email: 'alias-verify@example.com' });
       const { token } = created.body.data;
 
-      const ok = await request(app).get(`/api/auth/invitations/verify/${token}`);
-      expect(ok.status).toBe(200);
-      expect(ok.body.data).toEqual({ valid: true, email: 'verify@example.com' });
+      // canonical create → alias verify resolves the SAME invite
+      const viaAlias = await request(app).get(`/api/auth/invitations/verify/${token}`);
+      expect(viaAlias.status).toBe(200);
+      expect(viaAlias.body.data).toEqual({ valid: true, email: 'alias-verify@example.com' });
+    });
 
-      const bad = await request(app).get('/api/auth/invitations/verify/deadbeef');
-      expect(bad.status).toBe(200);
-      expect(bad.body.data.valid).toBe(false);
+    test('the alias did NOT shadow the greedy /api/auth/:strategy wildcard (OAuth routing intact)', async () => {
+      // /api/auth/google must still hit the oauth strategy handler, not 404 as an
+      // unknown invitations sub-path. Passport returns a 3xx redirect (or a strategy
+      // 4xx/5xx) — the contract asserted here is simply "not a 404 Not Found".
+      const res = await request(app).get('/api/auth/google');
+      expect(res.status).not.toBe(404);
     });
   });
 
@@ -162,7 +199,7 @@ describe('Signup invitations:', () => {
     test('signup disabled + valid invite token → account created and invite consumed', async () => {
       // Create admin while signup is still open (beforeEach saves/restores; we set false after admin creation)
       const adminAgent = await createAdminAndSignin();
-      const created = await adminAgent.post('/api/auth/invitations').send({ email: 'guest@example.com' });
+      const created = await adminAgent.post('/api/invitations').send({ email: 'guest@example.com' });
       const { token } = created.body.data;
 
       // Now close public signup — the invite path must still work
@@ -173,14 +210,14 @@ describe('Signup invitations:', () => {
         .send({ email: 'guest@example.com', password: 'Sup3rStr0ng!' });
       expect(res.status).toBe(200);
 
-      const recheck = await request(app).get(`/api/auth/invitations/verify/${token}`);
+      const recheck = await request(app).get(`/api/invitations/verify/${token}`);
       expect(recheck.body.data.valid).toBe(false);
     });
 
     test('signup disabled + invite token but email mismatch → 404', async () => {
       // Create admin and invitation while signup is open
       const adminAgent = await createAdminAndSignin();
-      const created = await adminAgent.post('/api/auth/invitations').send({ email: 'pinned@example.com' });
+      const created = await adminAgent.post('/api/invitations').send({ email: 'pinned@example.com' });
       const { token } = created.body.data;
 
       // Now close public signup
@@ -197,7 +234,7 @@ describe('Signup invitations:', () => {
       // is not blocked. Then snapshot the user count and set cap = total.
       config.sign.up = true; config.sign.cap = null;
       const adminAgent = await createAdminAndSignin();
-      const created = await adminAgent.post('/api/auth/invitations').send({ email: 'capped@example.com' });
+      const created = await adminAgent.post('/api/invitations').send({ email: 'capped@example.com' });
       const { token } = created.body.data;
       // Freeze the cap at the current total — next signup must be blocked
       config.sign.cap = await UserService.count(); // total >= cap → blocked
@@ -217,18 +254,18 @@ describe('Signup invitations:', () => {
     test('signup disabled + valid token but NO email in body → 404, invite not consumed (email-pin not bypassable)', async () => {
       config.sign.up = false; config.sign.cap = null;
       const adminAgent = await createAdminAndSignin();
-      const created = await adminAgent.post('/api/auth/invitations').send({ email: 'pinned2@example.com' });
+      const created = await adminAgent.post('/api/invitations').send({ email: 'pinned2@example.com' });
       const { token } = created.body.data;
       const res = await request(app).post(`/api/auth/signup?inviteToken=${token}`).send({ password: 'Sup3rStr0ng!' });
       expect(res.status).toBe(404);
-      const recheck = await request(app).get(`/api/auth/invitations/verify/${token}`);
+      const recheck = await request(app).get(`/api/invitations/verify/${token}`);
       expect(recheck.body.data.valid).toBe(true); // not consumed
     });
 
     test('invited signup canonicalizes account email to the invite (case-insensitive pin → lowercased)', async () => {
       config.sign.up = false; config.sign.cap = null;
       const adminAgent = await createAdminAndSignin();
-      const created = await adminAgent.post('/api/auth/invitations').send({ email: 'canon@example.com' });
+      const created = await adminAgent.post('/api/invitations').send({ email: 'canon@example.com' });
       const { token } = created.body.data;
       // sign up with an UPPER-CASE variant of the invited email
       const res = await request(app)
@@ -294,7 +331,7 @@ describe('Signup invitations:', () => {
       // Create admin and invitation while signup is still open
       const adminAgent = await createAdminAndSignin();
       const invEmail = 'oauthunverified@example.com';
-      const created = await adminAgent.post('/api/auth/invitations').send({ email: invEmail });
+      const created = await adminAgent.post('/api/invitations').send({ email: invEmail });
       expect(created.status).toBe(200);
 
       // Close public signup — an unverified provider email must NOT open the gate
@@ -332,7 +369,7 @@ describe('Signup invitations:', () => {
       // Create admin and invitation while signup is still open
       const adminAgent = await createAdminAndSignin();
       const invEmail = 'oauth-gate-invited@test.com';
-      const created = await adminAgent.post('/api/auth/invitations').send({ email: invEmail });
+      const created = await adminAgent.post('/api/invitations').send({ email: invEmail });
       expect(created.status).toBe(200);
       const { token } = created.body.data;
 
@@ -354,7 +391,7 @@ describe('Signup invitations:', () => {
       expect(createdUser.email).toBe(invEmail);
 
       // Invite must be consumed — verify token is no longer valid
-      const recheck = await request(app).get(`/api/auth/invitations/verify/${token}`);
+      const recheck = await request(app).get(`/api/invitations/verify/${token}`);
       expect(recheck.body.data.valid).toBe(false);
     });
   });

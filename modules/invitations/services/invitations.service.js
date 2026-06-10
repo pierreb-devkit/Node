@@ -3,7 +3,8 @@
  */
 import crypto from 'crypto';
 
-import InvitationRepository from '../repositories/auth.invitation.repository.js';
+import InvitationRepository from '../repositories/invitations.repository.js';
+import { DEFAULT_INVITE_EXPIRES_IN_DAYS } from '../lib/constants.js';
 import config from '../../../config/index.js';
 import mails from '../../../lib/helpers/mailer/index.js';
 import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
@@ -18,7 +19,7 @@ import logger from '../../../lib/services/logger.js';
  */
 const create = async (email, invitedBy) => {
   const token = crypto.randomBytes(20).toString('hex');
-  const days = config.sign?.inviteExpiresInDays || 14;
+  const days = config.sign?.inviteExpiresInDays || DEFAULT_INVITE_EXPIRES_IN_DAYS;
   const expiresAt = new Date(Date.now() + days * 24 * 3600000);
   const invitation = await InvitationRepository.create({
     email: String(email).toLowerCase().trim(),
@@ -38,7 +39,7 @@ const create = async (email, invitedBy) => {
           appContact: config.app.contact,
         },
       })
-      .catch((err) => logger.warn('auth.invitation: email failed', { message: err?.message }));
+      .catch((err) => logger.warn('invitations: email failed', { message: err?.message }));
   }
   return invitation;
 };
@@ -71,6 +72,41 @@ const findValidByEmail = async (email) => {
 };
 
 /**
+ * @desc Signup eligibility resolver — reproduces the exact local-signup invite gate.
+ * Resolves a valid invite for `token` (email-pinned) and enforces the controller's
+ * "an invite bound to an email must not be honored when the signup supplies no email
+ * to match" rule. Returns the resolved invite (so the caller can canonicalize the
+ * account email + consume it) or null when no invite opens the gate.
+ *
+ * NOTE: this resolves; it does NOT throw. The eligibility hook composes the throw
+ * decision (closed signup AND no invite ⇒ block) in auth — keeping the gate policy
+ * (cap + sign.up) owned by auth, and only the invite lookup owned by this module.
+ * @param {Object} args
+ * @param {String} [args.token] - invite token from the signup request (query/body)
+ * @param {String} [args.email] - email supplied on the signup request body
+ * @returns {Promise<Object|null>} the valid, email-matched invite, or null
+ */
+const assertInvited = async ({ token, email } = {}) => {
+  if (!token) return null;
+  const invite = await findValid(token, email);
+  // An invite is bound to its email; never honor it for a signup that supplies no
+  // email to match. findValid stays lenient on a falsy email because the public
+  // verify endpoint reuses it, so enforce the pin here (mirrors auth.controller).
+  if (invite && invite.email && !email) return null;
+  return invite;
+};
+
+/**
+ * @desc OAuth signup eligibility resolver — resolves a pending invite by the
+ * provider-verified email (no token rides the OAuth redirect). Thin wrapper over
+ * findValidByEmail so the OAuth gate decision stays in auth.controller.
+ * @param {Object} args
+ * @param {String} [args.email] - the provider-verified email
+ * @returns {Promise<Object|null>} the pending invite for this email, or null
+ */
+const assertInvitedByEmail = async ({ email } = {}) => findValidByEmail(email);
+
+/**
  * @desc Atomically consume (mark used) an invitation. Best-effort single-use.
  * @param {String} id
  * @returns {Promise<Object|null>}
@@ -97,4 +133,4 @@ const get = (id) => InvitationRepository.get(id);
  */
 const revoke = (id) => InvitationRepository.remove(id);
 
-export default { create, findValid, findValidByEmail, consume, list, get, revoke };
+export default { create, findValid, findValidByEmail, assertInvited, assertInvitedByEmail, consume, list, get, revoke };
