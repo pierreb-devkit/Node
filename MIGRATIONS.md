@@ -4,6 +4,27 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## org.addMember + membership consent split (2026-06-10)
+
+Phase 5a of the invitations↔org decouple epic (#3813). Replaces the deleted org email-invite with a **consent-safe add-member flow**: an owner/admin adds an *existing* user, creating a **PENDING `owner_add`** membership that the **invited user** must accept — the owner can NEVER approve it (consent invariant).
+
+### What changed (this repo)
+
+- **Membership model** (`organizations.membership.model.mongoose.js`) — new `source` enum field `{ 'join_request', 'owner_add' }` **with NO default** + a `pre('validate')` hook that throws if a PENDING row has no `source` (a forgotten source must fail loudly, never silently become an owner-approvable join request). New optional `addedBy` (ObjectId, audit-only).
+- **Constants** — new `PENDING_SOURCES = { JOIN_REQUEST:'join_request', OWNER_ADD:'owner_add' }`.
+- **Service** (`organizations.membership.service.js`) — `addMember(orgId, userId, role, addedBy)` creates a PENDING owner_add (status set EXPLICITLY — the schema defaults status to `'active'`); rejects if ANY membership already exists for (user, org); last-owner-safe. `acceptMembership(id, userId)` flips PENDING→ACTIVE **only** for a `source:'owner_add'` membership whose `userId` is the caller (sets `currentOrganization` if unset). `createJoinRequest`'s single-pending-global rule is now **source-scoped to join_request** (a pending owner_add no longer blocks a join request, and vice-versa). New `listPendingOwnerAddsByUser`.
+- **Approval surface scoped to join_request** — `listPending`, `listPendingByUser`, and the `requestByID` approve/reject gate now match `source:'join_request'` (with an E17 `source $exists:false` legacy fallback) so an owner_add is **invisible** to the owner-approval surface. The auth-payload `pendingRequests` is unchanged in shape — still the user's own join requests.
+- **Routes** — `POST /api/organizations/:organizationId/members` (owner/admin; CASL `create Membership`) adds a member; `GET /api/organizations/:organizationId/members/search?email=` (owner/admin) looks up a user by **exact email** (GDPR: no fuzzy directory enumeration); `GET /api/membership-requests/mine/pending` lists the user's pending owner_add invitations; `PUT /api/membership-requests/:membershipId/accept` lets the **invited user** accept (auth-only; consent gate in the service, no org-CASL).
+- **Migration** `modules/organizations/migrations/20260610140000-backfill-membership-source.js`: sets `source:'join_request'` on all existing PENDING memberships (they were all join requests pre-change). Idempotent (filter requires `source` absent). Raw collection driver (house style).
+
+### Action required for downstream projects (`/update-project`)
+
+1. Module/model/migration changes are devkit-owned → arrive via `/update-stack` (`--theirs`).
+2. **Migration ORDERING (E17 — critical):** the backfill `20260610140000` MUST run BEFORE the source-filtering code deploys, so no pre-existing join request is hidden from the approval list. The migration runs at boot before `listen()`; on Trawl this is sequenced in epic Phase 9 (#3815). The service/controller carry a temporary `source $exists:false` fallback so legacy rows stay visible even if the code lands first; that fallback is removed in a follow-up once every environment's backfill is confirmed.
+3. No platform-invitation (`sign.cap` / `?inviteToken=`) behavior changes. Vue add-member UI + pending-invitation list land in Vue #4281.
+
+---
+
 ## Remove organization email-invite feature (2026-06-10)
 
 Phase 4 of the invitations↔org decouple epic (#3812). The organization's **own** email-invite flow is **deleted** — distinct from the platform `invitations` module (single-use signup-token gate), which is unchanged. This is the owner-invites-an-email-to-join-their-org flow that lived on the membership doc as `status:'invited'` + `inviteToken` / `invitedEmail` / `inviteExpiresAt`. The 2-step "invite to platform, then add the resulting user as a member" flow replaces it (`org.addMember` lands in a later phase / #3813).
