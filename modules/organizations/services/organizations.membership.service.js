@@ -24,6 +24,12 @@ import { MEMBERSHIP_STATUSES, MEMBERSHIP_ROLES, PENDING_SOURCES } from '../lib/c
  * REMOVE the `{ source: { $exists: false } }` branch once the backfill is
  * confirmed run everywhere (follow-up — see MIGRATIONS.md). After that, every
  * PENDING row has an explicit source (enforced by the model pre-validate guard).
+ *
+ * DOC-LEVEL TWIN: `isOwnerApprovable(source)` (organizations/lib/constants.js) is
+ * the document-level expression of the SAME consent invariant — a PENDING row is
+ * owner-approvable iff it is NOT an owner_add (join_request + legacy no-source).
+ * A Mongo filter can't reuse a predicate, so this `$or` stays; keep the two in
+ * lock-step (this filter selects the rows `isOwnerApprovable` returns true for).
  */
 const joinRequestSourceFilter = {
   $or: [{ source: PENDING_SOURCES.JOIN_REQUEST }, { source: { $exists: false } }],
@@ -307,10 +313,14 @@ const rejectRequest = async (membership) => {
 /**
  * @function findUserByExactEmail
  * @description Look up a single user by EXACT email for the owner/admin add-member
- *   affordance (P5b). GDPR/privacy: exact-match only (no fuzzy name enumeration of
- *   the user directory). Returns minimal identity (id, displayName, email) for a
- *   match, or null. Authorization (owner/admin-only) is enforced at the controller.
- * @param {String} email - The exact email to look up.
+ *   affordance (P5b). "Exact" means exact-after-normalization: the lookup matches
+ *   modulo `normalizeEmail` (lowercased + trimmed), which is correct — that is the
+ *   form emails are stored under (the CI-unique-email index), so this is an exact
+ *   match on the canonical value, NOT a byte-for-byte raw-string match.
+ *   GDPR/privacy: exact-match only (no fuzzy name enumeration of the user
+ *   directory). Returns minimal identity (id, displayName, email) for a match, or
+ *   null. Authorization (owner/admin-only) is enforced at the controller.
+ * @param {String} email - The email to look up (matched lowercased/trimmed).
  * @returns {Promise<{id: String, displayName: String, email: String}|null>} The matched user or null.
  */
 const findUserByExactEmail = async (email) => {
@@ -390,6 +400,11 @@ const addMember = async (organizationId, userId, role, addedBy) => {
  * @returns {Promise<Object|null>} The activated membership, or null if not acceptable by this user.
  */
 const acceptMembership = async (membershipId, acceptingUserId) => {
+  // Self-defending consent gate: an absent caller can never own a membership, and
+  // `String(undefined) === String(membership.userId?._id || undefined)` could
+  // sentinel-collide. Reject up-front so the gate never leans on the route being
+  // auth-only (null → 404, matching the not-found / not-eligible path).
+  if (!acceptingUserId) return null;
   const membership = await MembershipRepository.get(membershipId);
   if (!membership) return null;
 

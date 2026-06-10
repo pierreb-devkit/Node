@@ -4,7 +4,7 @@
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
 import MembershipService from '../services/organizations.membership.service.js';
-import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES, PENDING_SOURCES } from '../lib/constants.js';
+import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES, isOwnerApprovable } from '../lib/constants.js';
 
 /**
  * @function create
@@ -160,10 +160,9 @@ const requestByID = async (req, res, next, id) => {
     // CONSENT GATE (invariant #1): the owner-approval surface (approve/reject) must
     // ONLY ever see JOIN REQUESTS. An owner_add awaits the INVITED USER's consent —
     // it must be invisible here, else an owner could approve it and bypass consent.
-    // E17: pre-backfill legacy rows have no `source` and were all join_requests, so
-    // `source !== OWNER_ADD` (covers both join_request and absent) is the safe gate.
-    const isOwnerAdd = membership?.source === PENDING_SOURCES.OWNER_ADD;
-    if (!membership || membership.status !== MEMBERSHIP_STATUSES.PENDING || isOwnerAdd || membershipOrgId !== organizationId) {
+    // `isOwnerApprovable` is the shared source of truth (covers join_request + the
+    // E17 legacy no-source case); see its doc-level twin note on joinRequestSourceFilter.
+    if (!membership || membership.status !== MEMBERSHIP_STATUSES.PENDING || !isOwnerApprovable(membership.source) || membershipOrgId !== organizationId) {
       return responses.error(res, 404, 'Not Found', 'No pending request with that identifier has been found')();
     }
     req.membershipRequest = membership;

@@ -205,6 +205,20 @@ describe('Membership consent service unit tests:', () => {
       expect(mockUpdate).not.toHaveBeenCalled();
     });
 
+    test('SELF-DEFENDING GATE: an undefined acceptingUserId → null, no activation (gate does not lean on the auth-only route)', async () => {
+      // A valid pending owner_add exists, but the caller id is absent. The early
+      // guard must reject BEFORE the String(undefined) identity compare could
+      // sentinel-collide — proving the gate self-defends regardless of the route.
+      const membership = ownerAddPending();
+      mockGet.mockResolvedValue(membership);
+
+      const result = await MembershipService.acceptMembership('m1', undefined);
+
+      expect(result).toBeNull();
+      expect(membership.status).toBe(MEMBERSHIP_STATUSES.PENDING);
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+
     test('matches the invited user even when userId is a populated sub-doc', async () => {
       const membership = ownerAddPending({ userId: { _id: USER, email: 'a@b.com' } });
       mockGet.mockResolvedValue(membership);
