@@ -21,6 +21,7 @@ InvitationModel.findOneAndUpdate = jest.fn(() => chain);
 InvitationModel.find = jest.fn(() => chain);
 InvitationModel.findById = jest.fn(() => chain);
 InvitationModel.deleteOne = jest.fn(() => chain);
+InvitationModel.updateMany = jest.fn(() => chain);
 
 const isValid = jest.fn(() => true);
 
@@ -56,22 +57,64 @@ describe('InvitationRepository', () => {
     expect(result).toEqual({ id: 'i1', token: 't' });
   });
 
-  test('findByEmail queries unused + unexpired, newest first', async () => {
+  test('findByEmail queries pending + unconsumed + not-in-flight + unexpired, newest first (E2/E8)', async () => {
     exec.mockResolvedValue(null);
     await InvitationRepository.findByEmail('a@b.co');
     const filter = InvitationModel.findOne.mock.calls.at(-1)[0];
     expect(filter.email).toBe('a@b.co');
+    expect(filter.status).toBe('pending'); // E8: only pending opens the gate
     expect(filter.usedAt).toBeNull();
+    expect(filter.consumingAt).toBeNull(); // E2: exclude claimed-but-unfinalized
     expect(filter.expiresAt).toHaveProperty('$gt');
     expect(chain.sort).toHaveBeenCalledWith('-createdAt');
   });
 
-  test('consume atomically marks used with a usedAt:null guard', async () => {
-    exec.mockResolvedValue({ id: 'i1', usedAt: new Date() });
-    await InvitationRepository.consume('i1');
+  test('claim atomically stamps consumingAt with a token+pending+unclaimed+unused+unexpired guard (E2)', async () => {
+    exec.mockResolvedValue({ id: 'i1', consumingAt: new Date() });
+    await InvitationRepository.claim('tok');
     const [filter, update] = InvitationModel.findOneAndUpdate.mock.calls.at(-1);
-    expect(filter).toEqual({ _id: 'i1', usedAt: null });
-    expect(update).toHaveProperty('$set.usedAt');
+    // Self-contained CAS: the filter rejects already-used, expired, or in-flight invites
+    // so a race between findValid and claim cannot bypass expiry or single-use (E2).
+    expect(filter.token).toBe('tok');
+    expect(filter.status).toBe('pending');
+    expect(filter.consumingAt).toBeNull();
+    expect(filter.usedAt).toBeNull();
+    expect(filter.expiresAt).toHaveProperty('$gt'); // unexpired guard
+    expect(update).toHaveProperty('$set.consumingAt');
+  });
+
+  test('finalize marks accepted+used guarded on not-yet-accepted, works claimed OR unclaimed (E2)', async () => {
+    exec.mockResolvedValue({ id: 'i1', status: 'accepted' });
+    await InvitationRepository.finalize('i1', 'u1');
+    const [filter, update] = InvitationModel.findOneAndUpdate.mock.calls.at(-1);
+    expect(filter._id).toBe('i1');
+    expect(filter.acceptedAt).toBeNull(); // idempotent single-accept guard
+    expect(filter.status).toEqual({ $ne: 'revoked' });
+    // Intentionally does NOT require consumingAt — the OAuth path never claims.
+    expect(filter.consumingAt).toBeUndefined();
+    expect(update.$set.status).toBe('accepted');
+    expect(update.$set.acceptedUserId).toBe('u1');
+    expect(update.$set).toHaveProperty('acceptedAt');
+    expect(update.$set).toHaveProperty('usedAt');
+    expect(update.$unset).toEqual({ consumingAt: 1 }); // clears any claim stamp
+  });
+
+  test('release clears consumingAt guarded on not-yet-accepted (E2)', async () => {
+    exec.mockResolvedValue({ id: 'i1' });
+    await InvitationRepository.release('i1');
+    const [filter, update] = InvitationModel.findOneAndUpdate.mock.calls.at(-1);
+    expect(filter).toEqual({ _id: 'i1', acceptedAt: null });
+    expect(update).toEqual({ $unset: { consumingAt: 1 } });
+  });
+
+  test('releaseStaleClaims clears consumingAt for stale, never-finalized claims (E2 sweep)', async () => {
+    exec.mockResolvedValue({ modifiedCount: 3 });
+    const cutoff = new Date(Date.now() - 999000);
+    await InvitationRepository.releaseStaleClaims(cutoff);
+    const [filter, update] = InvitationModel.updateMany.mock.calls.at(-1);
+    expect(filter.consumingAt).toEqual({ $ne: null, $lt: cutoff });
+    expect(filter.acceptedAt).toBeNull();
+    expect(update).toEqual({ $unset: { consumingAt: 1 } });
   });
 
   test('list omits the token and populates invitedBy, newest first', async () => {
@@ -98,10 +141,14 @@ describe('InvitationRepository', () => {
     expect(result).toEqual({ id: 'i1' });
   });
 
-  test('remove deletes by id', async () => {
-    exec.mockResolvedValue({ deletedCount: 1 });
-    const result = await InvitationRepository.remove('i1');
-    expect(InvitationModel.deleteOne).toHaveBeenCalledWith({ _id: 'i1' });
-    expect(result).toEqual({ deletedCount: 1 });
+  test('revoke soft-deletes by id (status:revoked + revokedAt), not deleteOne (E8)', async () => {
+    exec.mockResolvedValue({ id: 'i1', status: 'revoked' });
+    const result = await InvitationRepository.revoke('i1');
+    const [filter, update] = InvitationModel.findOneAndUpdate.mock.calls.at(-1);
+    expect(filter).toEqual({ _id: 'i1' });
+    expect(update.$set.status).toBe('revoked');
+    expect(update.$set).toHaveProperty('revokedAt');
+    expect(InvitationModel.deleteOne).not.toHaveBeenCalled();
+    expect(result).toEqual({ id: 'i1', status: 'revoked' });
   });
 });
