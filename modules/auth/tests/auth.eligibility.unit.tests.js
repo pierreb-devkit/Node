@@ -8,8 +8,14 @@ beforeEach(() => {
 });
 
 describe('auth.eligibility registry', () => {
-  test('assertSignupEligible is a no-op when no checks are registered', async () => {
-    await expect(assertSignupEligible({ email: 'a@b.co' })).resolves.toBeUndefined();
+  test('assertSignupEligible returns null when no checks are registered', async () => {
+    await expect(assertSignupEligible({ email: 'a@b.co' })).resolves.toBeNull();
+  });
+
+  test('returns null when every registered check returns nothing', async () => {
+    registerSignupEligibility(() => {});
+    registerSignupEligibility(async () => undefined);
+    await expect(assertSignupEligible({ email: 'a@b.co' })).resolves.toBeNull();
   });
 
   test('runs every registered check, in order, with the same ctx', async () => {
@@ -21,6 +27,19 @@ describe('auth.eligibility registry', () => {
     expect(order.map((o) => o[0])).toEqual(['a', 'b']);
     expect(order[0][1]).toBe(ctx);
     expect(order[1][1]).toBe(ctx);
+  });
+
+  test('returns the first non-null check result and still runs every check', async () => {
+    const r1 = { invite: { id: 'a' } };
+    const r2 = { invite: { id: 'b' } };
+    const third = jest.fn();
+    registerSignupEligibility(() => undefined); // contributes no result
+    registerSignupEligibility(() => r1); // first non-null → this one wins
+    registerSignupEligibility(() => r2); // later non-null is ignored
+    registerSignupEligibility(third); // but EVERY check still runs (side-effects fire)
+    const result = await assertSignupEligible({});
+    expect(result).toBe(r1);
+    expect(third).toHaveBeenCalledTimes(1);
   });
 
   test('a throwing check aborts the chain (blocks signup) and propagates', async () => {

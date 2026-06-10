@@ -96,7 +96,7 @@ describe('InvitationService.assertInvitedByEmail (OAuth eligibility resolver)', 
     expect(await InvitationService.assertInvitedByEmail({ email: '' })).toBeNull();
     expect(await InvitationService.assertInvitedByEmail({})).toBeNull();
   });
-  test('delegates to findValidByEmail (lowercased) when email present', async () => {
+  test('resolves a pending invite by email (lowercased, trimmed) when email present', async () => {
     const inv = { id: 'i3', email: 'a@b.co', usedAt: null, expiresAt: new Date(Date.now() + 3600000) };
     InvitationRepository.findByEmail.mockResolvedValue(inv);
     const result = await InvitationService.assertInvitedByEmail({ email: 'A@B.CO' });
@@ -139,20 +139,6 @@ describe('InvitationService.create — email sending branch', () => {
     expect(mockMailer.sendMail).toHaveBeenCalledTimes(1);
     // reset for other tests
     mockMailer.isConfigured.mockReturnValue(false);
-  });
-});
-
-describe('InvitationService.findValidByEmail', () => {
-  test('returns null when email is falsy', async () => {
-    expect(await InvitationService.findValidByEmail('')).toBeNull();
-    expect(await InvitationService.findValidByEmail(null)).toBeNull();
-  });
-  test('delegates to repository when email is provided', async () => {
-    const inv = { id: '3', email: 'a@b.co', usedAt: null, expiresAt: new Date(Date.now() + 3600000) };
-    InvitationRepository.findByEmail.mockResolvedValue(inv);
-    const result = await InvitationService.findValidByEmail('A@B.CO');
-    expect(InvitationRepository.findByEmail).toHaveBeenCalledWith('a@b.co');
-    expect(result).toBe(inv);
   });
 });
 

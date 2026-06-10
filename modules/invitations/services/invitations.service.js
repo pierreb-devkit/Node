@@ -61,17 +61,6 @@ const findValid = async (token, email) => {
 };
 
 /**
- * @desc Resolve a valid invitation by email (OAuth path, where no token rides
- * the redirect). Matches the provider's verified email against a pending invite.
- * @param {String} email
- * @returns {Promise<Object|null>}
- */
-const findValidByEmail = async (email) => {
-  if (!email) return null;
-  return InvitationRepository.findByEmail(String(email).toLowerCase().trim());
-};
-
-/**
  * @desc Signup eligibility resolver — reproduces the exact local-signup invite gate.
  * Resolves a valid invite for `token` (email-pinned) and enforces the controller's
  * "an invite bound to an email must not be honored when the signup supplies no email
@@ -97,14 +86,18 @@ const assertInvited = async ({ token, email } = {}) => {
 };
 
 /**
- * @desc OAuth signup eligibility resolver — resolves a pending invite by the
- * provider-verified email (no token rides the OAuth redirect). Thin wrapper over
- * findValidByEmail so the OAuth gate decision stays in auth.controller.
+ * @desc OAuth signup eligibility resolver — resolves a valid pending invite by the
+ * provider-verified email (no token rides the OAuth redirect). Matches the email
+ * against a pending invite (lowercased, trimmed); the OAuth gate decision (whether
+ * to honor it) stays in auth.controller.
  * @param {Object} args
  * @param {String} [args.email] - the provider-verified email
  * @returns {Promise<Object|null>} the pending invite for this email, or null
  */
-const assertInvitedByEmail = async ({ email } = {}) => findValidByEmail(email);
+const assertInvitedByEmail = async ({ email } = {}) => {
+  if (!email) return null;
+  return InvitationRepository.findByEmail(String(email).toLowerCase().trim());
+};
 
 /**
  * @desc Atomically consume (mark used) an invitation. Best-effort single-use.
@@ -133,4 +126,4 @@ const get = (id) => InvitationRepository.get(id);
  */
 const revoke = (id) => InvitationRepository.remove(id);
 
-export default { create, findValid, findValidByEmail, assertInvited, assertInvitedByEmail, consume, list, get, revoke };
+export default { create, findValid, assertInvited, assertInvitedByEmail, consume, list, get, revoke };

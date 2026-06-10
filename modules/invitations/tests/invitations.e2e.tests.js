@@ -92,7 +92,7 @@ describe('Invitations E2E:', () => {
       .send({ email: guestEmail, password });
     expect(blocked.status).toBe(404);
 
-    // With the token the guest gets in (eligibility hook resolves + stashes the invite)
+    // With the token the guest gets in (eligibility hook resolves + returns the invite)
     const signup = await request(app)
       .post(`/api/auth/signup?inviteToken=${token}`)
       .send({ email: guestEmail, password })

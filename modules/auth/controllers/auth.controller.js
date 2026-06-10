@@ -70,15 +70,16 @@ const signup = async (req, res) => {
     // invited users included; (2) eligibility — public signup open OR a valid
     // invite token. The eligibility check is supplied by optional modules via the
     // generic registry (auth never imports invitation code). The invitations
-    // checker resolves the email-pinned invite and stashes it on `req._signupInvite`
-    // so this controller can canonicalize the account email + consume it below.
+    // checker resolves the email-pinned invite and RETURNS `{ invite, consume }`,
+    // which auth relays back here verbatim (opaque result) so this controller can
+    // canonicalize the account email + consume it below.
     // Short-circuit count() when cap is not set (null = unlimited) to avoid a
     // collection-wide count on every signup request for uncapped deployments.
     const cap = config.sign.cap != null ? Number(config.sign.cap) : null;
     const capReached = cap != null && Number.isFinite(cap) && (await UserService.count()) >= cap;
-    await Eligibility.assertSignupEligible({ email: req.body.email, body: req.body, req });
+    const eligibility = await Eligibility.assertSignupEligible({ email: req.body.email, body: req.body, req });
     // null when no optional module opened the gate (registry empty or no valid invite).
-    const invite = req._signupInvite || null;
+    const invite = eligibility?.invite || null;
     if (capReached || (!config.sign.up && !invite)) {
       return responses.error(res, 404, 'Signup error', 'Registration is currently deactivated')();
     }
@@ -147,9 +148,9 @@ const signup = async (req, res) => {
     // Single-use: consume only when the invite actually opened the gate (signup
     // was closed, so the invite was required). When signup is open, a token can
     // be presented but is not required — consuming it would silently burn it.
-    // Consume runs through the stashed closure (invitations module owns consume;
-    // auth never imports invitation code).
-    if (invite && !config.sign.up) await req._consumeSignupInvite?.();
+    // Consume runs through the closure returned by the eligibility checker
+    // (invitations module owns consume; auth never imports invitation code).
+    if (invite && !config.sign.up) await eligibility?.consume?.();
 
     const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
       expiresIn: config.jwt.expiresIn,
@@ -448,16 +449,15 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
     // provider-verified email — the checker honors it only when emailVerifiedByProvider.
     // Skip the hook entirely when signup is open: a token/invite is presented but not
     // required, and resolving one would silently burn it (preserves prior short-circuit).
-    // `oauthCtx` is the synthetic stash carrier (checkOAuthUserProfile has no real req).
-    const oauthCtx = {};
+    // The checker returns `{ invite, consume }` (opaque to auth); no synthetic req carrier.
+    let oauthEligibility = null;
     if (!config.sign.up) {
-      await Eligibility.assertSignupEligible({
+      oauthEligibility = await Eligibility.assertSignupEligible({
         email: profil.email,
-        req: oauthCtx,
         oauth: { emailVerifiedByProvider: hasVerifiedProviderEmail },
       });
     }
-    const oauthInvite = oauthCtx._signupInvite || null;
+    const oauthInvite = oauthEligibility?.invite || null;
     if (capReached || (!config.sign.up && !oauthInvite)) {
       // Mirror the local signup endpoint's error shape so clients see the same
       // `message`/`description` regardless of signup method (see `signup` above).
@@ -482,8 +482,8 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
     // else return req.body with the data after Zod validation
     if (oauthInvite) result.value.email = oauthInvite.email;
     const createdUser = await UserService.create(result.value);
-    // Consume through the stashed closure (invitations owns consume; auth stays import-free).
-    if (oauthInvite) await oauthCtx._consumeSignupInvite?.();
+    // Consume through the returned closure (invitations owns consume; auth stays import-free).
+    if (oauthInvite) await oauthEligibility?.consume?.();
     return createdUser;
   } catch (err) {
     if (err instanceof AppError) throw err;

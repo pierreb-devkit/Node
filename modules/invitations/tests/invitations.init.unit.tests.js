@@ -2,10 +2,12 @@ import { jest } from '@jest/globals';
 
 /**
  * Init unit tests — verify the module plugs into auth at boot:
- *   (a) it registers exactly one signup-eligibility checker (via the auth registry),
+ *   (a) calling init() once registers exactly one signup-eligibility checker
+ *       (re-running init must not duplicate it — asserted by checks.length),
  *   (b) it wires an 'error' listener on the invitation events emitter (crash guard),
- *   (c) the registered checker resolves + stashes the invite (+ consume closure) on
- *       the ctx carrier for the local-signup and OAuth paths, honoring E13/E5/E7.
+ *   (c) the registered checker resolves the invite and RETURNS `{ invite, consume }`
+ *       (the return-value seam — no stashing) for the local-signup and OAuth paths,
+ *       honoring E13/E5/E7.
  *
  * The auth eligibility registry is the REAL module (the integration surface under
  * test); the invitations service is mocked so no DB is touched.
@@ -37,9 +39,12 @@ afterEach(() => {
 });
 
 describe('invitations.init', () => {
-  test('(a) registers exactly one signup-eligibility checker', async () => {
-    // A second init would register a second checker; _reset in beforeEach keeps it at one.
-    // Probe indirectly: with the service stubbed to resolve an invite, a single run stashes once.
+  test('(a) one init() registers exactly one checker', async () => {
+    // beforeEach ran _reset() then init() once. If init had registered the checker
+    // more than once, a SINGLE assertSignupEligible would run it >1× (assertInvited
+    // called >1×). One resolver call ⇒ exactly one checker registered per init().
+    // (init() is intentionally not idempotent — each call appends a checker — so the
+    // module is wired exactly once at boot via a single init(), which this asserts.)
     mockService.assertInvited.mockResolvedValue({ id: 'i1', email: 'a@b.co' });
     const req = { query: { inviteToken: 'tok' }, body: { email: 'a@b.co' } };
     await Eligibility.assertSignupEligible({ email: 'a@b.co', body: req.body, req });
@@ -54,46 +59,49 @@ describe('invitations.init', () => {
     expect(mockLogger.error).toHaveBeenCalledWith('[invitationEvents] uncaught error', { err });
   });
 
-  test('(c) local signup: reads ?inviteToken= (E13) and stashes invite + consume closure', async () => {
+  test('(c) local signup: reads ?inviteToken= (E13) and returns { invite, consume }', async () => {
     const invite = { id: 'i7', email: 'a@b.co' };
     mockService.assertInvited.mockResolvedValue(invite);
     const req = { query: { inviteToken: 'tok' }, body: { email: 'a@b.co' } };
-    await Eligibility.assertSignupEligible({ email: 'a@b.co', body: req.body, req });
+    const result = await Eligibility.assertSignupEligible({ email: 'a@b.co', body: req.body, req });
     expect(mockService.assertInvited).toHaveBeenCalledWith({ token: 'tok', email: 'a@b.co' });
-    expect(req._signupInvite).toBe(invite);
-    // consume closure burns exactly this invite id
-    await req._consumeSignupInvite();
+    expect(result.invite).toBe(invite);
+    // returned consume closure burns exactly this invite id
+    await result.consume();
     expect(mockService.consume).toHaveBeenCalledWith('i7');
   });
 
-  test('(c) local signup: falls back to body.inviteToken when no query token', async () => {
+  test('(c) checker honors a body token when called directly (HTTP signup strips it — query is the real source)', async () => {
+    // On the real HTTP signup path the model middleware strips unknown body keys
+    // (incl. inviteToken) BEFORE this checker runs, so query is the effective source.
+    // This asserts only the checker's isolated contract: when invoked directly (non-HTTP /
+    // future-whitelisted callers) with a body token and no query token, it reads the body.
     mockService.assertInvited.mockResolvedValue(null);
     const req = { query: {}, body: { email: 'a@b.co', inviteToken: 'btok' } };
-    await Eligibility.assertSignupEligible({ email: 'a@b.co', body: req.body, req });
+    const result = await Eligibility.assertSignupEligible({ email: 'a@b.co', body: req.body, req });
     expect(mockService.assertInvited).toHaveBeenCalledWith({ token: 'btok', email: 'a@b.co' });
-    expect(req._signupInvite).toBeNull();
-    expect(req._consumeSignupInvite).toBeNull();
+    expect(result).toBeNull(); // no eligible invite ⇒ no result relayed to auth
   });
 
-  test('(c) OAuth: resolves by email only when provider verified it (E7)', async () => {
+  test('(c) OAuth: resolves by email only when provider verified it (E7), returns { invite, consume }', async () => {
     const invite = { id: 'o1', email: 'v@b.co' };
     mockService.assertInvitedByEmail.mockResolvedValue(invite);
-    const carrier = {};
-    await Eligibility.assertSignupEligible({ email: 'v@b.co', req: carrier, oauth: { emailVerifiedByProvider: true } });
+    const result = await Eligibility.assertSignupEligible({ email: 'v@b.co', oauth: { emailVerifiedByProvider: true } });
     expect(mockService.assertInvitedByEmail).toHaveBeenCalledWith({ email: 'v@b.co' });
-    expect(carrier._signupInvite).toBe(invite);
+    expect(result.invite).toBe(invite);
+    await result.consume();
+    expect(mockService.consume).toHaveBeenCalledWith('o1');
   });
 
   test('(c) OAuth: does NOT resolve an invite when the provider email is unverified (E7)', async () => {
-    const carrier = {};
-    await Eligibility.assertSignupEligible({ email: 'v@b.co', req: carrier, oauth: { emailVerifiedByProvider: false } });
+    const result = await Eligibility.assertSignupEligible({ email: 'v@b.co', oauth: { emailVerifiedByProvider: false } });
     expect(mockService.assertInvitedByEmail).not.toHaveBeenCalled();
-    expect(carrier._signupInvite).toBeNull();
-    expect(carrier._consumeSignupInvite).toBeNull();
+    expect(result).toBeNull();
   });
 
-  test('(c) is a no-op when ctx carries no carrier (defensive)', async () => {
-    await expect(Eligibility.assertSignupEligible({ email: 'a@b.co' })).resolves.toBeUndefined();
+  test('(c) returns null (no result) when ctx carries no carrier on the local path (defensive)', async () => {
+    const result = await Eligibility.assertSignupEligible({ email: 'a@b.co' });
+    expect(result).toBeNull();
     expect(mockService.assertInvited).not.toHaveBeenCalled();
     expect(mockService.assertInvitedByEmail).not.toHaveBeenCalled();
   });
