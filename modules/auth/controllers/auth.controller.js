@@ -70,17 +70,32 @@ const signup = async (req, res) => {
     // invited users included; (2) eligibility — public signup open OR a valid
     // invite token. The eligibility check is supplied by optional modules via the
     // generic registry (auth never imports invitation code). The invitations
-    // checker resolves the email-pinned invite and RETURNS `{ invite, consume }`,
-    // which auth relays back here verbatim (opaque result) so this controller can
-    // canonicalize the account email + consume it below.
-    // Short-circuit count() when cap is not set (null = unlimited) to avoid a
-    // collection-wide count on every signup request for uncapped deployments.
-    const cap = config.sign.cap != null ? Number(config.sign.cap) : null;
-    const capReached = cap != null && Number.isFinite(cap) && (await UserService.count()) >= cap;
-    const eligibility = await Eligibility.assertSignupEligible({ email: req.body.email, body: req.body, req });
+    // checker resolves the email-pinned invite, atomically CLAIMS it (the replay
+    // guard, E2), and RETURNS `{ invite, finalize, release }`, which auth relays
+    // back here verbatim (opaque result) so this controller can canonicalize the
+    // account email + finalize/release the invite below.
+    // E4: cap is computed by computeSignupCapacity (single source of truth shared
+    // with getConfig) — a BLANK cap ('') means UNCAPPED. The old inline Number('')→0
+    // hard-rejected everyone while getConfig advertised the deployment as open.
+    // remaining<=0 (and cap>0) ⇒ the ceiling is reached. Accepted TOCTOU: cap is
+    // checked then the user created non-atomically, so a burst of concurrent signups
+    // can overshoot the cap by a few accounts (a small beta overshoot, tolerated).
+    const { cap, remaining } = await computeSignupCapacity(config.sign?.cap, UserService.count);
+    const capReached = cap != null && cap > 0 && remaining <= 0;
+    // `signupOpen` tells the checker whether the invite is REQUIRED to open the gate.
+    // When public signup is open a token may be PRESENTED but is not required — the
+    // checker must then resolve WITHOUT claiming (E2), so an open-signup signup never
+    // burns / locks a presented token (preserves the P2 `!config.sign.up` gating).
+    const eligibility = await Eligibility.assertSignupEligible({ email: req.body.email, body: req.body, req, signupOpen: !!config.sign.up });
     // null when no optional module opened the gate (registry empty or no valid invite).
     const invite = eligibility?.invite || null;
     if (capReached || (!config.sign.up && !invite)) {
+      // On the closed-signup path the eligibility checker CLAIMED the invite (E2)
+      // before the cap was found exhausted — release it so a cap bump later does not
+      // leave it stuck mid-claim (the lazy sweep would also recover it; this is
+      // immediate). Only the closed-signup path claims, so gate the release on it to
+      // avoid a no-op release (+ misleading log) on an open-signup presented token.
+      if (invite && !config.sign.up) await eligibility?.release?.();
       return responses.error(res, 404, 'Signup error', 'Registration is currently deactivated')();
     }
     // Force default role on public signup — clients must not self-assign admin
@@ -104,14 +119,22 @@ const signup = async (req, res) => {
         }, 'recover');
         // Send verification email (best-effort, do not block signup)
         sendVerificationEmail(user, verificationToken).catch((err) => logger.warn('auth.signup: verification email failed', { message: err?.message, stack: err?.stack }));
-      } else {
-        // No mailer configured — auto-verify so dev/test are not blocked
+      } else if (!invite) {
+        // No mailer configured — auto-verify so dev/test are not blocked.
+        // E6: do NOT auto-verify an INVITE-created account even with the mailer off.
+        // The token proves the INVITER knew the address, not that the SIGNER controls
+        // it — an invited account must follow the normal verification path (it just
+        // won't receive the email when the mailer is off, same as any account).
         const brutUser = await UserService.getBrut({ id: user.id });
         await UserService.update(brutUser, { emailVerified: true }, 'recover');
         user.emailVerified = true;
       }
     } catch (verifyErr) {
       try { await UserService.remove(user); } catch (_cleanupErr) { /* best-effort */ }
+      // E2: a claimed invite must be released on a pre-response failure so the token
+      // is reusable (it was only claimed, never finalized). Only the closed-signup
+      // path claimed, so gate the release on it (open signup never claimed).
+      if (invite && !config.sign.up) { try { await eligibility?.release?.(); } catch (_releaseErr) { /* best-effort */ } }
       throw verifyErr;
     }
 
@@ -127,6 +150,9 @@ const signup = async (req, res) => {
       } catch (_cleanupErr) {
         // Best-effort cleanup; log but don't mask original error
       }
+      // E2: release the claimed invite on org-provisioning failure so it can retry
+      // (only the closed-signup path claimed — open signup never did).
+      if (invite && !config.sign.up) { try { await eligibility?.release?.(); } catch (_releaseErr) { /* best-effort */ } }
       throw orgErr;
     }
 
@@ -145,12 +171,14 @@ const signup = async (req, res) => {
       });
     } catch (_) { /* analytics must not break auth */ }
 
-    // Single-use: consume only when the invite actually opened the gate (signup
-    // was closed, so the invite was required). When signup is open, a token can
-    // be presented but is not required — consuming it would silently burn it.
-    // Consume runs through the closure returned by the eligibility checker
-    // (invitations module owns consume; auth never imports invitation code).
-    if (invite && !config.sign.up) await eligibility?.consume?.();
+    // E2 single-use: FINALIZE only when the invite actually opened the gate (signup
+    // was closed, so the invite was required). When signup is open, a token can be
+    // presented but is not required — and the checker never claimed it, so there is
+    // nothing to finalize. finalize burns single-use (usedAt + status:'accepted')
+    // and records the user; it runs through the closure returned by the eligibility
+    // checker (invitations module owns it; auth never imports invitation code). This
+    // is the last pre-response step, so by here every earlier failure already released.
+    if (invite && !config.sign.up) await eligibility?.finalize?.(user._id || user.id);
 
     const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
       expiresIn: config.jwt.expiresIn,
@@ -437,9 +465,12 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
   try {
     // Same two gates as local signup. OAuth can't carry an invite token through
     // the redirect, so the invite is matched on the provider's verified email.
-    // Short-circuit count() when cap is not set (null = unlimited).
-    const oauthCap = config.sign.cap != null ? Number(config.sign.cap) : null;
-    const capReached = oauthCap != null && Number.isFinite(oauthCap) && (await UserService.count()) >= oauthCap;
+    // E4: cap via computeSignupCapacity (single source of truth shared with getConfig
+    // and the local signup path) — a BLANK cap ('') means UNCAPPED, not 0. The old
+    // inline Number('')→0 hard-rejected every OAuth signup while getConfig advertised
+    // the deployment as open. Same accepted small-beta TOCTOU overshoot as local signup.
+    const { cap: oauthCap, remaining: oauthRemaining } = await computeSignupCapacity(config.sign?.cap, UserService.count);
+    const capReached = oauthCap != null && oauthCap > 0 && oauthRemaining <= 0;
     // Only honor an OAuth invite when the provider verified the email — otherwise a
     // provider returning an arbitrary unverified email could open the gate on an
     // invite meant for someone else.
@@ -449,7 +480,7 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
     // provider-verified email — the checker honors it only when emailVerifiedByProvider.
     // Skip the hook entirely when signup is open: a token/invite is presented but not
     // required, and resolving one would silently burn it (preserves prior short-circuit).
-    // The checker returns `{ invite, consume }` (opaque to auth); no synthetic req carrier.
+    // The checker returns `{ invite, finalize, release }` (opaque to auth); no synthetic req carrier.
     let oauthEligibility = null;
     if (!config.sign.up) {
       oauthEligibility = await Eligibility.assertSignupEligible({
@@ -482,8 +513,13 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
     // else return req.body with the data after Zod validation
     if (oauthInvite) result.value.email = oauthInvite.email;
     const createdUser = await UserService.create(result.value);
-    // Consume through the returned closure (invitations owns consume; auth stays import-free).
-    if (oauthInvite) await oauthEligibility?.consume?.();
+    // E2: FINALIZE through the returned closure (invitations owns it; auth stays
+    // import-free). OAuth resolves the invite by the provider-verified email and
+    // never CLAIMS it (no token on the redirect), so there is no consumingAt to
+    // release on failure here — finalize marks it accepted+used (single-use). The
+    // finalize filter (acceptedAt:null) + the unique-email index are the single-use
+    // backstop against two concurrent OAuth signups for the same invited email.
+    if (oauthInvite) await oauthEligibility?.finalize?.(createdUser._id || createdUser.id);
     return createdUser;
   } catch (err) {
     if (err instanceof AppError) throw err;

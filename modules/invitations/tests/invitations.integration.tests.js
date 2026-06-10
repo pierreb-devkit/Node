@@ -395,4 +395,193 @@ describe('Signup invitations:', () => {
       expect(recheck.body.data.valid).toBe(false);
     });
   });
+
+  describe('E2 two-phase claim/finalize hardening', () => {
+    let InvitationService;
+    let InvitationRepository;
+    let originalUp; let originalCap;
+
+    beforeAll(async () => {
+      InvitationService = (await import(path.resolve('./modules/invitations/services/invitations.service.js'))).default;
+      InvitationRepository = (await import(path.resolve('./modules/invitations/repositories/invitations.repository.js'))).default;
+    });
+
+    beforeEach(() => { originalUp = config.sign.up; originalCap = config.sign.cap; });
+    afterEach(async () => {
+      config.sign.up = originalUp; config.sign.cap = originalCap;
+      for (const email of ['e2-replay@example.com', 'e2-claimed@example.com', 'e2-stale@example.com']) {
+        try {
+          const existing = await UserService.getBrut({ email });
+          if (existing) await UserService.remove(existing);
+        } catch (_) { /* cleanup */ }
+      }
+    });
+
+    test('replay: a 2nd signup with the same token is rejected (the invite was finalized) ', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const created = await adminAgent.post('/api/invitations').send({ email: 'e2-replay@example.com' });
+      const { token } = created.body.data;
+      config.sign.up = false; config.sign.cap = null;
+
+      const first = await request(app)
+        .post(`/api/auth/signup?inviteToken=${token}`)
+        .send({ email: 'e2-replay@example.com', password: 'Sup3rStr0ng!' });
+      expect(first.status).toBe(200);
+
+      // Replay the SAME token (even after deleting the user) — the invite is now
+      // accepted/used, so the claim finds nothing pending and signup is blocked.
+      const replayUser = await UserService.getBrut({ email: 'e2-replay@example.com' });
+      if (replayUser) await UserService.remove(replayUser);
+      const second = await request(app)
+        .post(`/api/auth/signup?inviteToken=${token}`)
+        .send({ email: 'e2-replay@example.com', password: 'Sup3rStr0ng!' });
+      expect(second.status).not.toBe(200);
+    });
+
+    test('a claimed-but-unfinalized invite is INVISIBLE to BOTH findValid and findValidByEmail (bypass guard)', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const email = 'e2-claimed@example.com';
+      const created = await adminAgent.post('/api/invitations').send({ email });
+      const { token } = created.body.data;
+
+      // Pre-state: both resolvers see it as valid.
+      expect(await InvitationService.findValid(token, email)).not.toBeNull();
+      expect(await InvitationService.findValidByEmail(email)).not.toBeNull();
+
+      // Atomically CLAIM it (simulating an in-flight signup that has not finalized).
+      const claimed = await InvitationRepository.claim(token);
+      expect(claimed).not.toBeNull();
+
+      // Now it must be invisible to BOTH paths — otherwise the OAuth email-resolved
+      // path (or a concurrent token signup) could re-accept it → single-use bypass.
+      expect(await InvitationService.findValid(token, email)).toBeNull();
+      expect(await InvitationService.findValidByEmail(email)).toBeNull();
+      // The public verify endpoint (which uses findValid) also reports invalid.
+      const verify = await request(app).get(`/api/invitations/verify/${token}`);
+      expect(verify.body.data.valid).toBe(false);
+    });
+
+    test('OPEN signup + presented token: the token is NOT claimed/burned, invite stays valid (P2 gating preserved)', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const email = 'e2-opensignup@example.com';
+      const created = await adminAgent.post('/api/invitations').send({ email });
+      const { token } = created.body.data;
+
+      // Public signup OPEN: a token may be presented but is not required.
+      config.sign.up = true; config.sign.cap = null;
+      const res = await request(app)
+        .post(`/api/auth/signup?inviteToken=${token}`)
+        .send({ email, password: 'Sup3rStr0ng!' });
+      expect(res.status).toBe(200);
+
+      // The invite must remain VALID (presented, not consumed) — not stuck mid-claim.
+      const verify = await request(app).get(`/api/invitations/verify/${token}`);
+      expect(verify.body.data.valid).toBe(true);
+
+      try {
+        const u = await UserService.getBrut({ email });
+        if (u) await UserService.remove(u);
+      } catch (_) { /* cleanup */ }
+    });
+
+    test('crash recovery: a stale claim (older than the window) is swept and the invite becomes reusable', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const email = 'e2-stale@example.com';
+      const created = await adminAgent.post('/api/invitations').send({ email });
+      const { token } = created.body.data;
+
+      // Claim, then SIMULATE A CRASH between claim and finalize by back-dating
+      // consumingAt past the staleness window (no acceptedAt was ever set).
+      const claimed = await InvitationRepository.claim(token);
+      const Invitation = (await import('mongoose')).default.model('Invitation');
+      await Invitation.updateOne(
+        { _id: claimed._id },
+        { $set: { consumingAt: new Date(Date.now() - 60 * 60 * 1000) } }, // 1h ago » 15min window
+      ).exec();
+
+      // While still stale-claimed (before any sweep read), it is invalid.
+      // findValid itself sweeps lazily, so call the sweep explicitly first to assert
+      // the recovery mechanism, THEN confirm the invite reads valid again.
+      await InvitationService.sweepStaleClaims();
+      const swept = await Invitation.findById(claimed._id).exec();
+      expect(swept.consumingAt == null).toBe(true); // claim released
+      expect(await InvitationService.findValid(token, email)).not.toBeNull(); // reusable again
+    });
+  });
+
+  describe('E6 no auto-verify on invite (mailer off)', () => {
+    let originalUp; let originalCap;
+    beforeEach(() => { originalUp = config.sign.up; originalCap = config.sign.cap; });
+    afterEach(async () => {
+      config.sign.up = originalUp; config.sign.cap = originalCap;
+      try {
+        const existing = await UserService.getBrut({ email: 'e6-invite@example.com' });
+        if (existing) await UserService.remove(existing);
+      } catch (_) { /* cleanup */ }
+    });
+
+    test('mailer off + invite ⇒ account created but NOT emailVerified (token proves inviter, not signer)', async () => {
+      // The test env has no mailer configured (isMailerConfigured() is false), so the
+      // mailer-off branch runs. An OPEN public signup auto-verifies in that branch,
+      // but an INVITE-gated account must NOT be auto-verified (E6).
+      const adminAgent = await createAdminAndSignin();
+      const created = await adminAgent.post('/api/invitations').send({ email: 'e6-invite@example.com' });
+      const { token } = created.body.data;
+      config.sign.up = false; config.sign.cap = null;
+
+      const res = await request(app)
+        .post(`/api/auth/signup?inviteToken=${token}`)
+        .send({ email: 'e6-invite@example.com', password: 'Sup3rStr0ng!' });
+      expect(res.status).toBe(200);
+
+      const brut = await UserService.getBrut({ email: 'e6-invite@example.com' });
+      expect(brut).not.toBeNull();
+      expect(!!brut.emailVerified).toBe(false); // invited account follows normal verification
+    });
+  });
+
+  describe('E9 already-registered guard', () => {
+    afterEach(async () => {
+      try {
+        const existing = await UserService.getBrut({ email: 'e9-existing@example.com' });
+        if (existing) await UserService.remove(existing);
+      } catch (_) { /* cleanup */ }
+    });
+
+    test('inviting an already-registered email is rejected (422)', async () => {
+      // Create the user first (open signup), then try to invite the same email.
+      const savedUp = config.sign.up; config.sign.up = true;
+      await request(app).post('/api/auth/signup').send({ email: 'e9-existing@example.com', password: 'Sup3rStr0ng!' });
+      config.sign.up = savedUp;
+
+      const adminAgent = await createAdminAndSignin();
+      const res = await adminAgent.post('/api/invitations').send({ email: 'e9-existing@example.com' });
+      expect(res.status).toBe(422);
+    });
+  });
+
+  describe('E4 cap unify — blank cap means UNCAPPED at the signup gate', () => {
+    let originalUp; let originalCap;
+    beforeEach(() => { originalUp = config.sign.up; originalCap = config.sign.cap; });
+    afterEach(async () => {
+      config.sign.up = originalUp; config.sign.cap = originalCap;
+      try {
+        const existing = await UserService.getBrut({ email: 'e4-blankcap@example.com' });
+        if (existing) await UserService.remove(existing);
+      } catch (_) { /* cleanup */ }
+    });
+
+    test("cap:'' + open signup ⇒ signup SUCCEEDS (blank is uncapped, not everyone-blocked)", async () => {
+      // The pre-fix inline `Number('')→0→count>=0` hard-rejected EVERY signup while
+      // getConfig advertised the deployment as open. The unify routes the gate through
+      // computeSignupCapacity, which treats '' as uncapped. This asserts the gate no
+      // longer rejects under a blank cap.
+      config.sign.up = true;
+      config.sign.cap = '';
+      const res = await request(app)
+        .post('/api/auth/signup')
+        .send({ email: 'e4-blankcap@example.com', password: 'Sup3rStr0ng!' });
+      expect(res.status).toBe(200);
+    });
+  });
 });

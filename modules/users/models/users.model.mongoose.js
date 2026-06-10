@@ -17,7 +17,12 @@ const UserMongoose = new Schema(
     position: String,
     email: {
       type: String,
-      unique: true,
+      // E3: store emails lowercased and enforce uniqueness case-INSENSITIVELY via a
+      // collation index (declared below), not the inline `unique:true` (which is
+      // case-sensitive — `User@x` and `user@x` would coexist and break the invite
+      // single-use backstop + OAuth account-linking). lowercase:true normalizes on
+      // write; the collation index is the read/uniqueness guard.
+      lowercase: true,
     },
     avatar: String,
     roles: [String],
@@ -52,6 +57,22 @@ const UserMongoose = new Schema(
   {
     timestamps: true,
   },
+);
+
+// E3: case-insensitive unique email. strength:2 = case- + diacritic-insensitive
+// equality, so `User@x.com` and `user@x.com` collide on insert. The migration
+// (modules/users/migrations/*-users-email-ci-unique-index.js) is the AUTHORITATIVE
+// creator of this index; declaring the IDENTICAL index here (same key, options,
+// AND explicit name) keeps autoIndex / syncIndexes idempotent (not divergent).
+// The explicit name MUST differ from the legacy default `email_1` so the collation
+// index and the legacy plain index can coexist transiently — otherwise autoIndex
+// tries to (re)create `email_1` with a collation while a plain `email_1` already
+// exists, which Mongo rejects ("Index already exists with a different name").
+// Both schema + migration converge on a single `email_ci_unique` (collation) index
+// with no stray plain `email_1` left behind.
+UserMongoose.index(
+  { email: 1 },
+  { unique: true, name: 'email_ci_unique', collation: { locale: 'en', strength: 2 } },
 );
 
 function addID() {
