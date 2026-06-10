@@ -19,6 +19,10 @@ jest.unstable_mockModule('../../../lib/helpers/errors.js', () => ({ default: { g
 
 const controller = (await import('../controllers/invitations.controller.js')).default;
 
+/**
+ * Creates a mock Express response object for testing.
+ * @returns {Object} Empty object representing a mock response
+ */
 const makeRes = () => ({});
 
 beforeEach(() => {

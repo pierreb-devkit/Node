@@ -3,7 +3,8 @@ import { jest } from '@jest/globals';
 /**
  * Init unit tests — verify the module plugs into auth at boot:
  *   (a) calling init() once registers exactly one signup-eligibility checker
- *       (re-running init must not duplicate it — asserted by checks.length),
+ *       (init() is intentionally not idempotent — each call appends a checker —
+ *       so it must be called exactly once at startup, which this asserts),
  *   (b) it wires an 'error' listener on the invitation events emitter (crash guard),
  *   (c) the registered checker resolves the invite and RETURNS `{ invite, consume }`
  *       (the return-value seam — no stashing) for the local-signup and OAuth paths,

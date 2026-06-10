@@ -34,6 +34,7 @@ jest.unstable_mockModule('mongoose', () => ({
 const InvitationRepository = (await import('../repositories/invitations.repository.js')).default;
 
 beforeEach(() => {
+  jest.clearAllMocks();
   exec.mockReset();
   save.mockReset();
   isValid.mockReturnValue(true);

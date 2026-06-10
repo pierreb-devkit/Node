@@ -20,6 +20,9 @@ const checks = [];
  * @returns {void}
  */
 export const registerSignupEligibility = (fn) => {
+  if (typeof fn !== 'function') {
+    throw new TypeError('registerSignupEligibility: fn must be a function');
+  }
   checks.push(fn);
 };
 

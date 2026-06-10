@@ -9,11 +9,14 @@ import policy from '../../../lib/middlewares/policy.js';
 import UsersSchema from '../../users/models/users.schema.js';
 import auth from '../controllers/auth.controller.js';
 import authPassword from '../controllers/auth.password.controller.js';
+// TODO(P6, pierreb-devkit/Node#4279): Remove these two imports and the three routes
+// below once Vue migrates to the canonical /api/invitations mount.
 // Deprecation alias only — the invitations feature lives in modules/invitations.
 // This block MUST stay here (before the greedy `/api/auth/:strategy` wildcard) so
 // the legacy `/api/auth/invitations*` paths the Vue admin store still calls keep
 // working; it points at the MOVED controller. Canonical mount: /api/invitations
-// (modules/invitations/routes/invitations.routes.js). Remove once Vue migrates (P6).
+// (modules/invitations/routes/invitations.routes.js).
+// INTENTIONAL core→optional import: temporary coupling until P6 removes these routes.
 import invitations from '../../invitations/controllers/invitations.controller.js';
 import InvitationSchema from '../../invitations/models/invitations.schema.js';
 

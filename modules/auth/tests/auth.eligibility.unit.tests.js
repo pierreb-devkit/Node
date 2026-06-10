@@ -42,6 +42,12 @@ describe('auth.eligibility registry', () => {
     expect(third).toHaveBeenCalledTimes(1);
   });
 
+  test('registerSignupEligibility throws TypeError when fn is not a function', () => {
+    expect(() => registerSignupEligibility('not-a-function')).toThrow(TypeError);
+    expect(() => registerSignupEligibility(null)).toThrow(TypeError);
+    expect(() => registerSignupEligibility(42)).toThrow(TypeError);
+  });
+
   test('a throwing check aborts the chain (blocks signup) and propagates', async () => {
     const second = jest.fn();
     registerSignupEligibility(() => { throw new Error('blocked'); });
