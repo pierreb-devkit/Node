@@ -81,6 +81,12 @@ const signup = async (req, res) => {
     // checked then the user created non-atomically, so a burst of concurrent signups
     // can overshoot the cap by a few accounts (a small beta overshoot, tolerated).
     const { cap, remaining } = await computeSignupCapacity(config.sign?.cap, UserService.count);
+    // Note the `cap > 0` guard: a `cap:0` deployment is NOT `capReached` here. cap:0
+    // ({cap:0, remaining:0} per computeSignupCapacity) means "closed to the public",
+    // and its rejection rides the `!sign.up && !invite` arm below — invites intentionally
+    // bypass a zero cap (computeSignupCapacity short-circuits the count for cap<=0), so an
+    // invited signup under cap:0 still passes the gate. capReached is only for a real
+    // positive ceiling that filled up (which DOES reject invites — they count in the cap).
     const capReached = cap != null && cap > 0 && remaining <= 0;
     // `signupOpen` tells the checker whether the invite is REQUIRED to open the gate.
     // When public signup is open a token may be PRESENTED but is not required — the
@@ -105,7 +111,20 @@ const signup = async (req, res) => {
     // unique-email index a reliable single-use backstop — concurrent case-variant
     // signups on the same invite collide on the index instead of creating two accounts.
     if (invite) safeBody.email = invite.email;
-    const user = await UserService.create(safeBody);
+    // E2: the invite was atomically CLAIMED (consumingAt stamped) before we got here,
+    // so a throw FROM create itself must release the claim too — otherwise the invite
+    // stays locked until the 15-min sweep. The most realistic throw is an E11000 from
+    // the case-sensitive unique-email index when two case-variant signups race the same
+    // invited email (validation/transient errors land here as well). Mirror the three
+    // release sites below + the same `!config.sign.up` gating (only the closed-signup
+    // path claimed). Best-effort: a release failure must not mask the create error.
+    let user;
+    try {
+      user = await UserService.create(safeBody);
+    } catch (createErr) {
+      if (invite && !config.sign.up) { try { await eligibility?.release?.(); } catch (_releaseErr) { /* best-effort */ } }
+      throw createErr;
+    }
 
     // Handle email verification — rollback user on failure to avoid orphaned accounts
     try {
@@ -177,7 +196,9 @@ const signup = async (req, res) => {
     // nothing to finalize. finalize burns single-use (usedAt + status:'accepted')
     // and records the user; it runs through the closure returned by the eligibility
     // checker (invitations module owns it; auth never imports invitation code). This
-    // is the last pre-response step, so by here every earlier failure already released.
+    // is the last pre-response step, and every earlier failure path (create-throw,
+    // verify-failure, org-failure) already released the claim, so reaching finalize
+    // means the claim is still ours to burn.
     if (invite && !config.sign.up) await eligibility?.finalize?.(user._id || user.id);
 
     const token = jwt.sign({ userId: user.id }, config.jwt.secret, {

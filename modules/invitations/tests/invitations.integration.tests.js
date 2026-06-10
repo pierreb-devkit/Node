@@ -4,7 +4,7 @@
 import request from 'supertest';
 import path from 'path';
 
-import { beforeAll, afterAll, beforeEach, afterEach, describe, test, expect } from '@jest/globals';
+import { beforeAll, afterAll, beforeEach, afterEach, describe, test, expect, jest } from '@jest/globals';
 import { bootstrap } from '../../../lib/app.js';
 import config from '../../../config/index.js';
 
@@ -409,7 +409,8 @@ describe('Signup invitations:', () => {
     beforeEach(() => { originalUp = config.sign.up; originalCap = config.sign.cap; });
     afterEach(async () => {
       config.sign.up = originalUp; config.sign.cap = originalCap;
-      for (const email of ['e2-replay@example.com', 'e2-claimed@example.com', 'e2-stale@example.com']) {
+      jest.restoreAllMocks();
+      for (const email of ['e2-replay@example.com', 'e2-claimed@example.com', 'e2-stale@example.com', 'e2-createthrow@example.com', 'e2-concurrent@example.com']) {
         try {
           const existing = await UserService.getBrut({ email });
           if (existing) await UserService.remove(existing);
@@ -436,6 +437,68 @@ describe('Signup invitations:', () => {
         .post(`/api/auth/signup?inviteToken=${token}`)
         .send({ email: 'e2-replay@example.com', password: 'Sup3rStr0ng!' });
       expect(second.status).not.toBe(200);
+    });
+
+    test('concurrent double-claim: two parallel claim() on the same token → EXACTLY ONE wins (the atomic CAS)', async () => {
+      // The replay test above is sequential (signup #1 finalizes the invite, then the
+      // 2nd attempt finds nothing pending). This is the genuine atomicity proof: fire
+      // two claim() at the SAME pending invite concurrently against real Mongo. The
+      // findOneAndUpdate CAS ({token,status:'pending',consumingAt:null}) must let exactly
+      // one stamp consumingAt — the loser gets null (which the service surfaces as 422).
+      const adminAgent = await createAdminAndSignin();
+      const email = 'e2-concurrent@example.com';
+      const created = await adminAgent.post('/api/invitations').send({ email });
+      const { token } = created.body.data;
+
+      const [a, b] = await Promise.all([
+        InvitationRepository.claim(token),
+        InvitationRepository.claim(token),
+      ]);
+
+      // Exactly one non-null winner; the other is null (the double-claim guard).
+      const winners = [a, b].filter((r) => r != null);
+      expect(winners.length).toBe(1);
+      expect([a, b].filter((r) => r == null).length).toBe(1);
+      // The winner is the in-flight claim — consumingAt stamped, not yet finalized.
+      expect(winners[0].consumingAt).toBeTruthy();
+      expect(winners[0].acceptedAt == null).toBe(true);
+    });
+
+    test('create-throw release: UserService.create throwing releases the claim so the invite is immediately reusable (not locked 15min)', async () => {
+      // Fix-1 regression: the invite is atomically CLAIMED before UserService.create
+      // runs, so a throw FROM create (e.g. an E11000 case-variant race, or any
+      // transient error) must release the claim too — otherwise it stays consumingAt-
+      // stamped and unusable until the 15-min stale sweep. Force create to reject once
+      // and assert the claim was cleared (immediately reusable), NOT left in-flight.
+      const adminAgent = await createAdminAndSignin();
+      const email = 'e2-createthrow@example.com';
+      const created = await adminAgent.post('/api/invitations').send({ email });
+      const { token } = created.body.data;
+      config.sign.up = false; config.sign.cap = null;
+
+      // Make the create after the claim blow up exactly once.
+      const createSpy = jest.spyOn(UserService, 'create').mockRejectedValueOnce(new Error('DB error on create'));
+
+      const res = await request(app)
+        .post(`/api/auth/signup?inviteToken=${token}`)
+        .send({ email, password: 'Sup3rStr0ng!' });
+      // The signup failed (create threw → 422).
+      expect(res.status).not.toBe(200);
+      expect(createSpy).toHaveBeenCalledTimes(1);
+
+      // The claim must have been RELEASED: consumingAt cleared (not stuck for 15min),
+      // never finalized (no acceptedAt), and the invite reads valid + reusable again.
+      const raw = await InvitationRepository.findByToken(token);
+      expect(raw.consumingAt == null).toBe(true); // released, not locked
+      expect(raw.acceptedAt == null).toBe(true); // never finalized
+      expect(raw.status).toBe('pending');
+      expect(await InvitationService.findValid(token, email)).not.toBeNull(); // immediately reusable
+
+      // And a real retry (create now works) succeeds end-to-end on the same token.
+      const retry = await request(app)
+        .post(`/api/auth/signup?inviteToken=${token}`)
+        .send({ email, password: 'Sup3rStr0ng!' });
+      expect(retry.status).toBe(200);
     });
 
     test('a claimed-but-unfinalized invite is INVISIBLE to BOTH findValid and findValidByEmail (bypass guard)', async () => {
