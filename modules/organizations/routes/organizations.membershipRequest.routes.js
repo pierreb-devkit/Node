@@ -13,11 +13,28 @@ import membershipRequests from '../controllers/organizations.membershipRequest.c
  * @param {Object} app - Express application instance
  */
 export default (app) => {
-  // User's own membership requests
+  // User's own pending OWNER_ADD invitations to accept (P5b "pending invitations"
+  // list). Auth-only: the invitee is not yet an org member, so NO org-membership /
+  // CASL check — and registered BEFORE /:membershipId so 'mine' isn't captured as one.
+  app
+    .route('/api/membership-requests/mine/pending')
+    .all(passport.authenticate('jwt', { session: false }))
+    .get(membershipRequests.listMinePending);
+
+  // User's own membership JOIN requests (initiated by the user, awaiting approval)
   app
     .route('/api/membership-requests/mine')
     .all(passport.authenticate('jwt', { session: false }))
     .get(membershipRequests.listMine);
+
+  // The INVITED USER accepts a pending owner_add membership (consent activation).
+  // Auth-only — the consent gate (membership is a PENDING owner_add AND belongs to
+  // the caller) is enforced in the service, not via org-membership CASL. The owner
+  // can NEVER reach this for someone else's invite.
+  app
+    .route('/api/membership-requests/:membershipId/accept')
+    .all(passport.authenticate('jwt', { session: false }))
+    .put(membershipRequests.accept);
 
   // Create a request to join an organization / list pending requests for an organization
   app
