@@ -69,11 +69,17 @@ describe('InvitationRepository', () => {
     expect(chain.sort).toHaveBeenCalledWith('-createdAt');
   });
 
-  test('claim atomically stamps consumingAt with a token+pending+unclaimed guard (E2)', async () => {
+  test('claim atomically stamps consumingAt with a token+pending+unclaimed+unused+unexpired guard (E2)', async () => {
     exec.mockResolvedValue({ id: 'i1', consumingAt: new Date() });
     await InvitationRepository.claim('tok');
     const [filter, update] = InvitationModel.findOneAndUpdate.mock.calls.at(-1);
-    expect(filter).toEqual({ token: 'tok', status: 'pending', consumingAt: null });
+    // Self-contained CAS: the filter rejects already-used, expired, or in-flight invites
+    // so a race between findValid and claim cannot bypass expiry or single-use (E2).
+    expect(filter.token).toBe('tok');
+    expect(filter.status).toBe('pending');
+    expect(filter.consumingAt).toBeNull();
+    expect(filter.usedAt).toBeNull();
+    expect(filter.expiresAt).toHaveProperty('$gt'); // unexpired guard
     expect(update).toHaveProperty('$set.consumingAt');
   });
 

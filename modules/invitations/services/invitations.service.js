@@ -28,10 +28,10 @@ const create = async (email, invitedBy) => {
   // E9: an already-registered email must not be invited — they are already a user.
   const existing = await UserService.findByEmail(normalizedEmail);
   if (existing) {
-    throw new AppError('user already exists — add them to the organization directly', {
+    throw new AppError('user already exists — this email is already registered', {
       status: 422,
       code: 'VALIDATION_ERROR',
-      details: { message: 'A user with this email already exists. Add them to the organization directly.' },
+      details: { message: 'A user with this email already exists.' },
     });
   }
   const token = crypto.randomBytes(20).toString('hex');

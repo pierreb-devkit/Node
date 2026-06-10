@@ -37,13 +37,16 @@ const findByEmail = (email) =>
  * @desc E2 — atomically CLAIM a pending, unclaimed invite by token. Stamps
  * `consumingAt` so a concurrent claim (or the email-resolved path) sees it as
  * in-flight/invalid. Returns the claimed doc, or null when nothing matched
- * (already claimed / used / revoked / accepted) — the replay/double-accept guard.
+ * (already claimed / used / revoked / accepted / expired) — the replay/double-accept guard.
+ * Filter includes `usedAt:null` and `expiresAt:{$gt:now}` so the CAS step is
+ * self-contained: even if a concurrent path accepted or the invite expired between
+ * the caller's findValid and this claim, the CAS returns null and the caller throws.
  * @param {String} token
  * @returns {Promise<Object|null>} the claimed invite, or null if not claimable
  */
 const claim = (token) =>
   Invitation.findOneAndUpdate(
-    { token, status: 'pending', consumingAt: null },
+    { token, status: 'pending', consumingAt: null, usedAt: null, expiresAt: { $gt: new Date() } },
     { $set: { consumingAt: new Date() } },
     { returnDocument: 'after' },
   ).exec();

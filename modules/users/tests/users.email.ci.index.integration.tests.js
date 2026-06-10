@@ -41,9 +41,9 @@ describe('E3 case-insensitive unique email index:', () => {
   });
 
   afterAll(async () => {
-    // Belt: drop any leftover variant rows by lowercased match.
+    // Belt: drop any leftover rows by lowercased match (mirrors afterEach targets).
     try {
-      await User.deleteMany({ email: { $in: ['ci-base@example.com', 'user@ci.example.com'] } }).exec();
+      await User.deleteMany({ email: { $in: ['ci-base@example.com', 'ci-variant@example.com'] } }).exec();
     } catch (_) { /* cleanup */ }
   });
 
