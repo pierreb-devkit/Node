@@ -6,7 +6,7 @@ import passport from 'passport';
 import jwt from 'jsonwebtoken';
 
 import UserService from '../../users/services/users.service.js';
-import InvitationService from '../services/auth.invitation.service.js';
+import Eligibility from '../services/auth.eligibility.js';
 import { computeSignupCapacity } from '../services/auth.signupCapacity.js';
 import config from '../../../config/index.js';
 import model from '../../../lib/middlewares/model.js';
@@ -68,19 +68,18 @@ const signup = async (req, res) => {
   try {
     // Two AND-ed gates: (1) capacity — a hard ceiling on total accounts,
     // invited users included; (2) eligibility — public signup open OR a valid
-    // invite token (read from query: model.isValid strips unknown body keys).
+    // invite token. The eligibility check is supplied by optional modules via the
+    // generic registry (auth never imports invitation code). The invitations
+    // checker resolves the email-pinned invite and RETURNS `{ invite, consume }`,
+    // which auth relays back here verbatim (opaque result) so this controller can
+    // canonicalize the account email + consume it below.
     // Short-circuit count() when cap is not set (null = unlimited) to avoid a
     // collection-wide count on every signup request for uncapped deployments.
     const cap = config.sign.cap != null ? Number(config.sign.cap) : null;
     const capReached = cap != null && Number.isFinite(cap) && (await UserService.count()) >= cap;
-    let invite = null;
-    if (req.query?.inviteToken) {
-      invite = await InvitationService.findValid(req.query.inviteToken, req.body.email);
-      // An invite is bound to its email; never honor it for a signup that supplies
-      // no email to match. findValid stays lenient on a falsy email because the
-      // public verify endpoint reuses it, so enforce the pin here.
-      if (invite && invite.email && !req.body.email) invite = null;
-    }
+    const eligibility = await Eligibility.assertSignupEligible({ email: req.body.email, body: req.body, req });
+    // null when no optional module opened the gate (registry empty or no valid invite).
+    const invite = eligibility?.invite || null;
     if (capReached || (!config.sign.up && !invite)) {
       return responses.error(res, 404, 'Signup error', 'Registration is currently deactivated')();
     }
@@ -149,7 +148,9 @@ const signup = async (req, res) => {
     // Single-use: consume only when the invite actually opened the gate (signup
     // was closed, so the invite was required). When signup is open, a token can
     // be presented but is not required — consuming it would silently burn it.
-    if (invite && !config.sign.up) await InvitationService.consume(invite.id);
+    // Consume runs through the closure returned by the eligibility checker
+    // (invitations module owns consume; auth never imports invitation code).
+    if (invite && !config.sign.up) await eligibility?.consume?.();
 
     const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
       expiresIn: config.jwt.expiresIn,
@@ -443,7 +444,20 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
     // provider returning an arbitrary unverified email could open the gate on an
     // invite meant for someone else.
     const hasVerifiedProviderEmail = !!(profil.email && profil.emailVerifiedByProvider);
-    const oauthInvite = config.sign.up || !hasVerifiedProviderEmail ? null : await InvitationService.findValidByEmail(profil.email);
+    // Eligibility via the generic hook (auth never imports invitation code). OAuth
+    // carries no token through the redirect, so the invite is matched on the
+    // provider-verified email — the checker honors it only when emailVerifiedByProvider.
+    // Skip the hook entirely when signup is open: a token/invite is presented but not
+    // required, and resolving one would silently burn it (preserves prior short-circuit).
+    // The checker returns `{ invite, consume }` (opaque to auth); no synthetic req carrier.
+    let oauthEligibility = null;
+    if (!config.sign.up) {
+      oauthEligibility = await Eligibility.assertSignupEligible({
+        email: profil.email,
+        oauth: { emailVerifiedByProvider: hasVerifiedProviderEmail },
+      });
+    }
+    const oauthInvite = oauthEligibility?.invite || null;
     if (capReached || (!config.sign.up && !oauthInvite)) {
       // Mirror the local signup endpoint's error shape so clients see the same
       // `message`/`description` regardless of signup method (see `signup` above).
@@ -468,7 +482,8 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
     // else return req.body with the data after Zod validation
     if (oauthInvite) result.value.email = oauthInvite.email;
     const createdUser = await UserService.create(result.value);
-    if (oauthInvite) await InvitationService.consume(oauthInvite.id);
+    // Consume through the returned closure (invitations owns consume; auth stays import-free).
+    if (oauthInvite) await oauthEligibility?.consume?.();
     return createdUser;
   } catch (err) {
     if (err instanceof AppError) throw err;

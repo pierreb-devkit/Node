@@ -55,8 +55,13 @@ describe('auth.controller verifyEmail — handleSignupOrganization wiring:', () 
     jest.unstable_mockModule('../../../modules/users/services/users.service.js', () => ({
       default: mockUserService,
     }));
-    jest.unstable_mockModule('../../../modules/auth/services/auth.invitation.service.js', () => ({
-      default: { findValid: jest.fn().mockResolvedValue(null), consume: jest.fn().mockResolvedValue(null) },
+    // auth.controller imports the generic eligibility registry (not invitation code).
+    jest.unstable_mockModule('../../../modules/auth/services/auth.eligibility.js', () => ({
+      default: {
+        registerSignupEligibility: jest.fn(),
+        assertSignupEligible: jest.fn().mockResolvedValue(undefined),
+        _reset: jest.fn(),
+      },
     }));
     jest.unstable_mockModule('../../../modules/auth/services/auth.signupCapacity.js', () => ({
       computeSignupCapacity: jest.fn().mockResolvedValue({ cap: null, remaining: null }),

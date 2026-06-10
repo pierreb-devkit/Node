@@ -1,12 +1,12 @@
 tags:
-  - name: Auth — Invitations
+  - name: Invitations
     description: Admin-managed signup invitations + access control (cap / invite-only)
 
 paths:
-  /api/auth/invitations:
+  /api/invitations:
     get:
       tags:
-        - Auth — Invitations
+        - Invitations
       summary: List signup invitations (admin only — JWT cookie)
       responses:
         '200':
@@ -28,7 +28,7 @@ paths:
           description: Not an admin
     post:
       tags:
-        - Auth — Invitations
+        - Invitations
       summary: Create + email a signup invitation (admin only — JWT cookie)
       requestBody:
         required: true
@@ -61,10 +61,10 @@ paths:
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
 
-  /api/auth/invitations/{invitationId}:
+  /api/invitations/{invitationId}:
     delete:
       tags:
-        - Auth — Invitations
+        - Invitations
       summary: Revoke a signup invitation (admin only — JWT cookie)
       parameters:
         - name: invitationId
@@ -82,10 +82,10 @@ paths:
         '404':
           description: Invitation not found
 
-  /api/auth/invitations/verify/{token}:
+  /api/invitations/verify/{token}:
     get:
       tags:
-        - Auth — Invitations
+        - Invitations
       summary: Verify an invitation token (public)
       description: Used by the signup page to reveal the form and prefill the invited email when public signup is closed.
       parameters:

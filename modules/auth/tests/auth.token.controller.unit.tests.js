@@ -93,11 +93,12 @@ describe('auth.controller.token — user projection:', () => {
       default: { identify: jest.fn(), groupIdentify: jest.fn() },
     }));
 
-    // Mock invite-only gate (auth.controller imports InvitationService)
-    jest.unstable_mockModule('../../../modules/auth/services/auth.invitation.service.js', () => ({
+    // Mock the generic eligibility registry (auth.controller imports it, not invitation code)
+    jest.unstable_mockModule('../../../modules/auth/services/auth.eligibility.js', () => ({
       default: {
-        validateInviteToken: jest.fn().mockResolvedValue(null),
-        consumeInviteToken: jest.fn().mockResolvedValue(undefined),
+        registerSignupEligibility: jest.fn(),
+        assertSignupEligible: jest.fn().mockResolvedValue(undefined),
+        _reset: jest.fn(),
       },
     }));
   });

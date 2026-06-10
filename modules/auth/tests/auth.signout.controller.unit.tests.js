@@ -22,15 +22,12 @@ describe('auth.controller signout:', () => {
     jest.unstable_mockModule('../../../modules/users/services/users.service.js', () => ({
       default: { create: jest.fn(), getBrut: jest.fn(), update: jest.fn(), remove: jest.fn(), search: jest.fn(), count: jest.fn().mockResolvedValue(0) },
     }));
-    jest.unstable_mockModule('../../../modules/auth/services/auth.invitation.service.js', () => ({
+    // auth.controller imports the generic eligibility registry (not invitation code).
+    jest.unstable_mockModule('../../../modules/auth/services/auth.eligibility.js', () => ({
       default: {
-        findValid: jest.fn().mockResolvedValue(null),
-        findValidByEmail: jest.fn().mockResolvedValue(null),
-        consume: jest.fn().mockResolvedValue(null),
-        create: jest.fn(),
-        list: jest.fn(),
-        get: jest.fn(),
-        revoke: jest.fn(),
+        registerSignupEligibility: jest.fn(),
+        assertSignupEligible: jest.fn().mockResolvedValue(undefined),
+        _reset: jest.fn(),
       },
     }));
     jest.unstable_mockModule('../../../modules/users/repositories/users.repository.js', () => ({

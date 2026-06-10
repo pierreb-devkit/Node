@@ -3,7 +3,7 @@
  */
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
-import InvitationService from '../services/auth.invitation.service.js';
+import InvitationService from '../services/invitations.service.js';
 
 /**
  * @desc Admin: create + email a signup invitation

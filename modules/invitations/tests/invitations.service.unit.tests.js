@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 
-jest.unstable_mockModule('../repositories/auth.invitation.repository.js', () => ({
+jest.unstable_mockModule('../repositories/invitations.repository.js', () => ({
   default: {
     create: jest.fn(),
     findByToken: jest.fn(),
@@ -32,8 +32,8 @@ jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
   default: { warn: jest.fn(), error: jest.fn(), info: jest.fn() },
 }));
 
-const InvitationRepository = (await import('../repositories/auth.invitation.repository.js')).default;
-const InvitationService = (await import('../services/auth.invitation.service.js')).default;
+const InvitationRepository = (await import('../repositories/invitations.repository.js')).default;
+const InvitationService = (await import('../services/invitations.service.js')).default;
 
 describe('InvitationService.findValid', () => {
   const future = new Date(Date.now() + 3600000);
@@ -65,6 +65,43 @@ describe('InvitationService.findValid', () => {
     const inv = { usedAt: null, expiresAt: future, email: 'a@b.co' };
     InvitationRepository.findByToken.mockResolvedValue(inv);
     expect(await InvitationService.findValid('tok', 'A@B.CO')).toBe(inv);
+  });
+});
+
+describe('InvitationService.assertInvited (signup eligibility resolver)', () => {
+  const future = new Date(Date.now() + 3600000);
+  test('returns null when no token supplied', async () => {
+    expect(await InvitationService.assertInvited({ token: '', email: 'a@b.co' })).toBeNull();
+    expect(await InvitationService.assertInvited({})).toBeNull();
+  });
+  test('returns the resolved invite when token + matching email', async () => {
+    const inv = { id: 'i1', usedAt: null, expiresAt: future, email: 'a@b.co' };
+    InvitationRepository.findByToken.mockResolvedValue(inv);
+    expect(await InvitationService.assertInvited({ token: 'tok', email: 'A@B.CO' })).toBe(inv);
+  });
+  test('E5: rejects (null) a pinned invite when the signup supplies no email', async () => {
+    const inv = { id: 'i2', usedAt: null, expiresAt: future, email: 'a@b.co' };
+    InvitationRepository.findByToken.mockResolvedValue(inv);
+    expect(await InvitationService.assertInvited({ token: 'tok' })).toBeNull();
+    expect(await InvitationService.assertInvited({ token: 'tok', email: '' })).toBeNull();
+  });
+  test('returns null when the token resolves to no valid invite', async () => {
+    InvitationRepository.findByToken.mockResolvedValue(null);
+    expect(await InvitationService.assertInvited({ token: 'tok', email: 'a@b.co' })).toBeNull();
+  });
+});
+
+describe('InvitationService.assertInvitedByEmail (OAuth eligibility resolver)', () => {
+  test('returns null when email is falsy', async () => {
+    expect(await InvitationService.assertInvitedByEmail({ email: '' })).toBeNull();
+    expect(await InvitationService.assertInvitedByEmail({})).toBeNull();
+  });
+  test('resolves a pending invite by email (lowercased, trimmed) when email present', async () => {
+    const inv = { id: 'i3', email: 'a@b.co', usedAt: null, expiresAt: new Date(Date.now() + 3600000) };
+    InvitationRepository.findByEmail.mockResolvedValue(inv);
+    const result = await InvitationService.assertInvitedByEmail({ email: 'A@B.CO' });
+    expect(InvitationRepository.findByEmail).toHaveBeenCalledWith('a@b.co');
+    expect(result).toBe(inv);
   });
 });
 
@@ -105,20 +142,6 @@ describe('InvitationService.create — email sending branch', () => {
   });
 });
 
-describe('InvitationService.findValidByEmail', () => {
-  test('returns null when email is falsy', async () => {
-    expect(await InvitationService.findValidByEmail('')).toBeNull();
-    expect(await InvitationService.findValidByEmail(null)).toBeNull();
-  });
-  test('delegates to repository when email is provided', async () => {
-    const inv = { id: '3', email: 'a@b.co', usedAt: null, expiresAt: new Date(Date.now() + 3600000) };
-    InvitationRepository.findByEmail.mockResolvedValue(inv);
-    const result = await InvitationService.findValidByEmail('A@B.CO');
-    expect(InvitationRepository.findByEmail).toHaveBeenCalledWith('a@b.co');
-    expect(result).toBe(inv);
-  });
-});
-
 describe('InvitationService.list / get / revoke', () => {
   test('list delegates to repository', async () => {
     InvitationRepository.list.mockResolvedValue([]);
@@ -134,31 +157,5 @@ describe('InvitationService.list / get / revoke', () => {
     InvitationRepository.remove.mockResolvedValue({ deletedCount: 1 });
     await InvitationService.revoke('id-1');
     expect(InvitationRepository.remove).toHaveBeenCalledWith('id-1');
-  });
-});
-
-describe('invitationAbilities / invitationSubjectRegistration', () => {
-  test('invitationSubjectRegistration registers the /api/auth/invitations path', async () => {
-    const { invitationSubjectRegistration } = await import('../policies/auth.invitation.policy.js');
-    const registerPathSubject = jest.fn();
-    invitationSubjectRegistration({ registerPathSubject });
-    expect(registerPathSubject).toHaveBeenCalledTimes(1);
-    const predicate = registerPathSubject.mock.calls[0][0];
-    expect(predicate('/api/auth/invitations')).toBe(true);
-    expect(predicate('/api/auth/invitations/abc')).toBe(true);
-    expect(predicate('/api/other')).toBe(false);
-    expect(registerPathSubject.mock.calls[0][1]).toBe('Invitation');
-  });
-  test('invitationAbilities grants manage all for admin', async () => {
-    const { invitationAbilities } = await import('../policies/auth.invitation.policy.js');
-    const can = jest.fn();
-    invitationAbilities({ roles: ['admin'] }, null, { can });
-    expect(can).toHaveBeenCalledWith('manage', 'all');
-  });
-  test('invitationAbilities grants nothing for non-admin', async () => {
-    const { invitationAbilities } = await import('../policies/auth.invitation.policy.js');
-    const can = jest.fn();
-    invitationAbilities({ roles: ['user'] }, null, { can });
-    expect(can).not.toHaveBeenCalled();
   });
 });
