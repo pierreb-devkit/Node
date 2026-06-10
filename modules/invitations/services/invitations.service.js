@@ -243,6 +243,7 @@ const accept = async (invite, userId) => {
       // not break signup. Surface it as a warning for follow-up (referral attribution
       // would be lost for this user, but the account is valid).
       logger.warn('invitations: failed to set referredBy on accepted signup', {
+        invitationId: String(invite.id),
         userId: String(userId),
         invitedBy: String(invitedBy),
         message: err?.message,

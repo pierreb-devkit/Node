@@ -59,6 +59,10 @@ const User = z.object({
   // every client-facing parse (signup POST + PUT /api/users), guaranteeing a client
   // can never self-assign a referrer. Do NOT add it here. (The Mongoose model + the
   // updateById raw path are all the server needs to persist it.)
+  // When a future feature (e.g. the P8b referrals view) needs to READ/EXPOSE
+  // `referredBy`, do it via a response projection / the read whitelist — NEVER by
+  // adding it to this Zod schema (which is also the signup-POST write surface, so
+  // adding it here reintroduces the client-writable hole this omission closes).
   // others
   complementary: z.record(z.string(), z.unknown()).nullable().optional(),
 });

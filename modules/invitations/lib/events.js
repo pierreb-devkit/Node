@@ -9,8 +9,16 @@ import { EventEmitter } from 'events';
  * Events:
  *   - `invitation.accepted` — emitted (P8a) by InvitationsService.accept when an invite
  *     is consumed by a successful signup (BOTH the local two-phase token path AND the
- *     OAuth-by-email path go through the same accept seam). Fire-and-forget: a listener
- *     throw is caught at the emit site, never breaks signup. Always emitted on accept.
+ *     OAuth-by-email path go through the same accept seam). Fire-and-forget. Always
+ *     emitted on accept.
+ *     ⚠️ The try/catch around the `emit` call (accept seam) only guards against a
+ *     SYNCHRONOUS listener throw — `EventEmitter.emit` is synchronous, so it returns
+ *     before any async listener settles. An ASYNC listener (e.g. `async (p) => { await
+ *     grantCredits() }`) that REJECTS escapes the emit-site try/catch as an
+ *     unhandledRejection AFTER emit returns. Therefore a future async listener (e.g. the
+ *     #5 credit-grant) MUST own its own internal try/catch and never let a rejection
+ *     escape, OR the emit seam must switch to an awaited `Promise.allSettled` fan-out —
+ *     the current synchronous guard will NOT catch an async rejection.
  *     Payload: {
  *       invitationId:   String   — the accepted invite's id
  *       email:          String   — the invite's pinned (lowercased) email

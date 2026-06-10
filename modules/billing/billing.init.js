@@ -55,6 +55,7 @@ export default async (app) => {
   // eslint-disable-next-line no-unused-vars
   invitationEvents.on('invitation.accepted', (payload) => {
     // TODO(#5): grant referral credits to payload.invitedBy (skip when invitedBy is null).
+    // TODO(#5): async grant listener must self-guard rejections — the emit-site try/catch only catches sync throws.
     // No-op for P8a — the seam is the deliverable, not the grant.
   });
 
