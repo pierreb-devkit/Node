@@ -15,11 +15,13 @@ const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  * (schema `lowercase:true`) and uniqueness is enforced case-insensitively (E3
  * collation index), but Mongoose's `lowercase` setter does NOT apply to query
  * filters — so every exact-match lookup must lowercase the term itself, otherwise
- * a `User@x.com` lookup misses the stored `user@x.com` row. No-op for non-strings.
+ * a `User@x.com` lookup misses the stored `user@x.com` row.
+ * Returns null for non-strings so callers can bail out safely instead of
+ * accidentally embedding an operator object into a Mongo filter.
  * @param {String} email
- * @returns {String} the lowercased, trimmed email (or the input unchanged if not a string)
+ * @returns {String|null} the lowercased, trimmed email, or null if not a string
  */
-const normalizeEmail = (email) => (typeof email === 'string' ? email.toLowerCase().trim() : email);
+const normalizeEmail = (email) => (typeof email === 'string' ? email.toLowerCase().trim() : null);
 
 const User = mongoose.model('User');
 
@@ -63,7 +65,11 @@ const create = (user) => new User(user).save();
  */
 const get = (user = {}) => {
   if (user.id && mongoose.Types.ObjectId.isValid(user.id)) return User.findOne({ _id: user.id }).exec();
-  if (user.email) return User.findOne({ email: normalizeEmail(user.email) }).exec();
+  if (user.email) {
+    const email = normalizeEmail(user.email);
+    if (!email) return Promise.resolve(null);
+    return User.findOne({ email }).exec();
+  }
   if (user.resetPasswordToken) {
     return User.findOne({
       resetPasswordToken: user.resetPasswordToken,
@@ -108,7 +114,11 @@ const update = (user) => {
  */
 const remove = async (user) => {
   if (user && user.id && mongoose.Types.ObjectId.isValid(user.id)) return User.deleteOne({ _id: user.id }).exec();
-  if (user && user.email) return User.deleteOne({ email: normalizeEmail(user.email) }).exec();
+  if (user && user.email) {
+    const email = normalizeEmail(user.email);
+    if (!email) return Promise.resolve({ deletedCount: 0 });
+    return User.deleteOne({ email }).exec();
+  }
   return { deletedCount: 0 };
 };
 
@@ -173,7 +183,11 @@ const searchByNameOrEmail = (search) => {
  * @param {String} email - The email to search for
  * @returns {Promise<Object|null>} The matching user or null
  */
-const findByEmail = (email) => User.findOne({ email: normalizeEmail(email) }).exec();
+const findByEmail = (email) => {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return Promise.resolve(null);
+  return User.findOne({ email: normalized }).exec();
+};
 
 /**
  * @desc Function to update a user by ID with a partial update object
@@ -222,12 +236,15 @@ const updateMany = (filter, data) => User.updateMany(filter, data, { runValidato
  *   to follow up with findByEmail to distinguish the two cases if it needs to
  *   return a specific error.
  */
-const linkProviderByEmail = (email, provider, providerData) =>
-  User.findOneAndUpdate(
-    { email: normalizeEmail(email), emailVerified: true },
+const linkProviderByEmail = (email, provider, providerData) => {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return Promise.resolve(null);
+  return User.findOneAndUpdate(
+    { email: normalized, emailVerified: true },
     { $set: { [`additionalProvidersData.${provider}`]: providerData } },
     { returnDocument: 'after', runValidators: true },
   ).exec();
+};
 
 export default {
   list,

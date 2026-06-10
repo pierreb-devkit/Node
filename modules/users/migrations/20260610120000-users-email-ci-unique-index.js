@@ -55,13 +55,14 @@ export async function up() {
     .toArray();
 
   if (duplicates.length > 0) {
+    // Emit only IDs/counts — never log raw emails (PII) in operator-facing errors.
     const sample = duplicates
       .slice(0, 10)
-      .map((d) => `${d._id} (${d.count} docs: ${d.emails.join(', ')})`)
+      .map((d) => `group:${d._id.slice(0, 6)}… (${d.count} docs, ids: ${d.ids.slice(0, 3).join(',')}${d.ids.length > 3 ? ',…' : ''})`)
       .join('; ');
     throw new Error(
       `[migration] users-email-ci-unique-index ABORTED: ${duplicates.length} case-variant duplicate email group(s) would violate the unique collation index. ` +
-        `Remediate (merge/delete the duplicate accounts) before re-running — this migration will NOT auto-merge accounts. Sample: ${sample}`,
+        `Remediate (merge/delete the duplicate accounts) before re-running — this migration will NOT auto-merge accounts. Sample (IDs only): ${sample}`,
     );
   }
 
@@ -78,7 +79,17 @@ export async function up() {
     }
     throw err;
   }
-  const hasCi = existing.some((ix) => ix.name === CI_INDEX || (ix.collation && ix.key && ix.key.email === 1 && ix.unique));
+  // Require the exact expected shape: name, key, uniqueness, AND collation spec.
+  // A spec-matching index with the wrong name would still conflict on re-creation
+  // (Mongo rejects two indexes on the same key pattern) — guard both to be explicit.
+  const hasCi = existing.some(
+    (ix) =>
+      ix.name === CI_INDEX &&
+      ix.key?.email === 1 &&
+      ix.unique === true &&
+      ix.collation?.locale === 'en' &&
+      ix.collation?.strength === 2,
+  );
   const hasPlain = existing.some((ix) => ix.name === PLAIN_INDEX);
 
   // ── (b) Create the collation unique index FIRST (idempotent) ──
