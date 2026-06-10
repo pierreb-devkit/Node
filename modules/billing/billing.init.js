@@ -6,6 +6,7 @@ import config from '../../config/index.js';
 import AnalyticsService from '../../lib/services/analytics.js';
 import logger from '../../lib/services/logger.js';
 import billingEvents from './lib/events.js';
+import invitationEvents from '../invitations/lib/events.js';
 import BillingUsageRepository from './repositories/billing.usage.repository.js';
 import { getAlertThresholdPercents } from './lib/billing.constants.js';
 import { setupBillingEmails } from './billing.email.js';
@@ -43,6 +44,19 @@ export default async (app) => {
 
   // Wire billing email listeners (quota warnings + payment-failed notifications).
   setupBillingEmails();
+
+  // Referral substrate (#5) — billing is an OPTIONAL consumer of the invitations
+  // fire-and-forget `invitation.accepted` event (dependency direction billing →
+  // invitations is fine: billing imports the events singleton, invitations never
+  // imports billing). This listener is a deliberate NO-OP that only PROVES the event
+  // seam works end-to-end (the payload arrives here on every invite acceptance); the
+  // actual credit-grant logic lands in #5. Wrapped so a future grant impl can't crash
+  // boot/signup. Mirrors the other cross-module listeners wired on this init.
+  // eslint-disable-next-line no-unused-vars
+  invitationEvents.on('invitation.accepted', (payload) => {
+    // TODO(#5): grant referral credits to payload.invitedBy (skip when invitedBy is null).
+    // No-op for P8a — the seam is the deliverable, not the grant.
+  });
 
   // Update analytics group properties when a subscription plan changes
   billingEvents.on('plan.changed', ({ organizationId, newPlan }) => {

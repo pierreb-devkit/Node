@@ -303,6 +303,48 @@ describe('User admin integration tests:', () => {
       }
     });
 
+    // P8a / E20: referredBy is a server-only referral field — even an admin update
+    // (config.whitelists.users.updateAdmin) must NOT persist it from the request body.
+    // It is absent from updateAdmin, so removeSensitive strips it. Proves the admin
+    // whitelist blocks it too (mirrors the self-update negative test).
+    test('should NOT persist referredBy via the admin user-update path (server-only)', async () => {
+      try {
+        userEdited = await signupAndPromoteAdmin(agent, { ..._userEdited, roles: ['user', 'admin'] });
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      try {
+        const userUpdate = {
+          firstName: 'admin_ref_first',
+          referredBy: '64b2f0000000000000000def', // attacker-supplied referrer id
+        };
+        const result = await agent.put(`/api/admin/users/${userEdited._id}`).send(userUpdate).expect(200);
+        expect(result.body.data.firstName).toBe('admin_ref_first');
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      try {
+        // Raw read — the whitelisted firstName landed, referredBy did NOT.
+        const result = await UserService.getBrut({ id: userEdited._id });
+        expect(result.firstName).toBe('admin_ref_first');
+        expect(result.referredBy == null).toBe(true);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      try {
+        await UserService.remove(userEdited);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
     test('should be able to remove a single user if admin', async () => {
       try {
         userEdited = await signupAndPromoteAdmin(agent, { ..._userEdited, roles: ['user', 'admin'] });

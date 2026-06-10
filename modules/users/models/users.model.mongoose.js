@@ -52,6 +52,18 @@ const UserMongoose = new Schema(
       type: Schema.ObjectId,
       ref: 'Organization',
     },
+    // Referral substrate (#5): the user whose invite this account accepted. Set
+    // SERVER-SIDE ONLY on invite acceptance (the invitations finalize seam, via
+    // UserService.updateById which bypasses the client whitelist) — NEVER from a
+    // client signup/update body. It is intentionally absent from the Zod schemas
+    // and from every users update whitelist, so a client cannot self-assign a
+    // referrer. null for self-serve signups and admin-created invites with no
+    // inviter. No index yet (default:null, no referral-list query in P8a).
+    referredBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
     complementary: {}, // put your specific project private data here
   },
   {

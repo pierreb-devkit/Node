@@ -13,6 +13,7 @@ describe('billing.init unit tests:', () => {
   let mockDistinct;
   let mockMongoose;
   let mockLogger;
+  let mockInvitationEvents;
 
   const mockApp = {};
 
@@ -58,6 +59,13 @@ describe('billing.init unit tests:', () => {
       default: { on: jest.fn(), emit: jest.fn() },
     }));
 
+    // P8a: billing is an optional consumer of the invitations `invitation.accepted`
+    // event — stub the singleton so the unit test asserts the listener wiring in isolation.
+    mockInvitationEvents = { on: jest.fn(), emit: jest.fn() };
+    jest.unstable_mockModule('../../invitations/lib/events.js', () => ({
+      default: mockInvitationEvents,
+    }));
+
     // Stub billing.email so boot validator tests don't wire real email listeners
     jest.unstable_mockModule('../billing.email.js', () => ({
       setupBillingEmails: jest.fn(),
@@ -77,6 +85,17 @@ describe('billing.init unit tests:', () => {
 
   test('resolves without error when meterMode=false', async () => {
     await expect(billingInit(mockApp)).resolves.toBeUndefined();
+  });
+
+  test('P8a: wires a (no-op) invitation.accepted listener that does not throw on emit', async () => {
+    await billingInit(mockApp);
+    // The seam is proven by the listener being registered on the invitations emitter.
+    const acceptedCall = mockInvitationEvents.on.mock.calls.find(([evt]) => evt === 'invitation.accepted');
+    expect(acceptedCall).toBeDefined();
+    const handler = acceptedCall[1];
+    expect(typeof handler).toBe('function');
+    // No-op: invoking it with a payload must not throw (and returns nothing).
+    expect(() => handler({ invitationId: 'i1', email: 'a@b.co', invitedBy: 'x', acceptedUserId: 'u1' })).not.toThrow();
   });
 
   test('resolves without error when meterMode=true and no legacy docs', async () => {

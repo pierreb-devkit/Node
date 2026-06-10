@@ -16,7 +16,7 @@ jest.unstable_mockModule('../repositories/invitations.repository.js', () => ({
   },
 }));
 
-const mockUserService = { findByEmail: jest.fn() };
+const mockUserService = { findByEmail: jest.fn(), updateById: jest.fn() };
 jest.unstable_mockModule('../../users/services/users.service.js', () => ({ default: mockUserService }));
 
 const mockMailer = { isConfigured: jest.fn(() => false), sendMail: jest.fn() };
@@ -41,11 +41,14 @@ jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
 
 const InvitationRepository = (await import('../repositories/invitations.repository.js')).default;
 const InvitationService = (await import('../services/invitations.service.js')).default;
+// Real events singleton — the service emits on it; we spy to assert the payload.
+const invitationEvents = (await import('../lib/events.js')).default;
 
 beforeEach(() => {
   // Default: no stale claims to sweep, no pre-existing user (E9).
   InvitationRepository.releaseStaleClaims.mockResolvedValue({ modifiedCount: 0 });
   mockUserService.findByEmail.mockResolvedValue(null);
+  mockUserService.updateById.mockResolvedValue({});
 });
 
 describe('InvitationService.findValid', () => {
@@ -183,6 +186,85 @@ describe('InvitationService.finalize / release (E2)', () => {
     InvitationRepository.release.mockResolvedValue(doc);
     expect(await InvitationService.release('i1')).toBe(doc);
     expect(InvitationRepository.release).toHaveBeenCalledWith('i1');
+  });
+});
+
+describe('InvitationService.accept (P8a — referral substrate seam)', () => {
+  let emitSpy;
+  beforeEach(() => {
+    InvitationRepository.finalize.mockResolvedValue({ id: 'i1', status: 'accepted' });
+    emitSpy = jest.spyOn(invitationEvents, 'emit');
+  });
+  afterEach(() => {
+    emitSpy.mockRestore();
+  });
+
+  test('finalizes the invite (burns single-use) AND returns the finalized doc', async () => {
+    const doc = { id: 'i1', status: 'accepted' };
+    InvitationRepository.finalize.mockResolvedValue(doc);
+    const invite = { id: 'i1', email: 'a@b.co', invitedBy: 'inviter1' };
+    expect(await InvitationService.accept(invite, 'u1')).toBe(doc);
+    expect(InvitationRepository.finalize).toHaveBeenCalledWith('i1', 'u1');
+  });
+
+  test('stamps referredBy = invite.invitedBy on the new user, SERVER-SIDE via updateById', async () => {
+    const invite = { id: 'i1', email: 'a@b.co', invitedBy: 'inviter1' };
+    await InvitationService.accept(invite, 'u1');
+    // updateById is the raw path that bypasses the client whitelist + Zod — the ONLY
+    // way referredBy is written. Asserts the server sets it from the invite, not a body.
+    expect(mockUserService.updateById).toHaveBeenCalledWith('u1', { referredBy: 'inviter1' });
+  });
+
+  test('emits invitation.accepted with the documented payload', async () => {
+    const invite = { id: 'i1', email: 'a@b.co', invitedBy: 'inviter1' };
+    await InvitationService.accept(invite, 'u1');
+    expect(emitSpy).toHaveBeenCalledWith('invitation.accepted', {
+      invitationId: 'i1',
+      email: 'a@b.co',
+      invitedBy: 'inviter1',
+      acceptedUserId: 'u1',
+    });
+  });
+
+  test('invitedBy null (admin-created invite): SKIPS the referredBy write but STILL emits (invitedBy:null)', async () => {
+    const invite = { id: 'i2', email: 'c@d.co', invitedBy: null };
+    await InvitationService.accept(invite, 'u2');
+    // No inviter → writing null is a redundant no-op, so updateById is skipped.
+    expect(mockUserService.updateById).not.toHaveBeenCalled();
+    // The event still fires (canonical "invite consumed" signal) with invitedBy:null.
+    expect(emitSpy).toHaveBeenCalledWith('invitation.accepted', {
+      invitationId: 'i2',
+      email: 'c@d.co',
+      invitedBy: null,
+      acceptedUserId: 'u2',
+    });
+  });
+
+  test('invitedBy undefined is normalized to null in the payload', async () => {
+    const invite = { id: 'i3', email: 'e@f.co' }; // no invitedBy key at all
+    await InvitationService.accept(invite, 'u3');
+    expect(mockUserService.updateById).not.toHaveBeenCalled();
+    expect(emitSpy).toHaveBeenCalledWith('invitation.accepted', expect.objectContaining({ invitedBy: null }));
+  });
+
+  test('best-effort: a referredBy write failure is swallowed (still emits, still returns the doc)', async () => {
+    mockUserService.updateById.mockRejectedValueOnce(new Error('db down'));
+    const invite = { id: 'i1', email: 'a@b.co', invitedBy: 'inviter1' };
+    // Must not throw — the invite is already accepted; signup must not break.
+    const result = await InvitationService.accept(invite, 'u1');
+    expect(result).toMatchObject({ status: 'accepted' });
+    expect(emitSpy).toHaveBeenCalledWith('invitation.accepted', expect.objectContaining({ acceptedUserId: 'u1' }));
+  });
+
+  test('best-effort: a synchronous listener throw is caught at the emit site (does not break signup)', async () => {
+    const thrower = () => { throw new Error('listener boom'); };
+    invitationEvents.on('invitation.accepted', thrower);
+    try {
+      const invite = { id: 'i1', email: 'a@b.co', invitedBy: 'inviter1' };
+      await expect(InvitationService.accept(invite, 'u1')).resolves.toMatchObject({ status: 'accepted' });
+    } finally {
+      invitationEvents.removeListener('invitation.accepted', thrower);
+    }
   });
 });
 

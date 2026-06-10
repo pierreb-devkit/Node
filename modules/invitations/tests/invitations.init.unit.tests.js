@@ -20,6 +20,7 @@ const mockService = {
   assertInvitedByEmail: jest.fn(),
   claim: jest.fn(),
   finalize: jest.fn(),
+  accept: jest.fn(),
   release: jest.fn(),
   sweepStaleClaims: jest.fn(),
 };
@@ -74,9 +75,13 @@ describe('invitations.init', () => {
     // E2: the resolved invite was atomically claimed by token before returning.
     expect(mockService.claim).toHaveBeenCalledWith('tok');
     expect(result.invite).toBe(invite);
-    // returned finalize/release closures bind exactly this invite id
+    // returned finalize/release closures bind exactly this invite. P8a: the `finalize`
+    // closure routes through accept(invite, userId) (finalize + referral wiring); the
+    // closure name is unchanged so auth relays it verbatim. accept receives the WHOLE
+    // invite (needs invitedBy/email for referredBy + the event payload), not just the id.
     await result.finalize('u9');
-    expect(mockService.finalize).toHaveBeenCalledWith('i7', 'u9');
+    expect(mockService.accept).toHaveBeenCalledWith(invite, 'u9');
+    expect(mockService.finalize).not.toHaveBeenCalled();
     await result.release();
     expect(mockService.release).toHaveBeenCalledWith('i7');
   });
@@ -117,8 +122,10 @@ describe('invitations.init', () => {
     // OAuth has no token to claim — claim must NOT be invoked on this path.
     expect(mockService.claim).not.toHaveBeenCalled();
     expect(result.invite).toBe(invite);
+    // P8a: the OAuth path's finalize closure also routes through accept — so an
+    // OAuth-invited user gets referredBy set + invitation.accepted emitted too.
     await result.finalize('u2');
-    expect(mockService.finalize).toHaveBeenCalledWith('o1', 'u2');
+    expect(mockService.accept).toHaveBeenCalledWith(invite, 'u2');
   });
 
   test('(c) OAuth: does NOT resolve an invite when the provider email is unverified (E7)', async () => {
