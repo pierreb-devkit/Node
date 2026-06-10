@@ -4,6 +4,27 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Remove organization email-invite feature (2026-06-10)
+
+Phase 4 of the invitations↔org decouple epic (#3812). The organization's **own** email-invite flow is **deleted** — distinct from the platform `invitations` module (single-use signup-token gate), which is unchanged. This is the owner-invites-an-email-to-join-their-org flow that lived on the membership doc as `status:'invited'` + `inviteToken` / `invitedEmail` / `inviteExpiresAt`. The 2-step "invite to platform, then add the resulting user as a member" flow replaces it (`org.addMember` lands in a later phase / #3813).
+
+### What changed (this repo)
+
+- **Routes removed** (now 404): `POST /api/organizations/:organizationId/invites`, `GET /api/invites/:token`, `POST /api/invites/:token/accept`. Org **join-requests** (`/requests`, `/requests/:id/approve`, `/requests/:id/reject`, `/membership-requests/mine`) and member CRUD are **unchanged**.
+- **Service/controller** (`organizations.membership.service.js`, `organizations.membershipRequest.{controller,routes}.js`) — `invite` / `acceptInvite` / `getInvite` deleted.
+- **Membership model** (`organizations.membership.model.mongoose.js`) — dropped the `inviteToken` / `invitedEmail` / `inviteExpiresAt` fields, removed `'invited'` (and the never-written `'rejected'`) from the `status` enum, and removed the sparse `inviteToken_1` index. The partial-unique `(userId, organizationId)`, the `organizationId`, and the `(organizationId, status)` indexes are kept.
+- **Constants** — `MEMBERSHIP_STATUSES` now `{ ACTIVE, PENDING }` (`INVITED` and the dead `REJECTED` removed; `rejectRequest` hard-deletes the doc, so `rejected` was never written).
+- **Template** `config/templates/org-invite.html` deleted.
+- **Migration** `modules/organizations/migrations/20260610130000-drop-org-invited-memberships.js`: deletes leftover `status:'invited'` memberships (often `userId:null` orphans), unsets the removed invite fields on any survivor, and drops the `inviteToken_1` index (idempotent; absent index swallowed).
+
+### Action required for downstream projects (`/update-project`)
+
+1. The module/model/migration changes are devkit-owned → arrive via `/update-stack` (`--theirs`).
+2. The migration runs at boot before `listen()` and removes any leftover org `invited` memberships + drops the index automatically. (Trawl has ~1 such test row → handled in epic Phase 9 / #3815.)
+3. No platform-invitation (`sign.cap` / `?inviteToken=` signup gate) behavior changes. Any downstream UI calling the removed `/invites` org routes must migrate to the add-member flow (#3813 / Vue #4280).
+
+---
+
 ## Invitations hardening: case-insensitive unique email index + two-phase invite claim (2026-06-10)
 
 Phase 3 of the invitations↔org decouple epic (#3811). Two downstream-relevant changes.
@@ -757,9 +778,11 @@ None for Node (CASL `@casl/ability` was already installed). No new npm packages 
 | `GET`    | `/api/admin/organizations/:organizationId`          | JWT+Admin| Platform admin: get org          |
 | `DELETE` | `/api/admin/organizations/:organizationId`          | JWT+Admin| Platform admin: delete org       |
 | `GET`    | `/api/organizations/:organizationId/members`        | JWT      | List members                     |
-| `POST`   | `/api/organizations/:organizationId/members/invite` | JWT      | Invite a member                  |
 | `PUT`    | `/api/organizations/:organizationId/members/:memberId` | JWT   | Update member role               |
 | `DELETE` | `/api/organizations/:organizationId/members/:memberId` | JWT   | Remove member                    |
+| `POST`   | `/api/organizations/:organizationId/requests`       | JWT      | Request to join                  |
+| `PUT`    | `/api/organizations/:organizationId/requests/:membershipRequestId/approve` | JWT | Approve join request   |
+| `PUT`    | `/api/organizations/:organizationId/requests/:membershipRequestId/reject`  | JWT | Reject join request    |
 
 ---
 
@@ -1061,7 +1084,7 @@ The organizations module follows the standard Devkit module structure:
 modules/organizations/
   controllers/
     organizations.controller.js          # CRUD + adminList + organizationByID param middleware
-    organizations.membership.controller.js  # list, invite, updateRole, remove + memberByID
+    organizations.membership.controller.js  # list, updateRole, remove + memberByID
   helpers/
     slug.js                              # slugify() + generateOrganizationSlug()
   migrations/
@@ -1070,7 +1093,7 @@ modules/organizations/
     organizations.model.mongoose.js      # Organization Mongoose model (name, slug, domain, plan, createdBy)
     organizations.schema.js              # Zod validation schema
     organizations.membership.model.mongoose.js  # Membership Mongoose model (userId, organizationId, role)
-    organizations.membership.schema.js   # Zod validation (MembershipInvite, MembershipUpdate)
+    organizations.membership.schema.js   # Zod validation (MembershipUpdate)
   policies/
     organizations.policy.js              # CASL abilities for Organization + Membership subjects
   repositories/

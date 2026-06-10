@@ -21,7 +21,7 @@ const OBJECT_ID_RE = /^[0-9a-fA-F]{24}$/;
 /**
  * Derive a human-readable action from the Express route path.
  * e.g. `/api/auth/signin` → `auth.signin`
- *      `/api/organizations/:orgId/members/invite` → `organizations.invite`
+ *      `/api/organizations/:orgId/members/:memberId` → `organizations.members`
  *      `/api/billing/checkout` → `billing.checkout`
  * @param {string} routePath - The Express matched route path (req.route.path)
  * @param {string} baseUrl - The Express baseUrl (req.baseUrl)

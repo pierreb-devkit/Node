@@ -1,8 +1,6 @@
 /**
  * Module dependencies
  */
-import crypto from 'crypto';
-
 import config from '../../../config/index.js';
 import logger from '../../../lib/services/logger.js';
 import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
@@ -284,120 +282,6 @@ const leave = async (userId, organizationId) => {
 };
 
 /**
- * @function invite
- * @description Invite a user to an organization by email. Creates an invited membership with a token.
- * @param {String} organizationId - The ID of the organization.
- * @param {String} email - The email address to invite.
- * @param {Object} invitedBy - The user object of the inviter.
- * @returns {Promise<Object>} The created membership and invite token.
- */
-const invite = async (organizationId, email, invitedBy) => {
-  // Check for existing invited membership by email first (handles non-registered users)
-  const existingInvite = await MembershipRepository.findOne({
-    invitedEmail: email.toLowerCase(),
-    organizationId,
-    status: MEMBERSHIP_STATUSES.INVITED,
-  });
-  if (existingInvite) throw new Error('An invite has already been sent to this email');
-
-  const existingUser = await UserService.findByEmail(email);
-  if (existingUser) {
-    const existingMembership = await MembershipRepository.findOne({
-      userId: existingUser._id,
-      organizationId,
-      status: { $in: [MEMBERSHIP_STATUSES.ACTIVE, MEMBERSHIP_STATUSES.PENDING, MEMBERSHIP_STATUSES.INVITED] },
-    });
-    if (existingMembership) throw new Error('User is already a member or has a pending request');
-  }
-
-  const inviteToken = crypto.randomBytes(20).toString('hex');
-  const membership = await MembershipRepository.create({
-    userId: existingUser ? existingUser._id : null,
-    organizationId,
-    role: MEMBERSHIP_ROLES.MEMBER,
-    status: MEMBERSHIP_STATUSES.INVITED,
-    inviteToken,
-    invitedEmail: email.toLowerCase(),
-    inviteExpiresAt: new Date(Date.now() + 7 * 24 * 3600000),
-  });
-
-  if (mailer.isConfigured()) {
-    const org = await OrganizationRepository.get(organizationId);
-    if (org?.name) {
-      try {
-        await mailer.sendMail({
-          to: email,
-          subject: `You've been invited to join ${org.name}`,
-          template: 'org-invite',
-          params: {
-            inviterName: [invitedBy.firstName, invitedBy.lastName].filter(Boolean).join(' '),
-            orgName: org.name,
-            url: `${getBaseUrl()}/invite?token=${inviteToken}`,
-            appName: config.app.title,
-            appContact: config.mailer.from,
-          },
-        });
-      } catch {
-        // Clean up persisted membership so the invite can be retried
-        await MembershipRepository.remove(membership);
-        throw new Error('Failed to send invite email');
-      }
-    }
-  }
-
-  return { membership, inviteToken };
-};
-
-/**
- * @function acceptInvite
- * @description Accept an organization invite by token. Sets the membership to active.
- * @param {String} token - The invite token.
- * @param {String} userId - The ID of the accepting user.
- * @returns {Promise<Object>} The updated membership.
- */
-const acceptInvite = async (token, userId) => {
-  const membership = await MembershipRepository.findOne({ inviteToken: token, status: MEMBERSHIP_STATUSES.INVITED });
-  if (!membership) throw new Error('Invalid or expired invite');
-
-  if (membership.inviteExpiresAt && membership.inviteExpiresAt < Date.now()) {
-    throw new Error('Invite has expired');
-  }
-
-  // Verify the accepting user matches the intended invite recipient
-  const user = await UserService.getBrut({ id: String(userId) });
-  if (!user) throw new Error('User not found');
-
-  const invitedUserId = membership.userId?._id || membership.userId;
-  if (invitedUserId && String(invitedUserId) !== String(userId)) {
-    throw new Error('This invite belongs to another user');
-  }
-  if (membership.invitedEmail && membership.invitedEmail.toLowerCase() !== user.email.toLowerCase()) {
-    throw new Error('This invite belongs to another email address');
-  }
-
-  membership.userId = userId;
-  membership.status = MEMBERSHIP_STATUSES.ACTIVE;
-  membership.inviteToken = null;
-  const result = await MembershipRepository.update(membership);
-
-  if (user && !user.currentOrganization) {
-    await UserService.updateById(user._id, {
-      currentOrganization: membership.organizationId._id || membership.organizationId,
-    });
-  }
-
-  return result;
-};
-
-/**
- * @function getInvite
- * @description Get invite details by token.
- * @param {String} token - The invite token.
- * @returns {Promise<Object|null>} The invited membership or null.
- */
-const getInvite = (token) => MembershipRepository.findOne({ inviteToken: token, status: MEMBERSHIP_STATUSES.INVITED });
-
-/**
  * @function count
  * @description Service to count memberships matching a filter.
  * @param {Object} filter - The filter criteria.
@@ -444,9 +328,6 @@ export default {
   createJoinRequest,
   approveRequest,
   rejectRequest,
-  invite,
-  acceptInvite,
-  getInvite,
   count,
   aggregateCountByOrganizations,
   deleteMany,
