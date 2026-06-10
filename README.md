@@ -35,7 +35,7 @@ Designed to be cloned into downstream projects and kept up-to-date via `git merg
 - **User** : classic register / auth or oAuth (Google, Apple) - profile management (update, avatar upload)
 - **User data privacy** : delete all - get all - send all by mail
 - **Admin** : list users - get user - edit user - delete user
-- **Organizations** : multi-tenant organization management - create, update, delete orgs - member invite, role management (owner/admin/member) - platform admin org listing
+- **Organizations** : multi-tenant organization management - create, update, delete orgs - join requests (request / approve / reject), role management (owner/admin/member) - platform admin org listing
 - **Signup access control** : invite-only signup (single-use token links) + hard account cap (beta gating) - admin-managed invitations, public signup auto-locks at the cap
 - **CASL v2 Authorization** : document-level permission checks via [@casl/ability](https://casl.js.org/) - replaces route-level role rules with per-document conditions (ownership, org scope)
 - **Migration System** : automatic database migrations at boot - tracks executed scripts in MongoDB - idempotent reruns
@@ -189,9 +189,12 @@ Both file types are optional and can be used independently or together. Per-modu
 | `PUT`    | `/api/organizations/:organizationId`                    | JWT       | Update organization         |
 | `DELETE` | `/api/organizations/:organizationId`                    | JWT       | Delete organization         |
 | `GET`    | `/api/organizations/:organizationId/members`            | JWT       | List members                |
-| `POST`   | `/api/organizations/:organizationId/members/invite`     | JWT       | Invite member               |
 | `PUT`    | `/api/organizations/:organizationId/members/:memberId`  | JWT       | Update member role          |
 | `DELETE` | `/api/organizations/:organizationId/members/:memberId`  | JWT       | Remove member               |
+| `POST`   | `/api/organizations/:organizationId/requests`           | JWT       | Request to join             |
+| `GET`    | `/api/organizations/:organizationId/requests`           | JWT       | List pending join requests  |
+| `PUT`    | `/api/organizations/:organizationId/requests/:membershipRequestId/approve` | JWT | Approve join request |
+| `PUT`    | `/api/organizations/:organizationId/requests/:membershipRequestId/reject`  | JWT | Reject join request  |
 | `GET`    | `/api/admin/organizations`                              | JWT+Admin | List all organizations      |
 | `GET`    | `/api/admin/organizations/:organizationId`              | JWT+Admin | Get any organization        |
 | `DELETE` | `/api/admin/organizations/:organizationId`              | JWT+Admin | Delete any organization     |

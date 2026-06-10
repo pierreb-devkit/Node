@@ -96,63 +96,6 @@ const listMine = async (req, res) => {
 };
 
 /**
- * @function invite
- * @description Endpoint to invite a user to an organization by email.
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @returns {Promise<void>}
- */
-const invite = async (req, res) => {
-  try {
-    const { email } = req.body;
-    if (!email) return responses.error(res, 422, 'Unprocessable Entity', 'Email is required')();
-    const result = await MembershipService.invite(
-      req.organization._id || req.organization.id,
-      email,
-      req.user,
-    );
-    responses.success(res, 'invitation sent')(result);
-  } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
-  }
-};
-
-/**
- * @function acceptInvite
- * @description Endpoint to accept an organization invite by token.
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @returns {Promise<void>}
- */
-const acceptInvite = async (req, res) => {
-  try {
-    const { token } = req.params;
-    const membership = await MembershipService.acceptInvite(token, req.user._id || req.user.id);
-    responses.success(res, 'invitation accepted')(membership);
-  } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
-  }
-};
-
-/**
- * @function getInvite
- * @description Endpoint to get invite details by token.
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @returns {Promise<void>}
- */
-const getInvite = async (req, res) => {
-  try {
-    const { token } = req.params;
-    const membership = await MembershipService.getInvite(token);
-    if (!membership) return responses.error(res, 404, 'Not Found', 'Invalid or expired invite')();
-    responses.success(res, 'invite details')(membership);
-  } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
-  }
-};
-
-/**
  * @function requestByID
  * @description Middleware to fetch a pending membership by its ID.
  * @param {Object} req - Express request object
@@ -182,8 +125,5 @@ export default {
   approve,
   reject,
   listMine,
-  invite,
-  acceptInvite,
-  getInvite,
   requestByID,
 };

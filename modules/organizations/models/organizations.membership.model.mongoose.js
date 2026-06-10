@@ -27,12 +27,9 @@ const MembershipMongoose = new Schema(
     },
     status: {
       type: String,
-      enum: ['active', 'pending', 'rejected', 'invited'],
+      enum: ['active', 'pending'],
       default: 'active',
     },
-    inviteToken: { type: String, default: null },
-    invitedEmail: { type: String, default: null },
-    inviteExpiresAt: { type: Date, default: null },
   },
   {
     timestamps: true,
@@ -46,11 +43,6 @@ MembershipMongoose.index(
   { userId: 1, organizationId: 1 },
   { unique: true, partialFilterExpression: { userId: { $exists: true, $ne: null } } },
 );
-
-/**
- * Sparse index on inviteToken for invite lookups
- */
-MembershipMongoose.index({ inviteToken: 1 }, { sparse: true });
 
 /**
  * Single-field index on organizationId for list-by-org queries

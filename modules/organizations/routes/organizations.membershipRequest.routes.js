@@ -38,24 +38,6 @@ export default (app) => {
     .all(passport.authenticate('jwt', { session: false }), organizations.loadMembership, policy.isAllowed)
     .put(membershipRequests.reject);
 
-  // Invite a user to an organization (owner/admin)
-  app
-    .route('/api/organizations/:organizationId/invites')
-    .all(passport.authenticate('jwt', { session: false }), organizations.loadMembership, policy.isAllowed)
-    .post(membershipRequests.invite);
-
-  // Get invite details
-  app
-    .route('/api/invites/:token')
-    .all(passport.authenticate('jwt', { session: false }))
-    .get(membershipRequests.getInvite);
-
-  // Accept an invite
-  app
-    .route('/api/invites/:token/accept')
-    .all(passport.authenticate('jwt', { session: false }))
-    .post(membershipRequests.acceptInvite);
-
   // Bind param middleware
   app.param('membershipRequestId', membershipRequests.requestByID);
 };
