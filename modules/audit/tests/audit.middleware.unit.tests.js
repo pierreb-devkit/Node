@@ -222,7 +222,7 @@ describe('Audit middleware unit tests:', () => {
   test('should derive action from nested route path', () => {
     expect(deriveAction('/signin', '/api/auth')).toBe('auth.signin');
     expect(deriveAction('/checkout', '/api/billing')).toBe('billing.checkout');
-    expect(deriveAction('/:orgId/members/invite', '/api/organizations')).toBe('organizations.invite');
+    expect(deriveAction('/:orgId/members/:memberId', '/api/organizations')).toBe('organizations.members');
     expect(deriveAction('/:token', '/api/auth/password/reset')).toBe('auth.reset');
   });
 
