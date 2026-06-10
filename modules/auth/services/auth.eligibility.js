@@ -30,6 +30,11 @@ export const registerSignupEligibility = (fn) => {
  * order), or null when no check returned one. The result is opaque to auth: it is
  * handed straight back to the caller (e.g. the invitations checker returns
  * `{ invite, consume }`, which auth relays without importing any invitation code).
+ *
+ * NOTE for future check authors (P5/P8 will register more): a THROW from ANY
+ * check aborts the whole chain and blocks signup — even a check that runs AFTER
+ * an earlier one already resolved a non-null result. Throwing is "block signup",
+ * not "I have no opinion"; return `undefined` for the latter. Order matters.
  * @param {{ email?: string, body?: Object, req?: Object, oauth?: Object }} ctx
  * @returns {Promise<any|null>} the first non-null check result, or null
  */
@@ -37,6 +42,8 @@ export const assertSignupEligible = async (ctx) => {
   let result = null;
   for (const check of checks) {
     const r = await check(ctx);
+    // Loose `== null`: a check returning either undefined or null counts as "no
+    // result" (a check can `return;` to mean "no opinion"). First non-null wins.
     if (result == null && r != null) result = r;
   }
   return result;
