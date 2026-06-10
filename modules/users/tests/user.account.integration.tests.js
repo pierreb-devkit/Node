@@ -291,6 +291,33 @@ describe('User integration tests:', () => {
       }
     });
 
+    // P8a / E20: referredBy is a server-only referral field — a client must never be
+    // able to self-assign a referrer via the self-update endpoint. It is absent from
+    // config.whitelists.users.update, so removeSensitive strips it. This proves the
+    // whitelist blocks it (the deliverable is the test, not new stripping code).
+    test('should NOT be able to set referredBy via PUT /api/users (server-only referral field)', async () => {
+      try {
+        const userUpdate = {
+          firstName: 'refUpdateFirst',
+          referredBy: '64b2f0000000000000000abc', // attacker-supplied referrer id
+        };
+        await agent.put('/api/users').send(userUpdate).expect(200);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      try {
+        // Read the raw doc — the whitelisted firstName landed, referredBy did NOT.
+        const result = await UserService.getBrut({ id: user.id });
+        expect(result.firstName).toBe('refUpdateFirst');
+        expect(result.referredBy == null).toBe(true);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
     test('should be able to remove current user', async () => {
       // Init user edited
       _userEdited.email = 'register_new_user_@test.com';

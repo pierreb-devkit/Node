@@ -623,6 +623,105 @@ describe('Signup invitations:', () => {
     });
   });
 
+  describe('P8a referral substrate (referredBy + invitation.accepted)', () => {
+    let invitationEvents;
+    let originalUp; let originalCap;
+
+    beforeAll(async () => {
+      invitationEvents = (await import(path.resolve('./modules/invitations/lib/events.js'))).default;
+    });
+
+    beforeEach(() => { originalUp = config.sign.up; originalCap = config.sign.cap; });
+    afterEach(async () => {
+      config.sign.up = originalUp; config.sign.cap = originalCap;
+      jest.restoreAllMocks();
+      for (const email of ['p8a-token@example.com', 'p8a-oauth@example.com', 'p8a-event@example.com']) {
+        try {
+          const existing = await UserService.getBrut({ email });
+          if (existing) await UserService.remove(existing);
+        } catch (_) { /* cleanup */ }
+      }
+    });
+
+    test('token path: invited signup sets referredBy = inviter id; a client-supplied referredBy in the body is IGNORED', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const email = 'p8a-token@example.com';
+      const created = await adminAgent.post('/api/invitations').send({ email });
+      const { token } = created.body.data;
+      // The inviter is the admin who created the invite.
+      const admin = await UserService.getBrut({ email: 'inv-admin@test.com' });
+      const inviterId = String(admin._id);
+
+      config.sign.up = false; config.sign.cap = null;
+
+      // Attacker tries to self-assign a DIFFERENT referrer via the signup body.
+      const res = await request(app)
+        .post(`/api/auth/signup?inviteToken=${token}`)
+        .send({ email, password: 'Sup3rStr0ng!', referredBy: '64b2f0000000000000000999' });
+      expect(res.status).toBe(200);
+
+      const brut = await UserService.getBrut({ email });
+      // referredBy is the SERVER-resolved inviter, NOT the client-supplied id.
+      expect(String(brut.referredBy)).toBe(inviterId);
+      expect(String(brut.referredBy)).not.toBe('64b2f0000000000000000999');
+    });
+
+    test('OAuth path: an email-matched invited OAuth signup ALSO sets referredBy = inviter id', async () => {
+      const AuthController = (await import(path.resolve('./modules/auth/controllers/auth.controller.js'))).default;
+      const adminAgent = await createAdminAndSignin();
+      const email = 'p8a-oauth@example.com';
+      await adminAgent.post('/api/invitations').send({ email });
+      const admin = await UserService.getBrut({ email: 'inv-admin@test.com' });
+      const inviterId = String(admin._id);
+
+      config.sign.up = false; config.sign.cap = null;
+
+      const profil = {
+        firstName: 'Referred', // NB: the name Zod regex rejects digits — no 'P8a'
+        lastName: 'OAuth',
+        email,
+        avatar: '',
+        providerData: { sub: 'google-p8a-oauth-sub' },
+        emailVerifiedByProvider: true,
+      };
+      const createdUser = await AuthController.checkOAuthUserProfile(profil, 'sub', 'google');
+      expect(createdUser.email).toBe(email);
+
+      const brut = await UserService.getBrut({ email });
+      // OAuth-invited users are credited too (the same accept seam runs).
+      expect(String(brut.referredBy)).toBe(inviterId);
+    });
+
+    test('invitation.accepted fires with the documented payload on accept (proves the billing listener seam end-to-end)', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const email = 'p8a-event@example.com';
+      const created = await adminAgent.post('/api/invitations').send({ email });
+      const { token } = created.body.data;
+      const invitationId = created.body.data.id;
+      const admin = await UserService.getBrut({ email: 'inv-admin@test.com' });
+      const inviterId = String(admin._id);
+
+      // Spy on the REAL events singleton (billing's no-op listener is also attached
+      // to it at boot — this proves the event reaches consumers end-to-end).
+      const emitSpy = jest.spyOn(invitationEvents, 'emit');
+
+      config.sign.up = false; config.sign.cap = null;
+      const res = await request(app)
+        .post(`/api/auth/signup?inviteToken=${token}`)
+        .send({ email, password: 'Sup3rStr0ng!' });
+      expect(res.status).toBe(200);
+      const newUser = await UserService.getBrut({ email });
+
+      const acceptedCall = emitSpy.mock.calls.find(([evt]) => evt === 'invitation.accepted');
+      expect(acceptedCall).toBeDefined();
+      const payload = acceptedCall[1];
+      expect(payload.invitationId).toBe(invitationId);
+      expect(payload.email).toBe(email);
+      expect(String(payload.invitedBy)).toBe(inviterId);
+      expect(String(payload.acceptedUserId)).toBe(String(newUser._id));
+    });
+  });
+
   describe('E4 cap unify — blank cap means UNCAPPED at the signup gate', () => {
     let originalUp; let originalCap;
     beforeEach(() => { originalUp = config.sign.up; originalCap = config.sign.cap; });

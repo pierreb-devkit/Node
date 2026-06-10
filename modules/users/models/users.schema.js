@@ -50,6 +50,19 @@ const User = z.object({
   lockUntil: z.coerce.date().nullable().optional().default(null),
   // organization context
   currentOrganization: z.string().trim().optional(),
+  // Referral substrate (#5) — `referredBy` is DELIBERATELY NOT declared here.
+  // This is a server-only field set on invite acceptance (the invitations finalize
+  // seam, via UserService.updateById, which bypasses Zod + the update whitelist).
+  // The signup route validates the body with `model.isValid(User)`, and for POST it
+  // replaces req.body with the FULL Zod output — so any field present in this schema
+  // becomes client-writable on signup. Omitting `referredBy` makes Zod strip it from
+  // every client-facing parse (signup POST + PUT /api/users), guaranteeing a client
+  // can never self-assign a referrer. Do NOT add it here. (The Mongoose model + the
+  // updateById raw path are all the server needs to persist it.)
+  // When a future feature (e.g. the P8b referrals view) needs to READ/EXPOSE
+  // `referredBy`, do it via a response projection / the read whitelist — NEVER by
+  // adding it to this Zod schema (which is also the signup-POST write surface, so
+  // adding it here reintroduces the client-writable hole this omission closes).
   // others
   complementary: z.record(z.string(), z.unknown()).nullable().optional(),
 });

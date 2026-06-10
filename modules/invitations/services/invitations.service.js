@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import InvitationRepository from '../repositories/invitations.repository.js';
 import { DEFAULT_INVITE_EXPIRES_IN_DAYS, STALE_CLAIM_MINUTES } from '../lib/constants.js';
 import UserService from '../../users/services/users.service.js';
+import invitationEvents from '../lib/events.js';
 import config from '../../../config/index.js';
 import mails from '../../../lib/helpers/mailer/index.js';
 import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
@@ -202,6 +203,79 @@ const finalize = async (id, userId) => {
 };
 
 /**
+ * @desc P8a — the shared ACCEPT seam, invoked by the eligibility closure on FULL
+ * signup success for BOTH paths (local two-phase token AND OAuth-by-email). It:
+ *   1. finalizes the invite (status:'accepted', acceptedAt, acceptedUserId:userId,
+ *      usedAt — burns single-use; already idempotent on acceptedAt:null in the repo),
+ *   2. stamps `referredBy = invite.invitedBy` on the just-created user, SERVER-SIDE,
+ *      via UserService.updateById (raw update — bypasses the client whitelist + Zod,
+ *      so this is the ONLY way the field is ever written; never from a client body).
+ *      invitations already depends on users (the E9 guard), so this keeps auth import-free.
+ *   3. emits `invitation.accepted` so optional consumers (billing #5 credit-grant) can
+ *      react fire-and-forget.
+ *
+ * Referral substrate (#5) — NO credit-grant logic here; this only wires the field + event.
+ *
+ * `invitedBy` may be null (admin-created invite with no inviter). We DECIDE to ALWAYS
+ * emit on accept (the canonical "an invite was consumed" signal) with `invitedBy:null`
+ * in that case, but to SKIP the referredBy write when there is no inviter (leaving the
+ * user's `referredBy` at its `default:null` — writing null is a redundant no-op).
+ *
+ * If finalize() returns null (duplicate-accept / revoked / missing invite), the method
+ * returns null immediately — no referral side-effects fire for non-finalized invites.
+ *
+ * Both side-effects are best-effort: a referredBy-write failure or a listener throw must
+ * NOT roll back an already-burned invite or break the signup response (the invite is
+ * finalized first; the referral wiring is downstream of account creation). Errors are
+ * logged. The emit is wrapped because a synchronous listener throw would otherwise
+ * propagate out of `emit` into the signup flow.
+ *
+ * @param {Object} invite - the resolved invite doc (has id, invitedBy, email)
+ * @param {String} userId - the just-created user's id
+ * @returns {Promise<Object|null>} the finalized invite doc, or null if nothing to finalize
+ */
+const accept = async (invite, userId) => {
+  const result = await finalize(invite.id, userId);
+  // Guard: only wire referral side-effects when the invite was actually finalized.
+  // finalize() returns null on duplicate-accept / revoked / missing — we must not
+  // emit a consumed-invite signal or stamp referredBy for an invite that did not land.
+  if (!result) {
+    return null;
+  }
+  const invitedBy = invite.invitedBy || null;
+  // Stamp the referral link server-side (skip the redundant null write).
+  if (invitedBy) {
+    try {
+      await UserService.updateById(userId, { referredBy: invitedBy });
+    } catch (err) {
+      // Best-effort: the invite is already accepted; a referredBy write failure must
+      // not break signup. Surface it as a warning for follow-up (referral attribution
+      // would be lost for this user, but the account is valid).
+      logger.warn('invitations: failed to set referredBy on accepted signup', {
+        invitationId: String(invite.id),
+        userId: String(userId),
+        invitedBy: String(invitedBy),
+        message: err?.message,
+      });
+    }
+  }
+  // Always emit on accept (invitedBy may be null) so the event is the single canonical
+  // "invite consumed" signal. Guard the emit so a synchronous listener throw cannot
+  // escape into the signup flow (an emitted 'error' would crash without the init listener).
+  try {
+    invitationEvents.emit('invitation.accepted', {
+      invitationId: invite.id,
+      email: invite.email,
+      invitedBy,
+      acceptedUserId: userId,
+    });
+  } catch (err) {
+    logger.warn('invitations: invitation.accepted listener threw', { message: err?.message });
+  }
+  return result;
+};
+
+/**
  * @desc E2 — release a claimed-but-unfinalized invite (on any pre-response signup
  * failure) so it can be retried. Checks the repository return.
  * @param {String} id - the claimed invite id
@@ -244,6 +318,7 @@ export default {
   assertInvitedByEmail,
   claim,
   finalize,
+  accept,
   release,
   sweepStaleClaims,
   list,

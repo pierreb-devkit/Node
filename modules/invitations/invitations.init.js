@@ -80,10 +80,25 @@ export default async () => {
     }
     if (!invite) return undefined;
     // Return the resolved (+claimed, local) invite plus finalize/release closures
-    // bound to its id. finalize/release logic stays in this module; auth just relays.
+    // bound to it. The accept/release logic stays in this module; auth just relays.
+    // P8a: `finalize` now routes through InvitationsService.accept, which finalizes
+    // the invite AND wires the referral substrate (#5) — stamps referredBy on the new
+    // user (server-side) + emits `invitation.accepted`. The closure name stays
+    // `finalize` so auth.controller relays it unchanged (auth never imports us); accept
+    // is a superset of finalize. Fires on BOTH the token AND the OAuth path (both go
+    // through this same closure), so OAuth-invited users are credited too.
+
+    /**
+     * @desc Finalize accepted invite and run referral side-effects (P8a).
+     * Delegates to InvitationsService.accept so auth stays import-free.
+     * @param {String} userId - the just-created user id
+     * @returns {Promise<Object|null>} finalized invitation document, or null if not finalized
+     */
+    const finalizeInvite = (userId) => InvitationsService.accept(invite, userId);
+
     return {
       invite,
-      finalize: (userId) => InvitationsService.finalize(invite.id, userId),
+      finalize: finalizeInvite,
       release: () => InvitationsService.release(invite.id),
     };
   });
