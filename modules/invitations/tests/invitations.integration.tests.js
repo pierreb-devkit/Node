@@ -410,7 +410,7 @@ describe('Signup invitations:', () => {
     afterEach(async () => {
       config.sign.up = originalUp; config.sign.cap = originalCap;
       jest.restoreAllMocks();
-      for (const email of ['e2-replay@example.com', 'e2-claimed@example.com', 'e2-stale@example.com', 'e2-createthrow@example.com', 'e2-concurrent@example.com', 'e2-finalize-throw@example.com']) {
+      for (const email of ['e2-replay@example.com', 'e2-claimed@example.com', 'e2-stale@example.com', 'e2-createthrow@example.com', 'e2-concurrent@example.com', 'e2-finalize-throw@example.com', 'e2-oauth-finalize-throw@example.com', 'e2-release-throw@example.com']) {
         try {
           const existing = await UserService.getBrut({ email });
           if (existing) await UserService.remove(existing);
@@ -589,6 +589,54 @@ describe('Signup invitations:', () => {
       expect(acceptSpy).toHaveBeenCalledTimes(1);
       expect(res.status).toBe(200);
       expect(res.body.user.email).toBe(email);
+    });
+
+    test('OAuth: a finalize throw does NOT convert a successful OAuth signup into an error (best-effort)', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const email = 'e2-oauth-finalize-throw@example.com';
+      const created = await adminAgent.post('/api/invitations').send({ email });
+      expect(created.status).toBe(200);
+      config.sign.up = false; config.sign.cap = null;
+
+      // Mirror of the local-signup test above on the OAuth path: the user is created,
+      // then finalize (the same accept closure — no claim to release on OAuth) blows up.
+      const AuthController = (await import(path.resolve('./modules/auth/controllers/auth.controller.js'))).default;
+      const acceptSpy = jest.spyOn(InvitationService, 'accept').mockRejectedValueOnce(new Error('simulated finalize DB hiccup'));
+
+      const createdUser = await AuthController.checkOAuthUserProfile({
+        firstName: 'Invited',
+        lastName: 'OAuth',
+        email,
+        avatar: '',
+        providerData: { sub: 'google-e2-oauth-finalize-throw-sub' },
+        emailVerifiedByProvider: true,
+      }, 'sub', 'google');
+
+      // The account was created before finalize — the call must still resolve with it.
+      expect(acceptSpy).toHaveBeenCalledTimes(1);
+      expect(createdUser).toBeDefined();
+      expect(createdUser.email).toBe(email);
+    });
+
+    test('cap-reached release: a release throw is swallowed — the gate still answers 404, not a 5xx', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const email = 'e2-release-throw@example.com';
+      const created = await adminAgent.post('/api/invitations').send({ email });
+      const { token } = created.body.data;
+      // Closed signup + a positive cap already filled: the checker CLAIMS the invite,
+      // then the capacity gate rejects and must release the claim — make that release
+      // blow up. Best-effort: the 404 must come back unchanged (no 5xx), the stuck
+      // claim is the sweep's job.
+      config.sign.up = false;
+      config.sign.cap = await UserService.count(); // > 0 (the admin exists) and reached
+
+      const releaseSpy = jest.spyOn(InvitationService, 'release').mockRejectedValueOnce(new Error('simulated release DB hiccup'));
+
+      const res = await request(app)
+        .post(`/api/auth/signup?inviteToken=${token}`)
+        .send({ email, password: 'Sup3rStr0ng!' });
+      expect(releaseSpy).toHaveBeenCalledTimes(1);
+      expect(res.status).toBe(404); // swallowed — the capacity answer, not a masked 5xx
     });
   });
 

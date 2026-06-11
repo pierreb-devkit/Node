@@ -18,7 +18,7 @@ import authPassword from '../controllers/auth.password.controller.js';
 // the legacy `/api/auth/invitations*` paths the Vue admin store still calls keep
 // working; it points at the MOVED controller. Canonical mount: /api/invitations
 // (modules/invitations/routes/invitations.routes.js).
-// INTENTIONAL core→optional import: temporary coupling until P6 removes these routes.
+// INTENTIONAL core→optional import: temporary coupling until P9 removes these routes.
 import invitations from '../../invitations/controllers/invitations.controller.js';
 import InvitationSchema from '../../invitations/models/invitations.schema.js';
 

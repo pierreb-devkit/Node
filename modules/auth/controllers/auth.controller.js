@@ -102,7 +102,16 @@ const signup = async (req, res) => {
       // immediate). Only the closed-signup path claims, so gate the release on it to
       // avoid a no-op release (+ misleading log) on an open-signup presented token.
       if (invite && !config.sign.up) {
-        try { await eligibility?.release?.(); } catch (_releaseErr) { /* best-effort — the sweep recovers */ }
+        try {
+          await eligibility?.release?.();
+        } catch (releaseErr) {
+          // Best-effort — the sweep recovers; log it so a burst of "signup blocked"
+          // reports is diagnosable (a silently stuck claim looks like a dead invite).
+          logger.warn('[signup] invite release failed on capacity gate (left to the sweep)', {
+            err: releaseErr?.message,
+            stack: releaseErr?.stack,
+          });
+        }
       }
       return responses.error(res, 404, 'Signup error', 'Registration is currently deactivated')();
     }
@@ -213,6 +222,7 @@ const signup = async (req, res) => {
         logger.warn('[signup] invite finalize failed post-create (left to the sweep)', {
           userId: String(user._id || user.id),
           err: finalizeErr?.message,
+          stack: finalizeErr?.stack,
         });
       }
     }
@@ -568,6 +578,7 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
         logger.warn('[oauth] invite finalize failed post-create (left to the sweep)', {
           userId: String(createdUser._id || createdUser.id),
           err: finalizeErr?.message,
+          stack: finalizeErr?.stack,
         });
       }
     }
