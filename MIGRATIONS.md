@@ -58,7 +58,7 @@ Phase 3 of the invitations↔org decouple epic (#3811). Two downstream-relevant 
 ### Action required for downstream projects (`/update-project`)
 
 1. The model/repository/migration changes are devkit-owned → arrive via `/update-stack` (`--theirs`).
-2. **🔴 Before the first boot that carries the new schema, pre-check prod for case-variant duplicate emails** (`db.users.aggregate([{$group:{_id:{$toLower:'$email'},n:{$sum:1}}},{$match:{n:{$gt:1}}}])`). If any exist, resolve them BEFORE deploy — otherwise the migration aborts boot. (Trawl: handled in epic Phase 9 / #3815.)
+2. **🔴 Before the first boot that carries the new schema, pre-check prod for case-variant duplicate emails** (`db.users.aggregate([{$group:{_id:{$toLower:'$email'},n:{$sum:1}}},{$match:{n:{$gt:1}}}])`). If any exist, resolve them BEFORE deploy — otherwise the migration aborts boot. Mixed-case **singles** need no action: the migration now lowercases them in place (post-dup-check, pre-index) so binary lookups keep finding those accounts. (Trawl: handled in epic Phase 9 / #3815.)
 3. Migrations run at boot before `listen()`; the index swap + the `consumingAt` field land automatically once the dupe pre-check passes.
 4. No client/contract change; existing 200/422 signup assertions pass unchanged.
 

@@ -7,6 +7,8 @@ import mongoose from 'mongoose';
 import { beforeAll, afterAll, afterEach, describe, test, expect } from '@jest/globals';
 import { bootstrap } from '../../../lib/app.js';
 
+import { up } from '../migrations/20260610120000-users-email-ci-unique-index.js';
+
 /**
  * E3 — case-insensitive unique email index integration tests.
  *
@@ -88,5 +90,48 @@ describe('E3 case-insensitive unique email index:', () => {
     const found = await UserService.getBrut({ email: 'CI-Variant@Example.com' });
     expect(found).not.toBeNull();
     expect(found.email).toBe('ci-variant@example.com');
+  });
+
+  test('lowercases legacy mixed-case emails so post-chain binary lookups can find them', async () => {
+    const col = mongoose.connection.db.collection('users');
+    try {
+      // Bypass the schema (lowercase:true) — simulate a PRE-chain legacy row.
+      await col.insertOne({
+        email: 'Legacy.MixedCase@Example.COM',
+        firstName: 'Legacy',
+        lastName: 'Row',
+        provider: 'local',
+        roles: ['user'],
+      });
+      await up();
+      // Raw read (binary): the stored value itself must now be lowercase.
+      const raw = await col.findOne({ email: 'legacy.mixedcase@example.com' });
+      expect(raw).not.toBeNull();
+      const mixed = await col.findOne({ email: 'Legacy.MixedCase@Example.COM' });
+      expect(mixed).toBeNull();
+    } finally {
+      // Binary deletes — target BOTH forms so a failing (pre-fix) run cannot leak the row.
+      await col.deleteMany({ email: { $in: ['legacy.mixedcase@example.com', 'Legacy.MixedCase@Example.COM'] } });
+    }
+  });
+
+  test('still ABORTS on case-variant duplicates BEFORE normalizing anything', async () => {
+    const col = mongoose.connection.db.collection('users');
+    try {
+      // The bootstrapped DB already carries the CI unique index, which would reject the
+      // 2nd case-variant insert below — drop it to simulate the PRE-migration state the
+      // dup pre-check exists for (the finally re-runs up() to restore the end state).
+      try { await col.dropIndex('email_ci_unique'); } catch (_) { /* already absent */ }
+      await col.insertOne({ email: 'Dupe@x.com', firstName: 'A', lastName: 'A', provider: 'local', roles: ['user'] });
+      await col.insertOne({ email: 'dupe@x.com', firstName: 'B', lastName: 'B', provider: 'local', roles: ['user'] });
+      await expect(up()).rejects.toThrow(/case-variant duplicate/);
+      // Neither row was modified (abort happens before the normalization pass).
+      expect(await col.findOne({ email: 'Dupe@x.com' })).not.toBeNull();
+      expect(await col.findOne({ email: 'dupe@x.com' })).not.toBeNull();
+    } finally {
+      await col.deleteMany({ email: { $in: ['Dupe@x.com', 'dupe@x.com'] } });
+      // Restore the migrated end state (idempotent — the dup rows are gone).
+      await up();
+    }
   });
 });
