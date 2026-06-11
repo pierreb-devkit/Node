@@ -53,6 +53,17 @@ gh issue comment <N> --body "WIP — session $(date -u +%Y%m%dT%H%M%SZ)-$(uuidge
 
 Where `<branch-name>` is the branch this `/feature` invocation will use (planned name, even if not yet created). If the branch isn't decided yet, use `branch TBD`. Posting a follow-up comment with the real branch name after `/pull-request` creates it is best-effort manual — the linked PR superseding the WIP comment is what matters in practice.
 
+### 3b. Board status → In progress (best-effort)
+
+After a successful claim, flip the issue's board item — and, if it's a sub-issue, its parent epic — to **In progress**:
+
+```bash
+_bs=/Users/pierrebrisorgueil/Documents/Dev/github/pierreb-projects/infra/marketplace/shared/board-status.sh
+[ -f "$_bs" ] && bash "$_bs" "$(gh repo view --json nameWithOwner -q .nameWithOwner)#<N>" "In progress" || true
+```
+
+Best-effort by design: script missing (machine without the infra checkout), org without a board (comes/montaine), or issue not yet on the board → silent no-op; `/dev:roadmap` in-progress-sync is the safety net. Never set Ready or Done from here.
+
 ### 4. Proceed to Phase 0
 
 Continue to scope analysis below.
