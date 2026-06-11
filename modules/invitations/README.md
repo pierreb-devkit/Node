@@ -39,18 +39,36 @@ from the payload — reward either side, or both.
 
 ## Implementing rewards — two architectures (pick per product)
 
-### A. Event-driven grant (recommended for usage-based / credit-ledger billing)
+> **⚠️ Downstream rule first:** stack files (`modules/billing/**`, this module, `lib/`)
+> stay **byte-identical** downstream — the drift gate blocks edits and `/update-stack`
+> would clobber them. A downstream project therefore NEVER wires a listener by editing
+> `billing.init.js`. The two sanctioned channels are: **config** (deep-merged
+> `{project}.config.js` — for the standard reward below) and **project-only modules**
+> (glob-discovered, e.g. `modules/trawl-rewards/` — for custom logic).
 
-Wire a listener in the consuming module's `*.init.js` (the no-op seam already exists in
-`modules/billing/billing.init.js` with a `TODO(#5)`):
+### A. Standard grant — ships IN the stack, downstream enables it by CONFIG
+
+The grant listener is implemented **once, upstream, in `billing.init.js`** (#5 — the
+no-op seam with the `TODO(#5)` is already there), entirely gated by config:
 
 ```js
-// billing.init.js — the grant listener (#5)
+// modules/billing/config/billing.development.config.js — stack default: OFF
+billing: { referral: { enabled: false, referrerUnits: 0, refereeUnits: 0 } }
+```
+
+```js
+// a downstream's config/defaults/{project}.config.js — the ONLY thing it touches:
+billing: { referral: { enabled: true, referrerUnits: 500, refereeUnits: 200 } }
+```
+
+The stack listener (#5 implementation sketch — lives upstream, never downstream):
+
+```js
 invitationEvents.on('invitation.accepted', async ({ invitationId, invitedBy, acceptedUserId }) => {
   try {
-    const cfg = config.billing?.referral;                  // settings-driven amounts
-    if (!cfg?.enabled) return;
-    if (invitedBy) await grantCredits({ userId: invitedBy, units: cfg.referrerUnits, key: `referral:${invitationId}:referrer` });
+    const cfg = config.billing?.referral;
+    if (!cfg?.enabled) return;                              // downstream flips this
+    if (invitedBy && cfg.referrerUnits) await grantCredits({ userId: invitedBy, units: cfg.referrerUnits, key: `referral:${invitationId}:referrer` });
     if (cfg.refereeUnits) await grantCredits({ userId: acceptedUserId, units: cfg.refereeUnits, key: `referral:${invitationId}:referee` });
   } catch (err) {
     // ⚠️ MANDATORY self-guard: EventEmitter.emit is synchronous — the emit-site
@@ -63,26 +81,33 @@ invitationEvents.on('invitation.accepted', async ({ invitationId, invitedBy, acc
 
 Rules that make this production-grade:
 
-- **Idempotency** — key every grant on `invitationId` (a unique index on the ledger's
-  `key`): a replayed/duplicate event can never double-credit.
-- **Settings, not code** — amounts live in config, deep-merged per project:
-
-  ```js
-  // modules/billing/config/billing.development.config.js (default OFF)
-  billing: { referral: { enabled: false, referrerUnits: 0, refereeUnits: 0 } }
-  // a downstream's {project}.config.js simply overrides:
-  billing: { referral: { enabled: true, referrerUnits: 500, refereeUnits: 200 } }
-  ```
-
+- **Idempotency** — key every grant on `invitationId` (unique index on the ledger `key`):
+  a replayed/duplicate event can never double-credit.
 - **Reconcile cron (safety net)** — EventEmitter is in-process fire-and-forget; a crash
   between accept and grant loses the event. Pair the listener with a periodic script
   (k8s CronJob, pattern: `modules/billing/crons/`) that scans
   `invitations { status:'accepted', invitedBy: {$ne:null} }` vs the grant ledger keys and
-  back-fills misses. With the reconcile in place, the listener is latency, the cron is truth.
-- For a **cashback / external payout** (Stripe credit note, coupon, webhook to a partner
-  system) the listener body is the only thing that changes — same event, same idempotency
-  key, same self-guard. Anything can subscribe: `analytics`, a `webhooks` module, etc.
-  Multiple listeners are fine (the emitter is shared); each owns its own failure handling.
+  back-fills misses. The listener is latency; the cron is truth.
+
+### A'. Custom rewards (cashback, Stripe credit note, partner webhook) — project-only module
+
+When a downstream needs logic beyond units (cashback %, coupons, external payouts), it
+ships its OWN module — glob discovery means zero stack edits:
+
+```js
+// modules/{project}-rewards/{project}-rewards.init.js   (downstream-only module)
+import invitationEvents from '../invitations/lib/events.js';
+
+export default async () => {
+  invitationEvents.on('invitation.accepted', async (payload) => {
+    try { await myCashbackFlow(payload); }                 // same idempotency key rule
+    catch (err) { logger.error('[rewards] cashback failed', { err: err?.message, stack: err?.stack }); }
+  });
+};
+```
+
+Multiple listeners on the shared emitter are fine (the stack's standard grant + a
+project's custom one can coexist); each owns its own failure handling.
 
 ### B. Compute-on-read (no writes, simplest)
 
