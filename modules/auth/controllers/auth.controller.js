@@ -109,14 +109,14 @@ const signup = async (req, res) => {
     // Force default role on public signup — clients must not self-assign admin
     const safeBody = { ...req.body, roles: ['user'] };
     // Invite-gated signup: canonicalize the account email to the invite's pinned
-    // (lowercased) email. Enforces the pin exactly AND makes the case-sensitive
-    // unique-email index a reliable single-use backstop — concurrent case-variant
+    // (lowercased) email. Enforces the pin exactly AND makes the case-insensitive
+    // unique-email index (email_ci_unique, collation strength-2) a reliable single-use backstop — concurrent case-variant
     // signups on the same invite collide on the index instead of creating two accounts.
     if (invite) safeBody.email = invite.email;
     // E2: the invite was atomically CLAIMED (consumingAt stamped) before we got here,
     // so a throw FROM create itself must release the claim too — otherwise the invite
     // stays locked until the 15-min sweep. The most realistic throw is an E11000 from
-    // the case-sensitive unique-email index when two case-variant signups race the same
+    // the case-insensitive unique-email index (email_ci_unique) when two case-variant signups race the same
     // invited email (validation/transient errors land here as well). Mirror the three
     // release sites below + the same `!config.sign.up` gating (only the closed-signup
     // path claimed). Best-effort: a release failure must not mask the create error.
