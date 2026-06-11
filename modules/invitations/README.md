@@ -1,0 +1,120 @@
+# Invitations module
+
+Optional, standalone module owning the **platform invitation** concept: invite a contact by
+email → single-use token + `invitedBy` + beta-gate eligibility. Depends only on `auth`
+(via the `registerSignupEligibility` hook — `auth` never imports this module). Knows nothing
+about organizations: getting an invited person into an org is the 2-step flow
+*platform invite → `org.addMember(userId)`*.
+
+- Routes: `/api/invitations` (admin CRUD) + `/api/invitations/verify/:token` (public).
+- Model `Invitation` → collection `invitations` (`email`, `token`, `invitedBy`, `status`,
+  `expiresAt`, `consumingAt`, `acceptedAt`, `acceptedUserId`, `revokedAt`, `usedAt`).
+- Signup gate: two-phase claim/finalize (`consumingAt` CAS + lazy 15-min stale sweep),
+  email pin, soft revoke. See `services/invitations.service.js`.
+
+## The referral substrate (what "Referral rewards — coming soon" hooks into)
+
+The reward **seam** ships; the reward **logic** is deliberately deferred (#5, gates in #3833).
+Two primitives are written on every accepted invite — on **both** the token-signup path and
+the OAuth path (shared `accept(invite, userId)`):
+
+1. **`user.referredBy`** — the inviter's userId, stamped server-side on the created account
+   (never client-writable: absent from the Zod schemas + update whitelists; written via the
+   raw repository path only). This is the durable referral edge — it supports
+   *compute-on-read* forever, even if an event was missed.
+2. **`invitation.accepted` event** — emitted by this module's singleton
+   (`lib/events.js`):
+
+   ```js
+   invitationEvents.emit('invitation.accepted', {
+     invitationId,    // ← natural IDEMPOTENCY KEY for any grant
+     email,           // invitee email (lowercased)
+     invitedBy,       // inviter userId — null for admin-created invites with no inviter
+     acceptedUserId,  // the REFEREE — double-sided rewards need no schema change
+   });
+   ```
+
+Both the **referrer** (`invitedBy`) and the **referee** (`acceptedUserId`) are identifiable
+from the payload — reward either side, or both.
+
+## Implementing rewards — two architectures (pick per product)
+
+### A. Event-driven grant (recommended for usage-based / credit-ledger billing)
+
+Wire a listener in the consuming module's `*.init.js` (the no-op seam already exists in
+`modules/billing/billing.init.js` with a `TODO(#5)`):
+
+```js
+// billing.init.js — the grant listener (#5)
+invitationEvents.on('invitation.accepted', async ({ invitationId, invitedBy, acceptedUserId }) => {
+  try {
+    const cfg = config.billing?.referral;                  // settings-driven amounts
+    if (!cfg?.enabled) return;
+    if (invitedBy) await grantCredits({ userId: invitedBy, units: cfg.referrerUnits, key: `referral:${invitationId}:referrer` });
+    if (cfg.refereeUnits) await grantCredits({ userId: acceptedUserId, units: cfg.refereeUnits, key: `referral:${invitationId}:referee` });
+  } catch (err) {
+    // ⚠️ MANDATORY self-guard: EventEmitter.emit is synchronous — the emit-site
+    // try/catch in invitations.service only catches SYNC throws. An async
+    // listener's rejection escapes as an unhandledRejection. Never let it.
+    logger.error('[billing] referral grant failed', { err: err?.message, stack: err?.stack });
+  }
+});
+```
+
+Rules that make this production-grade:
+
+- **Idempotency** — key every grant on `invitationId` (a unique index on the ledger's
+  `key`): a replayed/duplicate event can never double-credit.
+- **Settings, not code** — amounts live in config, deep-merged per project:
+
+  ```js
+  // modules/billing/config/billing.development.config.js (default OFF)
+  billing: { referral: { enabled: false, referrerUnits: 0, refereeUnits: 0 } }
+  // a downstream's {project}.config.js simply overrides:
+  billing: { referral: { enabled: true, referrerUnits: 500, refereeUnits: 200 } }
+  ```
+
+- **Reconcile cron (safety net)** — EventEmitter is in-process fire-and-forget; a crash
+  between accept and grant loses the event. Pair the listener with a periodic script
+  (k8s CronJob, pattern: `modules/billing/crons/`) that scans
+  `invitations { status:'accepted', invitedBy: {$ne:null} }` vs the grant ledger keys and
+  back-fills misses. With the reconcile in place, the listener is latency, the cron is truth.
+- For a **cashback / external payout** (Stripe credit note, coupon, webhook to a partner
+  system) the listener body is the only thing that changes — same event, same idempotency
+  key, same self-guard. Anything can subscribe: `analytics`, a `webhooks` module, etc.
+  Multiple listeners are fine (the emitter is shared); each owns its own failure handling.
+
+### B. Compute-on-read (no writes, simplest)
+
+Derive the reward at quota/entitlement time instead of granting:
+
+```js
+const accepted = await InvitationRepository.countAccepted({ invitedBy: userId });
+const bonus = accepted * config.billing.referral.referrerUnits;
+```
+
+Always consistent (survives missed events), zero ledger. Costs a query on the hot
+entitlement path (index `referredBy`/`invitedBy` first — see the in-code `TODO(#5)`),
+and hard to cap/expire/audit ("when was this credited?"). Good for simple boosts
+(e.g. "+1 project slot per referral"), wrong for money-shaped balances.
+
+> Recommended: **A + reconcile cron** for credit/cashback economies; **B** for static
+> entitlement boosts. The substrate supports both simultaneously.
+
+## Gates before shipping rewards (#3833 — read it first)
+
+1. **Scope the list**: `GET /api/invitations` is platform-global today (admin-only by
+   CASL). Before widening `create Invitation` to regular users, add an `invitedBy`-scoped
+   `/mine` (PII: invitee emails).
+2. **Self-referral guard** — alternate-email self-invites become valuable once credits exist.
+3. **Open-signup hole** — claim/finalize are gated on `!config.sign.up`: with public signup
+   open the event never fires. Resolve (finalize-without-claim) or hide the Referrals tab
+   before any open deployment enables rewards.
+4. **Index `referredBy`** alongside the first real referral query.
+
+## UI
+
+The Vue module (`src/modules/invitations/` in Devkit Vue) ships the admin beta-gate tab and
+the account **Referrals** tab (invite a contact, my invites + status chips, a referral
+summary, and the "Referral rewards — coming soon" placeholder where #5's balance lands —
+the placeholder is contractually digit-free until real numbers exist).
