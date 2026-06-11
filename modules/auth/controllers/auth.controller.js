@@ -101,7 +101,9 @@ const signup = async (req, res) => {
       // leave it stuck mid-claim (the lazy sweep would also recover it; this is
       // immediate). Only the closed-signup path claims, so gate the release on it to
       // avoid a no-op release (+ misleading log) on an open-signup presented token.
-      if (invite && !config.sign.up) await eligibility?.release?.();
+      if (invite && !config.sign.up) {
+        try { await eligibility?.release?.(); } catch (_releaseErr) { /* best-effort — the sweep recovers */ }
+      }
       return responses.error(res, 404, 'Signup error', 'Registration is currently deactivated')();
     }
     // Force default role on public signup — clients must not self-assign admin
@@ -198,8 +200,22 @@ const signup = async (req, res) => {
     // checker (invitations module owns it; auth never imports invitation code). This
     // is the last pre-response step, and every earlier failure path (create-throw,
     // verify-failure, org-failure) already released the claim, so reaching finalize
-    // means the claim is still ours to burn.
-    if (invite && !config.sign.up) await eligibility?.finalize?.(user._id || user.id);
+    // means the claim is still ours to burn. finalize itself is best-effort (see
+    // catch below).
+    if (invite && !config.sign.up) {
+      try {
+        await eligibility?.finalize?.(user._id || user.id);
+      } catch (finalizeErr) {
+        // Best-effort: the account exists and the response is about to succeed —
+        // a finalize DB hiccup must not convert a created account into a 422.
+        // The claim stays stamped and the 15-min lazy sweep releases it; the
+        // invite is reconcilable from its pending state + the account's email.
+        logger.warn('[signup] invite finalize failed post-create (left to the sweep)', {
+          userId: String(user._id || user.id),
+          err: finalizeErr?.message,
+        });
+      }
+    }
 
     const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
       expiresIn: config.jwt.expiresIn,
@@ -540,7 +556,21 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
     // release on failure here — finalize marks it accepted+used (single-use). The
     // finalize filter (acceptedAt:null) + the unique-email index are the single-use
     // backstop against two concurrent OAuth signups for the same invited email.
-    if (oauthInvite) await oauthEligibility?.finalize?.(createdUser._id || createdUser.id);
+    // finalize itself is best-effort (see catch below).
+    if (oauthInvite) {
+      try {
+        await oauthEligibility?.finalize?.(createdUser._id || createdUser.id);
+      } catch (finalizeErr) {
+        // Best-effort: the account exists and the response is about to succeed —
+        // a finalize DB hiccup must not convert a created account into a 422.
+        // The claim stays stamped and the 15-min lazy sweep releases it; the
+        // invite is reconcilable from its pending state + the account's email.
+        logger.warn('[oauth] invite finalize failed post-create (left to the sweep)', {
+          userId: String(createdUser._id || createdUser.id),
+          err: finalizeErr?.message,
+        });
+      }
+    }
     return createdUser;
   } catch (err) {
     if (err instanceof AppError) throw err;

@@ -410,7 +410,7 @@ describe('Signup invitations:', () => {
     afterEach(async () => {
       config.sign.up = originalUp; config.sign.cap = originalCap;
       jest.restoreAllMocks();
-      for (const email of ['e2-replay@example.com', 'e2-claimed@example.com', 'e2-stale@example.com', 'e2-createthrow@example.com', 'e2-concurrent@example.com']) {
+      for (const email of ['e2-replay@example.com', 'e2-claimed@example.com', 'e2-stale@example.com', 'e2-createthrow@example.com', 'e2-concurrent@example.com', 'e2-finalize-throw@example.com']) {
         try {
           const existing = await UserService.getBrut({ email });
           if (existing) await UserService.remove(existing);
@@ -569,6 +569,26 @@ describe('Signup invitations:', () => {
       const swept = await Invitation.findById(claimed._id).exec();
       expect(swept.consumingAt == null).toBe(true); // claim released
       expect(await InvitationService.findValid(token, email)).not.toBeNull(); // reusable again
+    });
+
+    test('a finalize throw does NOT convert a successful signup into an error (best-effort)', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const email = 'e2-finalize-throw@example.com';
+      const created = await adminAgent.post('/api/invitations').send({ email });
+      const { token } = created.body.data;
+      config.sign.up = false; config.sign.cap = null;
+
+      // finalize is the last pre-response step of an ALREADY-successful signup — make
+      // it blow up once (the eligibility closure routes finalize through accept, P8a).
+      const acceptSpy = jest.spyOn(InvitationService, 'accept').mockRejectedValueOnce(new Error('simulated finalize DB hiccup'));
+
+      const res = await request(app)
+        .post(`/api/auth/signup?inviteToken=${token}`)
+        .send({ email, password: 'Sup3rStr0ng!' });
+      // The account was created before finalize — the response must still succeed.
+      expect(acceptSpy).toHaveBeenCalledTimes(1);
+      expect(res.status).toBe(200);
+      expect(res.body.user.email).toBe(email);
     });
   });
 
