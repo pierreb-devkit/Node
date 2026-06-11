@@ -101,20 +101,31 @@ const signup = async (req, res) => {
       // leave it stuck mid-claim (the lazy sweep would also recover it; this is
       // immediate). Only the closed-signup path claims, so gate the release on it to
       // avoid a no-op release (+ misleading log) on an open-signup presented token.
-      if (invite && !config.sign.up) await eligibility?.release?.();
+      if (invite && !config.sign.up) {
+        try {
+          await eligibility?.release?.();
+        } catch (releaseErr) {
+          // Best-effort — the sweep recovers; log it so a burst of "signup blocked"
+          // reports is diagnosable (a silently stuck claim looks like a dead invite).
+          logger.warn('[signup] invite release failed on capacity gate (left to the sweep)', {
+            err: releaseErr?.message,
+            stack: releaseErr?.stack,
+          });
+        }
+      }
       return responses.error(res, 404, 'Signup error', 'Registration is currently deactivated')();
     }
     // Force default role on public signup — clients must not self-assign admin
     const safeBody = { ...req.body, roles: ['user'] };
     // Invite-gated signup: canonicalize the account email to the invite's pinned
-    // (lowercased) email. Enforces the pin exactly AND makes the case-sensitive
-    // unique-email index a reliable single-use backstop — concurrent case-variant
+    // (lowercased) email. Enforces the pin exactly AND makes the case-insensitive
+    // unique-email index (email_ci_unique, collation strength-2) a reliable single-use backstop — concurrent case-variant
     // signups on the same invite collide on the index instead of creating two accounts.
     if (invite) safeBody.email = invite.email;
     // E2: the invite was atomically CLAIMED (consumingAt stamped) before we got here,
     // so a throw FROM create itself must release the claim too — otherwise the invite
     // stays locked until the 15-min sweep. The most realistic throw is an E11000 from
-    // the case-sensitive unique-email index when two case-variant signups race the same
+    // the case-insensitive unique-email index (email_ci_unique) when two case-variant signups race the same
     // invited email (validation/transient errors land here as well). Mirror the three
     // release sites below + the same `!config.sign.up` gating (only the closed-signup
     // path claimed). Best-effort: a release failure must not mask the create error.
@@ -198,8 +209,23 @@ const signup = async (req, res) => {
     // checker (invitations module owns it; auth never imports invitation code). This
     // is the last pre-response step, and every earlier failure path (create-throw,
     // verify-failure, org-failure) already released the claim, so reaching finalize
-    // means the claim is still ours to burn.
-    if (invite && !config.sign.up) await eligibility?.finalize?.(user._id || user.id);
+    // means the claim is still ours to burn. finalize itself is best-effort (see
+    // catch below).
+    if (invite && !config.sign.up) {
+      try {
+        await eligibility?.finalize?.(user._id || user.id);
+      } catch (finalizeErr) {
+        // Best-effort: the account exists and the response is about to succeed —
+        // a finalize DB hiccup must not convert a created account into a 422.
+        // The claim stays stamped and the 15-min lazy sweep releases it; the
+        // invite is reconcilable from its pending state + the account's email.
+        logger.warn('[signup] invite finalize failed post-create (left to the sweep)', {
+          userId: String(user._id || user.id),
+          err: finalizeErr?.message,
+          stack: finalizeErr?.stack,
+        });
+      }
+    }
 
     const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
       expiresIn: config.jwt.expiresIn,
@@ -540,7 +566,22 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
     // release on failure here — finalize marks it accepted+used (single-use). The
     // finalize filter (acceptedAt:null) + the unique-email index are the single-use
     // backstop against two concurrent OAuth signups for the same invited email.
-    if (oauthInvite) await oauthEligibility?.finalize?.(createdUser._id || createdUser.id);
+    // finalize itself is best-effort (see catch below).
+    if (oauthInvite) {
+      try {
+        await oauthEligibility?.finalize?.(createdUser._id || createdUser.id);
+      } catch (finalizeErr) {
+        // Best-effort: the account exists and the response is about to succeed —
+        // a finalize DB hiccup must not convert a created account into a 422.
+        // The claim stays stamped and the 15-min lazy sweep releases it; the
+        // invite is reconcilable from its pending state + the account's email.
+        logger.warn('[oauth] invite finalize failed post-create (left to the sweep)', {
+          userId: String(createdUser._id || createdUser.id),
+          err: finalizeErr?.message,
+          stack: finalizeErr?.stack,
+        });
+      }
+    }
     return createdUser;
   } catch (err) {
     if (err instanceof AppError) throw err;

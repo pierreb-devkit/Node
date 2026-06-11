@@ -24,6 +24,7 @@ const CI_INDEX = 'email_ci_unique';
  *       ABORT (throw) WITHOUT touching indexes — auto-merging accounts is a
  *       destructive product decision, not a migration's call. The thrown error
  *       lists the colliding groups so an operator can remediate, then re-run.
+ *   (a2) Normalize legacy mixed-case emails (post-dup-check, so it can never collide).
  *   (b) Create the collation unique index FIRST, THEN drop the plain `email_1`.
  *       There is never a window without a unique constraint on email.
  *   (c) Idempotent: re-running after success is a no-op (the CI index already
@@ -64,6 +65,22 @@ export async function up() {
       `[migration] users-email-ci-unique-index ABORTED: ${duplicates.length} case-variant duplicate email group(s) would violate the unique collation index. ` +
         `Remediate (merge/delete the duplicate accounts) before re-running — this migration will NOT auto-merge accounts. Sample (IDs only): ${sample}`,
     );
+  }
+
+  // ── (a2) Normalize legacy mixed-case emails to lowercase ──
+  // Post-chain every lookup lowercases its input (schema `lowercase:true` +
+  // repository normalizeEmail) and a plain findOne without per-query collation
+  // is a BINARY match — a legacy mixed-case row would be unreachable (signin,
+  // password-forgot, OAuth linkProviderByEmail, the invitations E9 guard all
+  // miss it). The dup pre-check above guarantees lowercasing cannot collide.
+  // Pipeline-update form so $toLower runs server-side; idempotent (the filter
+  // only matches rows still containing an uppercase letter).
+  const normalized = await collection.updateMany(
+    { email: { $type: 'string', $regex: /[A-Z]/ } },
+    [{ $set: { email: { $toLower: '$email' } } }],
+  );
+  if (normalized.modifiedCount > 0) {
+    console.info(`[migration] users-email-ci-unique-index: lowercased ${normalized.modifiedCount} legacy mixed-case email(s)`);
   }
 
   // Snapshot existing indexes once (listIndexes throws if the collection does not
