@@ -45,31 +45,42 @@ export default async (app) => {
   // Wire billing email listeners (quota warnings + payment-failed notifications).
   setupBillingEmails();
 
-  // Referral substrate (#5) — billing is an OPTIONAL consumer of the invitations
-  // fire-and-forget `invitation.accepted` event (dependency direction billing →
-  // invitations is fine: billing imports the events singleton, invitations never
-  // imports billing). This listener is a deliberate NO-OP that only PROVES the event
-  // seam works end-to-end (the payload arrives here on every invite acceptance); the
-  // actual credit-grant logic lands in #5. Wrapped so a future grant impl can't crash
-  // boot/signup. Mirrors the other cross-module listeners wired on this init.
+  // Referral grant (#3842, ex TODO(#5)) — billing is an OPTIONAL consumer of the
+  // invitations fire-and-forget `invitation.accepted` event (dependency direction
+  // billing → invitations is fine: billing imports the events singleton, invitations
+  // never imports billing). The STANDARD grant lives HERE, in the stack, entirely
+  // CONFIG-GATED: `config.billing.referral = { enabled:false, referrerUnits:0,
+  // refereeUnits:0, expiryDays:365 }` (stack default OFF — zero behavior until a
+  // downstream flips it in {project}.config.js; this file is NEVER edited downstream,
+  // drift gate + ISO-merge). Custom rewards (cashback, webhooks) live in a project-only
+  // module listening to the same event. See modules/invitations/README.md.
   /**
-   * @desc No-op referral seam listener for invitation acceptance events (P8a).
-   * Proves the cross-module event contract end-to-end; credit-grant logic lands in #5.
+   * @desc Referral grant listener for invitation acceptance events (#3842).
+   * Idempotently credits the referrer's and referee's organizations via
+   * BillingReferralService (keys `referral:<invitationId>:referrer|referee`).
+   * Self-guarded: `EventEmitter.emit` is synchronous, so the emit-site try/catch in
+   * invitations.service only catches SYNC throws — an async rejection escaping here
+   * would surface as an unhandledRejection. It never does: everything is wrapped, a
+   * failed grant is logged and left to the reconcile cron (the listener is latency;
+   * crons/billing.referralReconcile.js is truth).
    * @param {{invitationId: string, email: string, invitedBy: (string|null), acceptedUserId: string}} payload - Accepted invitation event payload.
-   * @returns {void}
+   * @returns {Promise<void>} settles when the grant attempt completes (never rejects)
    */
-  // eslint-disable-next-line no-unused-vars
-  invitationEvents.on('invitation.accepted', (payload) => {
-    // TODO(#5): implement the STANDARD grant HERE, in the stack, entirely CONFIG-GATED:
-    //   config.billing.referral = { enabled: false, referrerUnits: 0, refereeUnits: 0 }
-    //   if (!config.billing?.referral?.enabled) return;  → grant idempotently
-    //   (key on `referral:${payload.invitationId}:referrer|referee`).
-    // Downstream projects NEVER edit this file (drift gate + ISO-merge) — they flip the
-    // config in their {project}.config.js. Custom rewards (cashback, webhooks) live in a
-    // project-only module listening to the same event. See modules/invitations/README.md.
-    // TODO(#5): grant credits to payload.invitedBy (skip null) + optionally acceptedUserId.
-    // TODO(#5): async grant listener must self-guard rejections — the emit-site try/catch only catches sync throws.
-    // No-op for P8a — the seam is the deliverable, not the grant.
+  invitationEvents.on('invitation.accepted', async (payload) => {
+    try {
+      if (!config.billing?.referral?.enabled) return; // downstream flips this — default OFF
+      // Lazy import keeps the boot graph unchanged when the feature is off and avoids
+      // import-time model resolution in the service's organization fallback path.
+      const { default: BillingReferralService } = await import('./services/billing.referral.service.js');
+      await BillingReferralService.grantForInvitation(payload);
+    } catch (err) {
+      // ⚠️ MANDATORY self-guard (see lib/events.js): never let a rejection escape.
+      logger.error('[billing] referral grant failed — reconcile cron will back-fill', {
+        invitationId: String(payload?.invitationId ?? ''),
+        err: err?.message,
+        stack: err?.stack,
+      });
+    }
   });
 
   // Update analytics group properties when a subscription plan changes

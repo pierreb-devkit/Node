@@ -211,10 +211,11 @@ const finalize = async (id, userId) => {
  *      via UserService.updateById (raw update — bypasses the client whitelist + Zod,
  *      so this is the ONLY way the field is ever written; never from a client body).
  *      invitations already depends on users (the E9 guard), so this keeps auth import-free.
- *   3. emits `invitation.accepted` so optional consumers (billing #5 credit-grant) can
- *      react fire-and-forget.
+ *   3. emits `invitation.accepted` so optional consumers (the billing #3842 credit-grant)
+ *      can react fire-and-forget.
  *
- * Referral substrate (#5) — NO credit-grant logic here; this only wires the field + event.
+ * Referral substrate — NO credit-grant logic here; this only wires the field + event
+ * (the config-gated grant listener lives in billing.init.js, #3842).
  *
  * `invitedBy` may be null (admin-created invite with no inviter). We DECIDE to ALWAYS
  * emit on accept (the canonical "an invite was consumed" signal) with `invitedBy:null`

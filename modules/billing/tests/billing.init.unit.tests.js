@@ -14,6 +14,7 @@ describe('billing.init unit tests:', () => {
   let mockMongoose;
   let mockLogger;
   let mockInvitationEvents;
+  let mockReferralService;
 
   const mockApp = {};
 
@@ -66,6 +67,13 @@ describe('billing.init unit tests:', () => {
       default: mockInvitationEvents,
     }));
 
+    // #3842: the listener lazy-imports the referral service — stub it so the wiring
+    // tests stay isolated from users/organizations resolution.
+    mockReferralService = { grantForInvitation: jest.fn().mockResolvedValue({}) };
+    jest.unstable_mockModule('../services/billing.referral.service.js', () => ({
+      default: mockReferralService,
+    }));
+
     // Stub billing.email so boot validator tests don't wire real email listeners
     jest.unstable_mockModule('../billing.email.js', () => ({
       setupBillingEmails: jest.fn(),
@@ -87,15 +95,65 @@ describe('billing.init unit tests:', () => {
     await expect(billingInit(mockApp)).resolves.toBeUndefined();
   });
 
-  test('P8a: wires a (no-op) invitation.accepted listener that does not throw on emit', async () => {
-    await billingInit(mockApp);
-    // The seam is proven by the listener being registered on the invitations emitter.
-    const acceptedCall = mockInvitationEvents.on.mock.calls.find(([evt]) => evt === 'invitation.accepted');
-    expect(acceptedCall).toBeDefined();
-    const handler = acceptedCall[1];
-    expect(typeof handler).toBe('function');
-    // No-op: invoking it with a payload must not throw (and returns nothing).
-    expect(() => handler({ invitationId: 'i1', email: 'a@b.co', invitedBy: 'x', acceptedUserId: 'u1' })).not.toThrow();
+  describe('#3842 referral grant listener (invitation.accepted):', () => {
+    const payload = { invitationId: 'i1', email: 'a@b.co', invitedBy: 'x', acceptedUserId: 'u1' };
+
+    /**
+     * Boot the module and return the registered invitation.accepted handler.
+     * @returns {Promise<Function>} The wired listener.
+     */
+    const getHandler = async () => {
+      await billingInit(mockApp);
+      const acceptedCall = mockInvitationEvents.on.mock.calls.find(([evt]) => evt === 'invitation.accepted');
+      expect(acceptedCall).toBeDefined();
+      return acceptedCall[1];
+    };
+
+    test('wires the listener on the invitations emitter', async () => {
+      const handler = await getHandler();
+      expect(typeof handler).toBe('function');
+    });
+
+    test('config-gated: disabled (default) → returns immediately, the service is never imported/called', async () => {
+      // mockConfig.billing has NO referral block — existing deployments unaffected.
+      const handler = await getHandler();
+      await handler(payload);
+      expect(mockReferralService.grantForInvitation).not.toHaveBeenCalled();
+    });
+
+    test('config-gated: enabled:false explicitly → no-op', async () => {
+      mockConfig.billing.referral = { enabled: false, referrerUnits: 1000, refereeUnits: 500 };
+      const handler = await getHandler();
+      await handler(payload);
+      expect(mockReferralService.grantForInvitation).not.toHaveBeenCalled();
+    });
+
+    test('enabled → delegates the payload to BillingReferralService.grantForInvitation', async () => {
+      mockConfig.billing.referral = { enabled: true, referrerUnits: 1000, refereeUnits: 500 };
+      const handler = await getHandler();
+      await handler(payload);
+      expect(mockReferralService.grantForInvitation).toHaveBeenCalledTimes(1);
+      expect(mockReferralService.grantForInvitation).toHaveBeenCalledWith(payload);
+    });
+
+    test('self-guard: a grant REJECTION is swallowed + logged, never escapes the listener', async () => {
+      mockConfig.billing.referral = { enabled: true, referrerUnits: 1000, refereeUnits: 500 };
+      mockReferralService.grantForInvitation.mockRejectedValue(new Error('mongo down'));
+      const handler = await getHandler();
+      // The emit-site catch is sync-only — the async listener must resolve, not reject.
+      await expect(handler(payload)).resolves.toBeUndefined();
+      const errCall = mockLogger.error.mock.calls.find(([msg]) => msg.includes('referral grant failed'));
+      expect(errCall).toBeDefined();
+      expect(errCall[1]).toMatchObject({ invitationId: 'i1', err: 'mongo down' });
+    });
+
+    test('self-guard: even a malformed payload cannot make the listener throw/reject', async () => {
+      mockConfig.billing.referral = { enabled: true, referrerUnits: 1000, refereeUnits: 500 };
+      mockReferralService.grantForInvitation.mockRejectedValue(new Error('boom'));
+      const handler = await getHandler();
+      await expect(handler(undefined)).resolves.toBeUndefined();
+      expect(mockLogger.error).toHaveBeenCalled();
+    });
   });
 
   test('resolves without error when meterMode=true and no legacy docs', async () => {

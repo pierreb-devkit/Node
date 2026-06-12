@@ -123,6 +123,29 @@ const config = {
      * Example: [{ packId: 'pack_500k', meterUnits: 500000, stripePriceId: 'price_xxx' }]
      */
     packs: [],
+    /**
+     * Referral grant (#3842) — stack default: OFF. The `invitation.accepted` listener
+     * in billing.init.js credits meter units to the referrer's and/or referee's
+     * organization when an invited signup completes. Entirely config-gated: downstream
+     * projects NEVER edit billing.init.js — they flip this block in {project}.config.js:
+     *   billing: { referral: { enabled: true, referrerUnits: 1000, refereeUnits: 500 } }
+     *
+     * enabled       — master switch; when false the listener returns immediately (no-op).
+     * referrerUnits — units credited to the INVITER's currentOrganization (0 = skip side).
+     * refereeUnits  — units credited to the ACCEPTED USER's organization (0 = skip side).
+     * expiryDays    — referral credits expire after N days (same expiry mechanism as
+     *                 pack.expiryDays — swept by crons/billing.extrasExpiration.js).
+     *                 null = never expire.
+     *
+     * Pair with the reconcile cron (crons/billing.referralReconcile.js): the listener
+     * is in-process fire-and-forget (latency); the cron back-fills missed grants (truth).
+     */
+    referral: {
+      enabled: false,
+      referrerUnits: 0,
+      refereeUnits: 0,
+      expiryDays: 365,
+    },
   },
   stripe: {
     secretKey: process.env.DEVKIT_NODE_stripe_secretKey ?? '',

@@ -103,6 +103,17 @@ const releaseStaleClaims = (cutoff) =>
 const list = () => Invitation.find({}).select('-token').populate('invitedBy', 'email firstName lastName').sort('-createdAt').exec();
 
 /**
+ * @desc List ALL accepted invitations, lean + minimal projection — the referral
+ * reconcile cron (#3842) diffs them against the billing grant ledger keys and
+ * back-fills misses. Scans all accepted (not just `invitedBy:{$ne:null}`): referee
+ * grants exist even when invitedBy is null, so a referrer-only scan would miss
+ * referee-only back-fills.
+ * @returns {Promise<Array<{_id: Object, invitedBy: (Object|null), acceptedUserId: (Object|null)}>>}
+ */
+const findAccepted = () =>
+  Invitation.find({ status: 'accepted' }, { invitedBy: 1, acceptedUserId: 1 }).lean().exec();
+
+/**
  * @desc Get one invitation by id
  * @param {String} id
  * @returns {Promise<Object|null>}
@@ -124,4 +135,4 @@ const revoke = (id) =>
     { returnDocument: 'after' },
   ).exec();
 
-export default { create, findByToken, findByEmail, claim, finalize, release, releaseStaleClaims, list, get, revoke };
+export default { create, findByToken, findByEmail, claim, finalize, release, releaseStaleClaims, list, findAccepted, get, revoke };

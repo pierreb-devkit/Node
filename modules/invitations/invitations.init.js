@@ -82,7 +82,7 @@ export default async () => {
     // Return the resolved (+claimed, local) invite plus finalize/release closures
     // bound to it. The accept/release logic stays in this module; auth just relays.
     // P8a: `finalize` now routes through InvitationsService.accept, which finalizes
-    // the invite AND wires the referral substrate (#5) — stamps referredBy on the new
+    // the invite AND wires the referral substrate (#3842) — stamps referredBy on the new
     // user (server-side) + emits `invitation.accepted`. The closure name stays
     // `finalize` so auth.controller relays it unchanged (auth never imports us); accept
     // is a superset of finalize. Fires on BOTH the token AND the OAuth path (both go

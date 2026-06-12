@@ -1091,3 +1091,176 @@ describe('ExtraBalanceCreditGrant schema:', () => {
     expect(result.error).toBeDefined();
   });
 });
+
+/**
+ * Referral grant extensions (#3842) — creditGrant {refId, expiresAt} options,
+ * 'referral' source, findExistingRefIds reconcile helper.
+ */
+describe('Referral grant extensions (#3842):', () => {
+  const orgId = '507f1f77bcf86cd799439011';
+
+  describe('schema', () => {
+    let schema;
+
+    beforeEach(async () => {
+      jest.resetModules();
+      const mod = await import('../models/billing.extraBalance.schema.js');
+      schema = mod.default;
+    });
+
+    test('GrantSource accepts referral', () => {
+      const result = schema.GrantSource.safeParse('referral');
+      expect(result.error).toBeFalsy();
+    });
+
+    test('LedgerEntry accepts a referral topup with refId + expiresAt', () => {
+      const result = schema.LedgerEntry.safeParse({
+        kind: 'topup',
+        amount: 500,
+        source: 'referral',
+        refId: 'referral:64b2f0000000000000000001:referee',
+        expiresAt: new Date('2027-06-12'),
+      });
+      expect(result.error).toBeFalsy();
+    });
+
+    test('ExtraBalanceCreditGrant accepts explicit refId + expiresAt', () => {
+      const result = schema.ExtraBalanceCreditGrant.safeParse({
+        orgId,
+        amount: 1000,
+        source: 'referral',
+        refId: 'referral:64b2f0000000000000000001:referrer',
+        expiresAt: new Date('2027-06-12'),
+      });
+      expect(result.error).toBeFalsy();
+    });
+
+    test('ExtraBalanceCreditGrant rejects an empty refId', () => {
+      const result = schema.ExtraBalanceCreditGrant.safeParse({
+        orgId,
+        amount: 1000,
+        source: 'referral',
+        refId: '',
+      });
+      expect(result.error).toBeDefined();
+    });
+  });
+
+  describe('repository', () => {
+    let BillingExtraBalanceRepository;
+    let mockModel;
+
+    /**
+     * @param {Object[]} rows - Rows the aggregation should resolve with.
+     * @returns {{exec: Function}} A chainable aggregate stub.
+     */
+    const makeAggregateMock = (rows) => ({
+      exec: jest.fn().mockResolvedValue(rows),
+    });
+
+    beforeEach(async () => {
+      jest.resetModules();
+      mockModel = {
+        findOne: jest.fn(),
+        findOneAndUpdate: jest.fn(),
+        updateOne: jest.fn(),
+        updateMany: jest.fn(),
+        exists: jest.fn(),
+        aggregate: jest.fn(),
+      };
+      jest.unstable_mockModule('mongoose', () => ({
+        default: {
+          model: jest.fn(() => mockModel),
+          Types: { ObjectId: { isValid: jest.fn(() => true) } },
+        },
+      }));
+      const mod = await import('../repositories/billing.extraBalance.repository.js');
+      BillingExtraBalanceRepository = mod.default;
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    describe('creditGrant — {refId, expiresAt} options', () => {
+      test('uses the explicit refId as idempotency key and stamps source/expiresAt on the entry', async () => {
+        const key = 'referral:64b2f0000000000000000001:referrer';
+        const expiresAt = new Date('2027-06-12');
+        let step2Filter;
+        let step2Update;
+        mockModel.findOneAndUpdate
+          .mockResolvedValueOnce({ organization: orgId, ledger: [], cachedBalance: 0 })
+          .mockImplementation((filter, update) => {
+            step2Filter = filter;
+            step2Update = update;
+            return Promise.resolve({ organization: orgId, cachedBalance: 1000 });
+          });
+
+        const result = await BillingExtraBalanceRepository.creditGrant(orgId, 1000, 'referral', { refId: key, expiresAt });
+
+        expect(result.applied).toBe(true);
+        expect(step2Filter).toMatchObject({ organization: orgId, 'ledger.refId': { $ne: key } });
+        expect(step2Update.$push.ledger).toMatchObject({
+          kind: 'topup',
+          amount: 1000,
+          source: 'referral',
+          refId: key,
+          expiresAt,
+        });
+      });
+
+      test('replayed explicit refId returns applied:false reason duplicate_grant (no double-credit)', async () => {
+        mockModel.findOneAndUpdate
+          .mockResolvedValueOnce({ organization: orgId, ledger: [], cachedBalance: 0 })
+          .mockResolvedValueOnce(null); // idempotency guard excluded the doc
+
+        const result = await BillingExtraBalanceRepository.creditGrant(orgId, 1000, 'referral', {
+          refId: 'referral:64b2f0000000000000000001:referee',
+        });
+
+        expect(result.applied).toBe(false);
+        expect(result.reason).toBe('duplicate_grant');
+      });
+
+      test('without options the synthetic <source>-<orgId> key is preserved (signup grant unchanged)', async () => {
+        let step2Filter;
+        mockModel.findOneAndUpdate
+          .mockResolvedValueOnce({ organization: orgId, ledger: [], cachedBalance: 0 })
+          .mockImplementation((filter) => {
+            step2Filter = filter;
+            return Promise.resolve({ organization: orgId, cachedBalance: 500 });
+          });
+
+        await BillingExtraBalanceRepository.creditGrant(orgId, 500, 'signup_grant');
+
+        expect(step2Filter).toMatchObject({ 'ledger.refId': { $ne: `signup_grant-${orgId}` } });
+      });
+
+      test('throws on an empty-string refId option', async () => {
+        await expect(
+          BillingExtraBalanceRepository.creditGrant(orgId, 500, 'referral', { refId: '  ' }),
+        ).rejects.toThrow('invalid argument: refId must be a non-empty string when provided');
+      });
+    });
+
+    describe('findExistingRefIds', () => {
+      test('returns [] without querying when input is empty or not an array', async () => {
+        expect(await BillingExtraBalanceRepository.findExistingRefIds([])).toEqual([]);
+        expect(await BillingExtraBalanceRepository.findExistingRefIds(undefined)).toEqual([]);
+        expect(mockModel.aggregate).not.toHaveBeenCalled();
+      });
+
+      test('returns the refIds found by the aggregation and filters on $in', async () => {
+        const keys = ['referral:a:referrer', 'referral:a:referee', 'referral:b:referee'];
+        mockModel.aggregate.mockReturnValue(makeAggregateMock([{ _id: 'referral:a:referrer' }, { _id: 'referral:a:referee' }]));
+
+        const found = await BillingExtraBalanceRepository.findExistingRefIds(keys);
+
+        expect(found).toEqual(['referral:a:referrer', 'referral:a:referee']);
+        const pipeline = mockModel.aggregate.mock.calls[0][0];
+        expect(JSON.stringify(pipeline)).toContain('"ledger.refId"');
+        expect(pipeline[0].$match['ledger.refId'].$in).toEqual(keys);
+      });
+    });
+  });
+});

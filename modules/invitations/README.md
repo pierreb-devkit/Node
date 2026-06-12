@@ -15,7 +15,8 @@ about organizations: getting an invited person into an org is the 2-step flow
 
 ## The referral substrate (what "Referral rewards — coming soon" hooks into)
 
-The reward **seam** ships; the reward **logic** is deliberately deferred (#5, gates in #3833).
+The reward **seam** ships, and the STANDARD reward logic now ships too (#3842 — the
+config-gated grant listener in `billing.init.js`, default OFF; product gates in #3833).
 Two primitives are written on every accepted invite — on **both** the token-signup path and
 the OAuth path (shared `accept(invite, userId)`):
 
@@ -50,13 +51,12 @@ from the payload — reward either side, or both.
 
 ### A. Standard grant — ships IN the stack, downstream enables it by CONFIG
 
-The grant listener is implemented **once, upstream, in `billing.init.js`** (#5 — the
-no-op seam with the `TODO(#5)` is already there), entirely gated by config:
+**Shipped (#3842).** The grant listener is implemented **once, upstream, in
+`billing.init.js`** (it replaced the P8a no-op seam), entirely gated by config:
 
 ```js
-// modules/billing/config/billing.development.config.js — stack default: OFF
-// (this block does NOT exist yet — #5 adds it together with the listener impl)
-billing: { referral: { enabled: false, referrerUnits: 0, refereeUnits: 0 } }
+// modules/billing/config/billing.development.config.js — stack default: OFF (shipped)
+billing: { referral: { enabled: false, referrerUnits: 0, refereeUnits: 0, expiryDays: 365 } }
 ```
 
 ```js
@@ -64,34 +64,36 @@ billing: { referral: { enabled: false, referrerUnits: 0, refereeUnits: 0 } }
 billing: { referral: { enabled: true, referrerUnits: 500, refereeUnits: 200 } }
 ```
 
-The stack listener (#5 implementation sketch — lives upstream, never downstream):
+The listener delegates to `modules/billing/services/billing.referral.service.js`
+(`grantForInvitation`), which:
 
-```js
-invitationEvents.on('invitation.accepted', async ({ invitationId, invitedBy, acceptedUserId }) => {
-  try {
-    const cfg = config.billing?.referral;
-    if (!cfg?.enabled) return;                              // downstream flips this
-    if (invitedBy && cfg.referrerUnits) await grantCredits({ userId: invitedBy, units: cfg.referrerUnits, key: `referral:${invitationId}:referrer` });
-    if (cfg.refereeUnits) await grantCredits({ userId: acceptedUserId, units: cfg.refereeUnits, key: `referral:${invitationId}:referee` });
-  } catch (err) {
-    // ⚠️ MANDATORY self-guard: EventEmitter.emit is synchronous — the emit-site
-    // try/catch in invitations.service only catches SYNC throws. An async
-    // listener's rejection escapes as an unhandledRejection. Never let it.
-    logger.error('[billing] referral grant failed', { err: err?.message, stack: err?.stack });
-  }
-});
-```
+- maps the **user-scoped** referral actors onto the **organization-scoped** billing
+  ledger: each side credits the actor's `currentOrganization` (active-membership
+  fallback) on the `BillingExtraBalance` ledger via `creditGrant` — `kind:'topup'`,
+  `source:'referral'`, expiry from `billing.referral.expiryDays` (same sweep as pack
+  credits, `crons/billing.extrasExpiration.js`);
+- skips the referrer grant when `invitedBy` is null, and when
+  `invitedBy === acceptedUserId` (cheap self-referral floor — the full guard is #3833);
+- when an actor has no organization yet (mailer-configured signups provision the org at
+  email verification, AFTER the event), the side is left to the reconcile cron;
+- is **self-guarded**: the listener wraps everything in try/catch + `logger.error` — an
+  async rejection must never escape (`EventEmitter.emit` is synchronous; the emit-site
+  try/catch only covers sync throws, see `lib/events.js`).
 
-Rules that make this production-grade:
+Rules that make this production-grade (both shipped):
 
-- **Idempotency** — key every grant on `invitationId` (unique index on the ledger `key`):
-  a replayed/duplicate event can never double-credit.
-- **Reconcile cron (safety net)** — EventEmitter is in-process fire-and-forget; a crash
-  between accept and grant loses the event. Pair the listener with a periodic script
-  (k8s CronJob, pattern: `modules/billing/crons/`) that scans
-  ALL `invitations { status:'accepted' }` vs the grant ledger keys and back-fills misses
-  (scan all accepted, not just `invitedBy:{$ne:null}` — referee grants exist even when
-  `invitedBy` is null, so a referrer-only scan would miss referee-only back-fills).
+- **Idempotency** — every grant is keyed `referral:${invitationId}:referrer|referee`
+  (`ledger.refId`): a replayed/duplicate event can never double-credit. The ledger is an
+  embedded array, so enforcement is the house atomic
+  `'ledger.refId': { $ne: key }` findOneAndUpdate guard (same mechanism as
+  creditPack/debit), supported by the sparse `{ 'ledger.refId': 1, 'ledger.source': 1 }`
+  index.
+- **Reconcile cron (safety net)** — `crons/billing.referralReconcile.js` (k8s CronJob,
+  house cron pattern): EventEmitter is in-process fire-and-forget; a crash between
+  accept and grant loses the event. The cron scans ALL `invitations
+  { status:'accepted' }` vs the grant ledger keys and back-fills misses idempotently
+  (it scans all accepted, not just `invitedBy:{$ne:null}` — referee grants exist even
+  when `invitedBy` is null, so a referrer-only scan would miss referee-only back-fills).
   The listener is latency; the cron is truth.
 
 ### A'. Custom rewards (cashback, Stripe credit note, partner webhook) — project-only module
@@ -119,7 +121,7 @@ project's custom one can coexist); each owns its own failure handling.
 Derive the reward at quota/entitlement time instead of granting:
 
 ```js
-// illustrative — a countAccepted helper does not exist yet; #5 adds it (or an equivalent query)
+// illustrative — a countAccepted helper does not exist yet (add it, or an equivalent query)
 const accepted = await InvitationRepository.countAccepted({ invitedBy: userId });
 const bonus = accepted * config.billing.referral.referrerUnits;
 ```
@@ -148,5 +150,5 @@ and hard to cap/expire/audit ("when was this credited?"). Good for simple boosts
 
 The Vue module (`src/modules/invitations/` in Devkit Vue) ships the admin beta-gate tab and
 the account **Referrals** tab (invite a contact, my invites + status chips, a referral
-summary, and the "Referral rewards — coming soon" placeholder where #5's balance lands —
-the placeholder is contractually digit-free until real numbers exist).
+summary, and the "Referral rewards — coming soon" placeholder where the #3842 grant
+balance lands — the placeholder is contractually digit-free until real numbers exist).

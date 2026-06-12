@@ -1,0 +1,155 @@
+/**
+ * Cron script — referral grant reconcile sweep (#3842).
+ *
+ * The `invitation.accepted` listener in billing.init.js is in-process fire-and-forget:
+ * a crash between accept and grant loses the event, and a mailer-configured signup can
+ * fire it before the referee's organization exists. This sweep is the truth: it scans
+ * ALL `invitations { status:'accepted' }`, diffs the expected grant keys
+ * (`referral:<invitationId>:referrer|referee`) against the BillingExtraBalance ledger,
+ * and back-fills misses idempotently via BillingReferralService.grantForInvitation
+ * (the atomic `ledger.refId` guard makes overlap with the listener harmless).
+ *
+ * No-op when config.billing.referral.enabled === false (default).
+ * Intended to run as a Kubernetes CronJob — see modules/billing/crons/README.md.
+ *
+ * Usage:
+ *   NODE_ENV=production node modules/billing/crons/billing.referralReconcile.js
+ */
+
+import { randomUUID } from 'node:crypto';
+
+process.env.NODE_ENV = process.env.NODE_ENV || 'development';
+
+const [
+  { default: config },
+  { default: mongooseService },
+  { default: logger },
+  { applyJitter },
+  { getCronJitterMaxMs },
+  { acquireLock, releaseLock },
+] = await Promise.all([
+  import('../../../config/index.js'),
+  import('../../../lib/services/mongoose.js'),
+  import('../../../lib/services/logger.js'),
+  import('../lib/billing.cron-utils.js'),
+  import('../lib/billing.constants.js'),
+  import('../../../lib/services/distributedLock.js'),
+]);
+
+if (!config?.billing?.referral?.enabled) {
+  logger.info('[cron.referralReconcile] referral disabled — skipping.');
+  process.exit(0);
+}
+
+const LOCK_NAME = 'billing.referralReconcile';
+const LOCK_TTL_MS = 10 * 60 * 1000; // 10 min
+
+const startMs = Date.now();
+logger.info('[cron.referralReconcile] start');
+
+let lockHolder = null;
+try {
+  await applyJitter(getCronJitterMaxMs());
+  await mongooseService.loadModels();
+  await mongooseService.connect();
+
+  lockHolder = `${process.env.HOSTNAME ?? 'unknown'}:${randomUUID()}`;
+  const acquired = await acquireLock({ name: LOCK_NAME, ttlMs: LOCK_TTL_MS, holder: lockHolder });
+  if (!acquired) {
+    logger.info('[cron.referralReconcile] lock held by another pod, skipping');
+    process.exitCode = 0;
+  } else {
+    try {
+      const [
+        { default: BillingReferralService },
+        { default: BillingExtraBalanceRepository },
+        { default: InvitationRepository },
+      ] = await Promise.all([
+        import('../services/billing.referral.service.js'),
+        import('../repositories/billing.extraBalance.repository.js'),
+        import('../../invitations/repositories/invitations.repository.js'),
+      ]);
+
+      const cfg = config.billing.referral;
+      const accepted = await InvitationRepository.findAccepted();
+
+      // Expected keys per invitation, mirroring the grant rules (sides with 0 units,
+      // actor-less invites, and the self-referral floor produce no expected key).
+      const candidates = [];
+      for (const invite of accepted) {
+        const keys = BillingReferralService.referralKeys(String(invite._id));
+        const expected = [];
+        if (cfg.refereeUnits > 0 && invite.acceptedUserId) expected.push(keys.referee);
+        if (
+          cfg.referrerUnits > 0 &&
+          invite.invitedBy &&
+          String(invite.invitedBy) !== String(invite.acceptedUserId)
+        ) {
+          expected.push(keys.referrer);
+        }
+        if (expected.length > 0) candidates.push({ invite, expected });
+      }
+
+      const allKeys = candidates.flatMap((c) => c.expected);
+      const existing = new Set(await BillingExtraBalanceRepository.findExistingRefIds(allKeys));
+
+      let backfilled = 0;
+      let pending = 0;
+      let errors = 0;
+
+      for (const { invite, expected } of candidates) {
+        if (expected.every((key) => existing.has(key))) continue; // fully granted
+        try {
+          const result = await BillingReferralService.grantForInvitation({
+            invitationId: String(invite._id),
+            invitedBy: invite.invitedBy ? String(invite.invitedBy) : null,
+            acceptedUserId: invite.acceptedUserId ? String(invite.acceptedUserId) : null,
+          });
+          const sides = [result.referrer, result.referee].filter(Boolean);
+          const applied = sides.filter((s) => s.applied).length;
+          // `no_organization` = the actor has no workspace yet (e.g. email verification
+          // pending) — stays pending, retried on the next run once the org exists.
+          const waiting = sides.filter((s) => s.reason === 'no_organization').length;
+          if (applied > 0) {
+            backfilled += applied;
+            logger.info('[cron.referralReconcile] back-filled', { invitationId: String(invite._id), applied });
+          }
+          if (waiting > 0) pending += waiting;
+        } catch (err) {
+          errors += 1;
+          logger.error('[cron.referralReconcile] grantForInvitation failed', {
+            invitationId: String(invite._id),
+            err: err?.message,
+            stack: err?.stack,
+          });
+        }
+      }
+
+      logger.info('[cron.referralReconcile] complete', {
+        accepted: accepted.length,
+        backfilled,
+        pending,
+        errors,
+        durationMs: Date.now() - startMs,
+      });
+      process.exitCode = errors > 0 ? 1 : 0;
+    } finally {
+      // releaseLock failure is non-fatal: lock auto-expires on TTL.
+      // Log separately to preserve any original work error.
+      try {
+        await releaseLock({ name: LOCK_NAME, holder: lockHolder });
+      } catch (releaseErr) {
+        logger.error('[cron.referralReconcile] failed to release lock — will auto-expire on TTL', {
+          err: releaseErr,
+          cron: LOCK_NAME,
+        });
+      }
+    }
+  }
+} catch (err) {
+  logger.error('[cron.referralReconcile] failed', { err: err?.message, stack: err?.stack });
+  process.exitCode = 1;
+} finally {
+  await mongooseService.disconnect?.();
+}
+process.exit(process.exitCode ?? 0);

@@ -9,6 +9,7 @@ const chain = {
   select: jest.fn(() => chain),
   populate: jest.fn(() => chain),
   sort: jest.fn(() => chain),
+  lean: jest.fn(() => chain),
   exec,
 };
 const save = jest.fn();
@@ -124,6 +125,15 @@ describe('InvitationRepository', () => {
     expect(chain.select).toHaveBeenCalledWith('-token');
     expect(chain.populate).toHaveBeenCalledWith('invitedBy', 'email firstName lastName');
     expect(chain.sort).toHaveBeenCalledWith('-createdAt');
+  });
+
+  test('findAccepted scans status:accepted lean with the minimal referral projection (#3842)', async () => {
+    exec.mockResolvedValue([{ _id: 'i1', invitedBy: 'u1', acceptedUserId: 'u2' }]);
+    const result = await InvitationRepository.findAccepted();
+    // Scans ALL accepted (not invitedBy:{$ne:null}) — referee grants exist without an inviter.
+    expect(InvitationModel.find).toHaveBeenCalledWith({ status: 'accepted' }, { invitedBy: 1, acceptedUserId: 1 });
+    expect(chain.lean).toHaveBeenCalled();
+    expect(result).toEqual([{ _id: 'i1', invitedBy: 'u1', acceptedUserId: 'u2' }]);
   });
 
   test('get returns null for an invalid ObjectId without hitting the DB', async () => {

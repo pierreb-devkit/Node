@@ -4,6 +4,34 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Referral grant — config-gated `invitation.accepted` listener in billing (2026-06-12)
+
+Standard referral reward (#3842, the real tracker behind the old in-code `TODO(#5)` refs). The `invitation.accepted` no-op seam in `billing.init.js` is now the **config-gated grant listener**: on every accepted invite it idempotently credits meter units to the **referrer**'s and **referee**'s organizations on the `BillingExtraBalance` ledger (`kind:'topup'`, `source:'referral'`, keys `referral:<invitationId>:referrer|referee`, expiry like pack credits).
+
+### What changed (this repo)
+
+- **New config knob** (`modules/billing/config/billing.development.config.js`) — stack default **OFF**, zero behavior change for existing deployments:
+  ```js
+  billing: { referral: { enabled: false, referrerUnits: 0, refereeUnits: 0, expiryDays: 365 } }
+  ```
+- **`billing.init.js`** — the P8a no-op listener is replaced by the grant impl (async, self-guarded: a grant failure is logged, never escapes as an unhandledRejection). Skips the referrer grant when `invitedBy` is null or `invitedBy === acceptedUserId` (cheap self-referral floor; the full guard is #3833).
+- **New service** `modules/billing/services/billing.referral.service.js` — maps user-scoped referral actors onto the org-scoped ledger (actor's `currentOrganization`, active-membership fallback; an actor without an org yet — e.g. mailer-configured signups before email verification — is left to the cron).
+- **`creditGrant`** (`billing.extraBalance.repository.js`) now accepts `{ refId, expiresAt }` options (explicit idempotency key + expiry); backward compatible — signup grant unchanged. `source` enums (Mongoose + Zod) gain `'referral'`. New `findExistingRefIds` helper.
+- **New reconcile cron** `modules/billing/crons/billing.referralReconcile.js` (house cron pattern: jitter + distributed lock `billing.referralReconcile` 10 min TTL; gates on `billing.referral.enabled`, NOT `meterMode`): scans ALL `invitations { status:'accepted' }` vs the grant ledger keys and back-fills misses idempotently. The listener is latency; the cron is truth.
+- **New index** `invitations.invitedBy` (schema-declared, built by Mongoose autoIndex at boot) — the reconcile + future referral lists query it.
+
+### Action required for downstream projects (`/update-project`)
+
+1. All changes are devkit-owned stack files → arrive via `/update-stack` (`--theirs`). Default OFF: **no action = no behavior change**.
+2. **To enable referral rewards**, flip the knob in `config/defaults/{project}.config.js` (NEVER edit `billing.init.js`):
+   ```js
+   billing: { referral: { enabled: true, referrerUnits: 1000, refereeUnits: 500 } } // Trawl-decided values
+   ```
+3. When enabling, add a k8s CronJob manifest for `billing.referralReconcile.js` in the infra repo (mirror the existing billing cron manifests; recommended daily `0 4 * * *`). Also confirm `billing.extrasExpiration.js` runs — referral credits expire through the same sweep.
+4. The `invitations.invitedBy` index is created automatically at boot (autoIndex, small collection — no manual migration needed).
+
+---
+
 ## org.addMember + membership consent split (2026-06-10)
 
 Phase 5a of the invitations↔org decouple epic (#3813). Replaces the deleted org email-invite with a **consent-safe add-member flow**: an owner/admin adds an *existing* user, creating a **PENDING `owner_add`** membership that the **invited user** must accept — the owner can NEVER approve it (consent invariant).
