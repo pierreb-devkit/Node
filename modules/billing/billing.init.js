@@ -60,7 +60,14 @@ export default async (app) => {
    */
   // eslint-disable-next-line no-unused-vars
   invitationEvents.on('invitation.accepted', (payload) => {
-    // TODO(#5): grant referral credits to payload.invitedBy (skip when invitedBy is null).
+    // TODO(#5): implement the STANDARD grant HERE, in the stack, entirely CONFIG-GATED:
+    //   config.billing.referral = { enabled: false, referrerUnits: 0, refereeUnits: 0 }
+    //   if (!config.billing?.referral?.enabled) return;  → grant idempotently
+    //   (key on `referral:${payload.invitationId}:referrer|referee`).
+    // Downstream projects NEVER edit this file (drift gate + ISO-merge) — they flip the
+    // config in their {project}.config.js. Custom rewards (cashback, webhooks) live in a
+    // project-only module listening to the same event. See modules/invitations/README.md.
+    // TODO(#5): grant credits to payload.invitedBy (skip null) + optionally acceptedUserId.
     // TODO(#5): async grant listener must self-guard rejections — the emit-site try/catch only catches sync throws.
     // No-op for P8a — the seam is the deliverable, not the grant.
   });
