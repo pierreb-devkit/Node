@@ -164,7 +164,7 @@ const grantSide = async ({ userId, units, key, expiresAt }) => {
  * @param {Object} payload - The `invitation.accepted` payload (or its cron reconstruction).
  * @param {string} payload.invitationId - The accepted invitation id (idempotency root).
  * @param {string|null} payload.invitedBy - The inviter user id, or null.
- * @param {string} payload.acceptedUserId - The referee (just-created user) id.
+ * @param {string|null} payload.acceptedUserId - The referee (just-created user) id, or null for legacy/cron rows.
  * @returns {Promise<{skipped?: string, referrer?: Object, referee?: Object}>}
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
@@ -177,7 +177,10 @@ const grantForInvitation = async ({ invitationId, invitedBy, acceptedUserId } = 
   const expected = new Map(
     expectedGrantKeys({ invitationId, invitedBy, acceptedUserId }, cfg).map(({ side, key }) => [side, key]),
   );
-  const expiresAt = cfg.expiryDays != null && cfg.expiryDays > 0
+  if (cfg.expiryDays !== null && cfg.expiryDays !== undefined && cfg.expiryDays <= 0) {
+    throw new Error('billing.referral.expiryDays must be > 0 or null (use null for no expiry)');
+  }
+  const expiresAt = cfg.expiryDays != null
     ? new Date(Date.now() + cfg.expiryDays * 24 * 60 * 60 * 1000)
     : null;
   const result = {};

@@ -170,6 +170,14 @@ describe('billing.referral.service unit tests:', () => {
     }
   });
 
+  test('expiryDays 0 → throws (0 is not a valid expiry; use null for no-expiry)', async () => {
+    mockConfig.billing.referral.expiryDays = 0;
+
+    await expect(
+      BillingReferralService.grantForInvitation({ invitationId, invitedBy: inviterId, acceptedUserId: refereeId }),
+    ).rejects.toThrow('billing.referral.expiryDays must be > 0 or null');
+  });
+
   test('invitedBy null → referee grant only, referrer skipped with no_inviter', async () => {
     const result = await BillingReferralService.grantForInvitation({ invitationId, invitedBy: null, acceptedUserId: refereeId });
 

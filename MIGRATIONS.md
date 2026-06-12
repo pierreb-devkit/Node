@@ -11,9 +11,11 @@ Standard referral reward (#3842, the real tracker behind the old in-code `TODO(#
 ### What changed (this repo)
 
 - **New config knob** (`modules/billing/config/billing.development.config.js`) — stack default **OFF**, zero behavior change for existing deployments:
+
   ```js
   billing: { referral: { enabled: false, referrerUnits: 0, refereeUnits: 0, expiryDays: 365 } }
   ```
+
 - **`billing.init.js`** — the P8a no-op listener is replaced by the grant impl (async, self-guarded: a grant failure is logged, never escapes as an unhandledRejection). Skips the referrer grant when `invitedBy` is null or `invitedBy === acceptedUserId` (cheap self-referral floor; the full guard is #3833).
 - **New service** `modules/billing/services/billing.referral.service.js` — maps user-scoped referral actors onto the org-scoped ledger (actor's `currentOrganization`, active-membership fallback; an actor without an org yet — e.g. mailer-configured signups before email verification — is left to the cron).
 - **`creditGrant`** (`billing.extraBalance.repository.js`) now accepts `{ refId, expiresAt }` options (explicit idempotency key + expiry); backward compatible — signup grant unchanged. `source` enums (Mongoose + Zod) gain `'referral'`. New `findExistingRefIds` helper.
@@ -24,9 +26,11 @@ Standard referral reward (#3842, the real tracker behind the old in-code `TODO(#
 
 1. All changes are devkit-owned stack files → arrive via `/update-stack` (`--theirs`). Default OFF: **no action = no behavior change**.
 2. **To enable referral rewards**, flip the knob in `config/defaults/{project}.config.js` (NEVER edit `billing.init.js`):
+
    ```js
    billing: { referral: { enabled: true, referrerUnits: 1000, refereeUnits: 500 } } // Trawl-decided values
    ```
+
    ⚠️ Merging is safe everywhere (default OFF); do NOT enable until pierreb-devkit/Node#3833 lands — only the cheap self-referral floor ships here.
 3. When enabling, add a k8s CronJob manifest for `billing.referralReconcile.js` in the infra repo (mirror the existing billing cron manifests; recommended daily `0 4 * * *`). Also confirm `billing.extrasExpiration.js` runs — referral credits expire through the same sweep. Note: the first reconcile run retro-grants every previously accepted invitation — if unwanted, pre-seed the `referral:<id>:*` ledger keys before enabling.
 4. The `invitations.invitedBy` index is created automatically at boot (autoIndex, small collection — no manual migration needed).
