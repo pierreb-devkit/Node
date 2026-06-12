@@ -27,7 +27,8 @@ Standard referral reward (#3842, the real tracker behind the old in-code `TODO(#
    ```js
    billing: { referral: { enabled: true, referrerUnits: 1000, refereeUnits: 500 } } // Trawl-decided values
    ```
-3. When enabling, add a k8s CronJob manifest for `billing.referralReconcile.js` in the infra repo (mirror the existing billing cron manifests; recommended daily `0 4 * * *`). Also confirm `billing.extrasExpiration.js` runs — referral credits expire through the same sweep.
+   ⚠️ Merging is safe everywhere (default OFF); do NOT enable until pierreb-devkit/Node#3833 lands — only the cheap self-referral floor ships here.
+3. When enabling, add a k8s CronJob manifest for `billing.referralReconcile.js` in the infra repo (mirror the existing billing cron manifests; recommended daily `0 4 * * *`). Also confirm `billing.extrasExpiration.js` runs — referral credits expire through the same sweep. Note: the first reconcile run retro-grants every previously accepted invitation — if unwanted, pre-seed the `referral:<id>:*` ledger keys before enabling.
 4. The `invitations.invitedBy` index is created automatically at boot (autoIndex, small collection — no manual migration needed).
 
 ---

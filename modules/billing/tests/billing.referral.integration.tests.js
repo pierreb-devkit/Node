@@ -29,6 +29,8 @@ describe('Billing referral grant (#3842):', () => {
 
   const ADMIN_EMAIL = 'ref-admin@test.com';
   const GUEST_EMAIL = 'ref-guest@example.com';
+  const GUEST_OFF_EMAIL = 'ref-guest-off@example.com';
+  const GUEST_RACE_EMAIL = 'ref-guest-race@example.com';
   const PASSWORD = 'W@os.jsI$Aw3$0m3';
   const REFERRER_UNITS = 1000;
   const REFEREE_UNITS = 500;
@@ -43,7 +45,7 @@ describe('Billing referral grant (#3842):', () => {
   });
 
   afterAll(async () => {
-    for (const email of [ADMIN_EMAIL, GUEST_EMAIL]) {
+    for (const email of [ADMIN_EMAIL, GUEST_EMAIL, GUEST_OFF_EMAIL, GUEST_RACE_EMAIL]) {
       try {
         const existing = await UserService.getBrut({ email });
         if (existing) await UserService.remove(existing);
@@ -195,11 +197,61 @@ describe('Billing referral grant (#3842):', () => {
     expect(new Set(existing)).toEqual(new Set([referrerKey, refereeKey]));
   }, 30000);
 
+  test('concurrent grantForInvitation calls (Promise.all) → exactly ONE applied:true and ONE ledger entry per side-key', async () => {
+    // Pins the document-locking atomicity claim: two racers against REAL Mongo, the
+    // atomic `'ledger.refId': { $ne: key }` guard must serialize to a single credit.
+    const email = GUEST_RACE_EMAIL;
+    const adminAgent = await createAdminAndSignin();
+    const created = await adminAgent.post('/api/invitations').send({ email });
+    expect(created.status).toBe(200);
+    const { token } = created.body.data;
+    const invitationId = created.body.data.id;
+
+    // Disable referral during signup so the accept listener does NOT grant —
+    // the two racers below must be the FIRST writers on both keys.
+    config.billing.referral.enabled = false;
+    config.sign.up = false;
+    config.sign.cap = null;
+    const res = await request(app)
+      .post(`/api/auth/signup?inviteToken=${token}`)
+      .send({ email, password: 'Sup3rStr0ng!' });
+    expect(res.status).toBe(200);
+    await new Promise((resolve) => { setTimeout(resolve, 300); }); // let the (disabled) listener settle
+    config.billing.referral.enabled = true;
+
+    const admin = await UserService.getBrut({ email: ADMIN_EMAIL });
+    const guest = await UserService.getBrut({ email });
+    const payload = {
+      invitationId,
+      invitedBy: String(admin._id),
+      acceptedUserId: String(guest._id),
+    };
+
+    const [first, second] = await Promise.all([
+      BillingReferralService.grantForInvitation(payload),
+      BillingReferralService.grantForInvitation(payload),
+    ]);
+
+    // Exactly one racer wins each side; the loser surfaces the idempotent no-op.
+    for (const side of ['referrer', 'referee']) {
+      const applied = [first[side], second[side]].filter((s) => s?.applied === true);
+      expect(applied).toHaveLength(1);
+    }
+
+    // Exactly one ledger entry per key — the race never double-credited.
+    const inviterOrgId = String(admin.currentOrganization._id || admin.currentOrganization);
+    const refereeOrgId = String(guest.currentOrganization._id || guest.currentOrganization);
+    const inviterLedger = await BillingExtraBalanceRepository.findLedgerByOrg(inviterOrgId);
+    expect(inviterLedger.filter((e) => e.refId === `referral:${invitationId}:referrer`)).toHaveLength(1);
+    const refereeLedger = await BillingExtraBalanceRepository.findLedgerByOrg(refereeOrgId);
+    expect(refereeLedger.filter((e) => e.refId === `referral:${invitationId}:referee`)).toHaveLength(1);
+  }, 30000);
+
   test('referral disabled → an invited signup credits NOTHING (zero behavior when off)', async () => {
     config.billing.referral = { enabled: false, referrerUnits: REFERRER_UNITS, refereeUnits: REFEREE_UNITS, expiryDays: 365 };
 
     // Fresh guest for this test (the previous one is cleaned in afterAll but emails must differ).
-    const email = 'ref-guest-off@example.com';
+    const email = GUEST_OFF_EMAIL;
     const adminAgent = await createAdminAndSignin();
     const created = await adminAgent.post('/api/invitations').send({ email });
     const { token } = created.body.data;

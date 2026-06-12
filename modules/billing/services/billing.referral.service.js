@@ -39,6 +39,39 @@ const referralKeys = (invitationId) => ({
 });
 
 /**
+ * @function expectedGrantKeys
+ * @description THE single source of the grant side-rules (#3842): given an invitation
+ *              (doc with `_id` or `invitation.accepted` payload with `invitationId`)
+ *              and the referral config, return the grant sides the pair implies as
+ *              `[{ side, key }]`. A side with 0 configured units, an actor-less invite
+ *              (`invitedBy` null), and the cheap self-referral floor
+ *              (`invitedBy === acceptedUserId`; the full guard is #3833) produce NO
+ *              entry. Pure — no I/O. Both `grantForInvitation` (grants) and
+ *              crons/billing.referralReconcile.js (candidate diff) derive from it, so a
+ *              new guard (e.g. #3833) lands in ONE place and the two callers can never
+ *              drift.
+ * @param {Object} invite - Invitation doc (`_id`) or accepted payload (`invitationId`).
+ * @param {Object} cfg - The `config.billing.referral` block.
+ * @returns {Array<{side: 'referrer'|'referee', key: string}>} The implied grant sides.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const expectedGrantKeys = (invite, cfg) => {
+  if (!cfg?.enabled) return [];
+  const invitationId = invite?._id ?? invite?.invitationId;
+  if (!invitationId) return [];
+  const keys = referralKeys(String(invitationId));
+  const { invitedBy, acceptedUserId } = invite;
+  const expected = [];
+  // Referee side — needs configured units and a referee user (legacy rows may have none).
+  if (cfg.refereeUnits > 0 && acceptedUserId) expected.push({ side: 'referee', key: keys.referee });
+  // Referrer side — skip zero units, actor-less invites, and trivial self-referrals.
+  if (cfg.referrerUnits > 0 && invitedBy && String(invitedBy) !== String(acceptedUserId)) {
+    expected.push({ side: 'referrer', key: keys.referrer });
+  }
+  return expected;
+};
+
+/**
  * @function resolveGrantOrganization
  * @description Resolve the organization to credit for a user — referral actors are USERS
  *              but billing is ORGANIZATION-scoped. Prefers the user's `currentOrganization`
@@ -70,7 +103,11 @@ const resolveGrantOrganization = async (userId) => {
     import('../../organizations/repositories/organizations.membership.repository.js'),
     import('../../organizations/lib/constants.js'),
   ]);
-  const membership = await MembershipRepository.findOne({ userId: String(userId), status: MEMBERSHIP_STATUSES.ACTIVE });
+  // Oldest membership wins (createdAt asc) — deterministic + auditable when a user has several.
+  const membership = await MembershipRepository.findOne(
+    { userId: String(userId), status: MEMBERSHIP_STATUSES.ACTIVE },
+    { sort: { createdAt: 1 } },
+  );
   if (!membership?.organizationId) return null;
   return String(membership.organizationId._id || membership.organizationId);
 };
@@ -117,7 +154,10 @@ const grantSide = async ({ userId, units, key, expiresAt }) => {
  *                `invitedBy === acceptedUserId` (cheap self-referral floor — the full
  *                guard is #3833).
  *              No-op (`skipped:'disabled'`) when `config.billing.referral.enabled` is
- *              false; a side with 0 configured units is skipped. Each side is keyed
+ *              false; a side with 0 configured units is skipped. WHICH sides to grant is
+ *              derived from `expectedGrantKeys` (the single rule source shared with the
+ *              reconcile cron) — the branches below only label WHY an absent side was
+ *              skipped (observability). Each side is keyed
  *              `referral:<invitationId>:<side>` so replays can never double-credit.
  *              May reject on infrastructure errors — callers own their failure handling
  *              (the listener self-guards, the cron counts errors).
@@ -133,26 +173,29 @@ const grantForInvitation = async ({ invitationId, invitedBy, acceptedUserId } = 
   if (!cfg?.enabled) return { skipped: 'disabled' };
   if (!invitationId) return { skipped: 'no_invitation_id' };
 
-  const keys = referralKeys(String(invitationId));
+  // Single rule source: expectedGrantKeys decides WHICH sides to grant.
+  const expected = new Map(
+    expectedGrantKeys({ invitationId, invitedBy, acceptedUserId }, cfg).map(({ side, key }) => [side, key]),
+  );
   const expiresAt = cfg.expiryDays != null && cfg.expiryDays > 0
     ? new Date(Date.now() + cfg.expiryDays * 24 * 60 * 60 * 1000)
     : null;
   const result = {};
 
   // Referee side — the accepted user's workspace doubles its welcome.
-  if (cfg.refereeUnits > 0 && acceptedUserId) {
-    result.referee = await grantSide({ userId: acceptedUserId, units: cfg.refereeUnits, key: keys.referee, expiresAt });
+  if (expected.has('referee')) {
+    result.referee = await grantSide({ userId: acceptedUserId, units: cfg.refereeUnits, key: expected.get('referee'), expiresAt });
   } else {
     result.referee = { applied: false, reason: acceptedUserId ? 'zero_units' : 'no_accepted_user' };
   }
 
   // Referrer side — skip actor-less invites and trivial self-referrals (#3833 owns the full guard).
-  if (!invitedBy) {
+  if (expected.has('referrer')) {
+    result.referrer = await grantSide({ userId: invitedBy, units: cfg.referrerUnits, key: expected.get('referrer'), expiresAt });
+  } else if (!invitedBy) {
     result.referrer = { applied: false, reason: 'no_inviter' };
   } else if (String(invitedBy) === String(acceptedUserId)) {
     result.referrer = { applied: false, reason: 'self_referral' };
-  } else if (cfg.referrerUnits > 0) {
-    result.referrer = await grantSide({ userId: invitedBy, units: cfg.referrerUnits, key: keys.referrer, expiresAt });
   } else {
     result.referrer = { applied: false, reason: 'zero_units' };
   }
@@ -162,6 +205,7 @@ const grantForInvitation = async ({ invitationId, invitedBy, acceptedUserId } = 
 
 export default {
   referralKeys,
+  expectedGrantKeys,
   resolveGrantOrganization,
   grantForInvitation,
 };

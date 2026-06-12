@@ -52,9 +52,16 @@ const get = (id) => {
  * @function findOne
  * @description Data access operation to fetch a single membership matching a filter.
  * @param {Object} filter - The filter to apply to the query.
+ * @param {Object} [options] - Optional query modifiers.
+ * @param {Object} [options.sort] - Mongo sort spec applied before picking the document
+ *                                  (e.g. `{ createdAt: 1 }` for a deterministic pick).
  * @returns {Promise<Object|null>} The found membership or null.
  */
-const findOne = (filter) => Membership.findOne(filter).populate(defaultPopulate).exec();
+const findOne = (filter, { sort } = {}) => {
+  const query = Membership.findOne(filter).populate(defaultPopulate);
+  if (sort) query.sort(sort);
+  return query.exec();
+};
 
 /**
  * @function update

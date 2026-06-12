@@ -73,20 +73,12 @@ try {
       const cfg = config.billing.referral;
       const accepted = await InvitationRepository.findAccepted();
 
-      // Expected keys per invitation, mirroring the grant rules (sides with 0 units,
-      // actor-less invites, and the self-referral floor produce no expected key).
+      // Expected keys per invitation — derived from the service's expectedGrantKeys
+      // (the SINGLE rule source shared with grantForInvitation): the cron never
+      // re-encodes the side rules, so a new guard (e.g. #3833) can never drift.
       const candidates = [];
       for (const invite of accepted) {
-        const keys = BillingReferralService.referralKeys(String(invite._id));
-        const expected = [];
-        if (cfg.refereeUnits > 0 && invite.acceptedUserId) expected.push(keys.referee);
-        if (
-          cfg.referrerUnits > 0 &&
-          invite.invitedBy &&
-          String(invite.invitedBy) !== String(invite.acceptedUserId)
-        ) {
-          expected.push(keys.referrer);
-        }
+        const expected = BillingReferralService.expectedGrantKeys(invite, cfg).map(({ key }) => key);
         if (expected.length > 0) candidates.push({ invite, expected });
       }
 

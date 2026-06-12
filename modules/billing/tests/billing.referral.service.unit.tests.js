@@ -83,6 +83,40 @@ describe('billing.referral.service unit tests:', () => {
     });
   });
 
+  describe('expectedGrantKeys — the single rule source shared with the reconcile cron:', () => {
+    test('standard invite → both sides as [{ side, key }] (referee first, like the grant order)', () => {
+      const cfg = mockConfig.billing.referral;
+      // Accepts an invitation doc (_id) AND the accepted-event payload (invitationId) — same result.
+      const expected = [
+        { side: 'referee', key: `referral:${invitationId}:referee` },
+        { side: 'referrer', key: `referral:${invitationId}:referrer` },
+      ];
+      expect(BillingReferralService.expectedGrantKeys({ _id: invitationId, invitedBy: inviterId, acceptedUserId: refereeId }, cfg)).toEqual(expected);
+      expect(BillingReferralService.expectedGrantKeys({ invitationId, invitedBy: inviterId, acceptedUserId: refereeId }, cfg)).toEqual(expected);
+    });
+
+    test('side rules: zero units / null invitedBy / self-referral / disabled / no id drop entries', () => {
+      const cfg = mockConfig.billing.referral;
+      const invite = { _id: invitationId, invitedBy: inviterId, acceptedUserId: refereeId };
+
+      // referrerUnits 0 → referee side only.
+      expect(BillingReferralService.expectedGrantKeys(invite, { ...cfg, referrerUnits: 0 }))
+        .toEqual([{ side: 'referee', key: `referral:${invitationId}:referee` }]);
+      // Actor-less invite → no referrer key.
+      expect(BillingReferralService.expectedGrantKeys({ ...invite, invitedBy: null }, cfg))
+        .toEqual([{ side: 'referee', key: `referral:${invitationId}:referee` }]);
+      // Self-referral floor → no referrer key.
+      expect(BillingReferralService.expectedGrantKeys({ ...invite, invitedBy: refereeId }, cfg))
+        .toEqual([{ side: 'referee', key: `referral:${invitationId}:referee` }]);
+      // Legacy row without a referee → no referee key.
+      expect(BillingReferralService.expectedGrantKeys({ ...invite, acceptedUserId: null }, cfg))
+        .toEqual([{ side: 'referrer', key: `referral:${invitationId}:referrer` }]);
+      // Disabled config / missing id → no keys at all.
+      expect(BillingReferralService.expectedGrantKeys(invite, { ...cfg, enabled: false })).toEqual([]);
+      expect(BillingReferralService.expectedGrantKeys({ invitedBy: inviterId, acceptedUserId: refereeId }, cfg)).toEqual([]);
+    });
+  });
+
   test('disabled → no-op: returns skipped and never touches the ledger or users', async () => {
     mockConfig.billing.referral.enabled = false;
 
@@ -182,7 +216,11 @@ describe('billing.referral.service unit tests:', () => {
 
     const result = await BillingReferralService.grantForInvitation({ invitationId, invitedBy: null, acceptedUserId: refereeId });
 
-    expect(mockMembershipRepository.findOne).toHaveBeenCalledWith({ userId: refereeId, status: 'active' });
+    // Deterministic fallback: oldest active membership wins (createdAt asc).
+    expect(mockMembershipRepository.findOne).toHaveBeenCalledWith(
+      { userId: refereeId, status: 'active' },
+      { sort: { createdAt: 1 } },
+    );
     expect(result.referee).toMatchObject({ applied: true, organizationId: refereeOrgId });
   });
 

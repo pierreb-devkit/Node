@@ -7,13 +7,14 @@ import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globa
  * Unit tests for billing.referralReconcile cron logic (#3842).
  *
  * The script itself is a standalone CLI (process.exit) — like the other billing cron
- * tests, this suite exercises the script's decision logic against the mocked
- * service/repositories (the gate, the expected-key construction rules, the
- * "skip fully granted" diff, back-fill idempotency, error counting + continuation).
+ * tests, this suite exercises the script's decision logic. Candidate selection runs
+ * against the REAL BillingReferralService.expectedGrantKeys (the single rule source
+ * shared with grantForInvitation — no hand-mirrored rule block, no drift risk); only
+ * the grant write path (grantForInvitation) and the repositories are stubbed.
  *
  * Tests cover:
  *  - referral.enabled gate (early exit when false — NOT meterMode)
- *  - expected keys mirror the grant rules (zero units / null invitedBy / self-referral)
+ *  - expected keys come from the real rule source (zero units / null invitedBy / self-referral)
  *  - fully-granted invitations are skipped (no grant call)
  *  - misses are back-filled via grantForInvitation (idempotent by construction)
  *  - error counting + continuation
@@ -36,18 +37,10 @@ describe('billing.referralReconcile cron — logic:', () => {
     const cfg = mockConfig.billing.referral;
     const accepted = await InvitationRepository.findAccepted();
 
+    // REAL rule source — same call the cron makes; kills the mirror-drift risk.
     const candidates = [];
     for (const invite of accepted) {
-      const keys = BillingReferralService.referralKeys(String(invite._id));
-      const expected = [];
-      if (cfg.refereeUnits > 0 && invite.acceptedUserId) expected.push(keys.referee);
-      if (
-        cfg.referrerUnits > 0 &&
-        invite.invitedBy &&
-        String(invite.invitedBy) !== String(invite.acceptedUserId)
-      ) {
-        expected.push(keys.referrer);
-      }
+      const expected = BillingReferralService.expectedGrantKeys(invite, cfg).map(({ key }) => key);
       if (expected.length > 0) candidates.push({ invite, expected });
     }
 
@@ -87,16 +80,8 @@ describe('billing.referralReconcile cron — logic:', () => {
     };
 
     jest.unstable_mockModule('../../../config/index.js', () => ({ default: mockConfig }));
-
-    jest.unstable_mockModule('../services/billing.referral.service.js', () => ({
-      default: {
-        referralKeys: (invitationId) => ({
-          referrer: `referral:${invitationId}:referrer`,
-          referee: `referral:${invitationId}:referee`,
-        }),
-        grantForInvitation: jest.fn(),
-        resolveGrantOrganization: jest.fn(),
-      },
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
     }));
 
     jest.unstable_mockModule('../repositories/billing.extraBalance.repository.js', () => ({
@@ -112,6 +97,9 @@ describe('billing.referralReconcile cron — logic:', () => {
       },
     }));
 
+    // REAL referral service (its static deps — config/logger/repo — are mocked above):
+    // expectedGrantKeys/referralKeys are exercised for real, only the grant write path
+    // is stubbed per test via the spy below.
     const [serviceMod, repoMod, invitationMod] = await Promise.all([
       import('../services/billing.referral.service.js'),
       import('../repositories/billing.extraBalance.repository.js'),
@@ -120,6 +108,7 @@ describe('billing.referralReconcile cron — logic:', () => {
     BillingReferralService = serviceMod.default;
     BillingExtraBalanceRepository = repoMod.default;
     InvitationRepository = invitationMod.default;
+    jest.spyOn(BillingReferralService, 'grantForInvitation').mockResolvedValue({});
   });
 
   afterEach(() => {
@@ -144,7 +133,7 @@ describe('billing.referralReconcile cron — logic:', () => {
     expect(BillingReferralService.grantForInvitation).not.toHaveBeenCalled();
   });
 
-  test('expected keys mirror the grant rules (zero units, null invitedBy, self-referral floor)', async () => {
+  test('expected keys come from the REAL expectedGrantKeys (zero units, null invitedBy, self-referral floor)', async () => {
     mockConfig.billing.referral.referrerUnits = 0; // referrer side disabled by config
     InvitationRepository.findAccepted.mockResolvedValue([
       { _id: 'inv1', invitedBy: inviterId, acceptedUserId: refereeId }, // referee key only (referrerUnits=0)

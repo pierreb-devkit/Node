@@ -139,6 +139,9 @@ const config = {
      *
      * Pair with the reconcile cron (crons/billing.referralReconcile.js): the listener
      * is in-process fire-and-forget (latency); the cron back-fills missed grants (truth).
+     *
+     * ⚠️ Merging is safe everywhere (default OFF); do NOT enable until
+     *    pierreb-devkit/Node#3833 lands — only the cheap self-referral floor ships here.
      */
     referral: {
       enabled: false,
