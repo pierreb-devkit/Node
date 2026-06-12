@@ -28,7 +28,7 @@ Standard referral reward (#3842, the real tracker behind the old in-code `TODO(#
 2. **To enable referral rewards**, flip the knob in `config/defaults/{project}.config.js` (NEVER edit `billing.init.js`):
 
    ```js
-   billing: { referral: { enabled: true, referrerUnits: 1000, refereeUnits: 500 } } // Trawl-decided values
+   billing: { referral: { enabled: true, referrerUnits: 1000, refereeUnits: 500 } } // example values
    ```
 
    ⚠️ Merging is safe everywhere (default OFF); do NOT enable until pierreb-devkit/Node#3833 lands — only the cheap self-referral floor ships here.
@@ -53,7 +53,7 @@ Phase 5a of the invitations↔org decouple epic (#3813). Replaces the deleted or
 ### Action required for downstream projects (`/update-project`)
 
 1. Module/model/migration changes are devkit-owned → arrive via `/update-stack` (`--theirs`).
-2. **Migration ORDERING (E17 — critical):** the backfill `20260610140000` MUST run BEFORE the source-filtering code deploys, so no pre-existing join request is hidden from the approval list. The migration runs at boot before `listen()`; on Trawl this is sequenced in epic Phase 9 (#3815). The service/controller carry a temporary `source $exists:false` fallback so legacy rows stay visible even if the code lands first; that fallback is removed in a follow-up once every environment's backfill is confirmed.
+2. **Migration ORDERING (E17 — critical):** the backfill `20260610140000` MUST run BEFORE the source-filtering code deploys, so no pre-existing join request is hidden from the approval list. The migration runs at boot before `listen()`; downstream rollouts must sequence it before the code deploy. The service/controller carry a temporary `source $exists:false` fallback so legacy rows stay visible even if the code lands first; that fallback is removed in a follow-up once every environment's backfill is confirmed.
 3. No platform-invitation (`sign.cap` / `?inviteToken=`) behavior changes. Vue add-member UI + pending-invitation list land in Vue #4281.
 
 ---
@@ -74,7 +74,7 @@ Phase 4 of the invitations↔org decouple epic (#3812). The organization's **own
 ### Action required for downstream projects (`/update-project`)
 
 1. The module/model/migration changes are devkit-owned → arrive via `/update-stack` (`--theirs`).
-2. The migration runs at boot before `listen()` and removes any leftover org `invited` memberships + drops the index automatically. (Trawl has ~1 such test row → handled in epic Phase 9 / #3815.)
+2. The migration runs at boot before `listen()` and removes any leftover org `invited` memberships + drops the index automatically. (downstream deployments may carry a few such legacy rows — removed automatically.)
 3. No platform-invitation (`sign.cap` / `?inviteToken=` signup gate) behavior changes. Any downstream UI calling the removed `/invites` org routes must migrate to the add-member flow (#3813 / Vue #4280).
 
 ---
@@ -91,7 +91,7 @@ Phase 3 of the invitations↔org decouple epic (#3811). Two downstream-relevant 
 ### Action required for downstream projects (`/update-project`)
 
 1. The model/repository/migration changes are devkit-owned → arrive via `/update-stack` (`--theirs`).
-2. **🔴 Before the first boot that carries the new schema, pre-check prod for case-variant duplicate emails** (`db.users.aggregate([{$group:{_id:{$toLower:'$email'},n:{$sum:1}}},{$match:{n:{$gt:1}}}])`). If any exist, resolve them BEFORE deploy — otherwise the migration aborts boot. Mixed-case **singles** need no action: the migration now lowercases them in place (post-dup-check, pre-index) so binary lookups keep finding those accounts. (Trawl: handled in epic Phase 9 / #3815.)
+2. **🔴 Before the first boot that carries the new schema, pre-check prod for case-variant duplicate emails** (`db.users.aggregate([{$group:{_id:{$toLower:'$email'},n:{$sum:1}}},{$match:{n:{$gt:1}}}])`). If any exist, resolve them BEFORE deploy — otherwise the migration aborts boot. Mixed-case **singles** need no action: the migration now lowercases them in place (post-dup-check, pre-index) so binary lookups keep finding those accounts. (each downstream runs this pre-check before its own rollout.)
 3. Migrations run at boot before `listen()`; the index swap + the `consumingAt` field land automatically once the dupe pre-check passes.
 4. No client/contract change; existing 200/422 signup assertions pass unchanged.
 
