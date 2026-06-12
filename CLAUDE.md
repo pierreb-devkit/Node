@@ -2,6 +2,10 @@
 
 Node / Express / Mongoose / JWT stack from Devkit. Standalone backend or fullstack with Vue/Swift. Cloned into downstream projects, kept up-to-date via upstream merges.
 
+## 🔓 PUBLIC OSS repo — no downstream references
+
+This repository is open source. **Never reference downstream consumers** — project names, domains, cluster/infra details, business decisions (pricing, reward amounts as "X-decided"), or links to private trackers — in code, comments, docs, issues, PRs, or commit messages. Use neutral wording ("a downstream consumer", "the first consumer", "downstream rollouts"). Downstream-specific operations (deploys, prod migrations, env decisions) are tracked on the consumer's own repo, never here.
+
 ## Quick start
 
 - Source of truth: `README.md` + `package.json` scripts

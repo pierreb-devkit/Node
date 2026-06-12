@@ -19,7 +19,7 @@ import { MEMBERSHIP_STATUSES, PENDING_SOURCES } from '../lib/constants.js';
  * surface as `source: 'join_request' OR source absent` so legacy rows stay visible
  * until this backfill runs. After this migration, every PENDING row carries an
  * explicit source and the `$exists:false` fallback in the service/controller can be
- * removed (follow-up). P9 MUST run this migration on Trawl BEFORE deploying any code
+ * removed (follow-up). Downstream rollouts MUST run this migration BEFORE deploying any code
  * that filters owner_adds out of the approval surface, so no join request is ever
  * hidden.
  *
