@@ -18,13 +18,15 @@ const LedgerKind = z.enum(['topup', 'debit', 'refund', 'expiration', 'adjustment
  * Allowed grant sources — mirrors the Mongoose enum on LedgerEntrySchema.source.
  * 'signup_grant' — one-shot free tier grant on org creation (kind='topup').
  * 'adjustment'   — reserved for future non-Stripe manual credits.
+ * 'referral'     — referral grant on invitation acceptance (#3842, kind='topup'),
+ *                  keyed `referral:<invitationId>:referrer|referee` in refId.
  * NOTE: 'adjustment' here is a source tag (provenance), distinct from
  * LedgerKind 'adjustment' (balance mutation type). Existing creditCompensation()
  * writes kind='adjustment' entries WITHOUT setting source — source is only set by
  * creditGrant() and future grant methods. Do not assume kind='adjustment' implies
  * source='adjustment'.
  */
-const GrantSource = z.enum(['signup_grant', 'adjustment']);
+const GrantSource = z.enum(['signup_grant', 'adjustment', 'referral']);
 
 /**
  * Single ledger entry schema.
@@ -113,12 +115,17 @@ const ExtraBalanceDebit = z.object({
 /**
  * Schema for creditGrant input.
  * Unlike creditPack, no stripeSessionId is required — idempotency is
- * derived from `source + orgId` (synthetic key stored as refId).
+ * derived from `source + orgId` (synthetic key stored as refId) UNLESS the
+ * caller supplies an explicit `refId` (#3842 referral grants — several grants
+ * per org, one per invitation, so the synthetic per-org key cannot apply).
+ * `expiresAt` mirrors the creditPack expiry mechanism (extrasExpiration sweep).
  */
 const ExtraBalanceCreditGrant = z.object({
   orgId: z.string().trim().regex(objectIdRegex, 'orgId must be a valid ObjectId'),
   amount: z.number().int().min(1, 'amount must be >= 1'),
   source: GrantSource,
+  refId: z.string().trim().min(1, 'refId must be a non-empty string').optional(),
+  expiresAt: z.coerce.date().optional().nullable(),
 });
 
 export default {

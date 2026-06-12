@@ -45,6 +45,8 @@ const InvitationMongoose = new Schema(
 
 InvitationMongoose.index({ token: 1 }, { unique: true });
 InvitationMongoose.index({ email: 1 });
+// #3842 — referral queries hit invitedBy (reconcile cron + future referral lists).
+InvitationMongoose.index({ invitedBy: 1 });
 
 /**
  * @desc Return document id as hex string

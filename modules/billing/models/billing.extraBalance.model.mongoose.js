@@ -69,11 +69,13 @@ const LedgerEntrySchema = new Schema(
      * Credit source tag — discriminates pack purchases from grants.
      * 'signup_grant' — one-shot free tier grant on org creation.
      * 'adjustment'   — manual ops credit (non-Stripe).
+     * 'referral'     — referral grant on invitation acceptance (#3842), keyed
+     *                  `referral:<invitationId>:referrer|referee` in refId.
      * Omitted for kind='topup' entries created by creditPack (Stripe path).
      */
     source: {
       type: String,
-      enum: ['signup_grant', 'adjustment'],
+      enum: ['signup_grant', 'adjustment', 'referral'],
     },
     at: {
       type: Date,

@@ -15,10 +15,11 @@ import { EventEmitter } from 'events';
  *     SYNCHRONOUS listener throw — `EventEmitter.emit` is synchronous, so it returns
  *     before any async listener settles. An ASYNC listener (e.g. `async (p) => { await
  *     grantCredits() }`) that REJECTS escapes the emit-site try/catch as an
- *     unhandledRejection AFTER emit returns. Therefore a future async listener (e.g. the
- *     #5 credit-grant) MUST own its own internal try/catch and never let a rejection
- *     escape, OR the emit seam must switch to an awaited `Promise.allSettled` fan-out —
- *     the current synchronous guard will NOT catch an async rejection.
+ *     unhandledRejection AFTER emit returns. Therefore an async listener (e.g. the
+ *     #3842 credit-grant in billing.init.js, which complies) MUST own its own internal
+ *     try/catch and never let a rejection escape, OR the emit seam must switch to an
+ *     awaited `Promise.allSettled` fan-out — the current synchronous guard will NOT
+ *     catch an async rejection.
  *     Payload: {
  *       invitationId:   String   — the accepted invite's id
  *       email:          String   — the invite's pinned (lowercased) email

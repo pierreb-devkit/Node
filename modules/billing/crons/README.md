@@ -5,7 +5,7 @@ Standalone CLI scripts intended to be executed as Kubernetes CronJobs.
 Relocated here from `scripts/crons/` as of 2026-05-01 (#3546) — billing logic belongs in the billing module.
 The old paths at `scripts/crons/billing.*.js` no longer exist. See `docs/migrations/2026-05-01-billing-crons-module-relocation.md` for the cutover procedure.
 
-All scripts gate on `config.billing.meterMode === true` and exit 0 immediately when the flag is `false` (default).
+All scripts gate on `config.billing.meterMode === true` and exit 0 immediately when the flag is `false` (default) — except `billing.referralReconcile.js`, which gates on `config.billing.referral.enabled === true` instead (referral grants are independent of meter consumption).
 No `node-cron` dependency — orchestration is handled by Kubernetes CronJob manifests.
 
 ## Scripts
@@ -15,6 +15,7 @@ No `node-cron` dependency — orchestration is handled by Kubernetes CronJob man
 | `billing.weeklyReset.js` | Reset meter counters for orgs whose billing period rolled over | Daily `0 1 * * *` |
 | `billing.extrasExpiration.js` | Expire topup ledger entries past their `expiresAt` date | Daily `0 2 * * *` |
 | `billing.dunningSweep.js` | Downgrade stale `past_due` subs (>14d) to `unpaid` + `free` | Daily `0 3 * * *` |
+| `billing.referralReconcile.js` | Back-fill referral grants missed by the in-process `invitation.accepted` listener (#3842) | Daily `0 4 * * *` |
 
 ## Usage
 
@@ -22,6 +23,7 @@ No `node-cron` dependency — orchestration is handled by Kubernetes CronJob man
 NODE_ENV=production node modules/billing/crons/billing.weeklyReset.js
 NODE_ENV=production node modules/billing/crons/billing.extrasExpiration.js
 NODE_ENV=production node modules/billing/crons/billing.dunningSweep.js
+NODE_ENV=production node modules/billing/crons/billing.referralReconcile.js
 ```
 
 Exit code 0 = success (or meterMode disabled). Exit code 1 = at least one error or fatal failure.
@@ -119,6 +121,8 @@ const orgs = allOrgs.filter(o => {
 
 All scripts check `config.billing.meterMode` at startup. Downstream projects must set this flag to `true` in their project config to activate billing crons. The devkit default is `false` — all crons are no-ops until explicitly enabled.
 
+Exception: `billing.referralReconcile.js` checks `config.billing.referral.enabled` instead (devkit default `false` — same no-op-until-enabled semantics, gated on the referral feature rather than the meter).
+
 ## Concurrency control
 
 All billing crons acquire a distributed lock (`lib/services/distributedLock.js`) before
@@ -132,6 +136,7 @@ Lock names and TTLs:
 | `billing.weeklyReset` | 10 min | `billing.weeklyReset.js` |
 | `billing.dunningSweep` | 15 min | `billing.dunningSweep.js` |
 | `billing.extrasExpiration` | 5 min | `billing.extrasExpiration.js` |
+| `billing.referralReconcile` | 10 min | `billing.referralReconcile.js` |
 
 If you see `lock held by another pod, skipping` in logs, that is expected when
 two pods race after a K8s `concurrencyPolicy` bypass (e.g. pod crash after

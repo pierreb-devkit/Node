@@ -165,35 +165,50 @@ const debit = async (orgId, amount, refId) => {
 
 /**
  * @function creditGrant
- * @description Atomically credit extra meter units for a non-Stripe grant (e.g. signup free tier).
- *              Idempotent: if a ledger entry with the same synthetic refId
- *              (`<source>-<orgId>`) already exists, the update is a no-op and
- *              applied=false is returned.
+ * @description Atomically credit extra meter units for a non-Stripe grant (e.g. signup free
+ *              tier, referral grant). Idempotent: if a ledger entry with the same refId
+ *              already exists, the update is a no-op and applied=false is returned.
  *              2-step pattern aligned with creditPack:
  *                Step 1 — ensure doc exists (atomic getOrCreate, no-op on replay).
  *                Step 2 — idempotency-guarded credit (no upsert).
- *              Synthetic idempotency key: `<source>-<orgId>` stored as ledger.refId.
+ *              Idempotency key: `options.refId` when supplied (#3842 referral grants —
+ *              several grants per org, one per invitation, e.g.
+ *              `referral:<invitationId>:referrer`), otherwise the synthetic per-org key
+ *              `<source>-<orgId>` (signup grant — one per org).
+ *              `options.expiresAt` mirrors the creditPack expiry mechanism: the entry is
+ *              swept by crons/billing.extrasExpiration.js once past its expiry.
  *              No stripeSessionId required.
  * @param {string} orgId - The organization ObjectId (string).
  * @param {number} amount - Meter units to credit (must be > 0).
- * @param {string} source - Grant source tag (e.g. 'signup_grant').
+ * @param {string} source - Grant source tag (e.g. 'signup_grant', 'referral').
+ * @param {Object} [options]
+ * @param {string} [options.refId] - Explicit idempotency key (defaults to `<source>-<orgId>`).
+ * @param {Date|null} [options.expiresAt=null] - Optional expiry date for the grant entry.
  * @returns {Promise<{doc: Object|null, applied: boolean, reason?: string}>}
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
-const creditGrant = async (orgId, amount, source) => {
+const creditGrant = async (orgId, amount, source, { refId = null, expiresAt = null } = {}) => {
   if (!isValidOrgId(orgId)) return { doc: null, applied: false };
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('invalid argument: amount must be a positive finite number');
   if (typeof source !== 'string' || source.trim() === '') throw new Error('invalid argument: source must be a non-empty string');
+  if (refId !== null && (typeof refId !== 'string' || refId.trim() === '')) throw new Error('invalid argument: refId must be a non-empty string when provided');
   // Validate source against the enum before writing — findOneAndUpdate does not run validators.
-  BillingExtraBalanceSchema.ExtraBalanceCreditGrant.parse({ orgId, amount, source: source.trim() });
+  BillingExtraBalanceSchema.ExtraBalanceCreditGrant.parse({
+    orgId,
+    amount,
+    source: source.trim(),
+    ...(refId ? { refId: refId.trim() } : {}),
+    ...(expiresAt ? { expiresAt } : {}),
+  });
 
-  const idempotencyKey = `${source.trim()}-${orgId}`;
+  const idempotencyKey = refId ? refId.trim() : `${source.trim()}-${orgId}`;
   const entry = {
     kind: 'topup',
     amount,
     source: source.trim(),
     refId: idempotencyKey,
     at: new Date(),
+    ...(expiresAt ? { expiresAt } : {}),
   };
 
   // Step 1: ensure the document exists (atomic getOrCreate, no-op if already present).
@@ -527,6 +542,29 @@ const findLedgerByOrg = async (orgId) => {
 };
 
 /**
+ * @function findExistingRefIds
+ * @description Return the subset of `refIds` that already exist as ledger entry refIds
+ *              (any org). Used by the referral reconcile cron (#3842) to diff the
+ *              expected grant keys (`referral:<invitationId>:referrer|referee`) against
+ *              the ledger and back-fill only the misses.
+ *              Server-side aggregation — the first $match uses the sparse
+ *              `{ 'ledger.refId': 1, 'ledger.source': 1 }` index to narrow the doc set.
+ * @param {string[]} refIds - Candidate idempotency keys to look up.
+ * @returns {Promise<string[]>} The refIds already present in any ledger.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const findExistingRefIds = async (refIds) => {
+  if (!Array.isArray(refIds) || refIds.length === 0) return [];
+  const rows = await BillingExtraBalance().aggregate([
+    { $match: { 'ledger.refId': { $in: refIds } } },
+    { $unwind: '$ledger' },
+    { $match: { 'ledger.refId': { $in: refIds } } },
+    { $group: { _id: '$ledger.refId' } },
+  ]).exec();
+  return rows.map((r) => String(r._id));
+};
+
+/**
  * Sum absolute debit entries within a time window using a server-side aggregation.
  * Avoids loading the full ledger into memory — O(1) payload regardless of ledger size.
  *
@@ -572,6 +610,7 @@ export default {
   getBalance,
   listLedgerPage,
   findOrgsWithExpiringTopups,
+  findExistingRefIds,
   findLedgerByOrg,
   sumDebitsByWindow,
 };
