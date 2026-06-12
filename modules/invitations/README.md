@@ -6,7 +6,8 @@ email → single-use token + `invitedBy` + beta-gate eligibility. Depends only o
 about organizations: getting an invited person into an org is the 2-step flow
 *platform invite → `org.addMember(userId)`*.
 
-- Routes: `/api/invitations` (admin CRUD) + `/api/invitations/verify/:token` (public).
+- Routes: `/api/invitations` (admin list/create + revoke via `DELETE /:invitationId` — no
+  update endpoint) + `/api/invitations/verify/:token` (public).
 - Model `Invitation` → collection `invitations` (`email`, `token`, `invitedBy`, `status`,
   `expiresAt`, `consumingAt`, `acceptedAt`, `acceptedUserId`, `revokedAt`, `usedAt`).
 - Signup gate: two-phase claim/finalize (`consumingAt` CAS + lazy 15-min stale sweep),
@@ -29,7 +30,8 @@ the OAuth path (shared `accept(invite, userId)`):
    invitationEvents.emit('invitation.accepted', {
      invitationId,    // ← natural IDEMPOTENCY KEY for any grant
      email,           // invitee email (lowercased)
-     invitedBy,       // inviter userId — null for admin-created invites with no inviter
+     invitedBy,       // inviter userId — the admin API always stamps the creating admin;
+                      // null only for actor-less inserts (legacy/scripted data)
      acceptedUserId,  // the REFEREE — double-sided rewards need no schema change
    });
    ```
@@ -53,6 +55,7 @@ no-op seam with the `TODO(#5)` is already there), entirely gated by config:
 
 ```js
 // modules/billing/config/billing.development.config.js — stack default: OFF
+// (this block does NOT exist yet — #5 adds it together with the listener impl)
 billing: { referral: { enabled: false, referrerUnits: 0, refereeUnits: 0 } }
 ```
 
@@ -86,8 +89,10 @@ Rules that make this production-grade:
 - **Reconcile cron (safety net)** — EventEmitter is in-process fire-and-forget; a crash
   between accept and grant loses the event. Pair the listener with a periodic script
   (k8s CronJob, pattern: `modules/billing/crons/`) that scans
-  `invitations { status:'accepted', invitedBy: {$ne:null} }` vs the grant ledger keys and
-  back-fills misses. The listener is latency; the cron is truth.
+  ALL `invitations { status:'accepted' }` vs the grant ledger keys and back-fills misses
+  (scan all accepted, not just `invitedBy:{$ne:null}` — referee grants exist even when
+  `invitedBy` is null, so a referrer-only scan would miss referee-only back-fills).
+  The listener is latency; the cron is truth.
 
 ### A'. Custom rewards (cashback, Stripe credit note, partner webhook) — project-only module
 
@@ -114,12 +119,14 @@ project's custom one can coexist); each owns its own failure handling.
 Derive the reward at quota/entitlement time instead of granting:
 
 ```js
+// illustrative — a countAccepted helper does not exist yet; #5 adds it (or an equivalent query)
 const accepted = await InvitationRepository.countAccepted({ invitedBy: userId });
 const bonus = accepted * config.billing.referral.referrerUnits;
 ```
 
 Always consistent (survives missed events), zero ledger. Costs a query on the hot
-entitlement path (index `referredBy`/`invitedBy` first — see the in-code `TODO(#5)`),
+entitlement path (index `invitations.invitedBy` first — the field this query hits;
+`users.referredBy` gets its own index only if referral lists query it),
 and hard to cap/expire/audit ("when was this credited?"). Good for simple boosts
 (e.g. "+1 project slot per referral"), wrong for money-shaped balances.
 
