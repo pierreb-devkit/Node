@@ -844,5 +844,22 @@ describe('Signup invitations:', () => {
       expect(after.status).toBe('accepted');
       expect(after.revokedAt).toBeNull();
     });
+
+    test('a second invite for the SAME email is refused with 409 while the first is pending', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const first = await adminAgent.post('/api/invitations').send({ email: 'ops-dup@example.com' });
+      expect(first.status).toBe(200);
+
+      // Case-insensitive: the service lowercases before the guard.
+      const second = await adminAgent.post('/api/invitations').send({ email: 'OPS-DUP@example.com' });
+      expect(second.status).toBe(409);
+      expect(second.body.description).toBe('A pending invitation already exists for this email.');
+
+      // Revoking the pending invite re-opens creation (findByEmail is pending-only).
+      const revoked = await adminAgent.delete(`/api/invitations/${first.body.data.id}`);
+      expect(revoked.status).toBe(200);
+      const third = await adminAgent.post('/api/invitations').send({ email: 'ops-dup@example.com' });
+      expect(third.status).toBe(200);
+    });
   });
 });

@@ -43,6 +43,11 @@ describe('invitations.controller.create', () => {
     await controller.create({ body: { email: 'a@b.co' }, user: {} }, makeRes());
     expect(error).toHaveBeenCalledWith(expect.anything(), 422, 'Unprocessable Entity', 'boom');
   });
+  test('threads a service 409 (duplicate pending) through as Conflict', async () => {
+    mockService.create.mockRejectedValue(Object.assign(new Error('A pending invitation already exists for this email'), { status: 409 }));
+    await controller.create({ body: { email: 'a@b.co' }, user: {} }, makeRes());
+    expect(error).toHaveBeenCalledWith(expect.anything(), 409, 'Conflict', 'A pending invitation already exists for this email');
+  });
 });
 
 describe('invitations.controller.list', () => {

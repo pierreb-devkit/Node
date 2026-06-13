@@ -45,8 +45,11 @@ const InvitationService = (await import('../services/invitations.service.js')).d
 const invitationEvents = (await import('../lib/events.js')).default;
 
 beforeEach(() => {
-  // Default: no stale claims to sweep, no pre-existing user (E9).
+  // Default: no stale claims to sweep, no pre-existing user (E9), no outstanding
+  // pending invite (the duplicate-pending guard). clearMocks resets calls but NOT
+  // mockResolvedValue, so a prior test's findByEmail value would otherwise leak in.
   InvitationRepository.releaseStaleClaims.mockResolvedValue({ modifiedCount: 0 });
+  InvitationRepository.findByEmail.mockResolvedValue(undefined);
   mockUserService.findByEmail.mockResolvedValue(null);
   mockUserService.updateById.mockResolvedValue({});
 });
@@ -315,6 +318,17 @@ describe('InvitationService.create', () => {
     });
     // checks the lowercased email + never persists an invite for an existing user
     expect(mockUserService.findByEmail).toHaveBeenCalledWith('taken@example.com');
+    expect(InvitationRepository.create).not.toHaveBeenCalled();
+  });
+
+  test('rejects (409 CONFLICT) when a PENDING invitation already exists for the email', async () => {
+    InvitationRepository.findByEmail.mockResolvedValue({ id: 'i0', email: 'dup@example.com', status: 'pending' });
+    await expect(InvitationService.create('Dup@Example.com', { id: 'admin1' })).rejects.toMatchObject({
+      status: 409,
+      code: 'CONFLICT',
+    });
+    // checks the lowercased email + never persists a second live invite
+    expect(InvitationRepository.findByEmail).toHaveBeenCalledWith('dup@example.com');
     expect(InvitationRepository.create).not.toHaveBeenCalled();
   });
 });

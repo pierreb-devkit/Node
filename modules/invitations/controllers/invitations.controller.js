@@ -11,14 +11,19 @@ import InvitationService from '../services/invitations.service.js';
  * @param {string} req.body.email - Email address to invite
  * @param {Object} req.user - Authenticated admin user
  * @param {Object} res - Express response object
- * @returns {Promise<void>} Sends HTTP 200 with created invitation or 422 on error
+ * @returns {Promise<void>} Sends HTTP 200 with created invitation, 409 on duplicate pending, or 422 on error
  */
 const create = async (req, res) => {
   try {
     const invitation = await InvitationService.create(req.body.email, req.user);
     responses.success(res, 'invitation created')(invitation);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    // Thread the service-thrown status — a 409 (duplicate pending) must not
+    // flatten to the legacy hardcoded 422. Anything else keeps the
+    // historical 422 mapping (same style as the billing admin controller).
+    const status = err.status === 409 ? 409 : 422;
+    const title = status === 409 ? 'Conflict' : 'Unprocessable Entity';
+    responses.error(res, status, title, errors.getMessage(err))(err);
   }
 };
 

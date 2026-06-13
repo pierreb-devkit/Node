@@ -51,6 +51,20 @@ const create = async (email, invitedBy) => {
       details: { message: 'A user with this email already exists.' },
     });
   }
+  // One LIVE invite per email. findByEmail is already pending-only
+  // (status:'pending', unused, unclaimed, unexpired), so an expired, revoked
+  // or accepted prior invite never blocks a re-invite — only a genuinely
+  // outstanding one does. Best-effort guard (no partial unique index on
+  // email+status): two racing creates can still both land; acceptable for an
+  // admin/owner surface, and any one resolved token still single-uses.
+  const outstanding = await InvitationRepository.findByEmail(normalizedEmail);
+  if (outstanding) {
+    throw new AppError('A pending invitation already exists for this email', {
+      status: 409,
+      code: 'CONFLICT',
+      details: { message: 'A pending invitation already exists for this email.' },
+    });
+  }
   const token = crypto.randomBytes(20).toString('hex');
   const days = config.sign?.inviteExpiresInDays || DEFAULT_INVITE_EXPIRES_IN_DAYS;
   const expiresAt = new Date(Date.now() + days * 24 * 3600000);
