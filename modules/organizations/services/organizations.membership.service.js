@@ -55,7 +55,12 @@ const validateLastOwnerProtection = async (organizationId) => {
 
 /**
  * @function list
- * @description Service to retrieve active memberships for an organization.
+ * @description Service to retrieve an organization's members surface: ACTIVE
+ *   memberships PLUS pending owner_add invitations — so the inviting owner/admin
+ *   can SEE (and cancel via DELETE /members/:memberId) an invite they created.
+ *   Pending join_requests stay OUT: they have their own approval surface
+ *   (listPending) and must never look like members. Rows carry status + source
+ *   so callers can render the pending state.
  * @param {String} organizationId - The ID of the organization.
  * @param {String} [search] - Optional search string to filter by user name/email.
  * @param {Number} [page] - Optional page number for pagination.
@@ -63,7 +68,13 @@ const validateLastOwnerProtection = async (organizationId) => {
  * @returns {Promise<Array>} A promise that resolves to the list of memberships.
  */
 const list = async (organizationId, search, page, perPage) => {
-  const filter = { organizationId, status: MEMBERSHIP_STATUSES.ACTIVE };
+  const filter = {
+    organizationId,
+    $or: [
+      { status: MEMBERSHIP_STATUSES.ACTIVE },
+      { status: MEMBERSHIP_STATUSES.PENDING, source: PENDING_SOURCES.OWNER_ADD },
+    ],
+  };
   if (search) {
     const matchingUsers = await UserService.searchByNameOrEmail(search);
     filter.userId = { $in: matchingUsers.map((u) => u._id) };
@@ -128,7 +139,10 @@ const updateRole = async (membership, role) => {
  * @returns {Promise<Object>} A promise resolving to a confirmation of the deletion.
  */
 const remove = async (membership) => {
-  if (membership.role === MEMBERSHIP_ROLES.OWNER) {
+  // Last-owner protection applies ONLY to ACTIVE owner rows: cancelling a PENDING
+  // owner-role invite never reduces the active-owner count, so it must not be
+  // blocked when the org has a single active owner (the inviter) — #3831.
+  if (membership.role === MEMBERSHIP_ROLES.OWNER && membership.status === MEMBERSHIP_STATUSES.ACTIVE) {
     const orgId = membership.organizationId._id || membership.organizationId;
     await validateLastOwnerProtection(orgId);
   }
@@ -352,7 +366,10 @@ const findUserByExactEmail = async (email) => {
  * @param {String} userId - The user being invited.
  * @param {String} [role] - The role to grant on acceptance (defaults to MEMBER).
  * @param {String} addedBy - The id of the owner/admin performing the add (provenance).
- * @returns {Promise<Object>} The created PENDING owner_add membership.
+ * @returns {Promise<Object>} The created PENDING owner_add membership. When the
+ *   mailer is configured, also notifies the invited user by email (invitation
+ *   wording — the membership awaits THEIR acceptance) with a link to their
+ *   organizations page. Fire-and-forget: a mail failure never fails the add.
  * @throws {Error} If userId is missing, the user does not exist, or a membership already exists.
  */
 const addMember = async (organizationId, userId, role, addedBy) => {
@@ -373,7 +390,7 @@ const addMember = async (organizationId, userId, role, addedBy) => {
   }
 
   // status EXPLICIT — never rely on the schema 'active' default (consent bypass).
-  return MembershipRepository.create({
+  const membership = await MembershipRepository.create({
     userId,
     organizationId,
     role: role || MEMBERSHIP_ROLES.MEMBER,
@@ -381,6 +398,34 @@ const addMember = async (organizationId, userId, role, addedBy) => {
     source: PENDING_SOURCES.OWNER_ADD,
     addedBy,
   });
+
+  // Invitation notification (parity with the join-request emails). The membership
+  // is PENDING — only the invitee can activate it via acceptMembership (consent
+  // invariant #1) — so the wording is an invitation, never a "you were added"
+  // fait accompli. Fire-and-forget: any failure (DB read or mailer) must never
+  // fail the add — the entire block is in a try/catch for that guarantee.
+  if (mailer.isConfigured() && user?.email) {
+    try {
+      const org = await OrganizationRepository.get(organizationId);
+      if (org?.name) {
+        mailer.sendMail({
+          to: user.email,
+          subject: `You have been invited to join ${org.name}`,
+          template: 'org-member-added',
+          params: {
+            displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
+            orgName: org.name,
+            appName: config.app.title,
+            url: `${getBaseUrl()}/users/organizations`,
+          },
+        }).catch((err) => logger.warn('organizations.membership.addMember: invitation email failed', { message: err?.message, stack: err?.stack }));
+      }
+    } catch (err) {
+      logger.warn('organizations.membership.addMember: invitation email setup failed', { message: err?.message, stack: err?.stack });
+    }
+  }
+
+  return membership;
 };
 
 /**
@@ -428,6 +473,40 @@ const acceptMembership = async (membershipId, acceptingUserId) => {
   }
 
   return result;
+};
+
+/**
+ * @function declineMembership
+ * @description The INVITED USER declines a pending owner_add membership, deleting
+ *   the row. CONSENT-CRITICAL — the gate is IDENTICAL to acceptMembership: the
+ *   membership must be PENDING + source 'owner_add' AND belong to the
+ *   authenticated caller; any mismatch (wrong user, a join_request, an
+ *   already-active or unknown membership) returns null so the controller can
+ *   answer 404 without leaking which condition failed. Deleting (not flagging)
+ *   mirrors rejectRequest — the user can be re-invited later. This makes the
+ *   createJoinRequest copy ('Please accept or decline it') honest.
+ * @param {String} membershipId - The pending owner_add membership to decline.
+ * @param {String} decliningUserId - The authenticated user declining (must be the invitee).
+ * @returns {Promise<Object|null>} The deleted membership row, or null if not declinable by this user.
+ */
+const declineMembership = async (membershipId, decliningUserId) => {
+  // Self-defending consent gate, same rationale as acceptMembership: reject an
+  // absent caller up-front so a null/undefined id never accidentally matches a
+  // document (MongoDB $eq null matches null + missing fields).
+  if (!decliningUserId) return null;
+
+  // Atomic consent-gated delete: the filter encodes ALL consent conditions so no
+  // separate read is needed. A concurrent accept that flipped status→ACTIVE will
+  // cause the filter to miss the document (status !== PENDING), safely returning
+  // null — the accept wins and the decline is silently a no-op, which is correct
+  // (the invitee accepted; there is nothing left to decline).
+  const deleted = await MembershipRepository.findOneAndDelete({
+    _id: membershipId,
+    userId: decliningUserId,
+    status: MEMBERSHIP_STATUSES.PENDING,
+    source: PENDING_SOURCES.OWNER_ADD,
+  });
+  return deleted || null;
 };
 
 /**
@@ -505,6 +584,7 @@ export default {
   findUserByExactEmail,
   addMember,
   acceptMembership,
+  declineMembership,
   count,
   aggregateCountByOrganizations,
   deleteMany,

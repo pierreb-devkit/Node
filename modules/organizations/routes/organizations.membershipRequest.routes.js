@@ -36,6 +36,17 @@ export default (app) => {
     .all(passport.authenticate('jwt', { session: false }))
     .put(membershipRequests.accept);
 
+  // The INVITED USER declines a pending owner_add membership (deletes the row so
+  // they can be re-invited). Auth-only — same consent gate as accept, enforced in
+  // the service. Registered AFTER /mine and /mine/pending so those literals are
+  // never captured as a :membershipId. NOTE: there is intentionally no app.param
+  // for :membershipId — the controller reads req.params.membershipId raw, exactly
+  // like accept does.
+  app
+    .route('/api/membership-requests/:membershipId')
+    .all(passport.authenticate('jwt', { session: false }))
+    .delete(membershipRequests.decline);
+
   // Create a request to join an organization / list pending requests for an organization
   app
     .route('/api/organizations/:organizationId/requests')

@@ -197,6 +197,12 @@ const remove = async (user) => {
     await MembershipService.deleteMany({ _id: membership._id });
   }
 
+  // Sweep the user's PENDING rows (both join_request and owner_add). The cleanup
+  // loop above iterates listByUser, which is ACTIVE-only — without this sweep a
+  // deleted user's pending invitations / join requests would survive as orphans
+  // pointing at a dead userId (and keep occupying the (user, org) unique slot).
+  await MembershipRepository.deleteMany({ userId, status: MEMBERSHIP_STATUSES.PENDING });
+
   const result = await UserRepository.remove(user);
   return result;
 };
