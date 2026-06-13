@@ -46,10 +46,11 @@ describe('invitations.controller.create', () => {
 });
 
 describe('invitations.controller.list', () => {
-  test('lists invitations', async () => {
+  test('passes the authenticated caller to the service (role-keyed scoping, #3833)', async () => {
     mockService.list.mockResolvedValue([{ id: 'i1' }]);
-    await controller.list({}, makeRes());
-    expect(mockService.list).toHaveBeenCalledTimes(1);
+    const req = { user: { id: 'u1', roles: ['user'] } };
+    await controller.list(req, makeRes());
+    expect(mockService.list).toHaveBeenCalledWith({ id: 'u1', roles: ['user'] });
     expect(successInner).toHaveBeenCalledWith([{ id: 'i1' }]);
   });
 });

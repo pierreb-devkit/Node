@@ -97,10 +97,14 @@ const releaseStaleClaims = (cutoff) =>
   ).exec();
 
 /**
- * @desc List all invitations (admin), newest first
+ * @desc List invitations, newest first, token always stripped. Optional filter
+ * (#3833): the service passes { invitedBy } for non-admin callers so a user only
+ * ever reads the invitations THEY sent (invitee emails are PII); admins list
+ * unfiltered. The { invitedBy: 1 } index (#3842) covers the scoped query.
+ * @param {Object} [filter] - mongo filter (default {} = all)
  * @returns {Promise<Array>}
  */
-const list = () => Invitation.find({}).select('-token').populate('invitedBy', 'email firstName lastName').sort('-createdAt').exec();
+const list = (filter = {}) => Invitation.find(filter).select('-token').populate('invitedBy', 'email firstName lastName').sort('-createdAt').exec();
 
 /**
  * @desc List ALL accepted invitations, lean + minimal projection — the referral

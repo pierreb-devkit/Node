@@ -291,10 +291,22 @@ const release = async (id) => {
 };
 
 /**
- * @desc List all invitations (admin)
+ * @desc List invitations, role-keyed (#3833): platform admins read the global
+ * list; any other caller reads only the invitations THEY sent (scoped on
+ * invitedBy — invitee emails are PII, an unscoped list would leak them
+ * platform-wide). The admin check mirrors invitations.policy.js. CASL still only
+ * routes admins to this today; the scoping ships FIRST so the referral phase can
+ * widen the Invitation abilities without touching this seam again. A caller with
+ * no resolvable id gets [] — never the { invitedBy: null } admin-created rows.
+ * @param {Object} user - the authenticated caller (req.user)
  * @returns {Promise<Array>}
  */
-const list = () => InvitationRepository.list();
+const list = (user) => {
+  if (Array.isArray(user?.roles) && user.roles.includes('admin')) return InvitationRepository.list();
+  const userId = user?.id || user?._id;
+  if (!userId) return Promise.resolve([]);
+  return InvitationRepository.list({ invitedBy: userId });
+};
 
 /**
  * @desc Get one invitation by id
