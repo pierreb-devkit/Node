@@ -69,11 +69,25 @@ MembershipMongoose.pre('validate', function enforcePendingSource() {
 });
 
 /**
- * Compound unique index to prevent duplicate memberships
+ * Compound unique index preventing duplicate (userId, organizationId) memberships.
+ *
+ * The partialFilterExpression uses `$type: 'objectId'` — NOT `$ne: null` — because
+ * MongoDB does not support `$ne` (or `$not`) inside a partialFilterExpression. The
+ * previous spec (`{ userId: { $exists: true, $ne: null } }`) was rejected
+ * server-side on every build attempt; mongoose autoIndex reports that failure on
+ * the model's 'index' event, where nothing listens, so the index NEVER existed on
+ * any deployed database and duplicate protection silently fell back to the racy
+ * findOne-then-create guards in the membership service (#3841). `$type: 'objectId'`
+ * preserves the original intent: `userId: null` rows are BSON type null (not
+ * objectId), so they stay outside the index and may repeat per organization.
+ *
+ * The migration (migrations/20260612120000-membership-user-org-unique-index.js) is
+ * the AUTHORITATIVE creator; this declaration is its IDENTICAL twin (same key,
+ * options, AND explicit name) so autoIndex / syncIndexes stay idempotent.
  */
 MembershipMongoose.index(
   { userId: 1, organizationId: 1 },
-  { unique: true, partialFilterExpression: { userId: { $exists: true, $ne: null } } },
+  { unique: true, name: 'user_org_unique', partialFilterExpression: { userId: { $type: 'objectId' } } },
 );
 
 /**
