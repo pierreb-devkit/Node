@@ -10,7 +10,7 @@ import UsersSchema from '../../users/models/users.schema.js';
 import auth from '../controllers/auth.controller.js';
 import authPassword from '../controllers/auth.password.controller.js';
 // TODO(P9, pierreb-devkit/Node#3815): Remove these two imports and the four routes
-// below ONLY after (a) downstream (Trawl) has absorbed Vue P6 via /update-stack AND
+// below ONLY after (a) the downstream consumer has absorbed Vue P6 via /update-stack AND
 // (b) Vue auth.store `verifyInvite` is repointed to the canonical
 // /api/invitations/verify/:token (Vue pre-P9 fix PR) — it still calls the alias.
 // Deprecation alias only — the invitations feature lives in modules/invitations.
