@@ -814,4 +814,35 @@ describe('Signup invitations:', () => {
       expect(res.status).toBe(200);
     });
   });
+
+  describe('Invitation ops — revoke guard, duplicate-pending, resend', () => {
+    let mails;
+
+    beforeAll(async () => {
+      mails = (await import(path.resolve('./lib/helpers/mailer/index.js'))).default;
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    test('revoking an ACCEPTED invitation is refused with 409 (referral attribution preserved)', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const created = await adminAgent.post('/api/invitations').send({ email: 'ops-accepted@example.com' });
+      const id = created.body.data.id;
+
+      // Flip to accepted directly — the full signup-accept path is covered elsewhere.
+      const Invitation = (await import('mongoose')).default.model('Invitation');
+      await Invitation.updateOne({ _id: id }, { $set: { status: 'accepted', acceptedAt: new Date() } }).exec();
+
+      const res = await adminAgent.delete(`/api/invitations/${id}`);
+      expect(res.status).toBe(409);
+      expect(res.body.description).toBe('Only pending invitations can be revoked');
+
+      // The accepted row is untouched — still in the accepted set.
+      const after = await Invitation.findById(id).exec();
+      expect(after.status).toBe('accepted');
+      expect(after.revokedAt).toBeNull();
+    });
+  });
 });

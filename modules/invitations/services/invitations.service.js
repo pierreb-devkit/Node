@@ -339,7 +339,7 @@ const get = (id) => InvitationRepository.get(id);
  * @desc E8 — soft-delete (revoke) an invitation by id (status:'revoked' + revokedAt,
  * NOT a hard delete), preserving invitedBy/acceptedUserId for the referral phase.
  * @param {String} id
- * @returns {Promise<Object|null>} the revoked invitation
+ * @returns {Promise<Object|null>} the revoked invitation, or null when not pending
  */
 const revoke = (id) => InvitationRepository.revoke(id);
 

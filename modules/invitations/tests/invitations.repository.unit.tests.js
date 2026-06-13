@@ -160,11 +160,13 @@ describe('InvitationRepository', () => {
     expect(result).toEqual({ id: 'i1' });
   });
 
-  test('revoke soft-deletes by id (status:revoked + revokedAt), not deleteOne (E8)', async () => {
+  test('revoke soft-deletes by id GUARDED on status:pending (E8 + revoke-guard), not deleteOne', async () => {
     exec.mockResolvedValue({ id: 'i1', status: 'revoked' });
     const result = await InvitationRepository.revoke('i1');
     const [filter, update] = InvitationModel.findOneAndUpdate.mock.calls.at(-1);
-    expect(filter).toEqual({ _id: 'i1' });
+    // An accepted invite must never flip to revoked — that would silently drop
+    // it out of the accepted set findAccepted() scans for referral attribution.
+    expect(filter).toEqual({ _id: 'i1', status: 'pending' });
     expect(update.$set.status).toBe('revoked');
     expect(update.$set).toHaveProperty('revokedAt');
     expect(InvitationModel.deleteOne).not.toHaveBeenCalled();

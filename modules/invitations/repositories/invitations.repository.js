@@ -129,12 +129,24 @@ const get = (id) => (mongoose.Types.ObjectId.isValid(id) ? Invitation.findById(i
  * revokedAt instead of deleting, so invitedBy/acceptedUserId survive for the
  * referral phase. A revoked invite never re-opens the gate (findValid filters
  * on status:'pending').
+ *
+ * Guarded on status:'pending': an ACCEPTED invite must never flip to 'revoked'
+ * — it would silently drop out of the accepted set findAccepted() scans for
+ * referral attribution. Returns null when the row exists but is no longer
+ * pending; the controller maps that to 409.
+ *
+ * Benign race (revoke-mid-claim): a signup can claim/finalize between the
+ * controller's param-load and this CAS — the filter then matches nothing and
+ * we return null (→ 409) instead of corrupting the just-accepted invite. The
+ * inverse interleaving (revoke lands first, mid-claim) is also safe: finalize
+ * is guarded on status:{$ne:'revoked'}, so the in-flight accept no-ops with a
+ * logged warning and the invite stays revoked.
  * @param {String} id
- * @returns {Promise<Object|null>} the revoked doc, or null when no such id
+ * @returns {Promise<Object|null>} the revoked doc, or null when missing / not pending
  */
 const revoke = (id) =>
   Invitation.findOneAndUpdate(
-    { _id: id },
+    { _id: id, status: 'pending' },
     { $set: { status: 'revoked', revokedAt: new Date() } },
     { returnDocument: 'after' },
   ).exec();

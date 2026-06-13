@@ -62,6 +62,12 @@ describe('invitations.controller.remove', () => {
     expect(mockService.revoke).toHaveBeenCalledWith('i9');
     expect(successInner).toHaveBeenCalledWith({ id: 'i9' });
   });
+  test('responds 409 Conflict when revoke matches no pending row (accepted / already revoked)', async () => {
+    mockService.revoke.mockResolvedValue(null);
+    await controller.remove({ invitation: { id: 'i9' } }, makeRes());
+    expect(error).toHaveBeenCalledWith(expect.anything(), 409, 'Conflict', 'Only pending invitations can be revoked');
+    expect(success).not.toHaveBeenCalled();
+  });
 });
 
 describe('invitations.controller.verify', () => {

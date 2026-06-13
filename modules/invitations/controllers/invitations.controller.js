@@ -40,16 +40,23 @@ const list = async (req, res) => {
 };
 
 /**
- * @desc Admin: revoke an invitation
+ * @desc Admin: revoke a PENDING invitation (pending-only guard in the repository)
  * @param {Object} req - Express request object
  * @param {Object} req.invitation - Loaded invitation document (set by invitationByID middleware)
  * @param {string} req.invitation.id - Invitation id
  * @param {Object} res - Express response object
- * @returns {Promise<void>} Sends HTTP 200 with deleted id or 422 on error
+ * @returns {Promise<void>} Sends HTTP 200 with deleted id, 409 when not pending, or 422 on error
  */
 const remove = async (req, res) => {
   try {
-    await InvitationService.revoke(req.invitation.id);
+    const revoked = await InvitationService.revoke(req.invitation.id);
+    if (!revoked) {
+      // The invitation EXISTS (invitationByID loaded it) but the guarded CAS
+      // matched nothing → it is no longer pending (accepted or already
+      // revoked). Refuse: revoking an accepted invite would silently drop it
+      // from the accepted set used for referral attribution.
+      return responses.error(res, 409, 'Conflict', 'Only pending invitations can be revoked')();
+    }
     responses.success(res, 'invitation deleted')({ id: req.invitation.id });
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
