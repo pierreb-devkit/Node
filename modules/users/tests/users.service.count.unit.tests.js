@@ -83,6 +83,20 @@ jest.unstable_mockModule('../../../config/index.js', () => ({
   default: { app: {}, db: {} },
 }));
 
+// Prevent logger from calling setupFileLogger() with the minimal config mock above
+// (logger.js calls setupFileLogger at module-evaluation time; config.log is undefined here).
+jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+  default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
+
+jest.unstable_mockModule('../../../lib/helpers/getBaseUrl.js', () => ({
+  default: jest.fn(() => 'http://localhost:3000'),
+}));
+
+jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
+  default: { sendMail: jest.fn(), isConfigured: jest.fn().mockReturnValue(false) },
+}));
+
 const { default: UserService } = await import('../services/users.service.js');
 
 /**

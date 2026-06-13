@@ -1,9 +1,13 @@
 /**
  * Module dependencies
  */
+import crypto from 'crypto';
 import _ from 'lodash';
 
 import config from '../../../config/index.js';
+import logger from '../../../lib/services/logger.js';
+import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
+import mailer from '../../../lib/helpers/mailer/index.js';
 import AuthService from '../../auth/services/auth.service.js';
 import UserRepository from '../repositories/users.repository.js';
 import MembershipService from '../../organizations/services/organizations.membership.service.js';
@@ -11,6 +15,18 @@ import OrganizationsRepository from '../../organizations/repositories/organizati
 import MembershipRepository from '../../organizations/repositories/organizations.membership.repository.js';
 import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../../organizations/lib/constants.js';
 import { removeSensitive } from '../utils/sanitizeUser.js';
+
+/**
+ * @function normalizeEmail
+ * @desc Lowercase + trim an email for case-insensitive comparison. MUST stay in sync
+ *   with the repository-layer normalization (UserRepository, module-local there) —
+ *   duplicated here as a one-liner to keep the layering untouched; if the repository
+ *   normalization ever changes (e.g. Unicode fold), update both so the email-change
+ *   guard's previous-vs-new comparison cannot drift.
+ * @param {string} email - raw email value
+ * @returns {string|null} normalized email, or null for a non-string input
+ */
+const normalizeEmail = (email) => (typeof email === 'string' ? email.toLowerCase().trim() : null);
 
 /**
  * @desc Function to get all users in db
@@ -85,11 +101,51 @@ const getBrut = async (user) => {
  * @returns {Promise<Object>} updated user (sanitized)
  */
 const update = async (user, body, option) => {
+  const previousEmail = user.email;
   if (!option) user = _.assignIn(user, removeSensitive(body, config.whitelists.users.update));
   else if (option === 'admin') user = _.assignIn(user, removeSensitive(body, config.whitelists.users.updateAdmin));
   else if (option === 'recover') user = _.assignIn(user, removeSensitive(body, config.whitelists.users.recover));
 
+  // #3825 — an email change through the self ('update') or admin ('updateAdmin')
+  // whitelists must invalidate the verified state: a stale emailVerified:true on a
+  // brand-new address lets linkProviderByEmail ({ email, emailVerified: true })
+  // attach an OAuth identity to an address the account never proved it owns. The
+  // 'recover' option is exempt — it is the internal writer that SETS verification
+  // state (verifyEmail, signup). Mailer-less deployments are exempt too: signup
+  // auto-verifies there by design (trust-any-email), and resetting with no way to
+  // send a new verification mail would break OAuth linking with no recovery path.
+  // The whitelist only filters the BODY, so the service can set these fields itself.
+  let verificationToken = null;
+  if (option !== 'recover' && mailer.isConfigured()) {
+    const normalizedNew = normalizeEmail(user.email);
+    const normalizedPrevious = normalizeEmail(previousEmail);
+    if (normalizedNew && normalizedNew !== normalizedPrevious) {
+      verificationToken = crypto.randomBytes(20).toString('hex');
+      user.emailVerified = false;
+      user.emailVerificationToken = verificationToken;
+      user.emailVerificationExpires = Date.now() + 24 * 3600000; // 24 hours
+    }
+  }
+
   const result = await UserRepository.update(user);
+
+  // Fire-and-forget the re-verification mail to the NEW address (same template and
+  // params shape as the signup verification mail). Never blocks or fails the update;
+  // re-sends are covered by POST /api/auth/resend-verification.
+  if (verificationToken) {
+    mailer.sendMail({
+      template: 'verify-email',
+      to: result.email,
+      subject: 'Verify your email address',
+      params: {
+        displayName: [result.firstName, result.lastName].filter(Boolean).join(' '),
+        url: `${getBaseUrl()}/verify-email?token=${verificationToken}`,
+        appName: config.app.title,
+        appContact: config.app.contact,
+      },
+    }).catch((err) => logger.warn('users.update: email-change verification email failed', { message: err?.message, stack: err?.stack }));
+  }
+
   return removeSensitive(result);
 };
 
