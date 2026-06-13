@@ -7,6 +7,7 @@ import AnalyticsService from '../../lib/services/analytics.js';
 import logger from '../../lib/services/logger.js';
 import billingEvents from './lib/events.js';
 import invitationEvents from '../invitations/lib/events.js';
+import organizationEvents from '../organizations/lib/events.js';
 import BillingUsageRepository from './repositories/billing.usage.repository.js';
 import { getAlertThresholdPercents } from './lib/billing.constants.js';
 import { setupBillingEmails } from './billing.email.js';
@@ -77,6 +78,54 @@ export default async (app) => {
       // ⚠️ MANDATORY self-guard (see lib/events.js): never let a rejection escape.
       logger.error('[billing] referral grant failed — reconcile cron will back-fill', {
         invitationId: String(payload?.invitationId ?? ''),
+        err: err?.message,
+        stack: err?.stack,
+      });
+    }
+  });
+
+  // Instant referee grant (#3844) — billing is an OPTIONAL consumer of the organizations
+  // fire-and-forget `organization.provisioned` event (dependency direction billing →
+  // organizations mirrors billing → invitations: billing imports the events singleton,
+  // organizations never imports billing). With a mailer configured the referee's org is
+  // only provisioned at EMAIL VERIFICATION — after `invitation.accepted` already fired —
+  // so the #3842 listener lands `no_organization` and the grant waits for the reconcile
+  // cron (≤24h). This listener closes that gap at the exact provisioning moment; the
+  // cron stays the truth/safety net. Same config gate — zero behavior until a project
+  // flips `config.billing.referral.enabled`.
+  /**
+   * @desc Instant referee referral grant on organization provisioning (#3844).
+   * Resolves the freshly-provisioned user's accepted invitation and re-runs the
+   * idempotent grantForInvitation (ledger refId guard `referral:<invitationId>:*`),
+   * so a double-fire with the #3842 listener or the reconcile cron is harmless
+   * (duplicate_grant). Self-guarded: never lets a rejection escape (see
+   * organizations/lib/events.js).
+   * @param {{userId: string, organizationId: string}} payload - Provisioned organization event payload.
+   * @returns {Promise<void>} settles when the grant attempt completes (never rejects)
+   */
+  organizationEvents.on('organization.provisioned', async (payload) => {
+    try {
+      if (!config.billing?.referral?.enabled) return; // downstream flips this — default OFF
+      const userId = payload?.userId ? String(payload.userId) : null;
+      if (!userId) return;
+      // Lazy imports keep the boot graph unchanged when the feature is off and avoid
+      // import-time model resolution (mirrors the invitation.accepted listener above).
+      const { default: UserService } = await import('../users/services/users.service.js');
+      const user = await UserService.getBrut({ id: userId });
+      if (!user?.referredBy) return; // not an invited signup — nothing to grant
+      const { default: InvitationRepository } = await import('../invitations/repositories/invitations.repository.js');
+      const invitation = await InvitationRepository.findByAcceptedUserId(userId);
+      if (!invitation) return; // referredBy without a finalized invite — the reconcile cron owns the edge
+      const { default: BillingReferralService } = await import('./services/billing.referral.service.js');
+      await BillingReferralService.grantForInvitation({
+        invitationId: String(invitation._id),
+        invitedBy: invitation.invitedBy ? String(invitation.invitedBy) : null,
+        acceptedUserId: String(invitation.acceptedUserId),
+      });
+    } catch (err) {
+      // ⚠️ MANDATORY self-guard (see organizations/lib/events.js): never let a rejection escape.
+      logger.error('[billing] instant referee grant failed — reconcile cron will back-fill', {
+        userId: String(payload?.userId ?? ''),
         err: err?.message,
         stack: err?.stack,
       });
