@@ -55,7 +55,12 @@ const validateLastOwnerProtection = async (organizationId) => {
 
 /**
  * @function list
- * @description Service to retrieve active memberships for an organization.
+ * @description Service to retrieve an organization's members surface: ACTIVE
+ *   memberships PLUS pending owner_add invitations — so the inviting owner/admin
+ *   can SEE (and cancel via DELETE /members/:memberId) an invite they created.
+ *   Pending join_requests stay OUT: they have their own approval surface
+ *   (listPending) and must never look like members. Rows carry status + source
+ *   so callers can render the pending state.
  * @param {String} organizationId - The ID of the organization.
  * @param {String} [search] - Optional search string to filter by user name/email.
  * @param {Number} [page] - Optional page number for pagination.
@@ -63,7 +68,13 @@ const validateLastOwnerProtection = async (organizationId) => {
  * @returns {Promise<Array>} A promise that resolves to the list of memberships.
  */
 const list = async (organizationId, search, page, perPage) => {
-  const filter = { organizationId, status: MEMBERSHIP_STATUSES.ACTIVE };
+  const filter = {
+    organizationId,
+    $or: [
+      { status: MEMBERSHIP_STATUSES.ACTIVE },
+      { status: MEMBERSHIP_STATUSES.PENDING, source: PENDING_SOURCES.OWNER_ADD },
+    ],
+  };
   if (search) {
     const matchingUsers = await UserService.searchByNameOrEmail(search);
     filter.userId = { $in: matchingUsers.map((u) => u._id) };
@@ -128,7 +139,10 @@ const updateRole = async (membership, role) => {
  * @returns {Promise<Object>} A promise resolving to a confirmation of the deletion.
  */
 const remove = async (membership) => {
-  if (membership.role === MEMBERSHIP_ROLES.OWNER) {
+  // Last-owner protection applies ONLY to ACTIVE owner rows: cancelling a PENDING
+  // owner-role invite never reduces the active-owner count, so it must not be
+  // blocked when the org has a single active owner (the inviter) — #3831.
+  if (membership.role === MEMBERSHIP_ROLES.OWNER && membership.status === MEMBERSHIP_STATUSES.ACTIVE) {
     const orgId = membership.organizationId._id || membership.organizationId;
     await validateLastOwnerProtection(orgId);
   }
@@ -431,6 +445,36 @@ const acceptMembership = async (membershipId, acceptingUserId) => {
 };
 
 /**
+ * @function declineMembership
+ * @description The INVITED USER declines a pending owner_add membership, deleting
+ *   the row. CONSENT-CRITICAL — the gate is IDENTICAL to acceptMembership: the
+ *   membership must be PENDING + source 'owner_add' AND belong to the
+ *   authenticated caller; any mismatch (wrong user, a join_request, an
+ *   already-active or unknown membership) returns null so the controller can
+ *   answer 404 without leaking which condition failed. Deleting (not flagging)
+ *   mirrors rejectRequest — the user can be re-invited later. This makes the
+ *   createJoinRequest copy ('Please accept or decline it') honest.
+ * @param {String} membershipId - The pending owner_add membership to decline.
+ * @param {String} decliningUserId - The authenticated user declining (must be the invitee).
+ * @returns {Promise<Object|null>} The deleted membership row, or null if not declinable by this user.
+ */
+const declineMembership = async (membershipId, decliningUserId) => {
+  // Self-defending consent gate, same rationale as acceptMembership: reject an
+  // absent caller up-front so the String(undefined) compare can never collide.
+  if (!decliningUserId) return null;
+  const membership = await MembershipRepository.get(membershipId);
+  if (!membership) return null;
+
+  const membershipUserId = String(membership.userId?._id || membership.userId);
+  const isOwnerAddPending = membership.status === MEMBERSHIP_STATUSES.PENDING
+    && membership.source === PENDING_SOURCES.OWNER_ADD;
+  if (!isOwnerAddPending || membershipUserId !== String(decliningUserId)) return null;
+
+  await MembershipRepository.remove(membership);
+  return membership;
+};
+
+/**
  * @function leave
  * @description Leave an organization. Prevents the last owner from leaving.
  * @param {String} userId - The ID of the user leaving.
@@ -505,6 +549,7 @@ export default {
   findUserByExactEmail,
   addMember,
   acceptMembership,
+  declineMembership,
   count,
   aggregateCountByOrganizations,
   deleteMany,
