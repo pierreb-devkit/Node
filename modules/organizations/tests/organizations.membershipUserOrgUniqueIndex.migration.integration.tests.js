@@ -47,6 +47,11 @@ describe('Migration membership-user-org-unique-index:', () => {
     }
   });
 
+  /**
+   * @desc Finds an index by name in the memberships collection.
+   * @param {string} name - the index name to look up.
+   * @returns {Promise<Object|undefined>} the index descriptor if found, undefined otherwise.
+   */
   const findIndex = async (name) => {
     const indexes = await memberships.listIndexes().toArray();
     return indexes.find((ix) => ix.name === name);
