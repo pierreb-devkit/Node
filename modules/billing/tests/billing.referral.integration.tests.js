@@ -22,6 +22,7 @@ describe('Billing referral grant (#3842):', () => {
   let BillingExtraBalanceRepository;
   let BillingReferralService;
   let invitationEvents;
+  let OrganizationsService;
 
   let originalUp;
   let originalCap;
@@ -31,6 +32,7 @@ describe('Billing referral grant (#3842):', () => {
   const GUEST_EMAIL = 'ref-guest@example.com';
   const GUEST_OFF_EMAIL = 'ref-guest-off@example.com';
   const GUEST_RACE_EMAIL = 'ref-guest-race@example.com';
+  const GUEST_VERIFY_EMAIL = 'ref-guest-verify@example.com';
   const PASSWORD = 'W@os.jsI$Aw3$0m3';
   const REFERRER_UNITS = 1000;
   const REFEREE_UNITS = 500;
@@ -42,10 +44,11 @@ describe('Billing referral grant (#3842):', () => {
     BillingExtraBalanceRepository = (await import(path.resolve('./modules/billing/repositories/billing.extraBalance.repository.js'))).default;
     BillingReferralService = (await import(path.resolve('./modules/billing/services/billing.referral.service.js'))).default;
     invitationEvents = (await import(path.resolve('./modules/invitations/lib/events.js'))).default;
+    OrganizationsService = (await import(path.resolve('./modules/organizations/services/organizations.service.js'))).default;
   });
 
   afterAll(async () => {
-    for (const email of [ADMIN_EMAIL, GUEST_EMAIL, GUEST_OFF_EMAIL, GUEST_RACE_EMAIL]) {
+    for (const email of [ADMIN_EMAIL, GUEST_EMAIL, GUEST_OFF_EMAIL, GUEST_RACE_EMAIL, GUEST_VERIFY_EMAIL]) {
       try {
         const existing = await UserService.getBrut({ email });
         if (existing) await UserService.remove(existing);
@@ -195,6 +198,64 @@ describe('Billing referral grant (#3842):', () => {
     // 7. The reconcile diff helper sees both keys as granted (cron would skip this invite).
     const existing = await BillingExtraBalanceRepository.findExistingRefIds([referrerKey, refereeKey]);
     expect(new Set(existing)).toEqual(new Set([referrerKey, refereeKey]));
+  }, 30000);
+
+  test('#3844 org provisioned AFTER acceptance (mailer-on timing) → organization.provisioned credits the referee instantly; replay → duplicate_grant', async () => {
+    // 1. Admin (the inviter) + invite, while signup is still open.
+    const adminAgent = await createAdminAndSignin();
+    const created = await adminAgent.post('/api/invitations').send({ email: GUEST_VERIFY_EMAIL });
+    expect(created.status).toBe(200);
+    const { token } = created.body.data;
+    const invitationId = created.body.data.id;
+
+    // 2. Sign the guest up with referral DISABLED so the #3842 invitation.accepted
+    //    listener does NOT credit — reproducing the mailer-on gap: accepted invite +
+    //    referredBy stamped, org existing, but ZERO referral keys on the ledger yet.
+    config.billing.referral.enabled = false;
+    config.sign.up = false;
+    config.sign.cap = null;
+    const res = await request(app)
+      .post(`/api/auth/signup?inviteToken=${token}`)
+      .send({ email: GUEST_VERIFY_EMAIL, password: 'Sup3rStr0ng!' });
+    expect(res.status).toBe(200);
+    await new Promise((resolve) => { setTimeout(resolve, 300); }); // let the (disabled) listeners settle
+    config.billing.referral.enabled = true;
+
+    const guest = await UserService.getBrut({ email: GUEST_VERIFY_EMAIL });
+    expect(guest.referredBy).toBeTruthy(); // stamped by the accept seam
+    const refereeOrgId = String(guest.currentOrganization._id || guest.currentOrganization);
+    const refereeKey = `referral:${invitationId}:referee`;
+    const referrerKey = `referral:${invitationId}:referrer`;
+    expect(await BillingExtraBalanceRepository.findExistingRefIds([refereeKey, referrerKey])).toEqual([]);
+
+    // 3. Re-run handleSignupOrganization exactly as verifyEmail does (A4 convergence —
+    //    the org already exists) → emits organization.provisioned → instant grant.
+    guest.emailVerified = true; // verifyEmail mutates the local object the same way
+    await OrganizationsService.handleSignupOrganization(guest);
+
+    // 4. The referee is credited instantly (the listener is async — poll until it settles)…
+    const refereeEntry = await waitForLedgerEntry(refereeOrgId, refereeKey);
+    expect(refereeEntry).not.toBeNull();
+    expect(refereeEntry).toMatchObject({ kind: 'topup', source: 'referral', amount: REFEREE_UNITS });
+
+    // …and grantForInvitation back-fills the referrer side too (idempotent both ways).
+    const admin = await UserService.getBrut({ email: ADMIN_EMAIL });
+    const inviterOrgId = String(admin.currentOrganization._id || admin.currentOrganization);
+    const referrerEntry = await waitForLedgerEntry(inviterOrgId, referrerKey);
+    expect(referrerEntry).not.toBeNull();
+
+    // 5. Replay (cron-overlap): the same grant path must come back duplicate_grant.
+    const replay = await BillingReferralService.grantForInvitation({
+      invitationId,
+      invitedBy: String(admin._id),
+      acceptedUserId: String(guest._id),
+    });
+    expect(replay.referee).toMatchObject({ applied: false, reason: 'duplicate_grant' });
+    expect(replay.referrer).toMatchObject({ applied: false, reason: 'duplicate_grant' });
+
+    // 6. Exactly ONE referee entry — listener + replay never double-credited.
+    const refereeLedger = await BillingExtraBalanceRepository.findLedgerByOrg(refereeOrgId);
+    expect(refereeLedger.filter((e) => e.refId === refereeKey)).toHaveLength(1);
   }, 30000);
 
   test('concurrent grantForInvitation calls (Promise.all) → exactly ONE applied:true and ONE ledger entry per side-key', async () => {
