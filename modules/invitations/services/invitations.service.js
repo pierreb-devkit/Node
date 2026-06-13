@@ -40,7 +40,7 @@ const inviteMailPayload = (invitation) => ({
  * @param {String} email - invitee email (any case)
  * @param {Object} invitedBy - the admin user creating the invite
  * @returns {Promise<Object>} created invitation
- * @throws {AppError} 422 when the invitee email is the inviter's own, or a user already exists for this email
+ * @throws {AppError} 409 when a pending invitation already exists for the email; 422 when the invitee email is the inviter's own, or a user already exists for this email
  */
 const create = async (email, invitedBy) => {
   const normalizedEmail = String(email).toLowerCase().trim();
@@ -378,7 +378,7 @@ const revoke = (id) => InvitationRepository.revoke(id);
 const resend = async (id) => {
   const invitation = await InvitationRepository.get(id);
   if (!invitation) {
-    throw new AppError('no invitation with that identifier has been found', {
+    throw new AppError('No invitation with that identifier has been found', {
       status: 404,
       code: 'NOT_FOUND',
       details: { message: 'No invitation with that identifier has been found.' },
