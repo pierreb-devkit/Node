@@ -262,6 +262,29 @@ describe('Email change re-verification integration tests:', () => {
       }
     });
 
+    test('should NOT reset emailVerified or send mail on the recover update path', async () => {
+      // 'recover' is the internal verification writer (verifyEmail / password reset) — it
+      // SETS verification state, so the email-change guard is exempt for it (option !== 'recover').
+      // Even an email in the recover body must not trigger a reset or a re-verification mail,
+      // else verifyEmail would clobber the very emailVerified:true it just wrote.
+      const isConfiguredSpy = jest.spyOn(mailer, 'isConfigured').mockReturnValue(true);
+      const sendMailSpy = jest.spyOn(mailer, 'sendMail').mockResolvedValue(null);
+      try {
+        const brut = await UserService.getBrut({ id: user.id });
+        await UserService.update(brut, { email: 'recover-change@test.com', emailVerified: true }, 'recover');
+
+        const after = await UserService.getBrut({ id: user.id });
+        expect(after.emailVerified).toBe(true);
+        expect(sendMailSpy).not.toHaveBeenCalled();
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      } finally {
+        isConfiguredSpy.mockRestore();
+        sendMailSpy.mockRestore();
+      }
+    });
+
     afterEach(async () => {
       // del user (removal is by id, so it works whatever email the test left behind)
       try {

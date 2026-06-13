@@ -94,7 +94,7 @@ jest.unstable_mockModule('../../../lib/helpers/getBaseUrl.js', () => ({
 }));
 
 jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
-  default: { sendMail: jest.fn() },
+  default: { sendMail: jest.fn(), isConfigured: jest.fn().mockReturnValue(false) },
 }));
 
 const { default: UserService } = await import('../services/users.service.js');
