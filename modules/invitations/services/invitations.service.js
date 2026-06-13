@@ -14,6 +14,24 @@ import logger from '../../../lib/services/logger.js';
 import AppError from '../../../lib/helpers/AppError.js';
 
 /**
+ * @desc Build the signup-invite email payload for an invitation. Shared by
+ * create() (fire-and-forget) and resend() (awaited) so the template, subject
+ * and link format can never drift between the two send sites.
+ * @param {Object} invitation - persisted invitation (email + token)
+ * @returns {Object} sendMail arguments
+ */
+const inviteMailPayload = (invitation) => ({
+  template: 'signup-invite',
+  to: invitation.email,
+  subject: `You're invited to ${config.app.title}`,
+  params: {
+    url: `${getBaseUrl()}/signup?inviteToken=${invitation.token}`,
+    appName: config.app.title,
+    appContact: config.app.contact,
+  },
+});
+
+/**
  * @desc Create an invitation for an email, generate a single-use token, persist,
  * and (best-effort) email the signup link. Token/expiry are server-controlled.
  *
@@ -76,16 +94,7 @@ const create = async (email, invitedBy) => {
   });
   if (mails.isConfigured()) {
     mails
-      .sendMail({
-        template: 'signup-invite',
-        to: invitation.email,
-        subject: `You're invited to ${config.app.title}`,
-        params: {
-          url: `${getBaseUrl()}/signup?inviteToken=${token}`,
-          appName: config.app.title,
-          appContact: config.app.contact,
-        },
-      })
+      .sendMail(inviteMailPayload(invitation))
       .catch((err) => logger.warn('invitations: email failed', { message: err?.message }));
   }
   return invitation;
@@ -357,6 +366,42 @@ const get = (id) => InvitationRepository.get(id);
  */
 const revoke = (id) => InvitationRepository.revoke(id);
 
+/**
+ * @desc Re-send the invitation email for a still-PENDING invitation, with the
+ * EXISTING token — never regenerated, so a previously emailed or copied link
+ * stays valid. Unlike create()'s best-effort send, the email here IS the
+ * operation: sendMail is awaited and a transport failure surfaces as an error.
+ * @param {String} id - invitation id
+ * @returns {Promise<Object>} the (unchanged) invitation
+ * @throws {AppError} 404 unknown id, 409 not pending, 422 mailer unconfigured
+ */
+const resend = async (id) => {
+  const invitation = await InvitationRepository.get(id);
+  if (!invitation) {
+    throw new AppError('no invitation with that identifier has been found', {
+      status: 404,
+      code: 'NOT_FOUND',
+      details: { message: 'No invitation with that identifier has been found.' },
+    });
+  }
+  if (invitation.status !== 'pending') {
+    throw new AppError('Only pending invitations can be resent', {
+      status: 409,
+      code: 'CONFLICT',
+      details: { message: 'Only pending invitations can be resent.' },
+    });
+  }
+  if (!mails.isConfigured()) {
+    throw new AppError('mailer is not configured', {
+      status: 422,
+      code: 'VALIDATION_ERROR',
+      details: { message: 'Email sending is not configured on this server.' },
+    });
+  }
+  await mails.sendMail(inviteMailPayload(invitation));
+  return invitation;
+};
+
 export default {
   create,
   findValid,
@@ -371,4 +416,5 @@ export default {
   list,
   get,
   revoke,
+  resend,
 };

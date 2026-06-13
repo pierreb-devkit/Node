@@ -69,6 +69,25 @@ const remove = async (req, res) => {
 };
 
 /**
+ * @desc Admin: re-send the invitation email for a pending invitation (existing token)
+ * @param {Object} req - Express request object
+ * @param {Object} req.invitation - Loaded invitation document (set by invitationByID middleware)
+ * @param {string} req.invitation.id - Invitation id
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} Sends HTTP 200 with the invitation, 409 when not pending, or 422 on error
+ */
+const resend = async (req, res) => {
+  try {
+    const invitation = await InvitationService.resend(req.invitation.id);
+    responses.success(res, 'invitation resent')(invitation);
+  } catch (err) {
+    const status = err.status === 409 ? 409 : 422;
+    const title = status === 409 ? 'Conflict' : 'Unprocessable Entity';
+    responses.error(res, status, title, errors.getMessage(err))(err);
+  }
+};
+
+/**
  * @desc Public: report whether a token is a valid invite (+ prefill email)
  * @param {Object} req - Express request object
  * @param {string} req.params.token - Invitation token to verify
@@ -103,4 +122,4 @@ const invitationByID = async (req, res, next, id) => {
   }
 };
 
-export default { create, list, remove, verify, invitationByID };
+export default { create, list, remove, resend, verify, invitationByID };

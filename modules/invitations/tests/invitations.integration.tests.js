@@ -861,5 +861,47 @@ describe('Signup invitations:', () => {
       const third = await adminAgent.post('/api/invitations').send({ email: 'ops-dup@example.com' });
       expect(third.status).toBe(200);
     });
+
+    test('resend re-sends the EXISTING token for a pending invite (no regeneration)', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const created = await adminAgent.post('/api/invitations').send({ email: 'ops-resend@example.com' });
+      const { id, token } = created.body.data;
+
+      jest.spyOn(mails, 'isConfigured').mockReturnValue(true);
+      const sendSpy = jest.spyOn(mails, 'sendMail').mockResolvedValue({});
+
+      const res = await adminAgent.post(`/api/invitations/${id}/resend`);
+      expect(res.status).toBe(200);
+      expect(sendSpy).toHaveBeenCalledTimes(1);
+      const mail = sendSpy.mock.calls[0][0];
+      expect(mail.template).toBe('signup-invite');
+      expect(mail.to).toBe('ops-resend@example.com');
+      expect(mail.params.url).toContain(`inviteToken=${token}`); // SAME token
+    });
+
+    test('resend guards: 422 with the mailer unconfigured, 409 once non-pending', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const created = await adminAgent.post('/api/invitations').send({ email: 'ops-resend-guards@example.com' });
+      const { id } = created.body.data;
+
+      // Test env mailer is unconfigured (placeholder `from`) → 422 with no mocks.
+      const unconfigured = await adminAgent.post(`/api/invitations/${id}/resend`);
+      expect(unconfigured.status).toBe(422);
+
+      // Revoke it, then resend → 409 (status guard fires before the mailer guard).
+      await adminAgent.delete(`/api/invitations/${id}`);
+      const conflicted = await adminAgent.post(`/api/invitations/${id}/resend`);
+      expect(conflicted.status).toBe(409);
+      expect(conflicted.body.description).toBe('Only pending invitations can be resent.');
+    });
+
+    test('resend resolves through the legacy /api/auth/invitations alias too (kept consistent)', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const created = await adminAgent.post('/api/invitations').send({ email: 'ops-resend-alias@example.com' });
+      jest.spyOn(mails, 'isConfigured').mockReturnValue(true);
+      jest.spyOn(mails, 'sendMail').mockResolvedValue({});
+      const res = await adminAgent.post(`/api/auth/invitations/${created.body.data.id}/resend`);
+      expect(res.status).toBe(200);
+    });
   });
 });

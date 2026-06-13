@@ -9,7 +9,7 @@ import policy from '../../../lib/middlewares/policy.js';
 import UsersSchema from '../../users/models/users.schema.js';
 import auth from '../controllers/auth.controller.js';
 import authPassword from '../controllers/auth.password.controller.js';
-// TODO(P9, pierreb-devkit/Node#3815): Remove these two imports and the three routes
+// TODO(P9, pierreb-devkit/Node#3815): Remove these two imports and the four routes
 // below ONLY after (a) downstream (Trawl) has absorbed Vue P6 via /update-stack AND
 // (b) Vue auth.store `verifyInvite` is repointed to the canonical
 // /api/invitations/verify/:token (Vue pre-P9 fix PR) — it still calls the alias.
@@ -47,6 +47,10 @@ export default (app) => {
     .route('/api/auth/invitations/:invitationId')
     .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
     .delete(invitations.remove);
+  app
+    .route('/api/auth/invitations/:invitationId/resend')
+    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
+    .post(invitations.resend);
 
   // Auth config — optional JWT: public fields for everyone, org details for authenticated users
   /**

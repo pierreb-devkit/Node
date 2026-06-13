@@ -407,3 +407,45 @@ describe('InvitationService.list / get / revoke', () => {
     expect(InvitationRepository.revoke).toHaveBeenCalledWith('id-1');
   });
 });
+
+describe('InvitationService.resend', () => {
+  const pending = { id: 'i1', email: 'a@b.co', token: 'tok-1', status: 'pending' };
+  beforeEach(() => {
+    mockMailer.isConfigured.mockReturnValue(true);
+    mockMailer.sendMail.mockResolvedValue({});
+  });
+  afterEach(() => {
+    mockMailer.isConfigured.mockReturnValue(false);
+  });
+
+  test('re-sends the signup-invite email with the EXISTING token and returns the invitation', async () => {
+    InvitationRepository.get.mockResolvedValue(pending);
+    const result = await InvitationService.resend('i1');
+    expect(result).toBe(pending);
+    expect(mockMailer.sendMail).toHaveBeenCalledTimes(1);
+    const mail = mockMailer.sendMail.mock.calls[0][0];
+    expect(mail.template).toBe('signup-invite');
+    expect(mail.to).toBe('a@b.co');
+    // No token regeneration: a previously emailed/shared link must stay valid.
+    expect(mail.params.url).toBe('http://localhost:3000/signup?inviteToken=tok-1');
+  });
+
+  test('404 when the invitation does not exist', async () => {
+    InvitationRepository.get.mockResolvedValue(null);
+    await expect(InvitationService.resend('missing')).rejects.toMatchObject({ status: 404 });
+    expect(mockMailer.sendMail).not.toHaveBeenCalled();
+  });
+
+  test('409 when the invitation is not pending (accepted/revoked never re-email)', async () => {
+    InvitationRepository.get.mockResolvedValue({ ...pending, status: 'accepted' });
+    await expect(InvitationService.resend('i1')).rejects.toMatchObject({ status: 409, code: 'CONFLICT' });
+    expect(mockMailer.sendMail).not.toHaveBeenCalled();
+  });
+
+  test('422 when the mailer is not configured (resend IS the email — fail loudly)', async () => {
+    mockMailer.isConfigured.mockReturnValue(false);
+    InvitationRepository.get.mockResolvedValue(pending);
+    await expect(InvitationService.resend('i1')).rejects.toMatchObject({ status: 422 });
+    expect(mockMailer.sendMail).not.toHaveBeenCalled();
+  });
+});

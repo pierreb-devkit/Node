@@ -36,5 +36,11 @@ export default (app) => {
     .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
     .delete(invitations.remove);
 
+  // Admin — re-send the invitation email (pending invites only, existing token).
+  app
+    .route('/api/invitations/:invitationId/resend')
+    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
+    .post(invitations.resend);
+
   app.param('invitationId', invitations.invitationByID);
 };
