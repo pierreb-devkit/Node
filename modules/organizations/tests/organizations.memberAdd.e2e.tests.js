@@ -66,7 +66,19 @@ describe('Organizations member-add E2E tests:', () => {
     let agentA;
     let agentB;
 
+    // Finding #1: unique-per-run emails to avoid dirty-DB re-run flakiness
+    const suffix = Date.now();
+    const emailA = `member-add-a-${suffix}@test.com`;
+    const emailB = `member-add-b-${suffix}@test.com`;
+
+    // Finding #2: move config assignment into beforeAll so it is always set
+    // before any test in this describe block runs
+    beforeAll(() => {
+      config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
+    });
+
     afterAll(async () => {
+      resetOrgConfig();
       // Clean up org A and its memberships, then B before A
       try {
         if (orgA) {
@@ -79,7 +91,6 @@ describe('Organizations member-add E2E tests:', () => {
     });
 
     test('full lifecycle: add → pending in list → accept → promote → leave', async () => {
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
       agentA = request.agent(agent.app);
       agentB = request.agent(agent.app);
 
@@ -92,7 +103,7 @@ describe('Organizations member-add E2E tests:', () => {
           .send({
             firstName: 'MemberAddA',
             lastName: 'User',
-            email: 'member-add-a@test.com',
+            email: emailA,
             password,
             provider: 'local',
           })
@@ -112,7 +123,7 @@ describe('Organizations member-add E2E tests:', () => {
           .send({
             firstName: 'MemberAddB',
             lastName: 'User',
-            email: 'member-add-b@test.com',
+            email: emailB,
             password,
             provider: 'local',
           })
@@ -129,12 +140,12 @@ describe('Organizations member-add E2E tests:', () => {
       try {
         const searchRes = await agentA
           .get(`/api/organizations/${orgA._id}/members/search`)
-          .query({ email: 'member-add-b@test.com' })
+          .query({ email: emailB })
           .expect(200);
         expect(searchRes.body.message).toBe('user lookup');
         expect(searchRes.body.data).not.toBeNull();
         expect(searchRes.body.data.id).toBe(userB.id);
-        expect(searchRes.body.data.email).toBe('member-add-b@test.com');
+        expect(searchRes.body.data.email).toBe(emailB);
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -165,7 +176,7 @@ describe('Organizations member-add E2E tests:', () => {
         expect(rowB).toBeDefined();
         expect(rowB.status).toBe('pending');
         expect(rowB.source).toBe('owner_add');
-        const rowA = listRes.body.data.find((m) => m.userId?.email === 'member-add-a@test.com');
+        const rowA = listRes.body.data.find((m) => m.userId?.email === emailA);
         expect(rowA).toBeDefined();
         expect(rowA.status).toBe('active');
         expect(rowA.role).toBe('owner');
@@ -213,12 +224,14 @@ describe('Organizations member-add E2E tests:', () => {
       }
 
       // 8. B leaves → members list back to A only
+      // Finding #4: assert identity (A's row) rather than a fragile bare count
       try {
         const leaveRes = await agentB.post(`/api/organizations/${orgA._id}/leave`).expect(200);
         expect(leaveRes.body.message).toBe('organization left');
         const finalList = await agentA.get(`/api/organizations/${orgA._id}/members`).expect(200);
-        expect(finalList.body.data.length).toBe(1);
-        expect(finalList.body.data[0].userId?.email).toBe('member-add-a@test.com');
+        // precondition: B must not appear in the list after leaving
+        expect(finalList.body.data.find((m) => m.userId?.email === emailB)).toBeUndefined();
+        expect(finalList.body.data[0].userId?.email).toBe(emailA);
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -228,6 +241,10 @@ describe('Organizations member-add E2E tests:', () => {
     // Runs after the lifecycle test (Jest executes tests in declaration order with
     // --runInBand): A owns org A, B has no membership left.
     test('decline path: re-add → duplicate guard 422 → B declines → row gone everywhere', async () => {
+      // Finding #2: guard against test-1 abort leaving shared state unpopulated
+      // precondition: the lifecycle test must have populated shared state
+      expect(orgA && userB && agentA && agentB).toBeTruthy();
+
       let declineId;
 
       // 1. A re-adds B → a fresh PENDING owner_add row
@@ -245,11 +262,12 @@ describe('Organizations member-add E2E tests:', () => {
       }
 
       // 2. Duplicate guard: adding B again while pending is rejected (422)
+      // Finding #3: chain .expect(422) so a 500 is not swallowed
       try {
         const dupRes = await agentA
           .post(`/api/organizations/${orgA._id}/members`)
-          .send({ userId: userB.id, role: 'member' });
-        expect(dupRes.status).toBe(422);
+          .send({ userId: userB.id, role: 'member' })
+          .expect(422);
         expect(dupRes.body.type).toBe('error');
         expect(dupRes.body.description).toBe('This user already has a pending membership for this organization.');
       } catch (err) {
@@ -258,25 +276,29 @@ describe('Organizations member-add E2E tests:', () => {
       }
 
       // 3. B sees the invitation, then DECLINES it (DELETE, auth-only)
+      // Finding #5: assert the decline response body message
       try {
         const mineRes = await agentB.get('/api/membership-requests/mine/pending').expect(200);
         const invite = mineRes.body.data.find((m) => m._id === declineId);
         expect(invite).toBeDefined();
 
-        await agentB.delete(`/api/membership-requests/${declineId}`).expect(200);
+        const declineRes = await agentB.delete(`/api/membership-requests/${declineId}`).expect(200);
+        expect(declineRes.body.message).toBe('membership invitation declined');
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
       }
 
       // 4. The row is gone everywhere — mine/pending, the members list, the DB
+      // Finding #4: assert no B-row remains (identity) rather than a bare count
       try {
         const mineAfter = await agentB.get('/api/membership-requests/mine/pending').expect(200);
         expect(mineAfter.body.data.find((m) => m._id === declineId)).toBeUndefined();
 
         const listAfter = await agentA.get(`/api/organizations/${orgA._id}/members`).expect(200);
         expect(listAfter.body.data.find((m) => m._id === declineId)).toBeUndefined();
-        expect(listAfter.body.data.length).toBe(1);
+        // assert B is not in the list rather than relying on a hard count
+        expect(listAfter.body.data.find((m) => m.userId?.email === emailB)).toBeUndefined();
 
         const row = await MembershipRepository.findOne({ _id: declineId });
         expect(row).toBeNull();
@@ -289,7 +311,6 @@ describe('Organizations member-add E2E tests:', () => {
 
   // Mongoose disconnect
   afterAll(async () => {
-    resetOrgConfig();
     try {
       await mongooseService.disconnect();
     } catch (err) {
