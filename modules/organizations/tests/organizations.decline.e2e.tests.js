@@ -24,6 +24,7 @@ describe('Organizations owner_add decline E2E tests:', () => {
 
   /**
    * @description Reset organizations config to original state.
+   * @returns {void}
    */
   const resetOrgConfig = () => {
     config.organizations = { ...originalOrganizations };
@@ -32,6 +33,7 @@ describe('Organizations owner_add decline E2E tests:', () => {
   /**
    * @description Clean up a user and their associated organizations/memberships.
    * @param {Object} user - The user object to clean up.
+   * @returns {Promise<void>}
    */
   const cleanupUser = async (user) => {
     if (!user) return;

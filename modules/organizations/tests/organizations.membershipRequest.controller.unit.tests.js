@@ -14,6 +14,7 @@ import { MEMBERSHIP_STATUSES, PENDING_SOURCES } from '../lib/constants.js';
 
 const mockGet = jest.fn();
 const mockAcceptMembership = jest.fn();
+const mockDeclineMembership = jest.fn();
 const mockListPendingOwnerAddsByUser = jest.fn();
 const mockListPendingByUser = jest.fn();
 
@@ -21,6 +22,7 @@ jest.unstable_mockModule('../services/organizations.membership.service.js', () =
   default: {
     get: mockGet,
     acceptMembership: mockAcceptMembership,
+    declineMembership: mockDeclineMembership,
     listPendingOwnerAddsByUser: mockListPendingOwnerAddsByUser,
     listPendingByUser: mockListPendingByUser,
     listPending: jest.fn(),
@@ -132,6 +134,52 @@ describe('membershipRequest controller — consent surfaces:', () => {
 
       expect(mockListPendingOwnerAddsByUser).toHaveBeenCalledWith('u1');
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ data: [{ id: 'inv1' }] }));
+    });
+  });
+
+  describe('decline (invited user declines their owner_add)', () => {
+    test('passes the membershipId + the AUTHENTICATED user to the service', async () => {
+      const deleted = { id: 'm1', status: 'pending', source: 'owner_add' };
+      mockDeclineMembership.mockResolvedValue(deleted);
+      const req = { params: { membershipId: 'm1' }, user: { _id: 'invitee' } };
+      const res = mockRes();
+
+      await controller.decline(req, res);
+
+      expect(mockDeclineMembership).toHaveBeenCalledWith('m1', 'invitee');
+      expect(res.status).not.toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ data: deleted }));
+    });
+
+    test('a null service result (consent mismatch / not found) → 404, never leaks which', async () => {
+      mockDeclineMembership.mockResolvedValue(null);
+      const req = { params: { membershipId: 'm1' }, user: { _id: 'someone-else' } };
+      const res = mockRes();
+
+      await controller.decline(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    test('falls back to req.user.id when _id is absent', async () => {
+      const deleted = { id: 'm2', status: 'pending', source: 'owner_add' };
+      mockDeclineMembership.mockResolvedValue(deleted);
+      const req = { params: { membershipId: 'm2' }, user: { id: 'invitee2' } };
+      const res = mockRes();
+
+      await controller.decline(req, res);
+
+      expect(mockDeclineMembership).toHaveBeenCalledWith('m2', 'invitee2');
+    });
+
+    test('service throws → 422 Unprocessable Entity', async () => {
+      mockDeclineMembership.mockRejectedValue(new Error('db error'));
+      const req = { params: { membershipId: 'm1' }, user: { _id: 'u1' } };
+      const res = mockRes();
+
+      await controller.decline(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(422);
     });
   });
 });

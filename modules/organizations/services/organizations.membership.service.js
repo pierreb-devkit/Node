@@ -402,21 +402,26 @@ const addMember = async (organizationId, userId, role, addedBy) => {
   // Invitation notification (parity with the join-request emails). The membership
   // is PENDING — only the invitee can activate it via acceptMembership (consent
   // invariant #1) — so the wording is an invitation, never a "you were added"
-  // fait accompli. Fire-and-forget: a mail failure must never fail the add.
+  // fait accompli. Fire-and-forget: any failure (DB read or mailer) must never
+  // fail the add — the entire block is in a try/catch for that guarantee.
   if (mailer.isConfigured() && user?.email) {
-    const org = await OrganizationRepository.get(organizationId);
-    if (org?.name) {
-      mailer.sendMail({
-        to: user.email,
-        subject: `You have been invited to join ${org.name}`,
-        template: 'org-member-added',
-        params: {
-          displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
-          orgName: org.name,
-          appName: config.app.title,
-          url: `${getBaseUrl()}/users/organizations`,
-        },
-      }).catch((err) => logger.warn('organizations.membership.addMember: invitation email failed', { message: err?.message, stack: err?.stack }));
+    try {
+      const org = await OrganizationRepository.get(organizationId);
+      if (org?.name) {
+        mailer.sendMail({
+          to: user.email,
+          subject: `You have been invited to join ${org.name}`,
+          template: 'org-member-added',
+          params: {
+            displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
+            orgName: org.name,
+            appName: config.app.title,
+            url: `${getBaseUrl()}/users/organizations`,
+          },
+        }).catch((err) => logger.warn('organizations.membership.addMember: invitation email failed', { message: err?.message, stack: err?.stack }));
+      }
+    } catch (err) {
+      logger.warn('organizations.membership.addMember: invitation email setup failed', { message: err?.message, stack: err?.stack });
     }
   }
 
@@ -486,18 +491,22 @@ const acceptMembership = async (membershipId, acceptingUserId) => {
  */
 const declineMembership = async (membershipId, decliningUserId) => {
   // Self-defending consent gate, same rationale as acceptMembership: reject an
-  // absent caller up-front so the String(undefined) compare can never collide.
+  // absent caller up-front so a null/undefined id never accidentally matches a
+  // document (MongoDB $eq null matches null + missing fields).
   if (!decliningUserId) return null;
-  const membership = await MembershipRepository.get(membershipId);
-  if (!membership) return null;
 
-  const membershipUserId = String(membership.userId?._id || membership.userId);
-  const isOwnerAddPending = membership.status === MEMBERSHIP_STATUSES.PENDING
-    && membership.source === PENDING_SOURCES.OWNER_ADD;
-  if (!isOwnerAddPending || membershipUserId !== String(decliningUserId)) return null;
-
-  await MembershipRepository.remove(membership);
-  return membership;
+  // Atomic consent-gated delete: the filter encodes ALL consent conditions so no
+  // separate read is needed. A concurrent accept that flipped status→ACTIVE will
+  // cause the filter to miss the document (status !== PENDING), safely returning
+  // null — the accept wins and the decline is silently a no-op, which is correct
+  // (the invitee accepted; there is nothing left to decline).
+  const deleted = await MembershipRepository.findOneAndDelete({
+    _id: membershipId,
+    userId: decliningUserId,
+    status: MEMBERSHIP_STATUSES.PENDING,
+    source: PENDING_SOURCES.OWNER_ADD,
+  });
+  return deleted || null;
 };
 
 /**

@@ -104,6 +104,7 @@ describe('organizations.membership.service addMember invitation email:', () => {
 
     expect(membership._id).toBe('m-new');
     expect(mockSendMail).not.toHaveBeenCalled();
+    expect(mockOrgGet).not.toHaveBeenCalled();
   });
 
   test('user without an email: creates the membership and never calls sendMail', async () => {
@@ -114,5 +115,6 @@ describe('organizations.membership.service addMember invitation email:', () => {
 
     expect(membership._id).toBe('m-new');
     expect(mockSendMail).not.toHaveBeenCalled();
+    expect(mockOrgGet).not.toHaveBeenCalled();
   });
 });

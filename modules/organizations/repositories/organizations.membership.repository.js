@@ -80,6 +80,18 @@ const update = (membership) => membership.save().then((doc) => doc.populate(defa
 const remove = (membership) => Membership.deleteOne({ _id: membership.id || membership._id }).exec();
 
 /**
+ * @function findOneAndDelete
+ * @description Atomically find a single membership matching a filter and delete it.
+ *   Returns the deleted document (populated) or null if no document matched, allowing
+ *   callers to implement consent-gated deletes in a single round-trip that is free
+ *   of read-then-delete race conditions.
+ * @param {Object} filter - The filter to match the document to delete.
+ * @returns {Promise<Object|null>} The deleted membership (populated) or null.
+ */
+const findOneAndDelete = (filter) =>
+  Membership.findOneAndDelete(filter).populate(defaultPopulate).exec();
+
+/**
  * @function count
  * @description Data access operation to count memberships matching a filter.
  * @param {Object} filter - The filter to apply to the count query.
@@ -124,6 +136,7 @@ export default {
   create,
   get,
   findOne,
+  findOneAndDelete,
   update,
   remove,
   count,

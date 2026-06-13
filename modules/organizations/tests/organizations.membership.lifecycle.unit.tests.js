@@ -24,6 +24,7 @@ const mockGet = jest.fn();
 const mockList = jest.fn();
 const mockCount = jest.fn();
 const mockRemove = jest.fn();
+const mockFindOneAndDelete = jest.fn();
 jest.unstable_mockModule('../repositories/organizations.membership.repository.js', () => ({
   default: {
     findOne: mockFindOne,
@@ -33,6 +34,7 @@ jest.unstable_mockModule('../repositories/organizations.membership.repository.js
     list: mockList,
     count: mockCount,
     remove: mockRemove,
+    findOneAndDelete: mockFindOneAndDelete,
   },
 }));
 
@@ -77,7 +79,7 @@ describe('Membership owner_add lifecycle unit tests:', () => {
     mockRemove.mockResolvedValue({ deletedCount: 1 });
   });
 
-  describe('declineMembership — consent gate (mirror of acceptMembership)', () => {
+  describe('declineMembership — atomic consent-gated delete', () => {
     /**
      * @desc Build a pending owner_add membership owned by USER.
      * @param {Object} overrides - field overrides
@@ -92,65 +94,61 @@ describe('Membership owner_add lifecycle unit tests:', () => {
       ...overrides,
     });
 
-    test('the INVITED USER can decline their own pending owner_add → row deleted and returned', async () => {
+    test('the INVITED USER can decline their own pending owner_add → deleted doc returned', async () => {
       const membership = ownerAddPending();
-      mockGet.mockResolvedValue(membership);
+      mockFindOneAndDelete.mockResolvedValue(membership);
 
       const result = await MembershipService.declineMembership('m1', USER);
 
       expect(result).toBe(membership);
-      expect(mockRemove).toHaveBeenCalledTimes(1);
-      expect(mockRemove).toHaveBeenCalledWith(membership);
+      expect(mockFindOneAndDelete).toHaveBeenCalledTimes(1);
+      expect(mockFindOneAndDelete).toHaveBeenCalledWith({
+        _id: 'm1',
+        userId: USER,
+        status: MEMBERSHIP_STATUSES.PENDING,
+        source: PENDING_SOURCES.OWNER_ADD,
+      });
+      expect(mockRemove).not.toHaveBeenCalled();
     });
 
-    test('a DIFFERENT user (e.g. the inviting owner) cannot decline → null, no deletion', async () => {
-      mockGet.mockResolvedValue(ownerAddPending());
+    test('a DIFFERENT user (e.g. the inviting owner) cannot decline → null (filter miss)', async () => {
+      // findOneAndDelete with userId=OWNER will find nothing (userId mismatch)
+      mockFindOneAndDelete.mockResolvedValue(null);
 
       const result = await MembershipService.declineMembership('m1', OWNER);
 
       expect(result).toBeNull();
+      // called with OWNER as userId — the DB filter correctly rejects cross-user deletes
+      expect(mockFindOneAndDelete).toHaveBeenCalledWith({
+        _id: 'm1',
+        userId: OWNER,
+        status: MEMBERSHIP_STATUSES.PENDING,
+        source: PENDING_SOURCES.OWNER_ADD,
+      });
       expect(mockRemove).not.toHaveBeenCalled();
     });
 
-    test('a JOIN REQUEST row cannot be declined here (owner reject path owns it) → null', async () => {
-      mockGet.mockResolvedValue(ownerAddPending({ source: PENDING_SOURCES.JOIN_REQUEST }));
-
-      const result = await MembershipService.declineMembership('m1', USER);
-
-      expect(result).toBeNull();
-      expect(mockRemove).not.toHaveBeenCalled();
-    });
-
-    test('an ACTIVE membership cannot be declined (leave/remove own that path) → null', async () => {
-      mockGet.mockResolvedValue(ownerAddPending({ status: MEMBERSHIP_STATUSES.ACTIVE }));
-
-      const result = await MembershipService.declineMembership('m1', USER);
-
-      expect(result).toBeNull();
-      expect(mockRemove).not.toHaveBeenCalled();
-    });
-
-    test('an unknown membership id → null', async () => {
-      mockGet.mockResolvedValue(null);
+    test('unknown membership id → null (findOneAndDelete returns null)', async () => {
+      mockFindOneAndDelete.mockResolvedValue(null);
       const result = await MembershipService.declineMembership('missing', USER);
       expect(result).toBeNull();
-      expect(mockRemove).not.toHaveBeenCalled();
     });
 
-    test('SELF-DEFENDING GATE: an undefined decliningUserId → null, no deletion', async () => {
-      mockGet.mockResolvedValue(ownerAddPending());
+    test('SELF-DEFENDING GATE: an undefined decliningUserId → null, findOneAndDelete never called', async () => {
       const result = await MembershipService.declineMembership('m1', undefined);
       expect(result).toBeNull();
-      expect(mockRemove).not.toHaveBeenCalled();
+      expect(mockFindOneAndDelete).not.toHaveBeenCalled();
     });
 
-    test('matches the invitee even when userId is a populated sub-doc', async () => {
-      const membership = ownerAddPending({ userId: { _id: USER, email: 'a@b.com' } });
-      mockGet.mockResolvedValue(membership);
+    test('concurrent accept wins: findOneAndDelete returns null (status no longer PENDING) → null', async () => {
+      // Simulates a race where acceptMembership flipped status→ACTIVE after our
+      // decliningUserId guard passed but before deletion; filter misses the doc.
+      mockFindOneAndDelete.mockResolvedValue(null);
 
       const result = await MembershipService.declineMembership('m1', USER);
-      expect(result).toBe(membership);
-      expect(mockRemove).toHaveBeenCalledWith(membership);
+
+      expect(result).toBeNull();
+      expect(mockRemove).not.toHaveBeenCalled();
     });
   });
 
