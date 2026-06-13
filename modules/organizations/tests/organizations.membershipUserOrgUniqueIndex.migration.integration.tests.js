@@ -101,4 +101,39 @@ describe('Migration membership-user-org-unique-index:', () => {
       await up(); // restore the migrated end state for the suites that follow
     }
   });
+
+  test('schema twin is IDENTICAL — syncIndexes() has nothing to drop or rebuild', async () => {
+    await up();
+    const Membership = mongoose.model('Membership');
+    const dropped = await Membership.syncIndexes();
+    expect(dropped).toEqual([]);
+    expect(await findIndex(INDEX_NAME)).toBeDefined();
+  });
+
+  test('DB backstop: a second pending row for the same (user, org) rejects with E11000', async () => {
+    await up();
+    const Membership = mongoose.model('Membership');
+    // Bypass the service guards (findOne-then-create) on purpose: the index itself
+    // must reject the duplicate, proving addMember/createJoinRequest now have a
+    // race-proof DB backstop instead of an application-level check alone.
+    await Membership.create({
+      userId, organizationId: orgId, role: 'member',
+      status: 'pending', source: PENDING_SOURCES.OWNER_ADD,
+    });
+    await expect(
+      Membership.create({
+        userId, organizationId: orgId, role: 'member',
+        status: 'pending', source: PENDING_SOURCES.JOIN_REQUEST,
+      }),
+    ).rejects.toMatchObject({ code: 11000 });
+    expect(await Membership.countDocuments({ userId, organizationId: orgId })).toBe(1);
+  });
+
+  test('null-userId rows stay OUTSIDE the partial index (may repeat per org)', async () => {
+    const Membership = mongoose.model('Membership');
+    // userId defaults to null; status defaults to active (no source required).
+    await Membership.create({ organizationId: orgId });
+    await Membership.create({ organizationId: orgId });
+    expect(await Membership.countDocuments({ organizationId: orgId, userId: null })).toBe(2);
+  });
 });
