@@ -144,12 +144,12 @@ export default async (app) => {
   // Ops alerting — real-money events that require immediate human review.
   //
   // NOTE: devkit has no ntfy helper; the structured logger is the alert sink here.
-  // Downstream projects (e.g. trawl_node) wire the actual ntfy push by re-listening
-  // on the same billingEvents singleton and calling their own ntfy service.
+  // A downstream consumer wires the actual ntfy push by re-listening on the same
+  // billingEvents singleton and calling its own ntfy service.
   // Priority annotations below document the intended ntfy priority for downstream use.
 
   // billing.dispute.opened — priority 5 (urgent): 7-day evidence window starts now.
-  // Downstream projects (e.g. trawl_node) re-listen on billingEvents for ntfy push.
+  // A downstream consumer re-listens on billingEvents for ntfy push.
   billingEvents.on('billing.dispute.opened', (payload) => {
     const { disputeId, chargeId, organizationId, stripeSessionId, amount, reason } = payload;
     logger.error('[billing.init] ALERT: dispute opened — 7-day evidence window — manual review required', {
