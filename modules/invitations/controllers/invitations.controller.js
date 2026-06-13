@@ -18,11 +18,12 @@ const create = async (req, res) => {
     const invitation = await InvitationService.create(req.body.email, req.user);
     responses.success(res, 'invitation created')(invitation);
   } catch (err) {
-    // Thread the service-thrown status — a 409 (duplicate pending) must not
-    // flatten to the legacy hardcoded 422. Anything else keeps the
-    // historical 422 mapping (same style as the billing admin controller).
-    const status = err.status === 409 ? 409 : 422;
-    const title = status === 409 ? 'Conflict' : 'Unprocessable Entity';
+    // Thread ANY service-thrown AppError status (409 duplicate-pending, etc.)
+    // rather than flattening everything but 409 to 422 (same style as the
+    // billing admin controller). create() does not throw 404 today, but the
+    // shared form keeps it consistent with resend().
+    const status = err.status ?? 422;
+    const title = status === 409 ? 'Conflict' : status === 404 ? 'Not Found' : 'Unprocessable Entity';
     responses.error(res, status, title, errors.getMessage(err))(err);
   }
 };
@@ -81,8 +82,12 @@ const resend = async (req, res) => {
     const invitation = await InvitationService.resend(req.invitation.id);
     responses.success(res, 'invitation resent')(invitation);
   } catch (err) {
-    const status = err.status === 409 ? 409 : 422;
-    const title = status === 409 ? 'Conflict' : 'Unprocessable Entity';
+    // Thread ANY service-thrown AppError status (409 duplicate-pending, 404
+    // unknown id, etc.) rather than flattening everything but 409 to 422 — a
+    // 404 must not surface as Unprocessable Entity if a future caller reaches
+    // the service without the invitationByID param-loader's 404 guard.
+    const status = err.status ?? 422;
+    const title = status === 409 ? 'Conflict' : status === 404 ? 'Not Found' : 'Unprocessable Entity';
     responses.error(res, status, title, errors.getMessage(err))(err);
   }
 };
