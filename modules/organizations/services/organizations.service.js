@@ -11,6 +11,7 @@ import MembershipRepository from '../repositories/organizations.membership.repos
 import UserService from '../../users/services/users.service.js';
 import { slugify, generateOrganizationSlug } from '../helpers/organizations.slug.js';
 import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../lib/constants.js';
+import organizationEvents from '../lib/events.js';
 import BillingSignupGrantService from '../../billing/services/billing.signupGrant.service.js';
 import { isPublicDomain, normalizeEmailDomain } from './organizations.domain.js';
 
@@ -168,11 +169,33 @@ const handleSignupOrganization = async (user) => {
     abilities: serializeAbilities(await policy.defineAbilityFor(user, membership)),
   });
 
+  /**
+   * Fire-and-forget `organization.provisioned` notification (#3844) — called on every
+   * exit path that returns a real organization (fresh create AND the A4 convergence
+   * retry; consumers must be idempotent, so a double-fire is harmless by design).
+   * The try/catch only guards SYNCHRONOUS listener throws — `EventEmitter.emit` is
+   * synchronous; async listeners own their own guards (see ../lib/events.js).
+   * @param {Object} organization - The provisioned (or converged-to) organization document.
+   * @returns {void}
+   */
+  const emitProvisioned = (organization) => {
+    if (!organization) return;
+    try {
+      organizationEvents.emit('organization.provisioned', {
+        userId: String(user.id || user._id),
+        organizationId: String(organization._id || organization.id),
+      });
+    } catch (err) {
+      logger.warn('organizations: organization.provisioned listener threw', { message: err?.message });
+    }
+  };
+
   const userId = user.id || user._id;
   const existingMembership = await MembershipRepository.findOne({ userId, status: MEMBERSHIP_STATUSES.ACTIVE });
   if (existingMembership) {
     // organizationId is populated (name+slug+_id) via MembershipRepository.findOne defaultPopulate — trusted shape, same contract as autoSetCurrentOrganization
     const existingOrg = existingMembership.organizationId;
+    emitProvisioned(existingOrg);
     return buildResult(existingOrg, existingMembership);
   }
 
@@ -189,6 +212,7 @@ const handleSignupOrganization = async (user) => {
       user,
     });
 
+    emitProvisioned(organization);
     return buildResult(organization, membership);
   }
 
@@ -243,6 +267,7 @@ const handleSignupOrganization = async (user) => {
     user,
   });
 
+  emitProvisioned(organization);
   return {
     ...(await buildResult(organization, membership)),
     ...(suggestedJoin ? { suggestedJoin } : {}),
