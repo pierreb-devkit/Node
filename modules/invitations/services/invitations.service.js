@@ -318,6 +318,10 @@ const release = async (id) => {
  * @returns {Promise<Array>}
  */
 const list = (user) => {
+  // Defence-in-depth seam: this role check is a deliberate MIRROR of invitations.policy.js,
+  // not the authorization itself (CASL is). It is what keeps a non-admin scoped to their own
+  // rows once the referral phase widens the Invitation abilities — any such widening MUST be
+  // reviewed against this seam so the unscoped branch is never reachable by a regular user.
   if (Array.isArray(user?.roles) && user.roles.includes('admin')) return InvitationRepository.list();
   const userId = user?.id || user?._id;
   if (!userId) return Promise.resolve([]);
