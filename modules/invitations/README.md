@@ -135,15 +135,31 @@ and hard to cap/expire/audit ("when was this credited?"). Good for simple boosts
 > Recommended: **A + reconcile cron** for credit/cashback economies; **B** for static
 > entitlement boosts. The substrate supports both simultaneously.
 
-## Gates before shipping rewards (#3833 — read it first)
+## Gates before shipping rewards (#3833 — status)
 
-1. **Scope the list**: `GET /api/invitations` is platform-global today (admin-only by
-   CASL). Before widening `create Invitation` to regular users, add an `invitedBy`-scoped
-   `/mine` (PII: invitee emails).
-2. **Self-referral guard** — alternate-email self-invites become valuable once credits exist.
-3. **Open-signup hole** — claim/finalize are gated on `!config.sign.up`: with public signup
-   open the event never fires. Resolve (finalize-without-claim) or hide the Referrals tab
-   before any open deployment enables rewards.
+1. **Scope the list — SHIPPED (#3833)**: `GET /api/invitations` is role-keyed in the
+   service: admins read the platform-global list; any other caller reads only the
+   invitations they sent (`invitedBy`-scoped — the `{ invitedBy: 1 }` index covers
+   it; a caller with no resolvable id gets `[]`, never the `invitedBy:null`
+   admin-created rows). CASL still grants the route to admins only — widening the
+   `Invitation` abilities to regular users is the referral phase's flip; the scoping
+   ships first so that flip can never leak invitee emails (PII) platform-wide.
+2. **Self-referral guard — SHIPPED (#3833), with a known residual**: `create()`
+   rejects 422 "You cannot invite yourself" when the invitee email equals the
+   inviter's own, before the E9 registered-email check. The grant-side floor
+   (`expectedGrantKeys` drops the referrer side when
+   `invitedBy === acceptedUserId` — pinned in the billing unit tests) covers
+   same-account pairs only. **Alias/variant self-invites (a second personal email
+   → a separate account) are NOT prevented** — accepted residual risk; revisit
+   (fraud review / email-normalization dedup) before any paid-rewards launch.
+3. **Open-signup hole — DOCUMENTED, intentionally NOT changed**: claim/finalize stay
+   gated on `!config.sign.up` (the "open signup never burns a token" invariant).
+   **Referral rewards therefore require `sign.up: false`.** On an open-signup
+   deployment a presented token is *resolved* but never *claimed/finalized*, so
+   `invitation.accepted` never fires and no grant occurs — enabling
+   `billing.referral` there is a silent no-op. The Vue Referrals tab reads
+   `GET /api/auth/config` (`sign.up`) and replaces the invite form with an
+   informational state when signup is open (the referrals list stays read-only).
 4. **Index `referredBy`** alongside the first real referral query.
 
 ## UI
