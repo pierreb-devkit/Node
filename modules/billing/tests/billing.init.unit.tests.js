@@ -15,6 +15,9 @@ describe('billing.init unit tests:', () => {
   let mockLogger;
   let mockInvitationEvents;
   let mockReferralService;
+  let mockOrganizationEvents;
+  let mockUserService;
+  let mockInvitationRepository;
 
   const mockApp = {};
 
@@ -72,6 +75,23 @@ describe('billing.init unit tests:', () => {
     mockReferralService = { grantForInvitation: jest.fn().mockResolvedValue({}) };
     jest.unstable_mockModule('../services/billing.referral.service.js', () => ({
       default: mockReferralService,
+    }));
+
+    // #3844: the organizations `organization.provisioned` singleton — stub like invitationEvents.
+    mockOrganizationEvents = { on: jest.fn(), emit: jest.fn() };
+    jest.unstable_mockModule('../../organizations/lib/events.js', () => ({
+      default: mockOrganizationEvents,
+    }));
+
+    // #3844: the listener lazy-imports UserService + InvitationRepository — stub both.
+    mockUserService = { getBrut: jest.fn().mockResolvedValue(null) };
+    jest.unstable_mockModule('../../users/services/users.service.js', () => ({
+      default: mockUserService,
+    }));
+
+    mockInvitationRepository = { findByAcceptedUserId: jest.fn().mockResolvedValue(null) };
+    jest.unstable_mockModule('../../invitations/repositories/invitations.repository.js', () => ({
+      default: mockInvitationRepository,
     }));
 
     // Stub billing.email so boot validator tests don't wire real email listeners
@@ -153,6 +173,103 @@ describe('billing.init unit tests:', () => {
       const handler = await getHandler();
       await expect(handler(undefined)).resolves.toBeUndefined();
       expect(mockLogger.error).toHaveBeenCalled();
+    });
+  });
+
+  describe('#3844 instant referee grant listener (organization.provisioned):', () => {
+    const payload = { userId: 'u1', organizationId: 'o1' };
+    const invitation = { _id: 'i9', invitedBy: 'x', acceptedUserId: 'u1' };
+
+    /**
+     * Boot the module and return the registered organization.provisioned handler.
+     * @returns {Promise<Function>} The wired listener.
+     */
+    const getHandler = async () => {
+      await billingInit(mockApp);
+      const provisionedCall = mockOrganizationEvents.on.mock.calls.find(([evt]) => evt === 'organization.provisioned');
+      expect(provisionedCall).toBeDefined();
+      return provisionedCall[1];
+    };
+
+    test('wires the listener on the organizations emitter', async () => {
+      const handler = await getHandler();
+      expect(typeof handler).toBe('function');
+    });
+
+    test('config-gated: disabled (default) → returns immediately, no lookup, no grant', async () => {
+      // mockConfig.billing has NO referral block — existing deployments unaffected.
+      const handler = await getHandler();
+      await handler(payload);
+      expect(mockUserService.getBrut).not.toHaveBeenCalled();
+      expect(mockReferralService.grantForInvitation).not.toHaveBeenCalled();
+    });
+
+    test('user without referredBy → no invitation lookup, no grant', async () => {
+      mockConfig.billing.referral = { enabled: true, referrerUnits: 1000, refereeUnits: 500 };
+      mockUserService.getBrut.mockResolvedValue({ _id: 'u1', referredBy: null });
+      const handler = await getHandler();
+      await handler(payload);
+      expect(mockUserService.getBrut).toHaveBeenCalledWith({ id: 'u1' });
+      expect(mockInvitationRepository.findByAcceptedUserId).not.toHaveBeenCalled();
+      expect(mockReferralService.grantForInvitation).not.toHaveBeenCalled();
+    });
+
+    test('referredBy set but no accepted invitation found → no grant (the cron owns the edge)', async () => {
+      mockConfig.billing.referral = { enabled: true, referrerUnits: 1000, refereeUnits: 500 };
+      mockUserService.getBrut.mockResolvedValue({ _id: 'u1', referredBy: 'x' });
+      mockInvitationRepository.findByAcceptedUserId.mockResolvedValue(null);
+      const handler = await getHandler();
+      await handler(payload);
+      expect(mockInvitationRepository.findByAcceptedUserId).toHaveBeenCalledWith('u1');
+      expect(mockReferralService.grantForInvitation).not.toHaveBeenCalled();
+    });
+
+    test('happy path → grant called once with the exact stringified invitation payload', async () => {
+      mockConfig.billing.referral = { enabled: true, referrerUnits: 1000, refereeUnits: 500 };
+      mockUserService.getBrut.mockResolvedValue({ _id: 'u1', referredBy: 'x' });
+      mockInvitationRepository.findByAcceptedUserId.mockResolvedValue(invitation);
+      const handler = await getHandler();
+      await handler(payload);
+      expect(mockReferralService.grantForInvitation).toHaveBeenCalledTimes(1);
+      expect(mockReferralService.grantForInvitation).toHaveBeenCalledWith({
+        invitationId: 'i9',
+        invitedBy: 'x',
+        acceptedUserId: 'u1',
+      });
+    });
+
+    test('admin-created invite (invitedBy null) → grant called with invitedBy:null', async () => {
+      mockConfig.billing.referral = { enabled: true, referrerUnits: 1000, refereeUnits: 500 };
+      mockUserService.getBrut.mockResolvedValue({ _id: 'u1', referredBy: 'x' });
+      mockInvitationRepository.findByAcceptedUserId.mockResolvedValue({ _id: 'i9', invitedBy: null, acceptedUserId: 'u1' });
+      const handler = await getHandler();
+      await handler(payload);
+      expect(mockReferralService.grantForInvitation).toHaveBeenCalledWith({
+        invitationId: 'i9',
+        invitedBy: null,
+        acceptedUserId: 'u1',
+      });
+    });
+
+    test('self-guard: a grant REJECTION is swallowed + logged, never escapes the listener', async () => {
+      mockConfig.billing.referral = { enabled: true, referrerUnits: 1000, refereeUnits: 500 };
+      mockUserService.getBrut.mockResolvedValue({ _id: 'u1', referredBy: 'x' });
+      mockInvitationRepository.findByAcceptedUserId.mockResolvedValue(invitation);
+      mockReferralService.grantForInvitation.mockRejectedValue(new Error('mongo down'));
+      const handler = await getHandler();
+      // The emit-site catch is sync-only — the async listener must resolve, not reject.
+      await expect(handler(payload)).resolves.toBeUndefined();
+      const errCall = mockLogger.error.mock.calls.find(([msg]) => msg.includes('instant referee grant failed'));
+      expect(errCall).toBeDefined();
+      expect(errCall[1]).toMatchObject({ userId: 'u1', err: 'mongo down' });
+    });
+
+    test('self-guard: even a malformed payload cannot make the listener throw/reject', async () => {
+      mockConfig.billing.referral = { enabled: true, referrerUnits: 1000, refereeUnits: 500 };
+      const handler = await getHandler();
+      await expect(handler(undefined)).resolves.toBeUndefined();
+      expect(mockUserService.getBrut).not.toHaveBeenCalled();
+      expect(mockReferralService.grantForInvitation).not.toHaveBeenCalled();
     });
   });
 

@@ -80,6 +80,13 @@ jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
   default: { error: jest.fn(), warn: jest.fn(), info: jest.fn() },
 }));
 
+// #3844: capture organization.provisioned emits — the singleton is config-free, stub it
+// so assertions see the emit without wiring real listeners.
+const mockOrgEventsEmit = jest.fn();
+jest.unstable_mockModule('../lib/events.js', () => ({
+  default: { emit: mockOrgEventsEmit, on: jest.fn() },
+}));
+
 // Config store — MUST be mutated in-place (not reassigned) because jest.unstable_mockModule
 // captures the default export value at import time. Object.assign ensures live updates.
 const configStore = { organizations: {} };
@@ -587,5 +594,80 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
       expect(result.suggestedJoin).toBeUndefined();
       expect(result.organization).toBe(existingOrg);
     });
+  });
+});
+
+describe('handleSignupOrganization — organization.provisioned emit (#3844):', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+    mockIsConfigured.mockReturnValue(false);
+    mockOrgExists.mockResolvedValue(false);
+    mockUpdateById.mockResolvedValue({});
+    mockGrantOnSignup.mockResolvedValue(null);
+    mockMembershipFindOne.mockResolvedValue(null);
+    mockDefineAbilityFor.mockResolvedValue({ rules: [] });
+    mockSerializeAbilities.mockReturnValue(['ability-stub']);
+  });
+
+  test('fresh-create path → emits ONCE with string userId + organizationId', async () => {
+    setupConfig({ enabled: true });
+    const fakeOrg = makeFakeOrg();
+    mockOrgCreate.mockResolvedValue(fakeOrg);
+    const user = makeUser('alice@acme.com');
+
+    const result = await OrganizationsService.handleSignupOrganization(user);
+
+    expect(result.organization).not.toBeNull();
+    expect(mockOrgEventsEmit).toHaveBeenCalledTimes(1);
+    expect(mockOrgEventsEmit).toHaveBeenCalledWith('organization.provisioned', {
+      userId: String(user.id),
+      organizationId: String(fakeOrg._id),
+    });
+  });
+
+  test('A4 convergence path (existing ACTIVE membership) → emits with the EXISTING org id', async () => {
+    setupConfig({ enabled: true });
+    const existingOrg = makeFakeOrg();
+    mockMembershipFindOne.mockResolvedValue({
+      _id: new mongoose.Types.ObjectId(),
+      role: 'owner',
+      status: 'active',
+      organizationId: existingOrg,
+    });
+    const user = makeUser('alice@acme.com');
+
+    const result = await OrganizationsService.handleSignupOrganization(user);
+
+    expect(result.organization).toBe(existingOrg);
+    expect(mockOrgCreate).not.toHaveBeenCalled();
+    expect(mockOrgEventsEmit).toHaveBeenCalledTimes(1);
+    expect(mockOrgEventsEmit).toHaveBeenCalledWith('organization.provisioned', {
+      userId: String(user.id),
+      organizationId: String(existingOrg._id),
+    });
+  });
+
+  test('mailer path (email verification required) → organization null, NO emit', async () => {
+    setupConfig({ enabled: true });
+    mockIsConfigured.mockReturnValue(true);
+    const user = makeUser('alice@acme.com');
+    user.emailVerified = false;
+
+    const result = await OrganizationsService.handleSignupOrganization(user);
+
+    expect(result.organization).toBeNull();
+    expect(result.emailVerificationRequired).toBe(true);
+    expect(mockOrgEventsEmit).not.toHaveBeenCalled();
+  });
+
+  test('a SYNCHRONOUS listener throw is swallowed — signup result still returned', async () => {
+    setupConfig({ enabled: true });
+    mockOrgEventsEmit.mockImplementation(() => { throw new Error('listener exploded'); });
+    const user = makeUser('alice@acme.com');
+
+    const result = await OrganizationsService.handleSignupOrganization(user);
+
+    expect(result.organization).not.toBeNull();
+    expect(result.membership).not.toBeNull();
   });
 });

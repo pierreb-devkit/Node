@@ -118,6 +118,20 @@ const findAccepted = () =>
   Invitation.find({ status: 'accepted' }, { invitedBy: 1, acceptedUserId: 1 }).lean().exec();
 
 /**
+ * @desc Find the accepted invitation consumed by a given user (#3844) — the instant
+ * referee grant listener resolves the `referral:<invitationId>:*` idempotency keys
+ * from it when `organization.provisioned` fires at email verification. Lean +
+ * minimal projection (same shape as findAccepted). One row max in practice: an
+ * invite is single-use and burns on accept.
+ * @param {String} userId - the accepted (invited) user's id
+ * @returns {Promise<{_id: Object, invitedBy: (Object|null), acceptedUserId: Object}|null>}
+ */
+const findByAcceptedUserId = (userId) =>
+  (mongoose.Types.ObjectId.isValid(userId)
+    ? Invitation.findOne({ status: 'accepted', acceptedUserId: userId }, { invitedBy: 1, acceptedUserId: 1 }).lean().exec()
+    : null);
+
+/**
  * @desc Get one invitation by id
  * @param {String} id
  * @returns {Promise<Object|null>}
@@ -151,4 +165,4 @@ const revoke = (id) =>
     { returnDocument: 'after' },
   ).exec();
 
-export default { create, findByToken, findByEmail, claim, finalize, release, releaseStaleClaims, list, findAccepted, get, revoke };
+export default { create, findByToken, findByEmail, claim, finalize, release, releaseStaleClaims, list, findAccepted, findByAcceptedUserId, get, revoke };
