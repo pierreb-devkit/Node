@@ -4,6 +4,7 @@ const mockService = {
   create: jest.fn(),
   list: jest.fn(),
   revoke: jest.fn(),
+  resend: jest.fn(),
   findValid: jest.fn(),
   get: jest.fn(),
 };
@@ -43,6 +44,11 @@ describe('invitations.controller.create', () => {
     await controller.create({ body: { email: 'a@b.co' }, user: {} }, makeRes());
     expect(error).toHaveBeenCalledWith(expect.anything(), 422, 'Unprocessable Entity', 'boom');
   });
+  test('threads a service 409 (duplicate pending) through as Conflict', async () => {
+    mockService.create.mockRejectedValue(Object.assign(new Error('A pending invitation already exists for this email'), { status: 409 }));
+    await controller.create({ body: { email: 'a@b.co' }, user: {} }, makeRes());
+    expect(error).toHaveBeenCalledWith(expect.anything(), 409, 'Conflict', 'A pending invitation already exists for this email');
+  });
 });
 
 describe('invitations.controller.list', () => {
@@ -61,6 +67,32 @@ describe('invitations.controller.remove', () => {
     await controller.remove({ invitation: { id: 'i9' } }, makeRes());
     expect(mockService.revoke).toHaveBeenCalledWith('i9');
     expect(successInner).toHaveBeenCalledWith({ id: 'i9' });
+  });
+  test('responds 409 Conflict when revoke matches no pending row (accepted / already revoked)', async () => {
+    mockService.revoke.mockResolvedValue(null);
+    await controller.remove({ invitation: { id: 'i9' } }, makeRes());
+    expect(error).toHaveBeenCalledWith(expect.anything(), 409, 'Conflict', 'Only pending invitations can be revoked');
+    expect(success).not.toHaveBeenCalled();
+  });
+});
+
+describe('invitations.controller.resend', () => {
+  test('resends via the service and responds success', async () => {
+    mockService.resend.mockResolvedValue({ id: 'i1', status: 'pending' });
+    await controller.resend({ invitation: { id: 'i1' } }, makeRes());
+    expect(mockService.resend).toHaveBeenCalledWith('i1');
+    expect(success).toHaveBeenCalledWith(expect.anything(), 'invitation resent');
+    expect(successInner).toHaveBeenCalledWith({ id: 'i1', status: 'pending' });
+  });
+  test('threads a 409 (non-pending) as Conflict', async () => {
+    mockService.resend.mockRejectedValue(Object.assign(new Error('Only pending invitations can be resent'), { status: 409 }));
+    await controller.resend({ invitation: { id: 'i1' } }, makeRes());
+    expect(error).toHaveBeenCalledWith(expect.anything(), 409, 'Conflict', expect.any(String));
+  });
+  test('maps a 422 (mailer unconfigured) as Unprocessable Entity', async () => {
+    mockService.resend.mockRejectedValue(Object.assign(new Error('mailer is not configured'), { status: 422 }));
+    await controller.resend({ invitation: { id: 'i1' } }, makeRes());
+    expect(error).toHaveBeenCalledWith(expect.anything(), 422, 'Unprocessable Entity', expect.any(String));
   });
 });
 

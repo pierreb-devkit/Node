@@ -11,14 +11,20 @@ import InvitationService from '../services/invitations.service.js';
  * @param {string} req.body.email - Email address to invite
  * @param {Object} req.user - Authenticated admin user
  * @param {Object} res - Express response object
- * @returns {Promise<void>} Sends HTTP 200 with created invitation or 422 on error
+ * @returns {Promise<void>} Sends HTTP 200 with created invitation, 409 on duplicate pending, or 422 on error
  */
 const create = async (req, res) => {
   try {
     const invitation = await InvitationService.create(req.body.email, req.user);
     responses.success(res, 'invitation created')(invitation);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    // Thread ANY service-thrown AppError status (409 duplicate-pending, etc.)
+    // rather than flattening everything but 409 to 422 (same style as the
+    // billing admin controller). create() does not throw 404 today, but the
+    // shared form keeps it consistent with resend().
+    const status = err.status ?? 422;
+    const title = status === 409 ? 'Conflict' : status === 404 ? 'Not Found' : 'Unprocessable Entity';
+    responses.error(res, status, title, errors.getMessage(err))(err);
   }
 };
 
@@ -40,19 +46,49 @@ const list = async (req, res) => {
 };
 
 /**
- * @desc Admin: revoke an invitation
+ * @desc Admin: revoke a PENDING invitation (pending-only guard in the repository)
  * @param {Object} req - Express request object
  * @param {Object} req.invitation - Loaded invitation document (set by invitationByID middleware)
  * @param {string} req.invitation.id - Invitation id
  * @param {Object} res - Express response object
- * @returns {Promise<void>} Sends HTTP 200 with deleted id or 422 on error
+ * @returns {Promise<void>} Sends HTTP 200 with deleted id, 409 when not pending, or 422 on error
  */
 const remove = async (req, res) => {
   try {
-    await InvitationService.revoke(req.invitation.id);
+    const revoked = await InvitationService.revoke(req.invitation.id);
+    if (!revoked) {
+      // The invitation EXISTS (invitationByID loaded it) but the guarded CAS
+      // matched nothing → it is no longer pending (accepted or already
+      // revoked). Refuse: revoking an accepted invite would silently drop it
+      // from the accepted set used for referral attribution.
+      return responses.error(res, 409, 'Conflict', 'Only pending invitations can be revoked')();
+    }
     responses.success(res, 'invitation deleted')({ id: req.invitation.id });
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+  }
+};
+
+/**
+ * @desc Admin: re-send the invitation email for a pending invitation (existing token)
+ * @param {Object} req - Express request object
+ * @param {Object} req.invitation - Loaded invitation document (set by invitationByID middleware)
+ * @param {string} req.invitation.id - Invitation id
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} Sends HTTP 200 with the invitation, 409 when not pending, or 422 on error
+ */
+const resend = async (req, res) => {
+  try {
+    const invitation = await InvitationService.resend(req.invitation.id);
+    responses.success(res, 'invitation resent')(invitation);
+  } catch (err) {
+    // Thread ANY service-thrown AppError status (409 duplicate-pending, 404
+    // unknown id, etc.) rather than flattening everything but 409 to 422 — a
+    // 404 must not surface as Unprocessable Entity if a future caller reaches
+    // the service without the invitationByID param-loader's 404 guard.
+    const status = err.status ?? 422;
+    const title = status === 409 ? 'Conflict' : status === 404 ? 'Not Found' : 'Unprocessable Entity';
+    responses.error(res, status, title, errors.getMessage(err))(err);
   }
 };
 
@@ -91,4 +127,4 @@ const invitationByID = async (req, res, next, id) => {
   }
 };
 
-export default { create, list, remove, verify, invitationByID };
+export default { create, list, remove, resend, verify, invitationByID };

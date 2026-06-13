@@ -45,8 +45,11 @@ const InvitationService = (await import('../services/invitations.service.js')).d
 const invitationEvents = (await import('../lib/events.js')).default;
 
 beforeEach(() => {
-  // Default: no stale claims to sweep, no pre-existing user (E9).
+  // Default: no stale claims to sweep, no pre-existing user (E9), no outstanding
+  // pending invite (the duplicate-pending guard). clearMocks resets calls but NOT
+  // mockResolvedValue, so a prior test's findByEmail value would otherwise leak in.
   InvitationRepository.releaseStaleClaims.mockResolvedValue({ modifiedCount: 0 });
+  InvitationRepository.findByEmail.mockResolvedValue(undefined);
   mockUserService.findByEmail.mockResolvedValue(null);
   mockUserService.updateById.mockResolvedValue({});
 });
@@ -317,6 +320,17 @@ describe('InvitationService.create', () => {
     expect(mockUserService.findByEmail).toHaveBeenCalledWith('taken@example.com');
     expect(InvitationRepository.create).not.toHaveBeenCalled();
   });
+
+  test('rejects (409 CONFLICT) when a PENDING invitation already exists for the email', async () => {
+    InvitationRepository.findByEmail.mockResolvedValue({ id: 'i0', email: 'dup@example.com', status: 'pending' });
+    await expect(InvitationService.create('Dup@Example.com', { id: 'admin1' })).rejects.toMatchObject({
+      status: 409,
+      code: 'CONFLICT',
+    });
+    // checks the lowercased email + never persists a second live invite
+    expect(InvitationRepository.findByEmail).toHaveBeenCalledWith('dup@example.com');
+    expect(InvitationRepository.create).not.toHaveBeenCalled();
+  });
 });
 
 describe('InvitationService.create — #3833 self-invite guard', () => {
@@ -391,5 +405,47 @@ describe('InvitationService.list / get / revoke', () => {
     InvitationRepository.revoke.mockResolvedValue({ id: 'id-1', status: 'revoked' });
     await InvitationService.revoke('id-1');
     expect(InvitationRepository.revoke).toHaveBeenCalledWith('id-1');
+  });
+});
+
+describe('InvitationService.resend', () => {
+  const pending = { id: 'i1', email: 'a@b.co', token: 'tok-1', status: 'pending' };
+  beforeEach(() => {
+    mockMailer.isConfigured.mockReturnValue(true);
+    mockMailer.sendMail.mockResolvedValue({});
+  });
+  afterEach(() => {
+    mockMailer.isConfigured.mockReturnValue(false);
+  });
+
+  test('re-sends the signup-invite email with the EXISTING token and returns the invitation', async () => {
+    InvitationRepository.get.mockResolvedValue(pending);
+    const result = await InvitationService.resend('i1');
+    expect(result).toBe(pending);
+    expect(mockMailer.sendMail).toHaveBeenCalledTimes(1);
+    const mail = mockMailer.sendMail.mock.calls[0][0];
+    expect(mail.template).toBe('signup-invite');
+    expect(mail.to).toBe('a@b.co');
+    // No token regeneration: a previously emailed/shared link must stay valid.
+    expect(mail.params.url).toBe('http://localhost:3000/signup?inviteToken=tok-1');
+  });
+
+  test('404 when the invitation does not exist', async () => {
+    InvitationRepository.get.mockResolvedValue(null);
+    await expect(InvitationService.resend('missing')).rejects.toMatchObject({ status: 404 });
+    expect(mockMailer.sendMail).not.toHaveBeenCalled();
+  });
+
+  test('409 when the invitation is not pending (accepted/revoked never re-email)', async () => {
+    InvitationRepository.get.mockResolvedValue({ ...pending, status: 'accepted' });
+    await expect(InvitationService.resend('i1')).rejects.toMatchObject({ status: 409, code: 'CONFLICT' });
+    expect(mockMailer.sendMail).not.toHaveBeenCalled();
+  });
+
+  test('422 when the mailer is not configured (resend IS the email — fail loudly)', async () => {
+    mockMailer.isConfigured.mockReturnValue(false);
+    InvitationRepository.get.mockResolvedValue(pending);
+    await expect(InvitationService.resend('i1')).rejects.toMatchObject({ status: 422 });
+    expect(mockMailer.sendMail).not.toHaveBeenCalled();
   });
 });

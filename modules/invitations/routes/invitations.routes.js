@@ -23,6 +23,11 @@ export default (app) => {
   // Public: report whether a token is a valid invite (+ prefill email).
   app.route('/api/invitations/verify/:token').get(authLimiter, invitations.verify);
 
+  // Param loader for :invitationId — anchored before the routes that use it
+  // (app.param is global regardless of position, but keeping it here is the
+  // house convention and avoids a future reader missing it for a new route).
+  app.param('invitationId', invitations.invitationByID);
+
   // Admin CRUD — list + create.
   app
     .route('/api/invitations')
@@ -36,5 +41,9 @@ export default (app) => {
     .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
     .delete(invitations.remove);
 
-  app.param('invitationId', invitations.invitationByID);
+  // Admin — re-send the invitation email (pending invites only, existing token).
+  app
+    .route('/api/invitations/:invitationId/resend')
+    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
+    .post(invitations.resend);
 };

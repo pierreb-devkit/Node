@@ -814,4 +814,94 @@ describe('Signup invitations:', () => {
       expect(res.status).toBe(200);
     });
   });
+
+  describe('Invitation ops — revoke guard, duplicate-pending, resend', () => {
+    let mails;
+
+    beforeAll(async () => {
+      mails = (await import(path.resolve('./lib/helpers/mailer/index.js'))).default;
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    test('revoking an ACCEPTED invitation is refused with 409 (referral attribution preserved)', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const created = await adminAgent.post('/api/invitations').send({ email: 'ops-accepted@example.com' });
+      const id = created.body.data.id;
+
+      // Flip to accepted directly — the full signup-accept path is covered elsewhere.
+      const Invitation = (await import('mongoose')).default.model('Invitation');
+      await Invitation.updateOne({ _id: id }, { $set: { status: 'accepted', acceptedAt: new Date() } }).exec();
+
+      const res = await adminAgent.delete(`/api/invitations/${id}`);
+      expect(res.status).toBe(409);
+      expect(res.body.description).toBe('Only pending invitations can be revoked');
+
+      // The accepted row is untouched — still in the accepted set.
+      const after = await Invitation.findById(id).exec();
+      expect(after.status).toBe('accepted');
+      expect(after.revokedAt).toBeNull();
+    });
+
+    test('a second invite for the SAME email is refused with 409 while the first is pending', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const first = await adminAgent.post('/api/invitations').send({ email: 'ops-dup@example.com' });
+      expect(first.status).toBe(200);
+
+      // Case-insensitive: the service lowercases before the guard.
+      const second = await adminAgent.post('/api/invitations').send({ email: 'OPS-DUP@example.com' });
+      expect(second.status).toBe(409);
+      expect(second.body.description).toBe('A pending invitation already exists for this email.');
+
+      // Revoking the pending invite re-opens creation (findByEmail is pending-only).
+      const revoked = await adminAgent.delete(`/api/invitations/${first.body.data.id}`);
+      expect(revoked.status).toBe(200);
+      const third = await adminAgent.post('/api/invitations').send({ email: 'ops-dup@example.com' });
+      expect(third.status).toBe(200);
+    });
+
+    test('resend re-sends the EXISTING token for a pending invite (no regeneration)', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const created = await adminAgent.post('/api/invitations').send({ email: 'ops-resend@example.com' });
+      const { id, token } = created.body.data;
+
+      jest.spyOn(mails, 'isConfigured').mockReturnValue(true);
+      const sendSpy = jest.spyOn(mails, 'sendMail').mockResolvedValue({});
+
+      const res = await adminAgent.post(`/api/invitations/${id}/resend`);
+      expect(res.status).toBe(200);
+      expect(sendSpy).toHaveBeenCalledTimes(1);
+      const mail = sendSpy.mock.calls[0][0];
+      expect(mail.template).toBe('signup-invite');
+      expect(mail.to).toBe('ops-resend@example.com');
+      expect(mail.params.url).toContain(`inviteToken=${token}`); // SAME token
+    });
+
+    test('resend guards: 422 with the mailer unconfigured, 409 once non-pending', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const created = await adminAgent.post('/api/invitations').send({ email: 'ops-resend-guards@example.com' });
+      const { id } = created.body.data;
+
+      // Test env mailer is unconfigured (placeholder `from`) → 422 with no mocks.
+      const unconfigured = await adminAgent.post(`/api/invitations/${id}/resend`);
+      expect(unconfigured.status).toBe(422);
+
+      // Revoke it, then resend → 409 (status guard fires before the mailer guard).
+      await adminAgent.delete(`/api/invitations/${id}`);
+      const conflicted = await adminAgent.post(`/api/invitations/${id}/resend`);
+      expect(conflicted.status).toBe(409);
+      expect(conflicted.body.description).toBe('Only pending invitations can be resent.');
+    });
+
+    test('resend resolves through the legacy /api/auth/invitations alias too (kept consistent)', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const created = await adminAgent.post('/api/invitations').send({ email: 'ops-resend-alias@example.com' });
+      jest.spyOn(mails, 'isConfigured').mockReturnValue(true);
+      jest.spyOn(mails, 'sendMail').mockResolvedValue({});
+      const res = await adminAgent.post(`/api/auth/invitations/${created.body.data.id}/resend`);
+      expect(res.status).toBe(200);
+    });
+  });
 });
