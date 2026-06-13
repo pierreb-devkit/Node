@@ -16,8 +16,16 @@ import MembershipRepository from '../../organizations/repositories/organizations
 import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../../organizations/lib/constants.js';
 import { removeSensitive } from '../utils/sanitizeUser.js';
 
-// Same normalization the repository applies on email lookups (module-local there,
-// duplicated here as a one-liner to keep the layering untouched).
+/**
+ * @function normalizeEmail
+ * @desc Lowercase + trim an email for case-insensitive comparison. MUST stay in sync
+ *   with the repository-layer normalization (UserRepository, module-local there) —
+ *   duplicated here as a one-liner to keep the layering untouched; if the repository
+ *   normalization ever changes (e.g. Unicode fold), update both so the email-change
+ *   guard's previous-vs-new comparison cannot drift.
+ * @param {string} email - raw email value
+ * @returns {string|null} normalized email, or null for a non-string input
+ */
 const normalizeEmail = (email) => (typeof email === 'string' ? email.toLowerCase().trim() : null);
 
 /**
