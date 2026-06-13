@@ -115,6 +115,16 @@ describe('billing.referral.service unit tests:', () => {
       expect(BillingReferralService.expectedGrantKeys(invite, { ...cfg, enabled: false })).toEqual([]);
       expect(BillingReferralService.expectedGrantKeys({ invitedBy: inviterId, acceptedUserId: refereeId }, cfg)).toEqual([]);
     });
+
+    test('#3833 belt: a SAME-account self-referral pair implies NO referrer key (listener AND cron derive from this one rule; alias multi-account self-invites are NOT covered by this floor)', () => {
+      const cfg = mockConfig.billing.referral;
+      const keys = BillingReferralService.expectedGrantKeys(
+        { _id: invitationId, invitedBy: refereeId, acceptedUserId: refereeId },
+        cfg,
+      );
+      expect(keys).toEqual([{ side: 'referee', key: `referral:${invitationId}:referee` }]);
+      expect(keys.some((k) => k.side === 'referrer')).toBe(false);
+    });
   });
 
   test('disabled → no-op: returns skipped and never touches the ledger or users', async () => {

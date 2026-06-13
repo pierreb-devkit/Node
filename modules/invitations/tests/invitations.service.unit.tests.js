@@ -319,6 +319,33 @@ describe('InvitationService.create', () => {
   });
 });
 
+describe('InvitationService.create — #3833 self-invite guard', () => {
+  test('rejects 422 "You cannot invite yourself" BEFORE the E9 lookup and any persistence', async () => {
+    await expect(InvitationService.create('Me@Example.com', { id: 'u1', email: 'me@example.com' })).rejects.toMatchObject({
+      status: 422,
+      code: 'VALIDATION_ERROR',
+    });
+    await expect(InvitationService.create('me@example.com', { id: 'u1', email: 'me@example.com' })).rejects.toThrow('You cannot invite yourself');
+    // Fires before E9: the registered-email lookup is never reached, nothing persists.
+    expect(mockUserService.findByEmail).not.toHaveBeenCalled();
+    expect(InvitationRepository.create).not.toHaveBeenCalled();
+  });
+  test('matches case-insensitively and trims whitespace (same normalization both sides)', async () => {
+    await expect(InvitationService.create('  ME@EXAMPLE.COM ', { id: 'u1', email: 'Me@Example.com' })).rejects.toMatchObject({ status: 422 });
+  });
+  test('a different invitee email passes the guard — E9 path unchanged', async () => {
+    InvitationRepository.create.mockImplementation((doc) => Promise.resolve({ ...doc, id: '1' }));
+    const inv = await InvitationService.create('friend@example.com', { id: 'u1', email: 'me@example.com' });
+    expect(inv.email).toBe('friend@example.com');
+    expect(mockUserService.findByEmail).toHaveBeenCalledWith('friend@example.com');
+  });
+  test('an inviter without an email (defensive) skips the guard, E9 still protects', async () => {
+    InvitationRepository.create.mockImplementation((doc) => Promise.resolve({ ...doc, id: '2' }));
+    const inv = await InvitationService.create('someone@example.com', { id: 'u1' });
+    expect(inv.email).toBe('someone@example.com');
+  });
+});
+
 describe('InvitationService.create — email sending branch', () => {
   test('sends email when mailer is configured', async () => {
     mockMailer.isConfigured.mockReturnValue(true);
