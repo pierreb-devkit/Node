@@ -145,6 +145,17 @@ describe('InvitationRepository', () => {
     expect(result).toEqual([{ _id: 'i1', invitedBy: 'u1', acceptedUserId: 'u2' }]);
   });
 
+  test('findByAcceptedUserId resolves the accepted invite consumed by a user, lean + minimal projection (#3844)', async () => {
+    exec.mockResolvedValue({ _id: 'i1', invitedBy: 'u1', acceptedUserId: 'u2' });
+    const result = await InvitationRepository.findByAcceptedUserId('u2');
+    expect(InvitationModel.findOne).toHaveBeenCalledWith(
+      { status: 'accepted', acceptedUserId: 'u2' },
+      { invitedBy: 1, acceptedUserId: 1 },
+    );
+    expect(chain.lean).toHaveBeenCalled();
+    expect(result).toEqual({ _id: 'i1', invitedBy: 'u1', acceptedUserId: 'u2' });
+  });
+
   test('get returns null for an invalid ObjectId without hitting the DB', async () => {
     isValid.mockReturnValue(false);
     const result = await InvitationRepository.get('not-an-id');
