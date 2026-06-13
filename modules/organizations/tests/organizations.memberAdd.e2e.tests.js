@@ -32,6 +32,7 @@ describe('Organizations member-add E2E tests:', () => {
   /**
    * @description Clean up a user and their associated organizations/memberships.
    * @param {Object} user - The user object to clean up.
+   * @returns {Promise<void>}
    */
   const cleanupUser = async (user) => {
     if (!user) return;
@@ -238,8 +239,9 @@ describe('Organizations member-add E2E tests:', () => {
       }
     });
 
-    // Runs after the lifecycle test (Jest executes tests in declaration order with
-    // --runInBand): A owns org A, B has no membership left.
+    // Jest runs test() blocks within a file in declaration order, so this runs after
+    // the lifecycle test above (which leaves A owning org A and B with no membership);
+    // the precondition assert below guards against that test having aborted.
     test('decline path: re-add → duplicate guard 422 → B declines → row gone everywhere', async () => {
       // Finding #2: guard against test-1 abort leaving shared state unpopulated
       // precondition: the lifecycle test must have populated shared state
