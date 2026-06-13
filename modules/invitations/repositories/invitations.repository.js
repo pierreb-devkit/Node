@@ -127,7 +127,9 @@ const findAccepted = () =>
  * @returns {Promise<{_id: Object, invitedBy: (Object|null), acceptedUserId: Object}|null>}
  */
 const findByAcceptedUserId = (userId) =>
-  Invitation.findOne({ status: 'accepted', acceptedUserId: userId }, { invitedBy: 1, acceptedUserId: 1 }).lean().exec();
+  (mongoose.Types.ObjectId.isValid(userId)
+    ? Invitation.findOne({ status: 'accepted', acceptedUserId: userId }, { invitedBy: 1, acceptedUserId: 1 }).lean().exec()
+    : null);
 
 /**
  * @desc Get one invitation by id

@@ -218,7 +218,7 @@ describe('Billing referral grant (#3842):', () => {
       .post(`/api/auth/signup?inviteToken=${token}`)
       .send({ email: GUEST_VERIFY_EMAIL, password: 'Sup3rStr0ng!' });
     expect(res.status).toBe(200);
-    await new Promise((resolve) => { setTimeout(resolve, 300); }); // let the (disabled) listeners settle
+    await new Promise((resolve) => { setImmediate(resolve); }); // let the (disabled) listeners settle
     config.billing.referral.enabled = true;
 
     const guest = await UserService.getBrut({ email: GUEST_VERIFY_EMAIL });
@@ -277,7 +277,7 @@ describe('Billing referral grant (#3842):', () => {
       .post(`/api/auth/signup?inviteToken=${token}`)
       .send({ email, password: 'Sup3rStr0ng!' });
     expect(res.status).toBe(200);
-    await new Promise((resolve) => { setTimeout(resolve, 300); }); // let the (disabled) listener settle
+    await new Promise((resolve) => { setImmediate(resolve); }); // let the (disabled) listener settle
     config.billing.referral.enabled = true;
 
     const admin = await UserService.getBrut({ email: ADMIN_EMAIL });

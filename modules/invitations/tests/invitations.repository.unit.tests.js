@@ -156,6 +156,13 @@ describe('InvitationRepository', () => {
     expect(result).toEqual({ _id: 'i1', invitedBy: 'u1', acceptedUserId: 'u2' });
   });
 
+  test('findByAcceptedUserId returns null for an invalid ObjectId without hitting the DB (#3844)', async () => {
+    isValid.mockReturnValue(false);
+    const result = await InvitationRepository.findByAcceptedUserId('not-an-id');
+    expect(result).toBeNull();
+    expect(InvitationModel.findOne).not.toHaveBeenCalled();
+  });
+
   test('get returns null for an invalid ObjectId without hitting the DB', async () => {
     isValid.mockReturnValue(false);
     const result = await InvitationRepository.get('not-an-id');
