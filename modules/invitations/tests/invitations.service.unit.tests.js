@@ -319,6 +319,33 @@ describe('InvitationService.create', () => {
   });
 });
 
+describe('InvitationService.create — #3833 self-invite guard', () => {
+  test('rejects 422 "You cannot invite yourself" BEFORE the E9 lookup and any persistence', async () => {
+    await expect(InvitationService.create('Me@Example.com', { id: 'u1', email: 'me@example.com' })).rejects.toMatchObject({
+      status: 422,
+      code: 'VALIDATION_ERROR',
+    });
+    await expect(InvitationService.create('me@example.com', { id: 'u1', email: 'me@example.com' })).rejects.toThrow('You cannot invite yourself');
+    // Fires before E9: the registered-email lookup is never reached, nothing persists.
+    expect(mockUserService.findByEmail).not.toHaveBeenCalled();
+    expect(InvitationRepository.create).not.toHaveBeenCalled();
+  });
+  test('matches case-insensitively and trims whitespace (same normalization both sides)', async () => {
+    await expect(InvitationService.create('  ME@EXAMPLE.COM ', { id: 'u1', email: 'Me@Example.com' })).rejects.toMatchObject({ status: 422 });
+  });
+  test('a different invitee email passes the guard — E9 path unchanged', async () => {
+    InvitationRepository.create.mockImplementation((doc) => Promise.resolve({ ...doc, id: '1' }));
+    const inv = await InvitationService.create('friend@example.com', { id: 'u1', email: 'me@example.com' });
+    expect(inv.email).toBe('friend@example.com');
+    expect(mockUserService.findByEmail).toHaveBeenCalledWith('friend@example.com');
+  });
+  test('an inviter without an email (defensive) skips the guard, E9 still protects', async () => {
+    InvitationRepository.create.mockImplementation((doc) => Promise.resolve({ ...doc, id: '2' }));
+    const inv = await InvitationService.create('someone@example.com', { id: 'u1' });
+    expect(inv.email).toBe('someone@example.com');
+  });
+});
+
 describe('InvitationService.create — email sending branch', () => {
   test('sends email when mailer is configured', async () => {
     mockMailer.isConfigured.mockReturnValue(true);
@@ -335,10 +362,25 @@ describe('InvitationService.create — email sending branch', () => {
 });
 
 describe('InvitationService.list / get / revoke', () => {
-  test('list delegates to repository', async () => {
+  test('list(admin) → unscoped repository list (#3833)', async () => {
     InvitationRepository.list.mockResolvedValue([]);
-    await InvitationService.list();
-    expect(InvitationRepository.list).toHaveBeenCalledTimes(1);
+    await InvitationService.list({ id: 'a1', roles: ['user', 'admin'] });
+    expect(InvitationRepository.list).toHaveBeenCalledWith();
+  });
+  test('list(non-admin) → repository list scoped to { invitedBy: <caller id> } (#3833)', async () => {
+    InvitationRepository.list.mockResolvedValue([]);
+    await InvitationService.list({ id: 'u1', roles: ['user'] });
+    expect(InvitationRepository.list).toHaveBeenCalledWith({ invitedBy: 'u1' });
+  });
+  test('list(non-admin with _id only) → scoped on _id (mirrors create() id resolution)', async () => {
+    InvitationRepository.list.mockResolvedValue([]);
+    await InvitationService.list({ _id: 'u2', roles: ['user'] });
+    expect(InvitationRepository.list).toHaveBeenCalledWith({ invitedBy: 'u2' });
+  });
+  test('list with no resolvable caller id → empty list, repository untouched (never leaks the invitedBy:null admin rows)', async () => {
+    expect(await InvitationService.list(undefined)).toEqual([]);
+    expect(await InvitationService.list({ roles: ['user'] })).toEqual([]);
+    expect(InvitationRepository.list).not.toHaveBeenCalled();
   });
   test('get delegates to repository', async () => {
     InvitationRepository.get.mockResolvedValue(null);

@@ -22,10 +22,26 @@ import AppError from '../../../lib/helpers/AppError.js';
  * @param {String} email - invitee email (any case)
  * @param {Object} invitedBy - the admin user creating the invite
  * @returns {Promise<Object>} created invitation
- * @throws {AppError} 422 when a user already exists for this email
+ * @throws {AppError} 422 when the invitee email is the inviter's own, or a user already exists for this email
  */
 const create = async (email, invitedBy) => {
   const normalizedEmail = String(email).toLowerCase().trim();
+  // #3833: explicit self-invite guard. The inviter's own email is by definition a
+  // registered email, so E9 below would also reject it — but with a misleading
+  // "already registered" message. Failing fast here makes the intent explicit.
+  // Alias/variant self-emails (a SEPARATE account on a second personal address) are
+  // NOT covered here or anywhere: the grant-side floor (billing expectedGrantKeys
+  // skips invitedBy === acceptedUserId) only suppresses same-account pairs. Accepted
+  // residual risk — sock-puppet prevention is out of #3833's scope (fraud review /
+  // email-normalization dedup territory, revisit before any paid-rewards launch).
+  const inviterEmail = typeof invitedBy?.email === 'string' ? invitedBy.email.toLowerCase().trim() : null;
+  if (inviterEmail && inviterEmail === normalizedEmail) {
+    throw new AppError('You cannot invite yourself', {
+      status: 422,
+      code: 'VALIDATION_ERROR',
+      details: { message: 'You cannot invite yourself.' },
+    });
+  }
   // E9: an already-registered email must not be invited — they are already a user.
   const existing = await UserService.findByEmail(normalizedEmail);
   if (existing) {
@@ -291,10 +307,26 @@ const release = async (id) => {
 };
 
 /**
- * @desc List all invitations (admin)
+ * @desc List invitations, role-keyed (#3833): platform admins read the global
+ * list; any other caller reads only the invitations THEY sent (scoped on
+ * invitedBy — invitee emails are PII, an unscoped list would leak them
+ * platform-wide). The admin check mirrors invitations.policy.js. CASL still only
+ * routes admins to this today; the scoping ships FIRST so the referral phase can
+ * widen the Invitation abilities without touching this seam again. A caller with
+ * no resolvable id gets [] — never the { invitedBy: null } admin-created rows.
+ * @param {Object} user - the authenticated caller (req.user)
  * @returns {Promise<Array>}
  */
-const list = () => InvitationRepository.list();
+const list = (user) => {
+  // Defence-in-depth seam: this role check is a deliberate MIRROR of invitations.policy.js,
+  // not the authorization itself (CASL is). It is what keeps a non-admin scoped to their own
+  // rows once the referral phase widens the Invitation abilities — any such widening MUST be
+  // reviewed against this seam so the unscoped branch is never reachable by a regular user.
+  if (Array.isArray(user?.roles) && user.roles.includes('admin')) return InvitationRepository.list();
+  const userId = user?.id || user?._id;
+  if (!userId) return Promise.resolve([]);
+  return InvitationRepository.list({ invitedBy: userId });
+};
 
 /**
  * @desc Get one invitation by id

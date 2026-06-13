@@ -127,6 +127,15 @@ describe('InvitationRepository', () => {
     expect(chain.sort).toHaveBeenCalledWith('-createdAt');
   });
 
+  test('list({ invitedBy }) threads the filter (#3833 non-admin scoping), token still stripped', async () => {
+    exec.mockResolvedValue([]);
+    await InvitationRepository.list({ invitedBy: 'u1' });
+    expect(InvitationModel.find).toHaveBeenCalledWith({ invitedBy: 'u1' });
+    expect(chain.select).toHaveBeenCalledWith('-token');
+    expect(chain.populate).toHaveBeenCalledWith('invitedBy', 'email firstName lastName');
+    expect(chain.sort).toHaveBeenCalledWith('-createdAt');
+  });
+
   test('findAccepted scans status:accepted lean with the minimal referral projection (#3842)', async () => {
     exec.mockResolvedValue([{ _id: 'i1', invitedBy: 'u1', acceptedUserId: 'u2' }]);
     const result = await InvitationRepository.findAccepted();

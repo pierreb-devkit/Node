@@ -23,14 +23,16 @@ const create = async (req, res) => {
 };
 
 /**
- * @desc Admin: list all signup invitations
+ * @desc List signup invitations — role-keyed by the service (#3833):
+ * admins get the platform-global list, any other caller only their own.
  * @param {Object} req - Express request object
+ * @param {Object} req.user - Authenticated caller (scoping key)
  * @param {Object} res - Express response object
  * @returns {Promise<void>} Sends HTTP 200 with invitation array or 422 on error
  */
 const list = async (req, res) => {
   try {
-    const invitations = await InvitationService.list();
+    const invitations = await InvitationService.list(req.user);
     responses.success(res, 'invitation list')(invitations);
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);

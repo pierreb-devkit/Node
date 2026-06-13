@@ -140,8 +140,12 @@ const config = {
      * Pair with the reconcile cron (crons/billing.referralReconcile.js): the listener
      * is in-process fire-and-forget (latency); the cron back-fills missed grants (truth).
      *
-     * ⚠️ Merging is safe everywhere (default OFF); do NOT enable until
-     *    pierreb-devkit/Node#3833 lands — only the cheap self-referral floor ships here.
+     * ⚠️ Referral grants require CLOSED signup (sign.up: false). With public signup
+     *    open, a presented invite token is resolved but never claimed/finalized (the
+     *    "open signup never burns a token" invariant), so `invitation.accepted` never
+     *    fires and enabling this block is a silent no-op. The #3833 gates shipped:
+     *    role-keyed list scoping + the create() self-invite guard (the grant-side
+     *    floor here skips invitedBy === acceptedUserId as the belt).
      */
     referral: {
       enabled: false,
