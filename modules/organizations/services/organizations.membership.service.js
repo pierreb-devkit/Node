@@ -403,19 +403,21 @@ const addMember = async (organizationId, userId, role, addedBy) => {
   // is PENDING — only the invitee can activate it via acceptMembership (consent
   // invariant #1) — so the wording is an invitation, never a "you were added"
   // fait accompli. Fire-and-forget: a mail failure must never fail the add.
-  const org = await OrganizationRepository.get(organizationId);
-  if (mailer.isConfigured() && user?.email && org?.name) {
-    mailer.sendMail({
-      to: user.email,
-      subject: `You have been invited to join ${org.name}`,
-      template: 'org-member-added',
-      params: {
-        displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
-        orgName: org.name,
-        appName: config.app.title,
-        url: `${getBaseUrl()}/users/organizations`,
-      },
-    }).catch((err) => logger.warn('organizations.membership.addMember: invitation email failed', { message: err?.message, stack: err?.stack }));
+  if (mailer.isConfigured() && user?.email) {
+    const org = await OrganizationRepository.get(organizationId);
+    if (org?.name) {
+      mailer.sendMail({
+        to: user.email,
+        subject: `You have been invited to join ${org.name}`,
+        template: 'org-member-added',
+        params: {
+          displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
+          orgName: org.name,
+          appName: config.app.title,
+          url: `${getBaseUrl()}/users/organizations`,
+        },
+      }).catch((err) => logger.warn('organizations.membership.addMember: invitation email failed', { message: err?.message, stack: err?.stack }));
+    }
   }
 
   return membership;
