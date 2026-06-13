@@ -144,6 +144,32 @@ const accept = async (req, res) => {
 };
 
 /**
+ * @function decline
+ * @description Endpoint for the INVITED USER to decline a pending owner_add
+ *   membership — deletes the row (the user can be re-invited later). Same
+ *   auth-only surface and consent gate as accept: the service returns null on any
+ *   mismatch (wrong user, a join_request, an already-active or unknown
+ *   membership) → 404, never leaking which condition failed.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+const decline = async (req, res) => {
+  try {
+    const membership = await MembershipService.declineMembership(
+      req.params.membershipId,
+      req.user._id || req.user.id,
+    );
+    if (!membership) {
+      return responses.error(res, 404, 'Not Found', 'No pending invitation with that identifier has been found')();
+    }
+    responses.success(res, 'membership invitation declined')(membership);
+  } catch (err) {
+    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+  }
+};
+
+/**
  * @function requestByID
  * @description Middleware to fetch a pending membership by its ID.
  * @param {Object} req - Express request object
@@ -180,5 +206,6 @@ export default {
   listMine,
   listMinePending,
   accept,
+  decline,
   requestByID,
 };
