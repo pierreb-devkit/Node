@@ -366,7 +366,10 @@ const findUserByExactEmail = async (email) => {
  * @param {String} userId - The user being invited.
  * @param {String} [role] - The role to grant on acceptance (defaults to MEMBER).
  * @param {String} addedBy - The id of the owner/admin performing the add (provenance).
- * @returns {Promise<Object>} The created PENDING owner_add membership.
+ * @returns {Promise<Object>} The created PENDING owner_add membership. When the
+ *   mailer is configured, also notifies the invited user by email (invitation
+ *   wording — the membership awaits THEIR acceptance) with a link to their
+ *   organizations page. Fire-and-forget: a mail failure never fails the add.
  * @throws {Error} If userId is missing, the user does not exist, or a membership already exists.
  */
 const addMember = async (organizationId, userId, role, addedBy) => {
@@ -387,7 +390,7 @@ const addMember = async (organizationId, userId, role, addedBy) => {
   }
 
   // status EXPLICIT — never rely on the schema 'active' default (consent bypass).
-  return MembershipRepository.create({
+  const membership = await MembershipRepository.create({
     userId,
     organizationId,
     role: role || MEMBERSHIP_ROLES.MEMBER,
@@ -395,6 +398,27 @@ const addMember = async (organizationId, userId, role, addedBy) => {
     source: PENDING_SOURCES.OWNER_ADD,
     addedBy,
   });
+
+  // Invitation notification (parity with the join-request emails). The membership
+  // is PENDING — only the invitee can activate it via acceptMembership (consent
+  // invariant #1) — so the wording is an invitation, never a "you were added"
+  // fait accompli. Fire-and-forget: a mail failure must never fail the add.
+  const org = await OrganizationRepository.get(organizationId);
+  if (mailer.isConfigured() && user?.email && org?.name) {
+    mailer.sendMail({
+      to: user.email,
+      subject: `You have been invited to join ${org.name}`,
+      template: 'org-member-added',
+      params: {
+        displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
+        orgName: org.name,
+        appName: config.app.title,
+        url: `${getBaseUrl()}/users/organizations`,
+      },
+    }).catch((err) => logger.warn('organizations.membership.addMember: invitation email failed', { message: err?.message, stack: err?.stack }));
+  }
+
+  return membership;
 };
 
 /**

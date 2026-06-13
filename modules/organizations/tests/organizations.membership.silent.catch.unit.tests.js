@@ -5,7 +5,8 @@ import { jest, describe, test, expect } from '@jest/globals';
 
 /**
  * Unit tests — verify that logger.warn is called when fire-and-forget emails
- * fail in organizations.membership.service (createJoinRequest, approveRequest, rejectRequest).
+ * fail in organizations.membership.service (createJoinRequest, approveRequest,
+ * rejectRequest, addMember).
  */
 
 const mockWarn = jest.fn();
@@ -128,6 +129,24 @@ describe('organizations.membership.service silent-catch error logging:', () => {
 
     expect(mockWarn).toHaveBeenCalledWith(
       'organizations.membership.rejectRequest: rejection email failed',
+      { message: emailError.message, stack: emailError.stack },
+    );
+  });
+
+  test('addMember: should call logger.warn when invitation email fails', async () => {
+    mockWarn.mockClear();
+    mockUserGetBrut.mockResolvedValueOnce({ _id: 'u1', email: 'user@x.com', firstName: 'A', lastName: 'B' });
+    mockMembershipFindOne.mockResolvedValueOnce(null);
+    mockMembershipCreate.mockResolvedValueOnce({ _id: 'm-add' });
+    mockOrgGet.mockResolvedValueOnce(org);
+    mockSendMail.mockRejectedValueOnce(emailError);
+
+    await MembershipService.addMember('org1', 'u1', 'member', 'owner1');
+
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(mockWarn).toHaveBeenCalledWith(
+      'organizations.membership.addMember: invitation email failed',
       { message: emailError.message, stack: emailError.stack },
     );
   });
