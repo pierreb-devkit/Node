@@ -54,6 +54,25 @@ describe('HomeService.getReadinessStatus unit tests:', () => {
     expect(categories).not.toContain('monitoring');
   });
 
+  describe('mail row', () => {
+    test('warning message states the consequence when no mail provider is configured', async () => {
+      const HomeService = await withConfig({});
+      const checks = HomeService.getReadinessStatus();
+      const row = checks.find((c) => c.category === 'mail');
+      expect(row.status).toBe('warning');
+      expect(row.message).toBe('No mail provider configured — users register without email verification');
+    });
+
+    test('ok message is unchanged when a mail provider is configured', async () => {
+      mockMailerIsConfigured.mockReturnValue(true);
+      const HomeService = await withConfig({});
+      const checks = HomeService.getReadinessStatus();
+      const row = checks.find((c) => c.category === 'mail');
+      expect(row.status).toBe('ok');
+      expect(row.message).toBe('Mail provider configured');
+    });
+  });
+
   describe('errorTracking row', () => {
     test('ok when analytics.posthog.key is set AND errorTracking=true', async () => {
       const HomeService = await withConfig({

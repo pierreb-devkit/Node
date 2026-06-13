@@ -99,7 +99,7 @@ const getReadinessStatus = () => {
   checks.push({
     category: 'mail',
     status: mailConfigured ? 'ok' : 'warning',
-    message: mailConfigured ? 'Mail provider configured' : 'No mail provider configured',
+    message: mailConfigured ? 'Mail provider configured' : 'No mail provider configured — users register without email verification',
   });
 
   // billing — Stripe
