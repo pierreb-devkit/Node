@@ -318,6 +318,7 @@ describe('auth.controller signup mass-assignment strip:', () => {
       'failedLoginAttempts',
       'lockUntil',
       'lastLoginAt',
+      'currentOrganization',
       'referredBy',
     ]) {
       expect(Object.prototype.hasOwnProperty.call(createdWith, field)).toBe(false);

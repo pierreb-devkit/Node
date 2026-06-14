@@ -53,16 +53,19 @@ const User = z.object({
   // Referral substrate (#5) — `referredBy` is DELIBERATELY NOT declared here.
   // This is a server-only field set on invite acceptance (the invitations finalize
   // seam, via UserService.updateById, which bypasses Zod + the update whitelist).
-  // The signup route validates the body with `model.isValid(User)`, and for POST it
-  // replaces req.body with the FULL Zod output — so any field present in this schema
-  // becomes client-writable on signup. Omitting `referredBy` makes Zod strip it from
-  // every client-facing parse (signup POST + PUT /api/users), guaranteeing a client
-  // can never self-assign a referrer. Do NOT add it here. (The Mongoose model + the
-  // updateById raw path are all the server needs to persist it.)
-  // When a future feature (e.g. the P8b referrals view) needs to READ/EXPOSE
-  // `referredBy`, do it via a response projection / the read whitelist — NEVER by
-  // adding it to this Zod schema (which is also the signup-POST write surface, so
-  // adding it here reintroduces the client-writable hole this omission closes).
+  //
+  // Architecture note: the signup route validates the body with `model.isValid(SignupUser)`
+  // (not `User`), and for POST replaces req.body with the full Zod output — so only fields
+  // declared on `SignupUser` reach the controller. `SignupUser` deliberately accepts
+  // `referredBy` (to avoid a .strict() 422 on invite-path clients) but the controller
+  // DELETES it before UserService.create so a client can never self-assign a referrer.
+  // See SignupUser JSDoc below and the controller's defense-in-depth strip for details.
+  //
+  // `User` still omits `referredBy` here to protect the `UserUpdate`/PUT surface and the
+  // OAuth-bootstrap path (both validated with `User`). Do NOT add `referredBy` to `User`.
+  // The Mongoose model + the updateById raw path are all the server needs to persist it.
+  // When a future feature needs to READ/EXPOSE `referredBy`, do it via a response
+  // projection / the read whitelist — NEVER by adding it to this schema.
   // others
   complementary: z.record(z.string(), z.unknown()).nullable().optional(),
 });

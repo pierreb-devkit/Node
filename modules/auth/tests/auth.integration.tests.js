@@ -215,8 +215,13 @@ describe('Auth integration tests:', () => {
             providerData: { email: attackerEmail, sub: 'attacker-injected-sub' },
             additionalProvidersData: { google: { sub: 'attacker-injected-sub' } },
             resetPasswordToken: 'attacker-reset-token',
+            resetPasswordExpires: new Date().toISOString(),
             emailVerificationToken: 'attacker-verify-token',
+            emailVerificationExpires: new Date().toISOString(),
             failedLoginAttempts: 99,
+            lockUntil: new Date().toISOString(),
+            lastLoginAt: new Date().toISOString(),
+            currentOrganization: 'attacker-org-id',
           })
           .expect(422);
 
