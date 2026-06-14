@@ -4,6 +4,15 @@
 import { MEMBERSHIP_ROLES } from '../lib/constants.js';
 
 /**
+ * Whether a route path targets an organization resource (regular or platform-admin form).
+ * Both surfaces share the same /members and /requests sub-resources, so their dedicated
+ * Membership path-subjects must match either prefix.
+ * @param {string} p - Express route path
+ * @returns {boolean} true for both /api/organizations and /api/admin/organizations
+ */
+const isOrganizationRoute = (p) => p.startsWith('/api/organizations') || p.startsWith('/api/admin/organizations');
+
+/**
  * Register organization-related subjects for document-level and path-level resolution.
  * The organization document subject uses a guard to exclude billing routes (which
  * set req.organization but authorize via their own path-derived subjects).
@@ -32,9 +41,14 @@ export function organizationSubjectRegistration({ registerDocumentSubject, regis
     const onOrgRoute = p.startsWith('/api/organizations') || p.startsWith('/api/admin/organizations');
     return onOrgRoute && !p.includes('/members');
   });
-  registerPathSubject((p) => p.startsWith('/api/admin/organizations'), 'Organization');
-  registerPathSubject((p) => p.startsWith('/api/organizations') && p.includes('/requests'), 'Membership');
-  registerPathSubject((p) => p.startsWith('/api/organizations') && p.includes('/members'), 'Membership');
+  // Admin organization routes resolve to the Organization subject, EXCEPT /members:
+  // membership management must authorize via the dedicated Membership path-subject below,
+  // mirroring the organization document-subject guard. Without this carve-out the broad
+  // admin Organization match would shadow the Membership entry (resolution is first-match-wins),
+  // so an admin /members path would resolve to Organization instead of Membership.
+  registerPathSubject((p) => p.startsWith('/api/admin/organizations') && !p.includes('/members'), 'Organization');
+  registerPathSubject((p) => isOrganizationRoute(p) && p.includes('/requests'), 'Membership');
+  registerPathSubject((p) => isOrganizationRoute(p) && p.includes('/members'), 'Membership');
   registerPathSubject((p) => p.startsWith('/api/organizations'), 'Organization');
 }
 
