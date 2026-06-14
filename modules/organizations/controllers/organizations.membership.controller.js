@@ -67,8 +67,18 @@ const findUserByEmail = async (req, res) => {
  * @description Endpoint for an org owner/admin to add a user as a member. Creates a
  *   PENDING owner_add membership the INVITED USER must accept (consent — invariant #1).
  *   Role gate mirrors updateRole: only OWNERS may grant owner/admin; admins may only
- *   add plain members. CASL (`create Membership`) on the /members POST route already
- *   restricts this to org owners/admins (+ global admins).
+ *   add plain members.
+ *
+ *   Authorization is enforced at two layers:
+ *   (1) The `/members` POST route resolves to the `Membership` path-subject (owner/admin
+ *       gate via `create Membership`) because both the Organization document-subject and
+ *       the admin Organization path-subject explicitly exclude `/members` paths — preventing
+ *       the broader `create Organization` grant (available to any authenticated user) from
+ *       shadowing the Membership subject and allowing unauthenticated membership injection.
+ *   (2) The explicit actor-role check at the top of this handler (isGlobalAdmin || OWNER
+ *       || ADMIN) fails closed for non-members and plain members, because the type-level
+ *       CASL `create Membership` grant does not carry an org-scope condition on its own
+ *       and would otherwise pass for any user who holds that grant in the same org.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  * @returns {void}
