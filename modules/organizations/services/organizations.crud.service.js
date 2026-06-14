@@ -25,6 +25,7 @@ import MembershipRepository from '../repositories/organizations.membership.repos
 import UserService from '../../users/services/users.service.js';
 import { slugify } from '../helpers/organizations.slug.js';
 import { MEMBERSHIP_STATUSES, MEMBERSHIP_ROLES } from '../lib/constants.js';
+import { runOrganizationRemovedHandlers } from '../lib/orgRemoval.registry.js';
 
 /**
  * @function list
@@ -170,7 +171,11 @@ const update = async (organization, body) => {
 
 /**
  * @function remove
- * @description Service to delete an organization and all its memberships.
+ * @description Service to delete an organization, all its memberships, and any
+ *   data owned by optional modules that registered an org-removal handler via
+ *   `onOrganizationRemoved`. Handlers run sequentially after membership cleanup;
+ *   any handler error propagates and aborts the delete before the repository
+ *   removal (no silent swallow).
  * @param {Object} organization - The organization to delete.
  * @returns {Promise<Object>} A promise resolving to a confirmation of the deletion.
  */
@@ -192,18 +197,9 @@ const remove = async (organization) => {
     await UserService.updateById(u._id, { currentOrganization: nextOrg });
   }));
 
-  // Delete all tasks belonging to this organization (Task module may not exist in all projects)
-  try {
-    const TasksService = (await import('../../tasks/services/tasks.service.js')).default;
-    await TasksService.deleteMany({ organizationId: orgId });
-  } catch (err) {
-    // Only swallow module-not-found errors; re-throw data/runtime failures
-    if (err && (err.code === 'ERR_MODULE_NOT_FOUND' || err.code === 'MODULE_NOT_FOUND')) {
-      // Tasks module not available — skip cleanup
-    } else {
-      throw err;
-    }
-  }
+  // Run org-removal cleanup handlers registered by optional modules (e.g. tasks).
+  // Errors propagate and abort the delete before the repository removal.
+  await runOrganizationRemovedHandlers({ organizationId: orgId, organization });
 
   const result = await OrganizationsRepository.remove(organization);
   return result;
