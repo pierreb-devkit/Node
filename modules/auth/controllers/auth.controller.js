@@ -637,9 +637,10 @@ const oauthErrorRedirect = (res, err, fallbackTitle) => {
 const oauthCallback = async (req, res, next) => {
   const strategy = req.params.strategy;
   // The identity is always derived server-side from the provider's response via
-  // passport. A client-asserted identity (request body) is never trusted, since
-  // nothing on this path verifies a provider token — accepting one would allow a
-  // caller who knows a victim's identifier to mint that victim's session.
+  // passport.authenticate(). The part that was previously unsafe was trusting a
+  // client-asserted identity from the request body (email, key, value) with no
+  // provider-token verification — a caller who knows a victim's identifier could
+  // have minted that victim's session. That branch is now removed entirely.
   passport.authenticate(strategy, (err, user) => {
     if (err) {
       logger.error(
