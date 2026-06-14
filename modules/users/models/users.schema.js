@@ -69,7 +69,46 @@ const User = z.object({
 
 const UserUpdate = User.partial();
 
+/**
+ * Public signup write surface.
+ *
+ * The signup route validates the body with `model.isValid(...)`, and for a POST that
+ * REPLACES req.body with the FULL Zod output — so EVERY field declared on the parsed
+ * schema becomes client-writable on signup. Validating signup with the full `User`
+ * schema therefore lets a public client self-assign server-owned fields
+ * (emailVerified, providerData/additionalProvidersData, reset/verification tokens,
+ * lockout counters, roles) — a mass-assignment hole: emailVerified:true self-verifies
+ * and defeats the OAuth-annexation guard, and a pre-seeded providerData enables hijack.
+ *
+ * `SignupUser` exposes ONLY the fields a public signup may legitimately set — the same
+ * safe surface encoded by `config.whitelists.users.default` / `.update` — and is
+ * `.strict()`, so any unknown / server-owned key is REJECTED (422) instead of silently
+ * persisted. Field DEFAULTS mirror `User` exactly (empty-string defaults, password
+ * `.default('')` + the shared strength refinement read from config) so the
+ * password-less / OAuth-bootstrap signup paths keep working. The controller adds a
+ * defense-in-depth strip on top, because the service layer does no whitelisting.
+ *
+ * `provider` is accepted (a local signup legitimately carries `provider:'local'`); it
+ * is NOT a privilege field on its own — without a client-writable providerData (omitted
+ * here) and with emailVerified forced false in the controller, a chosen provider value
+ * cannot annex an OAuth identity. `roles` is intentionally OMITTED: the controller
+ * forces `['user']`.
+ */
+const SignupUser = z.object({
+  firstName: User.shape.firstName,
+  lastName: User.shape.lastName,
+  bio: User.shape.bio,
+  position: User.shape.position,
+  email: User.shape.email,
+  avatar: User.shape.avatar,
+  provider: User.shape.provider,
+  password: User.shape.password,
+  terms: User.shape.terms,
+  complementary: User.shape.complementary,
+}).strict();
+
 export default {
   User,
   UserUpdate,
+  SignupUser,
 };

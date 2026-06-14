@@ -74,7 +74,11 @@ export default (app) => {
   app.route('/api/auth/reset').post(authLimiter, authPassword.reset);
 
   // Setting up the users authentication api
-  app.route('/api/auth/signup').post(authLimiter, model.isValid(UsersSchema.User), auth.signup);
+  // Validate signup against the restricted, `.strict()` SignupUser schema (NOT the full
+  // User schema): for a POST, model.isValid replaces req.body with the FULL parsed
+  // output, so any field on the schema is client-writable — using SignupUser limits that
+  // write surface to the safe client-settable fields and rejects server-owned keys.
+  app.route('/api/auth/signup').post(authLimiter, model.isValid(UsersSchema.SignupUser), auth.signup);
   app.route('/api/auth/signin').post(authLimiter, auth.signinAuthenticate, auth.signin);
   // Signout: intentionally no JWT middleware — must clear the cookie even if the
   // token is expired/invalid/missing so the client cannot get silently re-logged in.

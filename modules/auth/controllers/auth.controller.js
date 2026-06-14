@@ -115,8 +115,26 @@ const signup = async (req, res) => {
       }
       return responses.error(res, 404, 'Signup error', 'Registration is currently deactivated')();
     }
-    // Force default role on public signup — clients must not self-assign admin
-    const safeBody = { ...req.body, roles: ['user'] };
+    // Force default role on public signup — clients must not self-assign admin.
+    // Defense-in-depth against mass assignment: the SignupUser route schema already
+    // rejects server-owned keys (.strict()), but UserService.create does NO whitelist
+    // filtering, so we ALSO scrub the body here. Force roles + emailVerified, and delete
+    // every server-owned field a client could otherwise seed (provider identity, reset /
+    // verification tokens, lockout counters). emailVerified:true would self-verify the
+    // account and defeat the OAuth-annexation guard (linkProviderByEmail matches on
+    // emailVerified:true); a pre-seeded providerData enables identity hijack.
+    const safeBody = { ...req.body, roles: ['user'], emailVerified: false };
+    for (const serverOwned of [
+      'providerData',
+      'additionalProvidersData',
+      'resetPasswordToken',
+      'resetPasswordExpires',
+      'emailVerificationToken',
+      'emailVerificationExpires',
+      'failedLoginAttempts',
+      'lockUntil',
+      'lastLoginAt',
+    ]) delete safeBody[serverOwned];
     // Invite-gated signup: canonicalize the account email to the invite's pinned
     // (lowercased) email. Enforces the pin exactly AND makes the case-insensitive
     // unique-email index (email_ci_unique, collation strength-2) a reliable single-use backstop — concurrent case-variant

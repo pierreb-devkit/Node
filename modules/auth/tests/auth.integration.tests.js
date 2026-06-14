@@ -189,6 +189,51 @@ describe('Auth integration tests:', () => {
       }
     });
 
+    test('should reject signup that carries server-owned fields (mass assignment)', async () => {
+      // A public signup may only set client-settable fields. Posting server-owned
+      // fields (emailVerified, providerData, reset/verification tokens, roles) must be
+      // REJECTED by the restricted `.strict()` SignupUser schema — never silently
+      // persisted. Self-verifying defeats the OAuth-annexation guard; a pre-seeded
+      // providerData enables account hijack. The request is refused (422) AND no
+      // account is created.
+      const attackerEmail = 'massassign_attacker_@test.com';
+      try {
+        const existing = await UserService.getBrut({ email: attackerEmail });
+        if (existing) await UserService.remove(existing);
+      } catch (_) { /* cleanup */ }
+
+      try {
+        await agent
+          .post('/api/auth/signup')
+          .send({
+            firstName: 'Mallory',
+            lastName: 'Attacker',
+            email: attackerEmail,
+            password: credentials[0].password,
+            roles: ['admin'],
+            emailVerified: true,
+            providerData: { email: attackerEmail, sub: 'attacker-injected-sub' },
+            additionalProvidersData: { google: { sub: 'attacker-injected-sub' } },
+            resetPasswordToken: 'attacker-reset-token',
+            emailVerificationToken: 'attacker-verify-token',
+            failedLoginAttempts: 99,
+          })
+          .expect(422);
+
+        // The restricted schema rejected the request — no account was created.
+        const persisted = await UserService.getBrut({ email: attackerEmail });
+        expect(persisted == null).toBe(true);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      } finally {
+        try {
+          const leftover = await UserService.getBrut({ email: attackerEmail });
+          if (leftover) await UserService.remove(leftover);
+        } catch (_) { /* cleanup */ }
+      }
+    });
+
     test('should reject registration when email is already in use', async () => {
       // Init user edited
       _userEdited.email = 'register_new_user_@test.com';
