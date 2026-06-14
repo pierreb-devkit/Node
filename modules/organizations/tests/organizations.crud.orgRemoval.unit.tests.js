@@ -39,10 +39,6 @@ jest.unstable_mockModule('../../users/services/users.service.js', () => ({
   },
 }));
 
-jest.unstable_mockModule('../../tasks/services/tasks.service.js', () => ({
-  default: { deleteMany: jest.fn().mockResolvedValue({}) },
-}));
-
 const { default: OrgCrudService } = await import('../services/organizations.crud.service.js');
 const { onOrganizationRemoved, _reset } = await import('../lib/orgRemoval.registry.js');
 
