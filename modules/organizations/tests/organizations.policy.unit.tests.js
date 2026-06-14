@@ -61,6 +61,21 @@ describe('organizationSubjectRegistration policy unit tests:', () => {
       expect(guard({ route: { path: '/api/admin/organizations/:id' } })).toBe(true);
     });
 
+    test('should still return true for the join-request flow (/:id/requests)', () => {
+      // The any-user join-request flow legitimately relies on the Organization
+      // subject's unconditional `create` grant — it must NOT be carved out.
+      expect(guard({ route: { path: '/api/organizations/:organizationId/requests' } })).toBe(true);
+    });
+
+    test('should return false for the /members management routes', () => {
+      // /members must authorize via the dedicated Membership path-subject (owner/admin
+      // gate), not the unconditional `create Organization` grant — excluding it here
+      // prevents the Organization subject from shadowing the Membership subject.
+      expect(guard({ route: { path: '/api/organizations/:organizationId/members' } })).toBe(false);
+      expect(guard({ route: { path: '/api/organizations/:organizationId/members/:memberId' } })).toBe(false);
+      expect(guard({ route: { path: '/api/admin/organizations/:id/members' } })).toBe(false);
+    });
+
     test('should return false for unrelated paths (e.g. billing routes)', () => {
       expect(guard({ route: { path: '/api/billing/plans' } })).toBe(false);
       expect(guard({ route: { path: '/api/tasks' } })).toBe(false);

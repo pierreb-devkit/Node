@@ -253,6 +253,26 @@ describe('Membership controller unit tests:', () => {
       expect(res.status).not.toHaveBeenCalledWith(403);
     });
 
+    test('a plain MEMBER cannot add anyone → 403, service not called', async () => {
+      const req = mockReq({ membership: { role: MEMBERSHIP_ROLES.MEMBER }, body: { userId: 'u9' } });
+      const res = mockRes();
+
+      await membershipController.addMember(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(mockAddMember).not.toHaveBeenCalled();
+    });
+
+    test('a non-member (no req.membership) cannot add anyone → 403, fail closed', async () => {
+      const req = mockReq({ user: { _id: 'u1', roles: ['user'] }, membership: undefined, body: { userId: 'u9' } });
+      const res = mockRes();
+
+      await membershipController.addMember(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(mockAddMember).not.toHaveBeenCalled();
+    });
+
     test('admin CANNOT add an elevated role (owner/admin) → 403, service not called', async () => {
       const req = mockReq({ membership: { role: MEMBERSHIP_ROLES.ADMIN }, body: { userId: 'u9', role: MEMBERSHIP_ROLES.ADMIN } });
       const res = mockRes();

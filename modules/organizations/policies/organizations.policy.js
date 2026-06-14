@@ -16,12 +16,21 @@ export function organizationSubjectRegistration({ registerDocumentSubject, regis
   registerDocumentSubject('membershipDoc', 'Membership');
   // Guard: only resolve req.organization as an Organization subject on actual organization routes.
   // Other modules (billing, tasks, etc.) also set req.organization but authorize via their own subjects.
+  //
+  // The /members routes are deliberately EXCLUDED: req.organization is loaded there too,
+  // but membership management must authorize via the dedicated Membership path-subject
+  // (owner/admin gate), NOT the unconditional `create Organization` grant — otherwise the
+  // Organization document-subject is resolved first (resolveSubject is first-match-wins) and
+  // shadows the Membership subject, letting any authenticated user inject a membership.
+  // Do NOT exclude /requests — that is the any-user JOIN-REQUEST flow, which legitimately
+  // relies on `create Organization` (excluding it would 403 legitimate join requests).
   registerDocumentSubject('organization', 'Organization', (req) => {
     if (!req.route?.path) {
       return false;
     }
     const p = req.route.path;
-    return p.startsWith('/api/organizations') || p.startsWith('/api/admin/organizations');
+    const onOrgRoute = p.startsWith('/api/organizations') || p.startsWith('/api/admin/organizations');
+    return onOrgRoute && !p.includes('/members');
   });
   registerPathSubject((p) => p.startsWith('/api/admin/organizations'), 'Organization');
   registerPathSubject((p) => p.startsWith('/api/organizations') && p.includes('/requests'), 'Membership');

@@ -78,9 +78,22 @@ const addMember = async (req, res) => {
     const { userId, role } = req.body;
     const requestedRole = role || MEMBERSHIP_ROLES.MEMBER;
 
-    // Elevated-role guard: only owners (or global admins) may invite an owner/admin.
+    // Actor-role gate (mirrors updateRole/remove): only an org owner/admin (or a global
+    // admin) may add a member. The type-level CASL `create Membership` check does not
+    // carry the `{organizationId}` org-scope condition, so a non-member / plain member
+    // must be rejected here. Without this, the Organization-subject shadowing bug aside,
+    // a plain member could still inject a membership into their own org.
     const isPlatformAdmin = isGlobalAdmin(req.user);
-    const actorIsOwner = req.membership?.role === MEMBERSHIP_ROLES.OWNER;
+    const actorRole = req.membership?.role;
+    const canAdd = isPlatformAdmin
+      || actorRole === MEMBERSHIP_ROLES.OWNER
+      || actorRole === MEMBERSHIP_ROLES.ADMIN;
+    if (!canAdd) {
+      return responses.error(res, 403, 'Forbidden', 'Insufficient organization role')();
+    }
+
+    // Elevated-role guard: only owners (or global admins) may invite an owner/admin.
+    const actorIsOwner = actorRole === MEMBERSHIP_ROLES.OWNER;
     if (requestedRole !== MEMBERSHIP_ROLES.MEMBER && !isPlatformAdmin && !actorIsOwner) {
       return responses.error(res, 403, 'Forbidden', 'Only owners can add a member with an elevated role')();
     }
