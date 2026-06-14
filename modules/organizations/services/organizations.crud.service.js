@@ -171,7 +171,11 @@ const update = async (organization, body) => {
 
 /**
  * @function remove
- * @description Service to delete an organization and all its memberships.
+ * @description Service to delete an organization, all its memberships, and any
+ *   data owned by optional modules that registered an org-removal handler via
+ *   `onOrganizationRemoved`. Handlers run sequentially after membership cleanup;
+ *   any handler error propagates and aborts the delete before the repository
+ *   removal (no silent swallow).
  * @param {Object} organization - The organization to delete.
  * @returns {Promise<Object>} A promise resolving to a confirmation of the deletion.
  */

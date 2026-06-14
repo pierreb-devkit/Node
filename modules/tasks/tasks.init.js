@@ -8,6 +8,13 @@
 import TasksService from './services/tasks.service.js';
 import { onOrganizationRemoved } from '../organizations/lib/orgRemoval.registry.js';
 
+/**
+ * Tasks module initialisation.
+ * Registers an org-removal cleanup handler so all tasks scoped to an
+ * organization are deleted when that organization is removed.
+ *
+ * @returns {Promise<void>}
+ */
 export default async () => {
   onOrganizationRemoved(({ organizationId }) => TasksService.deleteMany({ organizationId }));
 };
