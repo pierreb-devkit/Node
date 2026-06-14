@@ -224,7 +224,6 @@ describe('Auth integration tests:', () => {
         const persisted = await UserService.getBrut({ email: attackerEmail });
         expect(persisted == null).toBe(true);
       } catch (err) {
-        console.log(err);
         expect(err).toBeFalsy();
       } finally {
         try {

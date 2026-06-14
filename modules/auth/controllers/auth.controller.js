@@ -134,6 +134,7 @@ const signup = async (req, res) => {
       'failedLoginAttempts',
       'lockUntil',
       'lastLoginAt',
+      'currentOrganization',
     ]) delete safeBody[serverOwned];
     // Invite-gated signup: canonicalize the account email to the invite's pinned
     // (lowercased) email. Enforces the pin exactly AND makes the case-insensitive
