@@ -138,13 +138,14 @@ describe('Organizations self-join authorization E2E tests:', () => {
       }
 
       // 2. The outsider (NOT a member of org) tries to inject a membership for
-      //    themselves. This must be forbidden (401/403) — the prior bug let it
-      //    through via the unconditional create-Organization grant.
+      //    themselves. The outsider IS authenticated, so this must be an
+      //    AUTHORIZATION denial — exactly 403, never 401 (a 401 would mask the
+      //    authz bypass the prior bug let through via the create-Organization grant).
       try {
         const selfAddRes = await agentOutsider
           .post(`/api/organizations/${org._id}/members`)
           .send({ userId: outsider.id, role: 'member' });
-        expect([401, 403]).toContain(selfAddRes.status);
+        expect(selfAddRes.status).toBe(403);
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();

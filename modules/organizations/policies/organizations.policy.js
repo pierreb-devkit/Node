@@ -38,8 +38,7 @@ export function organizationSubjectRegistration({ registerDocumentSubject, regis
       return false;
     }
     const p = req.route.path;
-    const onOrgRoute = p.startsWith('/api/organizations') || p.startsWith('/api/admin/organizations');
-    return onOrgRoute && !p.includes('/members');
+    return isOrganizationRoute(p) && !p.includes('/members');
   });
   // Admin organization routes resolve to the Organization subject, EXCEPT /members:
   // membership management must authorize via the dedicated Membership path-subject below,
