@@ -93,6 +93,6 @@ export default (app) => {
 
   // Setting the oauth routes
   app.route('/api/auth/:strategy').get(auth.oauthCall);
-  app.route('/api/auth/:strategy/callback').get(auth.oauthCallback);
-  app.route('/api/auth/:strategy/callback').post(auth.oauthCallback); // specific for apple call back
+  app.route('/api/auth/:strategy/callback').get(authLimiter, auth.oauthCallback);
+  app.route('/api/auth/:strategy/callback').post(authLimiter, auth.oauthCallback); // specific for apple call back
 };

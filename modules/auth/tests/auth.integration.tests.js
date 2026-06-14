@@ -571,45 +571,33 @@ describe('Auth integration tests:', () => {
       createSpy.mockRestore();
     });
 
-    test('should authenticate via client-side OAuth and set tokenCookieOptions on response', async () => {
-      const oauthEmail = 'oauthcb-appauth@test.com';
+    test('should NOT mint a session from a client-asserted identity on the OAuth callback', async () => {
+      // Security regression: the callback must never trust a client-supplied
+      // identity payload. A request that claims to be a known account by email
+      // (no server-side provider-token verification) must be rejected, not
+      // turned into a victim session. The callback always delegates to passport.
+      const victimEmail = 'oauthcb-victim@test.com';
+      const victim = await UserService.create({
+        firstName: 'Victim',
+        lastName: 'Owner',
+        email: victimEmail,
+        provider: 'google',
+        providerData: { email: victimEmail },
+        roles: ['user'],
+      });
       try {
         const result = await agent
           .post('/api/auth/google/callback')
-          .send({ strategy: false, key: 'id', value: 'cb-app-auth-id-999', firstName: 'OAuth', lastName: 'Callback', email: oauthEmail })
-          .expect(200);
+          .send({ strategy: false, key: 'email', value: victimEmail, email: victimEmail });
+
+        // No session may be issued to the attacker.
         const tokenCookie = result.headers['set-cookie']?.find((c) => c.startsWith('TOKEN='));
-        expect(tokenCookie).toBeDefined();
-        expect(tokenCookie).toMatch(/HttpOnly/i);
-        expect(tokenCookie).toMatch(/SameSite=Strict/i);
-        expect(result.body.message).toBe('oAuth Ok');
-      } catch (err) {
-        console.log(err);
-        expect(err).toBeFalsy();
+        expect(tokenCookie).toBeUndefined();
+        // The unverified client-asserted path must not succeed.
+        expect(result.status).toBeGreaterThanOrEqual(400);
       } finally {
-        try {
-          const u = await UserService.getBrut({ email: oauthEmail });
-          if (u) await UserService.remove(u);
-        } catch (_) { /* cleanup */ }
+        try { await UserService.remove(victim); } catch (_) { /* cleanup */ }
       }
-    });
-
-    test('should return 422 when client-side OAuth callback receives an invalid profile', async () => {
-      const result = await agent
-        .post('/api/auth/google/callback')
-        .send({
-          strategy: false,
-          key: 'id',
-          value: 'cb-app-auth-id-invalid-999',
-          firstName: 'Invalid1',
-          lastName: 'Callback',
-          email: 'oauthcb-invalid@test.com',
-        })
-        .expect(422);
-
-      expect(result.body.type).toBe('error');
-      expect(result.body.message).toMatch(/^Schema validation error/);
-      expect(result.body.description).toEqual(expect.any(String));
     });
 
     test('should set tokenCookieOptions and redirect on classic web oAuth success', async () => {
