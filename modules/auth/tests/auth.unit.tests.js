@@ -70,44 +70,21 @@ describe('Auth service unit tests:', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // comparePassword
+  // re-exported bcrypt helpers
   // ---------------------------------------------------------------------------
-  describe('comparePassword()', () => {
-    test('should return true when passwords match', async () => {
-      mockBcryptCompare.mockResolvedValueOnce(true);
-      const result = await AuthService.comparePassword('plain', 'hashed');
-      expect(result).toBe(true);
-      expect(mockBcryptCompare).toHaveBeenCalledWith('plain', 'hashed');
-    });
-
-    test('should return false when passwords do not match', async () => {
-      mockBcryptCompare.mockResolvedValueOnce(false);
-      const result = await AuthService.comparePassword('wrong', 'hashed');
-      expect(result).toBe(false);
-    });
-
-    test('should coerce arguments to strings before comparing', async () => {
-      mockBcryptCompare.mockResolvedValueOnce(true);
-      await AuthService.comparePassword(12345, 67890);
-      expect(mockBcryptCompare).toHaveBeenCalledWith('12345', '67890');
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // hashPassword
-  // ---------------------------------------------------------------------------
-  describe('hashPassword()', () => {
-    test('should resolve with the hashed string', async () => {
+  describe('re-exported bcrypt helpers', () => {
+    test('hashPassword is re-exported and delegates to the helper', async () => {
       mockBcryptHash.mockResolvedValueOnce('$2b$hashed');
       const result = await AuthService.hashPassword('mypassword');
       expect(result).toBe('$2b$hashed');
       expect(mockBcryptHash).toHaveBeenCalledWith('mypassword', 10);
     });
 
-    test('should coerce the password to a string', async () => {
-      mockBcryptHash.mockResolvedValueOnce('$2b$hashed');
-      await AuthService.hashPassword(42);
-      expect(mockBcryptHash).toHaveBeenCalledWith('42', 10);
+    test('comparePassword is re-exported and delegates to the helper', async () => {
+      mockBcryptCompare.mockResolvedValueOnce(true);
+      const result = await AuthService.comparePassword('plain', 'hashed');
+      expect(result).toBe(true);
+      expect(mockBcryptCompare).toHaveBeenCalledWith('plain', 'hashed');
     });
   });
 

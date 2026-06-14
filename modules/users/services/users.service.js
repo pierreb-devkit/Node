@@ -8,7 +8,7 @@ import config from '../../../config/index.js';
 import logger from '../../../lib/services/logger.js';
 import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
 import mailer from '../../../lib/helpers/mailer/index.js';
-import AuthService from '../../auth/services/auth.service.js';
+import passwordHelper from '../../../lib/helpers/password.js';
 import UserRepository from '../repositories/users.repository.js';
 import MembershipService from '../../organizations/services/organizations.membership.service.js';
 import OrganizationsRepository from '../../organizations/repositories/organizations.repository.js';
@@ -56,7 +56,7 @@ const create = async (user) => {
     //   throw new AppError(`${validPassword.feedback.warning}. ${validPassword.feedback.suggestions.join('. ')}`);
     // }
     // When password is provided we need to make sure we are hashing it
-    user.password = await AuthService.hashPassword(user.password);
+    user.password = await passwordHelper.hashPassword(user.password);
   }
   const result = await UserRepository.create(user);
   // Remove sensitive data before return

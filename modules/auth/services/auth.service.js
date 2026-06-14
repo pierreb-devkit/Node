@@ -2,15 +2,13 @@
  * Module dependencies
  */
 import _ from 'lodash';
-import bcrypt from 'bcrypt';
 import generatePassword from 'generate-password';
 import zxcvbn from 'zxcvbn';
 
 import config from '../../../config/index.js';
 import AppError from '../../../lib/helpers/AppError.js';
+import { hashPassword, comparePassword } from '../../../lib/helpers/password.js';
 import UserService from '../../users/services/users.service.js';
-
-const saltRounds = 10;
 
 /**
  * @desc Local function to removeSensitive data from user
@@ -23,14 +21,6 @@ const removeSensitive = (user, conf) => {
   const plain = typeof user.toJSON === 'function' ? user.toJSON() : user;
   return _.pick(plain, keys);
 };
-
-/**
- * @desc Function to compare passwords
- * @param {String} userPassword
- * @param {String} storedPassword
- * @return {Boolean} true/false
- */
-const comparePassword = async (userPassword, storedPassword) => bcrypt.compare(String(userPassword), String(storedPassword));
 
 /**
  * @desc Check whether the user account is currently locked and throw if so
@@ -108,13 +98,6 @@ const authenticate = async (email, password) => {
   await recordFailedAttempt(user);
   throw new AppError('invalid user or password.', { code: 'SERVICE_ERROR' });
 };
-
-/**
- * @desc Function to hash passwords
- * @param {String} password
- * @return {String} password hashed
- */
-const hashPassword = (password) => bcrypt.hash(String(password), saltRounds);
 
 /**
  * @desc Function to check password strength using zxcvbn

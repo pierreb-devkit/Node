@@ -26,8 +26,10 @@ jest.unstable_mockModule('../repositories/users.repository.js', () => ({
   },
 }));
 
-jest.unstable_mockModule('../../auth/services/auth.service.js', () => ({
+jest.unstable_mockModule('../../../lib/helpers/password.js', () => ({
   default: { hashPassword: jest.fn(), comparePassword: jest.fn() },
+  hashPassword: jest.fn(),
+  comparePassword: jest.fn(),
 }));
 
 jest.unstable_mockModule('../../organizations/services/organizations.membership.service.js', () => ({

@@ -69,10 +69,6 @@ jest.unstable_mockModule('../../organizations/repositories/organizations.members
   },
 }));
 
-jest.unstable_mockModule('../../auth/services/auth.service.js', () => ({
-  default: { signOut: jest.fn() },
-}));
-
 jest.unstable_mockModule('../../../config/index.js', () => ({
   default: { organizations: { enabled: true } },
 }));
