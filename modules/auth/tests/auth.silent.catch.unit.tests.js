@@ -290,6 +290,9 @@ describe('auth.controller signup mass-assignment strip:', () => {
         failedLoginAttempts: 99,
         lockUntil: new Date(),
         lastLoginAt: new Date(),
+        // referredBy is accepted by SignupUser schema (to avoid .strict() 422 on invite
+        // paths) but must be stripped by the controller — server owns it via invite finalize.
+        referredBy: '64b2f0000000000000000999',
       },
       query: {},
     };
@@ -315,6 +318,7 @@ describe('auth.controller signup mass-assignment strip:', () => {
       'failedLoginAttempts',
       'lockUntil',
       'lastLoginAt',
+      'referredBy',
     ]) {
       expect(Object.prototype.hasOwnProperty.call(createdWith, field)).toBe(false);
     }

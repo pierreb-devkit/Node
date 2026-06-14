@@ -93,6 +93,12 @@ const UserUpdate = User.partial();
  * here) and with emailVerified forced false in the controller, a chosen provider value
  * cannot annex an OAuth identity. `roles` is intentionally OMITTED: the controller
  * forces `['user']`.
+ *
+ * `referredBy` is accepted (the invitation P8a test — and real clients on an invite
+ * flow — may send it to prove the server ignores it) but DELETED by the controller
+ * before UserService.create; the server always sets referredBy via the invite finalize
+ * seam (invitations module, not the signup body). Accepting it here prevents a .strict()
+ * 422 on invite-path signups while still guaranteeing a client can never self-assign.
  */
 const SignupUser = z.object({
   firstName: User.shape.firstName,
@@ -105,6 +111,7 @@ const SignupUser = z.object({
   password: User.shape.password,
   terms: User.shape.terms,
   complementary: User.shape.complementary,
+  referredBy: z.string().optional(),
 }).strict();
 
 export default {

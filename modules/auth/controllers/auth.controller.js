@@ -123,6 +123,9 @@ const signup = async (req, res) => {
     // verification tokens, lockout counters). emailVerified:true would self-verify the
     // account and defeat the OAuth-annexation guard (linkProviderByEmail matches on
     // emailVerified:true); a pre-seeded providerData enables identity hijack.
+    // `referredBy` is accepted by SignupUser (preventing a .strict() 422 on invite paths
+    // that may send it) but ALWAYS deleted here — the server sets it via the invite
+    // finalize seam so a client can never self-assign a referrer.
     const safeBody = { ...req.body, roles: ['user'], emailVerified: false };
     for (const serverOwned of [
       'providerData',
@@ -135,6 +138,7 @@ const signup = async (req, res) => {
       'lockUntil',
       'lastLoginAt',
       'currentOrganization',
+      'referredBy',
     ]) delete safeBody[serverOwned];
     // Invite-gated signup: canonicalize the account email to the invite's pinned
     // (lowercased) email. Enforces the pin exactly AND makes the case-insensitive
