@@ -35,4 +35,11 @@ describe('tasks.init', () => {
 
     expect(mockDeleteMany).toHaveBeenCalledWith({ organizationId: 'org-1' });
   });
+
+  test('importing tasks.init does not itself register — registration only happens on invocation (boot)', async () => {
+    // Module import alone must not register; only the default export (run at boot) does.
+    expect(mockOnOrganizationRemoved).not.toHaveBeenCalled();
+    await tasksInit({});
+    expect(mockOnOrganizationRemoved).toHaveBeenCalledTimes(1);
+  });
 });
