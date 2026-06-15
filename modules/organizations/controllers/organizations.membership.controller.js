@@ -67,8 +67,18 @@ const findUserByEmail = async (req, res) => {
  * @description Endpoint for an org owner/admin to add a user as a member. Creates a
  *   PENDING owner_add membership the INVITED USER must accept (consent — invariant #1).
  *   Role gate mirrors updateRole: only OWNERS may grant owner/admin; admins may only
- *   add plain members. CASL (`create Membership`) on the /members POST route already
- *   restricts this to org owners/admins (+ global admins).
+ *   add plain members.
+ *
+ *   Authorization is enforced at two layers:
+ *   (1) The `/members` POST route resolves to the `Membership` path-subject (owner/admin
+ *       gate via `create Membership`) because both the Organization document-subject and
+ *       the admin Organization path-subject explicitly exclude `/members` paths — preventing
+ *       the broader `create Organization` grant (available to any authenticated user) from
+ *       shadowing the Membership subject and allowing unauthenticated membership injection.
+ *   (2) The explicit actor-role check at the top of this handler (isGlobalAdmin || OWNER
+ *       || ADMIN) fails closed for non-members and plain members, because the type-level
+ *       CASL `create Membership` grant does not carry an org-scope condition on its own
+ *       and would otherwise pass for any user who holds that grant in the same org.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  * @returns {void}
@@ -78,9 +88,22 @@ const addMember = async (req, res) => {
     const { userId, role } = req.body;
     const requestedRole = role || MEMBERSHIP_ROLES.MEMBER;
 
-    // Elevated-role guard: only owners (or global admins) may invite an owner/admin.
+    // Actor-role gate (mirrors updateRole/remove): only an org owner/admin (or a global
+    // admin) may add a member. The type-level CASL `create Membership` check does not
+    // carry the `{organizationId}` org-scope condition, so a non-member / plain member
+    // must be rejected here. Without this, the Organization-subject shadowing bug aside,
+    // a plain member could still inject a membership into their own org.
     const isPlatformAdmin = isGlobalAdmin(req.user);
-    const actorIsOwner = req.membership?.role === MEMBERSHIP_ROLES.OWNER;
+    const actorRole = req.membership?.role;
+    const canAdd = isPlatformAdmin
+      || actorRole === MEMBERSHIP_ROLES.OWNER
+      || actorRole === MEMBERSHIP_ROLES.ADMIN;
+    if (!canAdd) {
+      return responses.error(res, 403, 'Forbidden', 'Insufficient organization role')();
+    }
+
+    // Elevated-role guard: only owners (or global admins) may invite an owner/admin.
+    const actorIsOwner = actorRole === MEMBERSHIP_ROLES.OWNER;
     if (requestedRole !== MEMBERSHIP_ROLES.MEMBER && !isPlatformAdmin && !actorIsOwner) {
       return responses.error(res, 403, 'Forbidden', 'Only owners can add a member with an elevated role')();
     }
