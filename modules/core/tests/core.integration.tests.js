@@ -293,7 +293,7 @@ describe('Core integration tests:', () => {
     });
   });
 
-  describe('Redoc API reference', () => {
+  describe('OpenAPI spec endpoint', () => {
     it('should expose /api/spec.json with a valid OpenAPI info block', async () => {
       const res = await request(app).get('/api/spec.json').expect(200);
       expect(res.body).toBeDefined();
@@ -313,10 +313,13 @@ describe('Core integration tests:', () => {
       expect(res.body.servers[0].url.length).toBeGreaterThan(0);
     });
 
-    it('should serve the Redoc API reference page on /api/docs', async () => {
+    it('should NOT serve a dedicated Redoc UI on /api/docs (decommissioned)', async () => {
+      // The Redoc UI handler was removed. /api/docs is no longer a dedicated
+      // route, so it falls through to the SPA catch-all rather than serving a
+      // Redoc reference page that loads /api/spec.json.
       const res = await request(app).get('/api/docs').expect(200);
-      // Redoc returns HTML referencing the spec URL
-      expect(res.headers['content-type']).toMatch(/html/);
+      expect(res.text).not.toMatch(/redoc/i);
+      expect(res.text).not.toContain('/api/spec.json');
     });
   });
 

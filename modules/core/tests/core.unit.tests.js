@@ -491,7 +491,7 @@ describe('Core unit tests:', () => {
   });
 
   describe('Express service', () => {
-    describe('initSwagger', () => {
+    describe('initApiSpec', () => {
       let originalSwagger;
       let originalFiles;
 
@@ -505,16 +505,17 @@ describe('Core unit tests:', () => {
         config.files = originalFiles;
       });
 
-      it('should register /api/spec.json and /api/docs when swagger is enabled', () => {
+      it('should register /api/spec.json but NOT the decommissioned /api/docs Redoc UI when swagger is enabled', () => {
         config.swagger = { enable: true };
         config.files = { ...config.files, swagger: [path.join(process.cwd(), 'modules/core/doc/index.yml')] };
         const mockGet = jest.fn();
         const mockUse = jest.fn();
         const mockApp = { get: mockGet, use: mockUse };
-        expressService.initSwagger(mockApp);
+        expressService.initApiSpec(mockApp);
         expect(mockGet).toHaveBeenCalledWith('/api/spec.json', expect.any(Function));
-        // Redoc middleware is a plain request handler mounted via app.get
-        expect(mockGet).toHaveBeenCalledWith('/api/docs', expect.any(Function));
+        // The Redoc UI was decommissioned — /api/docs must never be mounted.
+        const docsCall = mockGet.mock.calls.find((c) => c[0] === '/api/docs');
+        expect(docsCall).toBeUndefined();
       });
 
       it('should serve merged spec as JSON from /api/spec.json handler', () => {
@@ -523,7 +524,7 @@ describe('Core unit tests:', () => {
         const mockGet = jest.fn();
         const mockUse = jest.fn();
         const mockApp = { get: mockGet, use: mockUse };
-        expressService.initSwagger(mockApp);
+        expressService.initApiSpec(mockApp);
         // Extract the handler registered for /api/spec.json
         const handler = mockGet.mock.calls.find((c) => c[0] === '/api/spec.json')[1];
         const mockRes = { json: jest.fn() };
@@ -545,7 +546,7 @@ describe('Core unit tests:', () => {
         const mockGet = jest.fn();
         const mockUse = jest.fn();
         const mockApp = { get: mockGet, use: mockUse };
-        expressService.initSwagger(mockApp);
+        expressService.initApiSpec(mockApp);
         const handler = mockGet.mock.calls.find((c) => c[0] === '/api/spec.json')[1];
         const mockRes = { json: jest.fn() };
         handler({}, mockRes);
@@ -569,7 +570,7 @@ describe('Core unit tests:', () => {
         const mockGet = jest.fn();
         const mockUse = jest.fn();
         const mockApp = { get: mockGet, use: mockUse };
-        expressService.initSwagger(mockApp);
+        expressService.initApiSpec(mockApp);
         expect(mockGet).not.toHaveBeenCalled();
         expect(mockUse).not.toHaveBeenCalled();
       });
@@ -580,7 +581,7 @@ describe('Core unit tests:', () => {
         const mockGet = jest.fn();
         const mockUse = jest.fn();
         const mockApp = { get: mockGet, use: mockUse };
-        expressService.initSwagger(mockApp);
+        expressService.initApiSpec(mockApp);
         expect(mockGet).not.toHaveBeenCalled();
         expect(mockUse).not.toHaveBeenCalled();
       });
@@ -589,7 +590,7 @@ describe('Core unit tests:', () => {
         config.swagger = { enable: true };
         config.files = { ...config.files, swagger: ['/nonexistent/path/bad.yml'] };
         const mockApp = { get: jest.fn(), use: jest.fn() };
-        expect(() => expressService.initSwagger(mockApp)).toThrow('[swagger] failed to load /nonexistent/path/bad.yml');
+        expect(() => expressService.initApiSpec(mockApp)).toThrow('[swagger] failed to load /nonexistent/path/bad.yml');
       });
 
       it('should skip YAML files that do not parse to a plain object and still register routes from valid ones', async () => {
@@ -604,7 +605,7 @@ describe('Core unit tests:', () => {
           const mockGet = jest.fn();
           const mockUse = jest.fn();
           const mockApp = { get: mockGet, use: mockUse };
-          expressService.initSwagger(mockApp);
+          expressService.initApiSpec(mockApp);
           expect(mockGet).toHaveBeenCalledWith('/api/spec.json', expect.any(Function));
         } finally {
           fsMod.unlinkSync(tmpFile);
@@ -627,7 +628,7 @@ describe('Core unit tests:', () => {
           const mockGet = jest.fn();
           const mockUse = jest.fn();
           const mockApp = { get: mockGet, use: mockUse };
-          expressService.initSwagger(mockApp);
+          expressService.initApiSpec(mockApp);
           const handler = mockGet.mock.calls.find((c) => c[0] === '/api/spec.json')[1];
           const mockRes = { json: jest.fn() };
           handler({}, mockRes);
@@ -652,7 +653,7 @@ describe('Core unit tests:', () => {
           const mockGet = jest.fn();
           const mockUse = jest.fn();
           const mockApp = { get: mockGet, use: mockUse };
-          expressService.initSwagger(mockApp);
+          expressService.initApiSpec(mockApp);
           const handler = mockGet.mock.calls.find((c) => c[0] === '/api/spec.json')[1];
           const mockRes = { json: jest.fn() };
           handler({}, mockRes);
@@ -674,7 +675,7 @@ describe('Core unit tests:', () => {
           const mockGet = jest.fn();
           const mockUse = jest.fn();
           const mockApp = { get: mockGet, use: mockUse };
-          expressService.initSwagger(mockApp);
+          expressService.initApiSpec(mockApp);
           const handler = mockGet.mock.calls.find((c) => c[0] === '/api/spec.json')[1];
           const mockRes = { json: jest.fn() };
           handler({}, mockRes);
@@ -701,7 +702,7 @@ describe('Core unit tests:', () => {
           const mockGet = jest.fn();
           const mockUse = jest.fn();
           const mockApp = { get: mockGet, use: mockUse };
-          expressService.initSwagger(mockApp);
+          expressService.initApiSpec(mockApp);
           const handler = mockGet.mock.calls.find((c) => c[0] === '/api/spec.json')[1];
           const mockRes = { json: jest.fn() };
           handler({}, mockRes);
@@ -726,7 +727,7 @@ describe('Core unit tests:', () => {
           const mockGet = jest.fn();
           const mockUse = jest.fn();
           const mockApp = { get: mockGet, use: mockUse };
-          expressService.initSwagger(mockApp);
+          expressService.initApiSpec(mockApp);
           expect(mockGet).not.toHaveBeenCalled();
           expect(mockUse).not.toHaveBeenCalled();
         } finally {
