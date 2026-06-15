@@ -8,7 +8,9 @@ import limiters from '../../../lib/middlewares/rateLimiter.js';
 import uploads from '../controllers/uploads.controller.js';
 
 /**
- * Routes
+ * Register uploads routes.
+ * @param {import('express').Application} app - Express app instance
+ * @returns {void}
  */
 export default (app) => {
   // classic crud — ownership is enforced by CASL conditions in isAllowed
