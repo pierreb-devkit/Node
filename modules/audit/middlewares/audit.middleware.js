@@ -7,10 +7,10 @@ import config from '../../../config/index.js';
 
 /**
  * Default route prefixes to skip when auto-capturing audit events.
- * Health checks, docs, and static assets generate noise.
+ * Health checks and static assets generate noise.
  * @type {string[]}
  */
-const SKIP_PREFIXES = ['/public', '/favicon', '/api/docs', '/api/health'];
+const SKIP_PREFIXES = ['/public', '/favicon', '/api/health'];
 
 /**
  * Regex to match a 24-hex-char MongoDB ObjectId.

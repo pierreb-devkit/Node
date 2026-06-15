@@ -18,6 +18,12 @@ const config = {
   swagger: {
     enable: true,
   },
+  docs: {
+    // Grouping primitive for guide sections. See `public.docs.tree.js` JSDoc for full schema details.
+    guideSections: [
+      { title: 'Get Started', prefixMin: 0, prefixMax: 9 },
+    ],
+  },
   api: {
     protocol: 'http',
     port: 3000,
