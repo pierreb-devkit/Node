@@ -25,6 +25,19 @@ const config = {
       'wanadoo.fr', 'bbox.fr',
     ],
   },
+  rateLimit: {
+    // General authenticated-API limiter (e.g. the membership-request route). Lives
+    // in this base layer so the profile is present — and the limiter active — under
+    // EVERY env, not only the literal `production`. Stricter caps are applied in
+    // config/defaults/production.config.js as an override.
+    api: {
+      windowMs: 15 * 60 * 1000, // 15 min
+      max: 1000, // lenient in dev; production overrides to a stricter cap
+      message: { message: 'Too many requests, please try again later.' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    },
+  },
 };
 
 export default config;

@@ -183,6 +183,20 @@ const config = {
       packs: {},
     },
   },
+  rateLimit: {
+    // Public, unauthenticated /api/billing/plans route that fans out to Stripe on
+    // cache miss. Lives in this base layer so the profile is present — and the
+    // limiter active — under EVERY env, not only the literal `production`; a missing
+    // profile means a no-op limiter (Stripe-API-quota DoS surface). Stricter caps
+    // are applied in config/defaults/production.config.js as an override.
+    billingPlans: {
+      windowMs: 60 * 1000, // 1 min
+      max: 300, // lenient in dev; production overrides to a stricter cap
+      message: { message: 'Too many requests, please try again later.' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    },
+  },
 };
 
 export default config;
