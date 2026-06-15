@@ -17,6 +17,10 @@ jest.unstable_mockModule('../services/public.docs.service.js', () => ({
 
 const controller = (await import('../controllers/public.docs.controller.js')).default;
 
+/**
+ * Build a chainable Express response double (status/json/send/set all return `res`).
+ * @returns {{ status: jest.Mock, json: jest.Mock, send: jest.Mock, set: jest.Mock }}
+ */
 const mockResponse = () => {
   const res = {};
   res.status = jest.fn(() => res);

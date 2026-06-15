@@ -12,7 +12,7 @@ import PublicDocsService from '../services/public.docs.service.js';
  * Built from on-disk markdown and cached in-process (~5min).
  * @param {Object} req - Express request
  * @param {Object} res - Express response
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const tree = async (req, res) => {
   try {
@@ -30,7 +30,7 @@ const tree = async (req, res) => {
  * H1 stripped; guides carry no front-matter). Unknown slug → 404.
  * @param {Object} req - Express request (`req.params.slug`)
  * @param {Object} res - Express response
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const raw = async (req, res) => {
   try {

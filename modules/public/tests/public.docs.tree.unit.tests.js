@@ -82,6 +82,12 @@ describe('firstParagraph:', () => {
 
 describe('loadGuideEntries:', () => {
   let dir;
+  /**
+   * Write a fixture guide file into the per-suite temp dir.
+   * @param {string} name - File name (e.g. `01-quickstart.md`).
+   * @param {string} content - Raw markdown body.
+   * @returns {void}
+   */
   const write = (name, content) => fs.writeFileSync(path.join(dir, name), content);
 
   beforeAll(() => {
