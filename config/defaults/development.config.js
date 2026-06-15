@@ -17,6 +17,8 @@ const config = {
   },
   swagger: {
     enable: true,
+    // opt-in: serve the unauthenticated /api/spec.json in production-grade envs (public API docs); off by default
+    publicInProd: false,
   },
   docs: {
     // Grouping primitive for guide sections. See `public.docs.tree.js` JSDoc for full schema details.
