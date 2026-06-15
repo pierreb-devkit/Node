@@ -105,6 +105,10 @@ describe('Auth service unit tests:', () => {
       mockBcryptCompare.mockResolvedValueOnce(false);
       await expect(AuthService.authenticate('ghost@b.com', 'pass')).rejects.toThrow('invalid user or password.');
       expect(mockBcryptCompare).toHaveBeenCalledTimes(1);
+      expect(mockBcryptCompare).toHaveBeenCalledWith(
+        'pass',
+        expect.stringMatching(/^\$2[aby]\$\d{2}\$.{53}$/)
+      );
     });
 
     test('should return sanitised user when credentials are valid', async () => {
