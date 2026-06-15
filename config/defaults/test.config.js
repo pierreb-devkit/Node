@@ -40,6 +40,9 @@ const config = {
     billingPlans: {
       max: Number.MAX_SAFE_INTEGER, // disable rate limiting in tests
     },
+    publicImage: {
+      max: Number.MAX_SAFE_INTEGER, // disable rate limiting in tests
+    },
   },
   uploads: {
     avatar: {

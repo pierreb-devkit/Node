@@ -53,6 +53,15 @@ const config = {
       standardHeaders: true,
       legacyHeaders: false,
     },
+    // Public, unauthenticated image route that runs the full sharp pipeline on
+    // every request. Stricter prod cap to harden against CPU-exhaustion DoS.
+    publicImage: {
+      windowMs: 60 * 1000,
+      max: 60,
+      message: { message: 'Too many requests, please try again later.' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    },
   },
   log: {
     format: 'custom',
