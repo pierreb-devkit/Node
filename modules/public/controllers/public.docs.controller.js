@@ -3,7 +3,7 @@
  */
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
-import PublicDocsService from '../services/publicDocs.service.js';
+import PublicDocsService from '../services/public.docs.service.js';
 
 /**
  * @desc GET /api/public/docs — public, unauthenticated docs content tree.

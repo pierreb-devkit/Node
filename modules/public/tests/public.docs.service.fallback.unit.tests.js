@@ -18,14 +18,14 @@ jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
   },
 }));
 
-jest.unstable_mockModule('../helpers/publicDocs.tree.js', () => ({
+jest.unstable_mockModule('../helpers/public.docs.tree.js', () => ({
   default: {
     loadGuideEntries: jest.fn().mockReturnValue([]),
     buildDocsTree: jest.fn().mockReturnValue({ categories: [] }),
   },
 }));
 
-const PublicDocsService = (await import('../services/publicDocs.service.js')).default;
+const PublicDocsService = (await import('../services/public.docs.service.js')).default;
 
 describe('PublicDocsService — config fallbacks (no files/docs):', () => {
   test('guideFiles returns [] when config.files.guides is absent', () => {

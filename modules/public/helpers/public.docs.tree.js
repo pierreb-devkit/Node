@@ -3,7 +3,7 @@
  *
  * Lives in the `public` module (NOT the stack `lib/helpers/guides.js`) on
  * purpose: `guides.js` owns the flat/sectioned markdown merge into the OpenAPI
- * `info.description` (the reference sidebar), while this module owns the richer
+ * `info.description` (for `/api/spec.json`), while this module owns the richer
  * `{ categories: [{ id, label, order, guides }] }` contract that backs the
  * structured public docs endpoint.
  *
@@ -13,8 +13,8 @@
  * plain prose starting with its H1.
  *
  * Category + persona come from the config grouping primitive
- * `config.docs.guideSections` — the SAME prefix-range grouping the reference
- * sidebar uses (`{ title, prefixMin, prefixMax }`). A section may additionally
+ * `config.docs.guideSections` (`{ title, prefixMin, prefixMax }`), which groups the
+ * public docs contract. A section may additionally
  * declare a `persona` array to narrow the audience; absent that, guides target
  * every audience ({@link DEFAULT_PERSONA}). A guide whose prefix falls outside
  * every configured range (or when no sections are configured) is grouped under
@@ -145,11 +145,13 @@ const firstParagraph = (markdown) => {
  * @param {string[]} filePaths - Absolute paths to `.md` guide files.
  * @returns {{ slug: string, title: string, order: number, summary: string,
  *   body: string, path: string }[]} Structured guides, sorted by numeric
- *   filename prefix (stable, matches the reference sidebar order).
+ *   filename prefix (stable, deterministic tiebreak by slug).
  */
 const loadGuideEntries = (filePaths) => {
   if (!Array.isArray(filePaths) || filePaths.length === 0) return [];
-  return filePaths
+  // Sort deterministically before mapping so the fallback `index` for
+  // unprefixed guides is stable across platforms (glob order is not guaranteed).
+  return [...filePaths].sort()
     .map((filePath, index) => {
       try {
         const raw = fs.readFileSync(filePath, 'utf8');
@@ -157,7 +159,7 @@ const loadGuideEntries = (filePaths) => {
         const title = titleFromMarkdown(raw, slug);
         const body = stripLeadingH1(raw).trim();
         if (!body) {
-          logger.warn(`[publicDocs] skipping ${filePath}: empty markdown content`);
+          logger.warn(`[public.docs] skipping ${filePath}: empty markdown content`);
           return null;
         }
         const prefix = prefixFromPath(filePath);
@@ -172,12 +174,12 @@ const loadGuideEntries = (filePaths) => {
           path: filePath,
         };
       } catch (err) {
-        logger.warn(`[publicDocs] failed to load ${filePath}: ${err.message}`);
+        logger.warn(`[public.docs] failed to load ${filePath}: ${err.message}`);
         return null;
       }
     })
     .filter(Boolean)
-    .sort((a, b) => a.order - b.order);
+    .sort((a, b) => a.order - b.order || a.slug.localeCompare(b.slug));
 };
 
 /**

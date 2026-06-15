@@ -2,7 +2,7 @@
  * Module dependencies
  */
 import limiters from '../../../lib/middlewares/rateLimiter.js';
-import publicDocs from '../controllers/publicDocs.controller.js';
+import publicDocs from '../controllers/public.docs.controller.js';
 
 /**
  * Register public, unauthenticated documentation routes.

@@ -1,6 +1,6 @@
 /**
  * Unit tests for the docs-tree helpers in
- * modules/public/helpers/publicDocs.tree.js:
+ * modules/public/helpers/public.docs.tree.js:
  * slugFromPath, prefixFromPath, moduleFromPath, titleFromMarkdown,
  * firstParagraph, loadGuideEntries, and buildDocsTree.
  *
@@ -14,7 +14,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import docsTree from '../helpers/publicDocs.tree.js';
+import docsTree from '../helpers/public.docs.tree.js';
 
 const {
   slugFromPath, prefixFromPath, moduleFromPath, titleFromMarkdown,

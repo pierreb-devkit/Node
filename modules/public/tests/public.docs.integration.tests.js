@@ -23,14 +23,9 @@ describe('Public docs integration tests:', () => {
 
   beforeAll(async () => {
     if (config.organizations) config.organizations.enabled = false;
-    try {
-      const init = await bootstrap();
-      app = init.app;
-      PublicDocsService = (await import(path.resolve('./modules/public/services/publicDocs.service.js'))).default;
-    } catch (err) {
-      console.log(err);
-      expect(err).toBeFalsy();
-    }
+    const init = await bootstrap();
+    app = init.app;
+    PublicDocsService = (await import(path.resolve('./modules/public/services/public.docs.service.js'))).default;
   });
 
   afterAll(async () => {

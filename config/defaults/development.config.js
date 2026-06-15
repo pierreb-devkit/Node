@@ -19,7 +19,7 @@ const config = {
     enable: true,
   },
   docs: {
-    // Grouping primitive for guide sections. See `publicDocs.tree.js` JSDoc for full schema details.
+    // Grouping primitive for guide sections. See `public.docs.tree.js` JSDoc for full schema details.
     guideSections: [
       { title: 'Get Started', prefixMin: 0, prefixMax: 9 },
     ],

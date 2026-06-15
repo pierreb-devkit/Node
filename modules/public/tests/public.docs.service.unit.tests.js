@@ -3,7 +3,7 @@
  * Verifies tree assembly (driven by config.docs.guideSections), slug lookup,
  * the 404 (null) path, and TTL caching — with config + the docs-tree helper
  * mocked so the test never touches disk. (The tree parsing itself is exercised
- * in publicDocs.tree.unit.tests.js.)
+ * in public.docs.tree.unit.tests.js.)
  */
 import {
   jest, describe, test, expect, beforeEach,
@@ -35,11 +35,11 @@ jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
 const loadGuideEntries = jest.fn();
 const buildDocsTree = jest.fn();
 
-jest.unstable_mockModule('../helpers/publicDocs.tree.js', () => ({
+jest.unstable_mockModule('../helpers/public.docs.tree.js', () => ({
   default: { loadGuideEntries, buildDocsTree },
 }));
 
-const PublicDocsService = (await import('../services/publicDocs.service.js')).default;
+const PublicDocsService = (await import('../services/public.docs.service.js')).default;
 
 const sampleEntries = [
   {

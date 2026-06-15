@@ -9,13 +9,13 @@ import {
 const getTree = jest.fn();
 const getMarkdown = jest.fn();
 
-jest.unstable_mockModule('../services/publicDocs.service.js', () => ({
+jest.unstable_mockModule('../services/public.docs.service.js', () => ({
   default: {
     getTree, getMarkdown, clearCache: jest.fn(), _internals: {},
   },
 }));
 
-const controller = (await import('../controllers/publicDocs.controller.js')).default;
+const controller = (await import('../controllers/public.docs.controller.js')).default;
 
 const mockResponse = () => {
   const res = {};

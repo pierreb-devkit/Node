@@ -2,7 +2,7 @@
  * Module dependencies
  */
 import config from '../../../config/index.js';
-import docsTree from '../helpers/publicDocs.tree.js';
+import docsTree from '../helpers/public.docs.tree.js';
 import logger from '../../../lib/services/logger.js';
 
 /**
@@ -27,7 +27,7 @@ let cacheEntry = null;
  * caller can never mutate config state.
  * @returns {string[]} Absolute guide markdown paths (empty array when unset).
  */
-const guideFiles = () => (Array.isArray(config.files?.guides) ? config.files.guides : []);
+const guideFiles = () => (Array.isArray(config.files?.guides) ? [...config.files.guides] : []);
 
 /**
  * @desc Resolve the configured guide sections grouping primitive
@@ -35,7 +35,7 @@ const guideFiles = () => (Array.isArray(config.files?.guides) ? config.files.gui
  * module-name grouping in the tree builder.
  * @returns {{ title: string, prefixMin: number, prefixMax: number, persona?: string[] }[]}
  */
-const guideSections = () => (Array.isArray(config.docs?.guideSections) ? config.docs.guideSections : []);
+const guideSections = () => (Array.isArray(config.docs?.guideSections) ? config.docs.guideSections.map((s) => ({ ...s })) : []);
 
 /**
  * @desc Build the docs tree + slug index from disk.
