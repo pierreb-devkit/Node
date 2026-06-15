@@ -97,6 +97,16 @@ describe('Auth service unit tests:', () => {
       await expect(AuthService.authenticate('a@b.com', 'pass')).rejects.toThrow('invalid user or password.');
     });
 
+    test('should run a dummy password compare on the unknown-user path to equalise timing (anti-enumeration)', async () => {
+      // Unknown email: the service must still run a bcrypt compare against a
+      // sentinel hash so response timing does not reveal whether the account
+      // exists, THEN throw the same generic error as a wrong-password attempt.
+      mockGetBrut.mockResolvedValueOnce(null);
+      mockBcryptCompare.mockResolvedValueOnce(false);
+      await expect(AuthService.authenticate('ghost@b.com', 'pass')).rejects.toThrow('invalid user or password.');
+      expect(mockBcryptCompare).toHaveBeenCalledTimes(1);
+    });
+
     test('should return sanitised user when credentials are valid', async () => {
       const storedUser = { _id: '1', email: 'a@b.com', firstName: 'Joe', password: 'hashed', roles: ['user'], provider: 'local', save: jest.fn() };
       mockGetBrut.mockResolvedValueOnce(storedUser);

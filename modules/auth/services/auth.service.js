@@ -10,6 +10,13 @@ import AppError from '../../../lib/helpers/AppError.js';
 import { hashPassword, comparePassword } from '../../../lib/helpers/password.js';
 import UserService from '../../users/services/users.service.js';
 
+// Precomputed valid bcrypt hash (cost=10, 60 chars) used as a constant-work
+// sentinel on the unknown-user login path. Running a real compare against it
+// equalises response timing with the password-mismatch path so the endpoint
+// cannot be used as an account-enumeration oracle. Mirrors the forgot-password
+// dummy-compare pattern.
+const DUMMY_PASSWORD_HASH = '$2b$10$wotSb2xPb8VF8lpBkulk0.e2xvYvDedhjMyuG/7w3GdPl1vdvogY2';
+
 /**
  * @desc Local function to removeSensitive data from user
  * @param {Object} user
@@ -84,7 +91,13 @@ const recordSuccessfulLogin = async (user) => {
  */
 const authenticate = async (email, password) => {
   const user = await UserService.getBrut({ email });
-  if (!user) throw new AppError('invalid user or password.', { code: 'SERVICE_ERROR' });
+  if (!user) {
+    // Unknown account — run a dummy compare against the sentinel hash to keep
+    // the work (and thus the response timing) indistinguishable from a real
+    // password mismatch, then throw the same generic error (anti-enumeration).
+    await comparePassword(password, DUMMY_PASSWORD_HASH);
+    throw new AppError('invalid user or password.', { code: 'SERVICE_ERROR' });
+  }
 
   // Check lockout before attempting password comparison
   await checkLockout(user);
