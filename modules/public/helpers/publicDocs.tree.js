@@ -40,6 +40,7 @@ const DEFAULT_PERSONA = Object.freeze(['all']);
  * @param {string} filePath - Absolute or relative path to the guide file.
  * @returns {string} URL-safe guide slug.
  */
+// Guide filenames are expected to be `NN-kebab-name.md` (numeric prefix + kebab); the prefix is stripped for the slug.
 const slugFromPath = (filePath) => {
   const base = path.basename(String(filePath), path.extname(String(filePath)));
   const stripped = base.replace(/^\d+[-_]/, '');

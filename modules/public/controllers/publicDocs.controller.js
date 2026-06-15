@@ -17,6 +17,7 @@ import PublicDocsService from '../services/publicDocs.service.js';
 const tree = async (req, res) => {
   try {
     const payload = PublicDocsService.getTree();
+    res.set('Cache-Control', 'public, max-age=300');
     return responses.success(res, 'public docs')(payload);
   } catch (err) {
     return responses.error(res, 503, 'Service Unavailable', errors.getMessage(err))(err);
@@ -37,6 +38,7 @@ const raw = async (req, res) => {
     if (markdown === null) {
       return responses.error(res, 404, 'Not Found', 'Unknown guide')();
     }
+    res.set('Cache-Control', 'public, max-age=300');
     res.set('Content-Type', 'text/markdown; charset=utf-8');
     return res.status(200).send(markdown);
   } catch (err) {

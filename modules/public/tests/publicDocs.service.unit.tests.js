@@ -27,10 +27,9 @@ jest.unstable_mockModule('../../../config/index.js', () => ({
 
 // Stub the logger so the mocked config (no `log.fileLogger`) doesn't trip the
 // real logger's file-logging bootstrap when the service is imported.
+const mockLogger = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
 jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
-  default: {
-    debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(),
-  },
+  default: mockLogger,
 }));
 
 const loadGuideEntries = jest.fn();
@@ -91,5 +90,25 @@ describe('PublicDocsService', () => {
     PublicDocsService.clearCache();
     PublicDocsService.getTree();
     expect(loadGuideEntries).toHaveBeenCalledTimes(2);
+  });
+
+  test('warns and last-wins when two entries share the same slug', () => {
+    const dupeEntries = [
+      {
+        slug: 'quickstart', title: 'Quickstart A', order: 0, summary: 'a', body: 'Body A',
+      },
+      {
+        slug: 'quickstart', title: 'Quickstart B', order: 1, summary: 'b', body: 'Body B',
+      },
+    ];
+    loadGuideEntries.mockReturnValueOnce(dupeEntries);
+
+    PublicDocsService.getTree();
+
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('duplicate guide slug "quickstart"'),
+    );
+    // Last entry wins
+    expect(PublicDocsService.getMarkdown('quickstart')).toBe('Body B');
   });
 });

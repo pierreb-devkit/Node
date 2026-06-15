@@ -46,6 +46,15 @@ describe('PublicDocsController', () => {
     });
   });
 
+  test('tree: sets Cache-Control: public, max-age=300 on a 200 response', async () => {
+    getTree.mockReturnValueOnce({ categories: [] });
+    const res = mockResponse();
+
+    await controller.tree({ query: {} }, res);
+
+    expect(res.set).toHaveBeenCalledWith('Cache-Control', 'public, max-age=300');
+  });
+
   test('tree: returns 503 when the service throws', async () => {
     getTree.mockImplementationOnce(() => { throw new Error('disk gone'); });
     const res = mockResponse();
@@ -67,6 +76,25 @@ describe('PublicDocsController', () => {
     expect(res.set).toHaveBeenCalledWith('Content-Type', 'text/markdown; charset=utf-8');
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.send).toHaveBeenCalledWith('# Body\n\nText.');
+  });
+
+  test('raw: sets Cache-Control: public, max-age=300 on a 200 response', async () => {
+    getMarkdown.mockReturnValueOnce('# Guide\n\nProse.');
+    const res = mockResponse();
+
+    await controller.raw({ params: { slug: 'quickstart' } }, res);
+
+    expect(res.set).toHaveBeenCalledWith('Cache-Control', 'public, max-age=300');
+  });
+
+  test('raw: does NOT set Cache-Control on a 404 response', async () => {
+    getMarkdown.mockReturnValueOnce(null);
+    const res = mockResponse();
+
+    await controller.raw({ params: { slug: 'nope' } }, res);
+
+    const cacheControlCalls = res.set.mock.calls.filter(([header]) => header === 'Cache-Control');
+    expect(cacheControlCalls).toHaveLength(0);
   });
 
   test('raw: returns 404 for an unknown slug', async () => {

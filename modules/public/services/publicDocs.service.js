@@ -44,7 +44,13 @@ const guideSections = () => (Array.isArray(config.docs?.guideSections) ? config.
 const compute = () => {
   const entries = docsTree.loadGuideEntries(guideFiles());
   const tree = docsTree.buildDocsTree(entries, guideSections());
-  const bySlug = new Map(entries.map((entry) => [entry.slug, entry]));
+  const bySlug = new Map();
+  for (const entry of entries) {
+    if (bySlug.has(entry.slug)) {
+      logger.warn(`[public/docs] duplicate guide slug "${entry.slug}" — later guide wins; rename one to avoid the collision`);
+    }
+    bySlug.set(entry.slug, entry);
+  }
   return { tree, bySlug };
 };
 
@@ -59,6 +65,10 @@ const load = ({ bypassCache = false } = {}) => {
     logger.debug('public.docs - cache hit');
     return cacheEntry;
   }
+  // No inflight guard needed: compute() is fully synchronous (fs.readFileSync,
+  // no await), so there is no gap between the staleness check and the cache
+  // assignment on Node's event loop — stampede is impossible. If compute() is
+  // ever made async, an inflight guard must be added.
   const { tree, bySlug } = compute();
   cacheEntry = { tree, bySlug, expiresAt: Date.now() + CACHE_TTL_MS };
   logger.info('public.docs - recomputed', {

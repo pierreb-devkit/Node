@@ -19,14 +19,7 @@ const config = {
     enable: true,
   },
   docs: {
-    // Grouping primitive for documentation guides, shared by the OpenAPI
-    // reference sidebar and the structured public docs endpoint
-    // (GET /api/public/docs). Guides are grouped by their filename numeric
-    // prefix: a guide whose prefix is within [prefixMin, prefixMax] lands in
-    // that section. A section may declare a `persona` array to narrow the
-    // audience; absent that, guides target every audience (['all']). Guides
-    // outside every range fall back to their capitalised module name.
-    // Adding/renaming a section is a config-only change — no helper rewrite.
+    // Grouping primitive for guide sections. See `publicDocs.tree.js` JSDoc for full schema details.
     guideSections: [
       { title: 'Get Started', prefixMin: 0, prefixMax: 9 },
     ],
