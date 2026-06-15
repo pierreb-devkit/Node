@@ -636,43 +636,11 @@ const oauthErrorRedirect = (res, err, fallbackTitle) => {
  */
 const oauthCallback = async (req, res, next) => {
   const strategy = req.params.strategy;
-  // app Auth with Strategy managed on client side
-  if (req.body?.strategy === false && req.body?.key) {
-    const allowedKeys = ['id', 'sub', 'email'];
-    if (!allowedKeys.includes(req.body.key)) {
-      return responses.error(res, 422, 'Unprocessable Entity', 'Invalid provider key')();
-    }
-    try {
-      let user = {
-        firstName: req.body.firstName,
-        lastName: req.body.lastName,
-        email: req.body.email,
-        providerData: {},
-      };
-      user.providerData[req.body.key] = req.body.value;
-      user = await checkOAuthUserProfile(user, req.body.key, strategy);
-      const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
-        expiresIn: config.jwt.expiresIn,
-      });
-      return res
-        .status(200)
-        .cookie('TOKEN', token, tokenCookieOptions)
-        .json({
-          user,
-          tokenExpiresIn: Date.now() + config.jwt.expiresIn * 1000,
-          type: 'success',
-          message: 'oAuth Ok',
-        });
-    } catch (err) {
-      return responses.error(
-        res,
-        422,
-        err instanceof AppError && err.code === 'VALIDATION_ERROR' ? errors.getMessage(err) : 'Unprocessable Entity',
-        errors.getMessage(err.details || err),
-      )(err);
-    }
-  }
-  // classic web oAuth
+  // The identity is always derived server-side from the provider's response via
+  // passport.authenticate(). The part that was previously unsafe was trusting a
+  // client-asserted identity from the request body (email, key, value) with no
+  // provider-token verification — a caller who knows a victim's identifier could
+  // have minted that victim's session. That branch is now removed entirely.
   passport.authenticate(strategy, (err, user) => {
     if (err) {
       logger.error(
