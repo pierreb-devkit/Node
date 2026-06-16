@@ -15,10 +15,10 @@ const config = {
     contact: 'contact@example.com',
     version: '', // app release version — overridden at build via DEVKIT_NODE_app_version (Layer 4 env override); getConfig falls back to package.json version
   },
-  swagger: {
+  openapi: {
     enable: true,
-    // opt-in: serve the unauthenticated /api/spec.json in production-grade envs (public API docs); off by default
-    publicInProd: false,
+    // opt-in: serve the unauthenticated /api/spec.json publicly in production-grade envs (public API docs); off by default
+    public: false,
   },
   docs: {
     // Grouping primitive for guide sections. See `public.docs.tree.js` JSDoc for full schema details.
