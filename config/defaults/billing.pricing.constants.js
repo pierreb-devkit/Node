@@ -10,8 +10,8 @@
  * Why ship from devkit:
  * - Every downstream running billing wants the same export shape.
  * - Migrations + contract tests + costs service all benefit from a single import path.
- * - Trawl had this file at `modules/billing/config/billing.pricing.constants.js` with
- *   6+ importers — promoted upstream in plan `2026-06-02-trawl-billing-residual-cleanup.md`.
+ * - Previously lived per-project at `modules/billing/config/billing.pricing.constants.js`
+ *   with several importers — promoted upstream to a single import path.
  *
  * @module billing.pricing.constants
  */

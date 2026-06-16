@@ -17,7 +17,7 @@ const ACTIVE_STATUSES = new Set(['active', 'trialing']);
  * A plan is only effective when subscription.status ∈ {active, trialing}.
  * canceled / past_due / unpaid / incomplete are treated as 'free'.
  *
- * Response shape on deny matches the downstream trawl_node contract (top-level errorCode):
+ * Response shape on deny follows the downstream consumer contract (top-level errorCode):
  *   { type: 'error', message: 'Forbidden', code: 403, status: 403,
  *     errorCode: 'PLAN_REQUIRED', description, requiredPlans: string[], currentPlan: string }
  *

@@ -41,7 +41,7 @@ Operational runbooks for the billing module. Each runbook references real endpoi
    Example curl:
 
    ```bash
-   curl -X POST https://api.trawl.me/api/admin/billing/dispute/credit/<orgId> \
+   curl -X POST https://api.example.com/api/admin/billing/dispute/credit/<orgId> \
      -H "Authorization: Bearer $ADMIN_JWT" \
      -H "Content-Type: application/json" \
      -d '{"chargeId":"ch_xxx","amountCents":2000,"reason":"dispute won — Stripe reinstated funds","refundRequestId":"<uuid>"}'
@@ -141,10 +141,10 @@ Operational runbooks for the billing module. Each runbook references real endpoi
 - [ ] Stripe Dashboard (LIVE mode): 10 webhook events enabled (see `STRIPE_SETUP.md`)
 - [ ] Stripe Dashboard (LIVE mode): Smart Retries enabled (Billing settings → Smart Retries)
 - [ ] Stripe Dashboard (LIVE mode): `tax_id` collection enabled in Checkout (B2B EU)
-- [ ] `STRIPE_SECRET_KEY` = `sk_live_*` set in K8s secret `trawl-node-env`
+- [ ] `STRIPE_SECRET_KEY` = `sk_live_*` set in the deployment secret (e.g. K8s secret `<project>-node-env`)
 - [ ] `STRIPE_WEBHOOK_SECRET` = `whsec_*` (LIVE mode endpoint secret) updated in K8s secret
 - [ ] `STRIPE_PRICE_*` env vars point to LIVE price IDs (not test price IDs)
-- [ ] All 4 CronJob manifests deployed: `trawl-billing-dunning-sweep`, `trawl-billing-weekly-reset`, `trawl-billing-extras-expiration`, `trawl-billing-reconcile`
+- [ ] All 4 CronJob manifests deployed: `<project>-billing-dunning-sweep`, `<project>-billing-weekly-reset`, `<project>-billing-extras-expiration`, `<project>-billing-reconcile`
 - [ ] Dead-letter queue empty: `GET /api/admin/billing/dead-letters` → 0 entries
 - [ ] Test mode webhooks drained: Stripe Dashboard → Webhooks → no pending test deliveries
 - [ ] Smoke test: in staging pointed at **TEST** Stripe keys (not LIVE), create a checkout session using Stripe test card `4242 4242 4242 4242` — confirm `checkout.session.completed` webhook received + subscription created in DB. Do **not** use test cards against LIVE keys (they are rejected; use this step to validate the integration flow, then cut over to LIVE keys for production)

@@ -47,7 +47,7 @@ from the payload — reward either side, or both.
 > would clobber them. A downstream project therefore NEVER wires a listener by editing
 > `billing.init.js`. The two sanctioned channels are: **config** (deep-merged
 > `{project}.config.js` — for the standard reward below) and **project-only modules**
-> (glob-discovered, e.g. `modules/trawl-rewards/` — for custom logic).
+> (glob-discovered, e.g. `modules/<project>-rewards/` — for custom logic).
 
 ### A. Standard grant — ships IN the stack, downstream enables it by CONFIG
 

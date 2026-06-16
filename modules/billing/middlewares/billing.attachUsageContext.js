@@ -17,7 +17,7 @@ import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.
  *       Mount after `resolveOrganization` so that `req.organization` is populated.
  *
  *       NOTE: This middleware is documented here but intentionally NOT auto-wired in
- *       lib/app.js — downstream projects (e.g. Trawl) decide where to mount it.
+ *       lib/app.js — downstream projects decide where to mount it.
  *       Example: `app.use(resolveOrganization, attachUsageContext);`
  *
  * @param {import('express').Request} req - Express request object.

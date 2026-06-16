@@ -28,7 +28,7 @@ modules/billing/tests/billing.cron.*.unit.tests.js
 
 This is an atomic move with no backward-compat shim. The cutover for each downstream project requires coordinated steps:
 
-1. Run `/update-stack` on the downstream project repo (e.g. trawl_node) — pulls the new structure with crons at `modules/billing/crons/`.
+1. Run `/update-stack` on the downstream project repo — pulls the new structure with crons at `modules/billing/crons/`.
 2. CI on the downstream repo builds a new image and pushes to GHCR.
 3. Update the infra K8s CronJob manifests in `clusters/{cluster}/apps/{project}-billing-*.yaml` — change `args: ["scripts/crons/billing.*.js"]` to `args: ["modules/billing/crons/billing.*.js"]`.
 4. Push the infra change → Flux applies → CronJobs use new args + new image together.
