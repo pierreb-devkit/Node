@@ -262,7 +262,7 @@ const updateIfEventNewer = (id, eventCreatedAt, eventId, fields, family = 'subsc
         [createdAtField]: eventCreatedAt,
         [eventIdField]: eventId,
         // Legacy fields stripeEventCreatedAt/stripeEventId are no longer written.
-        // The migration in trawl_node $unset them post-deploy so docs converge to
+        // A downstream migration $unsets them post-deploy so docs converge to
         // per-family markers only. Reading the legacy fields anywhere is dead surface.
       },
     },

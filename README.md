@@ -174,7 +174,7 @@ config/defaults/
   myproject.config.js            ← global project overrides (all modules)
 
 modules/<name>/config/
-  <name>.myproject.config.js     ← per-module project overrides (e.g. users.trawl.config.js)
+  <name>.myproject.config.js     ← per-module project overrides (e.g. users.<project>.config.js)
 ```
 
 Both file types are optional and can be used independently or together. Per-module files take priority over the global project config, allowing fine-grained overrides per module without polluting the global file.
@@ -312,9 +312,9 @@ Canonical sources used downstream:
 | Source | Meaning |
 |---|---|
 | `web` | Request from browser (UA not matched as CLI) |
-| `cli` | Request from `@trawlme/cli/<version>` (UA-parsed) |
+| `cli` | Request from a configured CLI user-agent (UA-parsed, see `analytics.cliUserAgentPattern`) |
 | `stripe-webhook` | Stripe POST `/api/billing/webhook` |
-| `worker-callback` | worker-puppeteer scrap completion callback |
+| `worker-callback` | Background worker completion callback |
 | `cron` | Scheduled background job |
 | `system` | Server-side fallback (no req, no caller override) |
 

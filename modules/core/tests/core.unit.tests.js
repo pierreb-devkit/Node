@@ -85,7 +85,7 @@ describe('Core unit tests:', () => {
     it('assertSafeEnv should allow valid environment names', () => {
       expect(() => assertSafeEnv('development')).not.toThrow();
       expect(() => assertSafeEnv('production')).not.toThrow();
-      expect(() => assertSafeEnv('trawl')).not.toThrow();
+      expect(() => assertSafeEnv('acme')).not.toThrow();
       expect(() => assertSafeEnv('my-project_v2')).not.toThrow();
     });
 

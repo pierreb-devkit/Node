@@ -736,7 +736,7 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
  *           payment_intent_data: { metadata: { organizationId, stripeSessionId, packId, ... } },
  *         })
  *       Without payment_intent_data.metadata, charge.metadata will be empty and refunds
- *       silently skip. Downstream (trawl_node) is responsible for setting these at session creation.
+ *       silently skip. The downstream consumer is responsible for setting these at session creation.
  *       Calls BillingExtraService.refundPartial for each entry in charge.refunds.data.
  *       Each refund's rf_ id is used as the idempotency key, making webhook replay safe.
  *       Individual entries are silently skipped when: metadata is incomplete, refund amount

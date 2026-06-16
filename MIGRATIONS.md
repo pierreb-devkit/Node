@@ -161,7 +161,7 @@ Cf `infra/docs/superpowers/plans/2026-05-10-posthog-observability-followups.md` 
 
 ## Test DB isolation: per-pid Mongo database default + globalTeardown (2026-04-24)
 
-Default test database is now `mongodb://127.0.0.1:27017/NodeTest_${process.pid}` instead of the shared `NodeTest`. Concurrent jest invocations (e.g. multiple agent worktrees running `npm run test:coverage` in parallel) get isolated databases, eliminating the 401 / 404 / 422 / `MongoPoolClosedError` flake patterns documented in trawl_node#980.
+Default test database is now `mongodb://127.0.0.1:27017/NodeTest_${process.pid}` instead of the shared `NodeTest`. Concurrent jest invocations (e.g. multiple agent worktrees running `npm run test:coverage` in parallel) get isolated databases, eliminating the 401 / 404 / 422 / `MongoPoolClosedError` flake patterns seen in parallel runs.
 
 ### What changed
 
@@ -195,17 +195,13 @@ CI workflows (`.github/workflows/CI.yml` and downstream copies) set `DEVKIT_NODE
 
 When this lands in your project via `/update-stack`, the new `parallel-smoke` CI job ships a default `SMOKE_TEST_PATTERN` of `organizations.integration|tasks.integration` — which only matches in the upstream Devkit. **You MUST override `SMOKE_TEST_PATTERN`** in your CI `parallel-smoke` job (set it under the job's `env:` in `.github/workflows/CI.yml`) to match your project's integration test paths.
 
-The 5 downstream Node projects that consume this stack must each set the override:
+Each downstream Node project that consumes this stack must set the override:
 
 | Project | Suggested `SMOKE_TEST_PATTERN` |
 |---|---|
-| `pierreb_node` | project-specific integration globs |
-| `comes_node` | `tasks.integration\|notes.integration` |
-| `trawl_node` | `scraps.integration\|historys.integration` |
-| `montaine_node` | project-specific integration globs |
-| `ism_node` | project-specific integration globs |
+| `<project>_node` | project-specific integration globs (e.g. `foo.integration\|bar.integration`) |
 
-(The exact globs are illustrative — replace with whatever integration files actually exist in each repo. The point is: pick at least two real integration suites so the parallel-smoke job exercises the per-pid DB isolation rather than passing on zero matches.)
+(The exact globs are illustrative — replace with whatever integration files actually exist in your repo. The point is: pick at least two real integration suites so the parallel-smoke job exercises the per-pid DB isolation rather than passing on zero matches.)
 
 Without an override, the smoke would historically have silently passed with 0 tests run, defeating the regression gate. As of #3518 the orchestrator passes `--passWithNoTests=false` to jest, so a 0-match pattern now exits non-zero and fails the smoke loudly — but the actionable fix is still to point the pattern at real integration paths in your repo.
 
@@ -777,7 +773,7 @@ All features are no-op when `apiKey` is empty — safe to deploy without PostHog
 
 ## Organizations & CASL v2 (2026-03-13)
 
-This guide is for downstream projects (e.g. lou-node, pierreb-node) migrating to the new organizations + CASL document-level authorization system introduced on the `feature/signup-org-flow` branch.
+This guide is for downstream projects migrating to the new organizations + CASL document-level authorization system introduced on the `feature/signup-org-flow` branch.
 
 ---
 

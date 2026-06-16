@@ -107,6 +107,11 @@ const config = {
       errorTracking: process.env.DEVKIT_NODE_analytics_posthog_errorTracking === 'true',
       autoCapture: process.env.DEVKIT_NODE_analytics_posthog_autoCapture === 'true',
     },
+    // Regex-source string used by the PostHog context middleware to detect a
+    // CLI client from its User-Agent (capture group 1 = version). Empty → no
+    // CLI detection (source stays 'web'). A project that ships a CLI sets this
+    // to e.g. '@example-org/cli/(\\S+)'.
+    cliUserAgentPattern: process.env.DEVKIT_NODE_analytics_cliUserAgentPattern ?? '',
   },
   domain: '',
   cookie: {

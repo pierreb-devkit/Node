@@ -116,7 +116,7 @@ const initGlobalConfig = async () => {
     }
 
     // Layer 3.5: per-module project overrides (modules/*/config/*.{project}.config.js)
-    // Only applies for non-standard envs (i.e. downstream project names like "trawl", "comes")
+    // Only applies for non-standard envs (i.e. a downstream project name, the NODE_ENV value)
     if (!STANDARD_ENVS.has(env)) {
       const moduleProjectPattern = `modules/*/config/*.${env}.config.js`;
       const moduleProjectFiles = await configHelper.getGlobbedPaths(moduleProjectPattern);
