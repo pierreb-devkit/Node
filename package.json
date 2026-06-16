@@ -80,7 +80,7 @@
     "passport-google-oauth20": "^2.0.0",
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",
-    "posthog-node": "^5.37.0",
+    "posthog-node": "^5.37.1",
     "resend": "^6.12.4",
     "sharp": "^0.35.1",
     "snyk": "^1.1305.1",
