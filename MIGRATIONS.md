@@ -4,6 +4,23 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Config rename: `swagger` → `openapi` (2026-06-16)
+
+The mis-named `config.swagger` namespace is renamed to `config.openapi`: it gates the OpenAPI JSON spec served at `/api/spec.json`, and there is no Swagger-UI (the Redoc UI was decommissioned earlier). Pure rename, no behavior change.
+
+### What changed (this repo)
+
+- `config.swagger` → `config.openapi` (defaults in `config/defaults/development.config.js` + `production.config.js`).
+- `config.swagger.publicInProd` → `config.openapi.public` (the `InProd` suffix is dropped — the flag means "serve the spec publicly"; still secure-by-default `public: false`).
+- `config.files.swagger` glob key → `config.files.openapi` (`lib/helpers/config.js` + the `fileKeys` filter list in `config/index.js`).
+- The gate in `lib/services/express.js` (`initApiSpec`) reads the new keys; internal log prefixes `[swagger]` → `[openapi]`.
+
+### Action required for downstream projects (`/update-stack`)
+
+- Rename the `swagger` block to `openapi` in `config/defaults/{project}.config.js` and rename `publicInProd` → `public` if set. No other action — the glob key + gate are devkit-owned stack files that arrive via `/update-stack`.
+
+---
+
 ## Referral grant — config-gated `invitation.accepted` listener in billing (2026-06-12)
 
 Standard referral reward (#3842, the real tracker behind the old in-code `TODO(#5)` refs). The `invitation.accepted` no-op seam in `billing.init.js` is now the **config-gated grant listener**: on every accepted invite it idempotently credits meter units to the **referrer**'s and **referee**'s organizations on the `BillingExtraBalance` ledger (`kind:'topup'`, `source:'referral'`, keys `referral:<invitationId>:referrer|referee`, expiry like pack credits).
@@ -1390,13 +1407,13 @@ Config belongs to the module that **semantically owns** the data, even if other 
 | `uploads`, `sharp` | `uploads` | Uploads defines its own processing rules |
 | `organizations`, `roles`, `roleDescriptions`, `publicDomains` | `organizations` | Orgs defines its own structure |
 | `repos` | `home` | Home defines its own data sources |
-| `app`, `swagger`, `api`, `db`, `log`, `cors`, `cookie`, `mailer`, `seedDB` | global | Pure infrastructure, no module owns them |
+| `app`, `openapi`, `api`, `db`, `log`, `cors`, `cookie`, `mailer`, `seedDB` | global | Pure infrastructure, no module owns them |
 
 ### File layout
 
 ```text
 config/defaults/
-  development.config.js          ← infra only (app, swagger, api, db, log, csrf, cors, cookie, mailer, seedDB)
+  development.config.js          ← infra only (app, openapi, api, db, log, csrf, cors, cookie, mailer, seedDB)
   production.config.js           ← production overrides (standalone)
   test.config.js                 ← test overrides (standalone)
   myproject.config.js            ← template for downstream projects

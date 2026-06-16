@@ -5,7 +5,7 @@ const config = {
   // Secure-by-default: keep the unauthenticated API docs surface off in production.
   // The runtime gate in lib/services/express.js (isProd) already prevents mounting
   // docs in any non-dev env; this flag makes the intent explicit at the config layer.
-  swagger: {
+  openapi: {
     enable: false,
   },
   api: {

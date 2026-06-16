@@ -492,22 +492,22 @@ describe('Core unit tests:', () => {
 
   describe('Express service', () => {
     describe('initApiSpec', () => {
-      let originalSwagger;
+      let originalOpenapi;
       let originalFiles;
 
       beforeEach(() => {
-        originalSwagger = config.swagger;
+        originalOpenapi = config.openapi;
         originalFiles = config.files;
       });
 
       afterEach(() => {
-        config.swagger = originalSwagger;
+        config.openapi = originalOpenapi;
         config.files = originalFiles;
       });
 
-      it('should register /api/spec.json but NOT the decommissioned /api/docs Redoc UI when swagger is enabled', () => {
-        config.swagger = { enable: true };
-        config.files = { ...config.files, swagger: [path.join(process.cwd(), 'modules/core/doc/index.yml')] };
+      it('should register /api/spec.json but NOT the decommissioned /api/docs Redoc UI when the OpenAPI spec is enabled', () => {
+        config.openapi = { enable: true };
+        config.files = { ...config.files, openapi:[path.join(process.cwd(), 'modules/core/doc/index.yml')] };
         const mockGet = jest.fn();
         const mockUse = jest.fn();
         const mockApp = { get: mockGet, use: mockUse };
@@ -519,8 +519,8 @@ describe('Core unit tests:', () => {
       });
 
       it('should serve merged spec as JSON from /api/spec.json handler', () => {
-        config.swagger = { enable: true };
-        config.files = { ...config.files, swagger: [path.join(process.cwd(), 'modules/core/doc/index.yml')] };
+        config.openapi = { enable: true };
+        config.files = { ...config.files, openapi:[path.join(process.cwd(), 'modules/core/doc/index.yml')] };
         const mockGet = jest.fn();
         const mockUse = jest.fn();
         const mockApp = { get: mockGet, use: mockUse };
@@ -535,10 +535,10 @@ describe('Core unit tests:', () => {
       });
 
       it('should merge multiple module YAML files and include paths from each', () => {
-        config.swagger = { enable: true };
+        config.openapi = { enable: true };
         config.files = {
           ...config.files,
-          swagger: [
+          openapi: [
             path.join(process.cwd(), 'modules/core/doc/index.yml'),
             path.join(process.cwd(), 'modules/tasks/doc/tasks.yml'),
           ],
@@ -565,8 +565,8 @@ describe('Core unit tests:', () => {
         );
       });
 
-      it('should not register routes when swagger is disabled', () => {
-        config.swagger = { enable: false };
+      it('should not register routes when the OpenAPI spec is disabled', () => {
+        config.openapi = { enable: false };
         const mockGet = jest.fn();
         const mockUse = jest.fn();
         const mockApp = { get: mockGet, use: mockUse };
@@ -575,9 +575,9 @@ describe('Core unit tests:', () => {
         expect(mockUse).not.toHaveBeenCalled();
       });
 
-      it('should warn and skip registration when swagger file list is empty', () => {
-        config.swagger = { enable: true };
-        config.files = { ...config.files, swagger: [] };
+      it('should warn and skip registration when the OpenAPI spec file list is empty', () => {
+        config.openapi = { enable: true };
+        config.files = { ...config.files, openapi:[] };
         const mockGet = jest.fn();
         const mockUse = jest.fn();
         const mockApp = { get: mockGet, use: mockUse };
@@ -587,10 +587,10 @@ describe('Core unit tests:', () => {
       });
 
       it('should throw with file path context when a YAML file fails to load', () => {
-        config.swagger = { enable: true };
-        config.files = { ...config.files, swagger: ['/nonexistent/path/bad.yml'] };
+        config.openapi = { enable: true };
+        config.files = { ...config.files, openapi:['/nonexistent/path/bad.yml'] };
         const mockApp = { get: jest.fn(), use: jest.fn() };
-        expect(() => expressService.initApiSpec(mockApp)).toThrow('[swagger] failed to load /nonexistent/path/bad.yml');
+        expect(() => expressService.initApiSpec(mockApp)).toThrow('[openapi] failed to load /nonexistent/path/bad.yml');
       });
 
       it('should skip YAML files that do not parse to a plain object and still register routes from valid ones', async () => {
@@ -600,8 +600,8 @@ describe('Core unit tests:', () => {
         fsMod.writeFileSync(tmpFile, 'just a string value\n');
         try {
           const validFile = path.join(process.cwd(), 'modules/core/doc/index.yml');
-          config.swagger = { enable: true };
-          config.files = { ...config.files, swagger: [tmpFile, validFile] };
+          config.openapi = { enable: true };
+          config.files = { ...config.files, openapi:[tmpFile, validFile] };
           const mockGet = jest.fn();
           const mockUse = jest.fn();
           const mockApp = { get: mockGet, use: mockUse };
@@ -619,10 +619,10 @@ describe('Core unit tests:', () => {
         const tmpGuide = path.join(tmpDir, 'sample.md');
         fsMod.writeFileSync(tmpGuide, '# Ignored Heading\n\nSample guide body for unit test.\n');
         try {
-          config.swagger = { enable: true };
+          config.openapi = { enable: true };
           config.files = {
             ...config.files,
-            swagger: [path.join(process.cwd(), 'modules/core/doc/index.yml')],
+            openapi: [path.join(process.cwd(), 'modules/core/doc/index.yml')],
             guides: [tmpGuide],
           };
           const mockGet = jest.fn();
@@ -645,8 +645,8 @@ describe('Core unit tests:', () => {
       });
 
       it('should inject info.title, info.description and servers from config', () => {
-        config.swagger = { enable: true };
-        config.files = { ...config.files, swagger: [path.join(process.cwd(), 'modules/core/doc/index.yml')], guides: [] };
+        config.openapi = { enable: true };
+        config.files = { ...config.files, openapi:[path.join(process.cwd(), 'modules/core/doc/index.yml')], guides: [] };
         const originalDomain = config.domain;
         config.domain = 'https://api.example.test';
         try {
@@ -667,8 +667,8 @@ describe('Core unit tests:', () => {
       });
 
       it('should fall back to localhost in servers when config.domain is empty', () => {
-        config.swagger = { enable: true };
-        config.files = { ...config.files, swagger: [path.join(process.cwd(), 'modules/core/doc/index.yml')], guides: [] };
+        config.openapi = { enable: true };
+        config.files = { ...config.files, openapi:[path.join(process.cwd(), 'modules/core/doc/index.yml')], guides: [] };
         const originalDomain = config.domain;
         config.domain = '';
         try {
@@ -693,10 +693,10 @@ describe('Core unit tests:', () => {
         const tmpGuide = path.join(tmpDir, 'welcome.md');
         fsMod.writeFileSync(tmpGuide, 'Welcome guide content for description merge.\n');
         try {
-          config.swagger = { enable: true };
+          config.openapi = { enable: true };
           config.files = {
             ...config.files,
-            swagger: [path.join(process.cwd(), 'modules/core/doc/index.yml')],
+            openapi: [path.join(process.cwd(), 'modules/core/doc/index.yml')],
             guides: [tmpGuide],
           };
           const mockGet = jest.fn();
@@ -722,8 +722,8 @@ describe('Core unit tests:', () => {
         const tmpFile = path.join('/tmp', `test-scalar-only-${Date.now()}.yml`);
         fsMod.writeFileSync(tmpFile, 'just a string value\n');
         try {
-          config.swagger = { enable: true };
-          config.files = { ...config.files, swagger: [tmpFile] };
+          config.openapi = { enable: true };
+          config.files = { ...config.files, openapi:[tmpFile] };
           const mockGet = jest.fn();
           const mockUse = jest.fn();
           const mockApp = { get: mockGet, use: mockUse };
