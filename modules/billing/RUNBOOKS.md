@@ -100,7 +100,7 @@ Operational runbooks for the billing module. Each runbook references real endpoi
 1. Identify the divergence from the weekly reconciliation log:
 
    ```bash
-   kubectl logs -n pierreb-projects job/billing-reconcile-<timestamp>
+   kubectl logs -n <your-namespace> job/billing-reconcile-<timestamp>
    ```
 
    Look for lines containing `divergence detected` — they include `orgId`, `stripeStatus`, `dbStatus`, `stripePlan`, `dbPlan`.
@@ -212,7 +212,7 @@ db.cron_locks.deleteOne({ _id: "billing.extrasExpiration" })
 Or via `kubectl exec` on the mongo pod:
 
 ```bash
-kubectl exec -n pierreb-projects mongo-0 -- mongosh \
+kubectl exec -n <your-namespace> <your-mongo-pod> -- mongosh \
   "mongodb://localhost:27017/<your-db>" \
   --eval 'db.cron_locks.deleteOne({ _id: "billing.weeklyReset" })'
 ```
