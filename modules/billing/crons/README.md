@@ -35,7 +35,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: billing-weekly-reset
-  namespace: pierreb-projects
+  namespace: your-namespace  # replace with your namespace
 spec:
   schedule: "0 1 * * *"
   concurrencyPolicy: Forbid
