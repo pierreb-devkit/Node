@@ -42,12 +42,15 @@ const config = {
      * Display-only capacity equivalences for the nav compute gauge
      * (Vue billing.navComputeGauge.component). Each entry maps an operation "kind"
      * to its unit cost; the gauge renders `floor(remaining / unitCost)` as a
-     * human-readable "~N easy / ~M heavy operations remaining" estimate. Served
+     * human-readable "N easy / M heavy operations remaining" estimate. Served
      * verbatim to the client via the auth config (serverConfig.billing.equivalences).
+     * Only surfaces while `meterMode` is on (the gauge is hidden otherwise).
      *
-     * DEVKIT DEMO VALUES — illustrative only. Downstream projects override with
-     * their own kinds / labels / unit costs (or omit the block → the gauge shows
-     * raw units only). null / absent / [] → no-op.
+     * DEVKIT DEMO VALUES — illustrative, like the other billing defaults in this file.
+     * DOWNSTREAM-OVERRIDE: set your own kinds / labels / unit costs, or set
+     * `equivalences: []` (or `null`) to show raw units only. Because this ships as
+     * the billing base config, simply omitting the key downstream inherits these
+     * demo values — disable the chips explicitly with `[]` / `null`.
      *
      * Entry shape: { kind: 'easy' | 'hard', unitCost: number > 0, label: string }
      */
