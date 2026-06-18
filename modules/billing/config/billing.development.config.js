@@ -39,6 +39,23 @@ const config = {
      */
     upgradeUrl: '/billing/plans',
     /**
+     * Display-only capacity equivalences for the nav compute gauge
+     * (Vue billing.navComputeGauge.component). Each entry maps an operation "kind"
+     * to its unit cost; the gauge renders `floor(remaining / unitCost)` as a
+     * human-readable "~N easy / ~M heavy operations remaining" estimate. Served
+     * verbatim to the client via the auth config (serverConfig.billing.equivalences).
+     *
+     * DEVKIT DEMO VALUES — illustrative only. Downstream projects override with
+     * their own kinds / labels / unit costs (or omit the block → the gauge shows
+     * raw units only). null / absent / [] → no-op.
+     *
+     * Entry shape: { kind: 'easy' | 'hard', unitCost: number > 0, label: string }
+     */
+    equivalences: [
+      { kind: 'easy', unitCost: 200, label: 'easy operations' },
+      { kind: 'hard', unitCost: 2000, label: 'heavy operations' },
+    ],
+    /**
      * When true, mounts attachUsageContext on protected /api/billing/* routes.
      * Emits X-Meter-Remaining on billing responses. Off by default to avoid
      * extra DB reads on routes that do not need the header.
