@@ -82,7 +82,7 @@
     "passport-local": "^1.0.0",
     "posthog-node": "^5.37.1",
     "resend": "^6.12.4",
-    "sharp": "^0.35.1",
+    "sharp": "^0.35.2",
     "snyk": "^1.1305.1",
     "stripe": "^22.2.2",
     "winston": "^3.19.0",
