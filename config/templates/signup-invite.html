@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
   <head>
     <title>You've been invited — complete your signup</title>
@@ -13,20 +13,28 @@
           <a
             href="{{url}}"
             target="_blank"
-            style="display: inline-block; padding: 12px 28px; font-family: Arial, Helvetica, sans-serif; font-size: 16px; font-weight: bold; line-height: 20px; color: #ffffff; text-decoration: none; border-radius: 6px"
+            rel="noopener noreferrer"
+            style="
+              display: inline-block;
+              padding: 12px 28px;
+              font-family: Arial, Helvetica, sans-serif;
+              font-size: 16px;
+              font-weight: bold;
+              line-height: 20px;
+              color: #ffffff;
+              text-decoration: none;
+              border-radius: 6px;
+            "
             >Create your account</a
           >
         </td>
       </tr>
     </table>
-    <p style="font-size: 13px; color: #9b9b9b">
-      Button not working? <a href="{{url}}">{{url}}</a>
-    </p>
+    <p style="font-size: 13px; color: #9b9b9b">Button not working? <a href="{{url}}">{{url}}</a></p>
     <p>The <b>{{appName}}</b> Team.</p>
     <br />
     <i style="color: #9b9b9b"
-      >If you weren't expecting this invitation you can ignore this email. Please
-      do not reply to this email, you can contact us
+      >If you weren't expecting this invitation you can ignore this email. Please do not reply to this email, you can contact us
       <a href="mailto:{{appContact}}">here</a>.</i
     >
   </body>
