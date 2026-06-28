@@ -1,8 +1,36 @@
-<!DOCTYPE html>
-<html lang="en"><head><title></title></head>
-<body>
-  <p>Hello,</p>
-  <p><b>{{requesterName}}</b> ({{requesterEmail}}) has requested to join your organization <b>{{orgName}}</b> on {{appName}}.</p>
-  <p>Review this request in your dashboard: {{url}}</p>
-  <p>The <b>{{appName}}</b> Team.</p>
-</body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <title></title>
+  </head>
+  <body>
+    <p>Hello,</p>
+    <p><b>{{requesterName}}</b> ({{requesterEmail}}) has requested to join your organization <b>{{orgName}}</b> on {{appName}}.</p>
+    <p>Review this request in your dashboard:</p>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 24px 0">
+      <tr>
+        <td align="center" bgcolor="#1a1a1a" style="border-radius: 6px">
+          <a
+            href="{{url}}"
+            target="_blank"
+            rel="noopener noreferrer"
+            style="
+              display: inline-block;
+              padding: 12px 28px;
+              font-family: Arial, Helvetica, sans-serif;
+              font-size: 16px;
+              font-weight: bold;
+              line-height: 20px;
+              color: #ffffff;
+              text-decoration: none;
+              border-radius: 6px;
+            "
+            >Review request</a
+          >
+        </td>
+      </tr>
+    </table>
+    <p style="font-size: 13px; color: #9b9b9b">Button not working? <a href="{{url}}">{{url}}</a></p>
+    <p>The <b>{{appName}}</b> Team.</p>
+  </body>
+</html>
