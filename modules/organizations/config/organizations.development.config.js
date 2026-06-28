@@ -9,6 +9,14 @@ const config = {
     enabled: true, // false → B2C mode, organizations invisible
     autoCreate: true, // automatically create/join orgs at signup
     domainMatching: true, // match users to existing orgs by email domain
+    // Email-verification policy for org provisioning/discovery.
+    //   'strict' (default) → when the mailer is configured, an unverified user
+    //     cannot provision an org at signup nor run domain search; they must
+    //     verify their email first.
+    //   'off' → email verification is never required for these flows; the user
+    //     is always auto-provisioned (same path as a mailer-not-configured env).
+    // emailVerified stays server-only; this policy only gates the existing checks.
+    emailVerification: { mode: 'strict' },
     roles: ['owner', 'admin', 'member'],
     roleDescriptions: {
       owner: 'Full control — manage organization settings, members, roles, and billing.',

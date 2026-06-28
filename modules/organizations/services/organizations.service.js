@@ -136,8 +136,17 @@ const createOrganizationForUser = async ({ name, slug, domain, user, slugGenerat
 const handleSignupOrganization = async (user) => {
   const orgConfig = config.organizations || {};
 
-  // When mailer is configured, require email verification before any org provisioning
-  if (mailer.isConfigured() && !user.emailVerified) {
+  // Email-verification policy gate (config.organizations.emailVerification.mode).
+  // FAIL CLOSED: verification is bypassed ONLY for the explicit, permissive value
+  // 'off'. Any other value — the default, a typo ('stict'), or wrong casing
+  // ('STRICT') — keeps the strict gate, so a misconfiguration can never silently
+  // auto-provision unverified users. 'off' → always auto-provision (same effective
+  // path as a mailer-not-configured env). See module base config.
+  const emailVerificationOff = (orgConfig.emailVerification?.mode ?? 'strict') === 'off';
+
+  // When the policy is NOT 'off' and the mailer is configured, require email
+  // verification before any org provisioning.
+  if (!emailVerificationOff && mailer.isConfigured() && !user.emailVerified) {
     return {
       organization: null,
       membership: null,
