@@ -141,6 +141,18 @@ describe('Email-verification policy modes:', () => {
       expect(result.organization).not.toBeNull();
       expect(mockOrganizationsRepositoryCreate).toHaveBeenCalled();
     });
+
+    test("unknown/typo mode fails closed (treated as strict) — blocks an unverified user", async () => {
+      orgConfig.emailVerification = { mode: 'stict' }; // typo: not the explicit permissive 'off'
+      mockIsConfigured.mockReturnValue(true);
+
+      const user = { id: fakeUserId.toString(), email: 'test@acme.com', firstName: 'Test', lastName: 'User', emailVerified: false };
+      const result = await OrganizationsService.handleSignupOrganization(user);
+
+      expect(result.emailVerificationRequired).toBe(true);
+      expect(result.organization).toBeNull();
+      expect(mockOrganizationsRepositoryCreate).not.toHaveBeenCalled();
+    });
   });
 
   // --- search controller gate ---

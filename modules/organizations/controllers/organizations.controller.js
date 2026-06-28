@@ -185,10 +185,12 @@ const organizationByPage = async (req, res, next, params) => {
 const search = async (req, res) => {
   try {
     // Email-verification policy gate (config.organizations.emailVerification.mode).
-    // 'strict' (default) → block domain search for unverified users when the mailer is
-    // configured. 'off' → never block on verification (same path as mailer-not-configured).
-    const emailVerificationStrict = (config.organizations?.emailVerification?.mode ?? 'strict') === 'strict';
-    if (emailVerificationStrict && mailer.isConfigured() && !req.user.emailVerified) {
+    // FAIL CLOSED: only the explicit 'off' value lifts the gate; the default, a typo,
+    // or wrong casing all keep the strict block, so a misconfiguration can never leak
+    // the domain search to unverified users. 'off' → never block (same path as
+    // mailer-not-configured).
+    const emailVerificationOff = (config.organizations?.emailVerification?.mode ?? 'strict') === 'off';
+    if (!emailVerificationOff && mailer.isConfigured() && !req.user.emailVerified) {
       return responses.success(res, 'organization search')([]);
     }
     const organizations = await OrganizationsService.searchByDomain(req.user.email);
