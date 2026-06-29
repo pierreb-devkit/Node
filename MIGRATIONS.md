@@ -4,6 +4,31 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Config: `docs.excludeModules` — doc-only module exclusion (2026-06-29)
+
+New opt-in `config.docs.excludeModules` (default `[]` → **no behavior change**). It drops a module's `doc/*.yml` (OpenAPI) + `doc/guides/*.md` (guide tree) from the public spec (`/api/spec.json`) and guide tree (`/api/public/docs`), **independent of module runtime activation** — so it works even for **core** modules (`core`/`auth`/`users`/`home`), which `filterByActivation` never filters.
+
+Why: a module's `activated` flag gates both its routes/models **and** its doc contribution, and core modules bypass that filter entirely. So a core module's sample docs/guides were always served, with no opt-out. A project whose own guides reuse the sample slugs (e.g. `welcome`/`quickstart`, shipped by `home`) collided on duplicate slugs and could only fix it by deleting stack files — which conflicts with keeping stack files byte-identical and recurs on every sync.
+
+### What changed (this repo)
+
+- **New config knob** `config.docs.excludeModules: []` (`config/defaults/development.config.js`, in the existing `docs:` block).
+- **New helper** `filterByDocExclusion(files, config)` (`lib/helpers/config.js`, next to `filterByActivation`) — drops doc files of listed modules, **no `CORE_MODULES` bypass**; missing/empty/non-array list = no-op.
+- **`config/index.js`** — second filter pass applies `filterByDocExclusion` to the `openapi` + `guides` file keys only, after the activation filter. Runtime file keys (routes/models/policies/...) are unaffected.
+
+### Action required for downstream projects (`/update-stack`)
+
+- All changes are devkit-owned stack files → arrive via `/update-stack`. Default `[]`: **no action = no behavior change** (sample guides remain a working tutorial).
+- A project that keeps a module runtime-active but does **not** want its sample docs/guides in the public spec/tree (e.g. it ships its own guides under the same slugs) sets it in `config/defaults/{project}.config.js`:
+
+  ```js
+  docs: { excludeModules: ['home'] }
+  ```
+
+  Non-core demo modules can instead be dropped wholesale via `config.{module}.activated = false` (existing mechanism); `excludeModules` is for modules that must stay active.
+
+---
+
 ## Config rename: `swagger` → `openapi` (2026-06-16)
 
 The mis-named `config.swagger` namespace is renamed to `config.openapi`: it gates the OpenAPI JSON spec served at `/api/spec.json`, and there is no Swagger-UI (the Redoc UI was decommissioned earlier). Pure rename, no behavior change.
