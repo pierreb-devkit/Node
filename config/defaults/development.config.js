@@ -25,6 +25,12 @@ const config = {
     guideSections: [
       { title: 'Get Started', prefixMin: 0, prefixMax: 9 },
     ],
+    // Modules whose doc/*.yml (OpenAPI) + doc/guides/*.md are excluded from the
+    // public spec (/api/spec.json) and guide tree (/api/public/docs), independent
+    // of module activation — works even on core modules (core/auth/users/home).
+    // Empty = include all (the sample guides stay a working tutorial). A project
+    // overrides this (e.g. ['home']) when its own guides reuse the sample slugs.
+    excludeModules: [],
   },
   api: {
     protocol: 'http',

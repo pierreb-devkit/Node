@@ -164,6 +164,15 @@ const initGlobalConfig = async () => {
       config.files[key] = configHelper.filterByActivation(config.files[key], config);
     }
   }
+  // Exclude doc files (OpenAPI YAML + guides) for modules listed in
+  // config.docs.excludeModules — independent of runtime activation, so it works
+  // even for core modules. Empty/missing list = no-op.
+  const docFileKeys = ['openapi', 'guides'];
+  for (const key of docFileKeys) {
+    if (config.files[key]) {
+      config.files[key] = configHelper.filterByDocExclusion(config.files[key], config);
+    }
+  }
   // Init Secure SSL if can be used
   configHelper.initSecureMode(config);
   // Print a warning if config.domain is not set
