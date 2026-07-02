@@ -59,7 +59,7 @@ The issue `body` is the **primary scope source** — read it, not just the title
 
 - If the issue is **old** (`createdAt` older than ~7 days), or its body references files, symbols, or routes that no longer match the current codebase → **re-validate the scope**: check the referenced code, summarize the drift ("the issue says X, the code now does Y"), and present it to the user for confirmation before proceeding. A stale scope implemented as-written ships against a codebase that has moved.
 - Fresh issue with matching references → continue silently.
-- If the user aborts at this gate, remove the claim (`gh issue edit <N> --remove-assignee @me`) so the issue isn't left assigned with a dangling WIP comment.
+- If the user aborts at this gate, roll back the FULL claim from step 3 — `gh issue edit <N> --remove-assignee @me` AND delete the `WIP —` comment just posted (`gh api -X DELETE repos/<owner>/<repo>/issues/comments/<comment-id>` — capture the id when posting, or take the last own `WIP —` comment). Leaving the comment behind would make step 2 treat the aborted claim as resumable on the next run.
 
 ### 5. Proceed to Phase 0
 
