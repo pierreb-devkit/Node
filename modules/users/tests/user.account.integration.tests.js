@@ -76,17 +76,37 @@ describe('User integration tests:', () => {
     });
 
     test('should be able to change user own password successfully', async () => {
+      const newPassword = 'Waos.azs@^:SA3$&2';
       try {
         const result = await agent
           .post('/api/users/password')
           .send({
-            newPassword: 'Waos.azs@^:SA3$&2',
-            verifyPassword: 'Waos.azs@^:SA3$&2',
+            newPassword,
+            verifyPassword: newPassword,
             currentPassword: credentials[0].password,
           })
           .expect(200);
         expect(result.body.message).toBe('Password changed successfully');
       } catch (err) {
+        expect(err).toBeFalsy();
+      }
+
+      // Regression guard (#3925): the STORED password must be a bcrypt hash,
+      // never the raw plaintext. updatePassword previously persisted the
+      // plaintext verbatim (the model has no pre-save hash hook), which both
+      // stored credentials in the clear and locked the user out on next signin.
+      // This shipped undetected precisely because no test read the persisted
+      // value — assert the hash format at rest, then confirm via signin oracle.
+      try {
+        const stored = await UserService.getBrut({ id: user.id });
+        expect(stored.password).toMatch(/^\$2[aby]\$/);
+        expect(stored.password).not.toBe(newPassword);
+
+        // Runtime oracle: the NEW password authenticates, the OLD one does not.
+        await request(app).post('/api/auth/signin').send({ email: credentials[0].email, password: newPassword }).expect(200);
+        await request(app).post('/api/auth/signin').send({ email: credentials[0].email, password: credentials[0].password }).expect(401);
+      } catch (err) {
+        console.log(err);
         expect(err).toBeFalsy();
       }
     });
