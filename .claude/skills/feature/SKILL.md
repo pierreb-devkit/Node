@@ -19,7 +19,7 @@ description: >
 ### 1. Read the issue state
 
 ```bash
-gh issue view <N> --json number,title,state,assignees,comments
+gh issue view <N> --json number,title,state,body,createdAt,assignees,comments
 ```
 
 If the command fails (issue not found, network down, missing scope) → **STOP** and surface the error to the user before proceeding. Do not silently fall through to the claim step.
@@ -53,7 +53,15 @@ gh issue comment <N> --body "WIP — session $(date -u +%Y%m%dT%H%M%SZ)-$(uuidge
 
 Where `<branch-name>` is the branch this `/feature` invocation will use (planned name, even if not yet created). If the branch isn't decided yet, use `branch TBD`. Posting a follow-up comment with the real branch name after `/pull-request` creates it is best-effort manual — the linked PR superseding the WIP comment is what matters in practice.
 
-### 4. Proceed to Phase 0
+### 4. Aged-scope gate (re-validate before implementing)
+
+The issue `body` is the **primary scope source** — read it, not just the title (issues are often filed well ahead of execution, and the intended scope lives in the description). Before coding:
+
+- If the issue is **old** (`createdAt` older than ~7 days), or its body references files, symbols, or routes that no longer match the current codebase → **re-validate the scope**: check the referenced code, summarize the drift ("the issue says X, the code now does Y"), and present it to the user for confirmation before proceeding. A stale scope implemented as-written ships against a codebase that has moved.
+- Fresh issue with matching references → continue silently.
+- If the user aborts at this gate, remove the claim (`gh issue edit <N> --remove-assignee @me`) so the issue isn't left assigned with a dangling WIP comment.
+
+### 5. Proceed to Phase 0
 
 Continue to scope analysis below.
 
