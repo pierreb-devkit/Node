@@ -160,6 +160,21 @@ describe('assertCanExecute — meter mode (meterMode: true)', () => {
     })).resolves.toEqual({ degraded: false });
   });
 
+  test('resolves when meterUsed > meterQuota but extras cover the overflow (headroom clamps to 0)', async () => {
+    const assertCanExecute = await setupMocks(meterConfig);
+    mockSubscriptionRepository.findByOrganization.mockResolvedValue({ status: 'active', pastDueSince: null });
+    // meterUsed is $inc'd past meterQuota; the overflow (6000 - 5000 = 1000) is already
+    // debited from extras. remaining must be Math.max(0, 5000 - 6000) + 500 = 500 (extras),
+    // NOT (5000 - 6000) + 500 = -500 which would wrongly deny with a positive extras balance.
+    mockBillingUsageService.getMeter.mockResolvedValue({ meterUsed: 6000, meterQuota: 5000 });
+    mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(500);
+
+    await expect(assertCanExecute({
+      orgId: ORG_ID, organization: BASE_ORG, user: { roles: ['user'] },
+      resource: 'scraps', action: 'execute',
+    })).resolves.toEqual({ degraded: false });
+  });
+
   test('throws AppError status 402 METER_EXHAUSTED when meter is exhausted', async () => {
     const assertCanExecute = await setupMocks(meterConfig);
     mockSubscriptionRepository.findByOrganization.mockResolvedValue({ status: 'active', pastDueSince: null });

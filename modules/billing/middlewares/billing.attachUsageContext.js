@@ -42,7 +42,9 @@ const attachUsageContext = async (req, res, next) => {
 
     const meterUsed = meter?.meterUsed ?? 0;
     const meterQuota = meter?.meterQuota ?? 0;
-    const remaining = (meterQuota - meterUsed) + extrasBalance;
+    // Clamp plan headroom to 0 so overflow past quota is not double-counted against
+    // the extras balance (mirrors billing.quota.service enforcement).
+    const remaining = Math.max(0, meterQuota - meterUsed) + extrasBalance;
 
     req.meterContext = {
       used: meterUsed,

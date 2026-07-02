@@ -138,7 +138,10 @@ async function assertCanExecute({ orgId, organization, user, resource, action })
       meterQuota = usage.meterQuota ?? 0;
     }
 
-    const remaining = (meterQuota - meterUsed) + extrasBalance;
+    // Clamp plan headroom to 0: meterUsed is $inc'd uncapped past meterQuota, and the
+    // overflow units are also debited from extrasBalance. Without the clamp the same
+    // overflow is subtracted twice, denying paying orgs that still hold extras.
+    const remaining = Math.max(0, meterQuota - meterUsed) + extrasBalance;
     if (remaining <= 0) {
       throw new AppError('Meter exhausted', {
         status: 402,
