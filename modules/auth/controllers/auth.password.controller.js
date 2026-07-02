@@ -163,7 +163,8 @@ const updatePassword = async (req, res) => {
     if (!(await AuthService.comparePassword(req.body.currentPassword, user.password)))
       return responses.error(res, 422, 'Unprocessable Entity', 'Current password is incorrect')();
     if (req.body.newPassword !== req.body.verifyPassword) return responses.error(res, 422, 'Unprocessable Entity', 'Passwords do not match')();
-    password = AuthService.checkPassword(req.body.newPassword);
+    const checkedPassword = AuthService.checkPassword(req.body.newPassword);
+    password = await AuthService.hashPassword(checkedPassword);
     user = await UserService.update(user, { password }, 'recover');
     return res
       .status(200)
