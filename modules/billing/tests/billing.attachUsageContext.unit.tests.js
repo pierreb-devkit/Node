@@ -107,6 +107,21 @@ describe('billing.attachUsageContext middleware unit tests:', () => {
     expect(next).toHaveBeenCalled();
   });
 
+  test('should clamp plan headroom to 0 when meterUsed exceeds meterQuota', async () => {
+    mockBillingUsageService.getMeter.mockResolvedValue({
+      meterUsed: 6000,
+      meterQuota: 5000,
+      meterBreakdown: {},
+    });
+    mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(500);
+
+    await attachUsageContext(req, res, next);
+
+    // remaining = Math.max(0, 5000 - 6000) + 500 = 500 (extras only), NOT -500
+    expect(res.setHeader).toHaveBeenCalledWith('X-Meter-Remaining', '500');
+    expect(next).toHaveBeenCalled();
+  });
+
   test('should be a no-op when meterMode is false', async () => {
     mockConfig.billing.meterMode = false;
 
