@@ -440,6 +440,31 @@ const token = async (req, res) => {
 };
 
 /**
+ * Known OAuth providers — used to validate the `provider` argument and `key` argument
+ * before constructing dynamic query paths, preventing prototype-pollution-style injections.
+ */
+const ALLOWED_PROVIDERS = new Set(['google', 'apple']);
+const ALLOWED_PROVIDER_KEYS = new Set(['sub', 'id', 'email']);
+
+/**
+ * @desc Check whether `:strategy` (from `req.params.strategy`) is both an allowlisted
+ * provider AND actually registered with passport at boot time. A provider in
+ * ALLOWED_PROVIDERS is only registered (modules/auth/strategies/local/{provider}.js)
+ * when its config carries valid credentials — otherwise passport never sees it.
+ * Guards the `/api/auth/:strategy` and `/api/auth/:strategy/callback` routes so an
+ * unknown or disabled strategy name is rejected with a clean 404 before it can reach
+ * passport.authenticate(), which otherwise throws synchronously ("Unknown
+ * authentication strategy") for an unregistered name.
+ * `passport._strategy` is documented `@api private` in passport's own source, but it
+ * is the single source of truth for "is this strategy registered" — asking config
+ * directly would mean duplicating each provider's own credential-presence check here
+ * and risking drift from modules/auth/strategies/local/*.js over time.
+ * @param {string} strategy - strategy name from req.params.strategy
+ * @returns {boolean} true when strategy is both allowlisted and registered with passport
+ */
+const isEnabledOAuthProvider = (strategy) => ALLOWED_PROVIDERS.has(strategy) && Boolean(passport._strategy(strategy));
+
+/**
  * @desc Endpoint for oautCall
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
@@ -447,15 +472,12 @@ const token = async (req, res) => {
  */
 const oauthCall = (req, res, next) => {
   const strategy = req.params.strategy;
-  passport.authenticate(strategy)(req, res, next);
+  if (!isEnabledOAuthProvider(strategy)) {
+    return next(new AppError('OAuth provider not supported', { status: 404, code: 'OAUTH_PROVIDER_NOT_FOUND' }));
+  }
+  // session: false — stateless JWT stack, no express-session middleware is mounted.
+  return passport.authenticate(strategy, { session: false })(req, res, next);
 };
-
-/**
- * Known OAuth providers — used to validate the `provider` argument and `key` argument
- * before constructing dynamic query paths, preventing prototype-pollution-style injections.
- */
-const ALLOWED_PROVIDERS = new Set(['google', 'apple']);
-const ALLOWED_PROVIDER_KEYS = new Set(['sub', 'id', 'email']);
 
 /**
  * @desc Resolve or create a user from an OAuth profile. Lookup order:
@@ -659,12 +681,19 @@ const oauthErrorRedirect = (res, err, fallbackTitle) => {
  */
 const oauthCallback = async (req, res, next) => {
   const strategy = req.params.strategy;
+  if (!isEnabledOAuthProvider(strategy)) {
+    return next(new AppError('OAuth provider not supported', { status: 404, code: 'OAUTH_PROVIDER_NOT_FOUND' }));
+  }
   // The identity is always derived server-side from the provider's response via
   // passport.authenticate(). The part that was previously unsafe was trusting a
   // client-asserted identity from the request body (email, key, value) with no
   // provider-token verification — a caller who knows a victim's identifier could
   // have minted that victim's session. That branch is now removed entirely.
-  passport.authenticate(strategy, (err, user) => {
+  // No `{ session: false }` here: passport.authenticate()'s callback form (a
+  // function as the 2nd/3rd arg) never calls req.logIn() itself — session
+  // establishment is entirely the caller's responsibility below (JWT + cookie,
+  // no express-session) — so the `session` option has nothing to act on.
+  return passport.authenticate(strategy, (err, user) => {
     if (err) {
       logger.error(
         { err: { message: err?.message, code: err?.code, stack: err?.stack }, strategy },

@@ -656,6 +656,11 @@ describe('Auth integration tests:', () => {
 
     test('should set tokenCookieOptions and redirect on classic web oAuth success', async () => {
       const mockUserId = 'mock-oauth-user-id-123';
+      // Simulate 'google' being registered with passport (isEnabledOAuthProvider's
+      // guard check) — this test targets oauthCallback's post-authenticate
+      // handling, not the provider-registration guard itself (covered separately
+      // for oauthCall).
+      const strategySpy = jest.spyOn(passport, '_strategy').mockReturnValue({});
       const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
         (strategy, callback) => () => callback(null, { id: mockUserId }),
       );
@@ -675,9 +680,11 @@ describe('Auth integration tests:', () => {
       expect(redirectCalls[0]).toMatchObject({ code: 302 });
       expect(redirectCalls[0].url).toMatch(/\/token$/);
       authenticateSpy.mockRestore();
+      strategySpy.mockRestore();
     });
 
     test('should handle GET callback when req.body is undefined (Express 5)', async () => {
+      const strategySpy = jest.spyOn(passport, '_strategy').mockReturnValue({});
       const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
         (strategy, callback) => () => callback(null, { id: 'mock-get-cb-user' }),
       );
@@ -694,11 +701,13 @@ describe('Auth integration tests:', () => {
       expect(cookies.TOKEN).toBeDefined();
       expect(redirectCalls[0]).toMatchObject({ code: 302 });
       authenticateSpy.mockRestore();
+      strategySpy.mockRestore();
     });
 
     test('should log and redirect with canonical error envelope when classic web oAuth errors out', async () => {
       const oauthErr = new Error('token exchange failed');
       oauthErr.code = 'OAUTH_TOKEN_EXCHANGE';
+      const strategySpy = jest.spyOn(passport, '_strategy').mockReturnValue({});
       const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
         (strategy, callback) => () => callback(oauthErr, null),
       );
@@ -743,6 +752,7 @@ describe('Auth integration tests:', () => {
 
       loggerSpy.mockRestore();
       authenticateSpy.mockRestore();
+      strategySpy.mockRestore();
     });
 
     test('should redirect with canonical envelope preserving AppError details.message', async () => {
@@ -751,6 +761,7 @@ describe('Auth integration tests:', () => {
         code: 'VALIDATION_ERROR',
         details: { message: 'Registration is currently deactivated' },
       });
+      const strategySpy = jest.spyOn(passport, '_strategy').mockReturnValue({});
       const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
         (strategy, callback) => () => callback(oauthErr, null),
       );
@@ -781,9 +792,11 @@ describe('Auth integration tests:', () => {
 
       loggerSpy.mockRestore();
       authenticateSpy.mockRestore();
+      strategySpy.mockRestore();
     });
 
     test('should fall back to OAUTH_ERROR code for plain Error without code', async () => {
+      const strategySpy = jest.spyOn(passport, '_strategy').mockReturnValue({});
       const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
         (strategy, callback) => () => callback(new Error('boom'), null),
       );
@@ -805,9 +818,11 @@ describe('Auth integration tests:', () => {
 
       loggerSpy.mockRestore();
       authenticateSpy.mockRestore();
+      strategySpy.mockRestore();
     });
 
     test('should log and redirect with canonical envelope when no user is returned by passport', async () => {
+      const strategySpy = jest.spyOn(passport, '_strategy').mockReturnValue({});
       const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
         (strategy, callback) => () => callback(null, null),
       );
@@ -851,6 +866,7 @@ describe('Auth integration tests:', () => {
 
       loggerSpy.mockRestore();
       authenticateSpy.mockRestore();
+      strategySpy.mockRestore();
     });
 
     test('should find an existing OAuth user via checkOAuthUserProfile', async () => {
