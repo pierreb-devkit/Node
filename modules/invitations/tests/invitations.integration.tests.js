@@ -177,11 +177,17 @@ describe('Signup invitations:', () => {
     });
 
     test('the alias did NOT shadow the greedy /api/auth/:strategy wildcard (OAuth routing intact)', async () => {
-      // /api/auth/google must still hit the oauth strategy handler, not 404 as an
-      // unknown invitations sub-path. Passport returns a 3xx redirect (or a strategy
-      // 4xx/5xx) — the contract asserted here is simply "not a 404 Not Found".
+      // /api/auth/google must still hit the OAuth :strategy route handler, not
+      // fall through as an unmatched invitations sub-path. 'google' is
+      // allowlisted but unregistered in test config (no clientID) so the
+      // handler's own guard (#3900) now returns a deliberate 404 with
+      // `code: OAUTH_PROVIDER_NOT_FOUND` — asserting on that code (rather than
+      // just "not a 404") is what proves the wildcard route was actually
+      // matched and its handler ran, as opposed to Express's own generic
+      // route-miss 404 the alias mount could otherwise cause.
       const res = await request(app).get('/api/auth/google');
-      expect(res.status).not.toBe(404);
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('OAUTH_PROVIDER_NOT_FOUND');
     });
   });
 

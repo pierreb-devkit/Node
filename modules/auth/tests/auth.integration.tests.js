@@ -558,6 +558,15 @@ describe('Auth integration tests:', () => {
       }
     });
 
+    // Safety net alongside each test's own manual mockRestore(): jest.config.js
+    // only sets `clearMocks` (resets calls, not implementations), so a spy left
+    // dangling by a failing assertion earlier in a test would otherwise leak its
+    // stubbed truthy passport._strategy()/mockRejectedValueOnce() into later
+    // tests in this block.
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
     test('should create user with default provider when none is specified', async () => {
       const result = await UserService.create({
         firstName: 'No',
@@ -625,6 +634,18 @@ describe('Auth integration tests:', () => {
       // identity payload. A request that claims to be a known account by email
       // (no server-side provider-token verification) must be rejected, not
       // turned into a victim session. The callback always delegates to passport.
+      //
+      // Simulate 'google' being registered with passport (bypasses the
+      // isEnabledOAuthProvider guard, covered separately for oauthCall/oauthCallback)
+      // and stub passport.authenticate the same way a real OAuth2 strategy would
+      // behave for this request: there is no valid provider code, so authentication
+      // fails regardless of what the attacker put in the body. Without this stub the
+      // request would 404 at the guard before ever reaching the identity-trust logic
+      // this test protects.
+      const strategySpy = jest.spyOn(passport, '_strategy').mockReturnValue({});
+      const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
+        (strategy, callback) => () => callback(null, false),
+      );
       const victimEmail = 'oauthcb-victim@test.com';
       let victim;
       try {
@@ -649,13 +670,26 @@ describe('Auth integration tests:', () => {
         const tokenCookie = result.headers['set-cookie']?.find((c) => c.startsWith('TOKEN='));
         expect(tokenCookie).toBeUndefined();
         expect(result.status).not.toBe(200);
+        // Confirm the request reached oauthCallback's post-authenticate
+        // identity-trust logic (not the 404 provider-registration guard) —
+        // the redirect must carry the "no user" error, never the guard's code.
+        expect(result.status).toBe(302);
+        expect(result.headers.location).toContain('/token');
+        expect(result.headers.location).not.toContain('OAUTH_PROVIDER_NOT_FOUND');
       } finally {
+        authenticateSpy.mockRestore();
+        strategySpy.mockRestore();
         try { if (victim) await UserService.remove(victim); } catch (_) { /* cleanup */ }
       }
     });
 
     test('should set tokenCookieOptions and redirect on classic web oAuth success', async () => {
       const mockUserId = 'mock-oauth-user-id-123';
+      // Simulate 'google' being registered with passport (isEnabledOAuthProvider's
+      // guard check) — this test targets oauthCallback's post-authenticate
+      // handling, not the provider-registration guard itself (covered separately
+      // for oauthCall).
+      const strategySpy = jest.spyOn(passport, '_strategy').mockReturnValue({});
       const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
         (strategy, callback) => () => callback(null, { id: mockUserId }),
       );
@@ -675,9 +709,11 @@ describe('Auth integration tests:', () => {
       expect(redirectCalls[0]).toMatchObject({ code: 302 });
       expect(redirectCalls[0].url).toMatch(/\/token$/);
       authenticateSpy.mockRestore();
+      strategySpy.mockRestore();
     });
 
     test('should handle GET callback when req.body is undefined (Express 5)', async () => {
+      const strategySpy = jest.spyOn(passport, '_strategy').mockReturnValue({});
       const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
         (strategy, callback) => () => callback(null, { id: 'mock-get-cb-user' }),
       );
@@ -694,11 +730,13 @@ describe('Auth integration tests:', () => {
       expect(cookies.TOKEN).toBeDefined();
       expect(redirectCalls[0]).toMatchObject({ code: 302 });
       authenticateSpy.mockRestore();
+      strategySpy.mockRestore();
     });
 
     test('should log and redirect with canonical error envelope when classic web oAuth errors out', async () => {
       const oauthErr = new Error('token exchange failed');
       oauthErr.code = 'OAUTH_TOKEN_EXCHANGE';
+      const strategySpy = jest.spyOn(passport, '_strategy').mockReturnValue({});
       const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
         (strategy, callback) => () => callback(oauthErr, null),
       );
@@ -743,6 +781,7 @@ describe('Auth integration tests:', () => {
 
       loggerSpy.mockRestore();
       authenticateSpy.mockRestore();
+      strategySpy.mockRestore();
     });
 
     test('should redirect with canonical envelope preserving AppError details.message', async () => {
@@ -751,6 +790,7 @@ describe('Auth integration tests:', () => {
         code: 'VALIDATION_ERROR',
         details: { message: 'Registration is currently deactivated' },
       });
+      const strategySpy = jest.spyOn(passport, '_strategy').mockReturnValue({});
       const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
         (strategy, callback) => () => callback(oauthErr, null),
       );
@@ -781,9 +821,11 @@ describe('Auth integration tests:', () => {
 
       loggerSpy.mockRestore();
       authenticateSpy.mockRestore();
+      strategySpy.mockRestore();
     });
 
     test('should fall back to OAUTH_ERROR code for plain Error without code', async () => {
+      const strategySpy = jest.spyOn(passport, '_strategy').mockReturnValue({});
       const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
         (strategy, callback) => () => callback(new Error('boom'), null),
       );
@@ -805,9 +847,11 @@ describe('Auth integration tests:', () => {
 
       loggerSpy.mockRestore();
       authenticateSpy.mockRestore();
+      strategySpy.mockRestore();
     });
 
     test('should log and redirect with canonical envelope when no user is returned by passport', async () => {
+      const strategySpy = jest.spyOn(passport, '_strategy').mockReturnValue({});
       const authenticateSpy = jest.spyOn(passport, 'authenticate').mockImplementationOnce(
         (strategy, callback) => () => callback(null, null),
       );
@@ -851,6 +895,7 @@ describe('Auth integration tests:', () => {
 
       loggerSpy.mockRestore();
       authenticateSpy.mockRestore();
+      strategySpy.mockRestore();
     });
 
     test('should find an existing OAuth user via checkOAuthUserProfile', async () => {
