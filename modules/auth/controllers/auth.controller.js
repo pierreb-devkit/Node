@@ -473,7 +473,7 @@ const isEnabledOAuthProvider = (strategy) => ALLOWED_PROVIDERS.has(strategy) && 
 const oauthCall = (req, res, next) => {
   const strategy = req.params.strategy;
   if (!isEnabledOAuthProvider(strategy)) {
-    return next(new AppError('OAuth provider not supported', { status: 404, code: 'OAUTH_PROVIDER_NOT_FOUND' }));
+    return next(new AppError('oAuth, unsupported provider', { status: 404, code: 'OAUTH_PROVIDER_NOT_FOUND' }));
   }
   // session: false — stateless JWT stack, no express-session middleware is mounted.
   return passport.authenticate(strategy, { session: false })(req, res, next);
@@ -682,7 +682,7 @@ const oauthErrorRedirect = (res, err, fallbackTitle) => {
 const oauthCallback = async (req, res, next) => {
   const strategy = req.params.strategy;
   if (!isEnabledOAuthProvider(strategy)) {
-    return next(new AppError('OAuth provider not supported', { status: 404, code: 'OAUTH_PROVIDER_NOT_FOUND' }));
+    return next(new AppError('oAuth, unsupported provider', { status: 404, code: 'OAUTH_PROVIDER_NOT_FOUND' }));
   }
   // The identity is always derived server-side from the provider's response via
   // passport.authenticate(). The part that was previously unsafe was trusting a
