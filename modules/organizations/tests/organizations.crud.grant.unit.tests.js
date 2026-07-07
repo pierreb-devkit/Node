@@ -86,4 +86,12 @@ describe('organizations.crud.service.create signup grant:', () => {
 
     expect(mockGrantOnSignup).toHaveBeenCalledWith({ orgId: 'org2', planId: 'free' });
   });
+
+  test('does not credit the grant when membership creation fails (rollback exits before the grant)', async () => {
+    mockMembershipCreate.mockRejectedValueOnce(new Error('membership boom'));
+    const user = { id: 'u1', _id: 'u1', email: 'a@b.com', emailVerified: true };
+
+    await expect(OrgCrudService.create({ name: 'Rollback Org' }, user)).rejects.toThrow();
+    expect(mockGrantOnSignup).not.toHaveBeenCalled();
+  });
 });
