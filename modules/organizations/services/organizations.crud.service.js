@@ -23,6 +23,7 @@ const normalizeDomain = (value = '') => value.trim().toLowerCase();
 import OrganizationsRepository from '../repositories/organizations.repository.js';
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
 import UserService from '../../users/services/users.service.js';
+import BillingSignupGrantService from '../../billing/services/billing.signupGrant.service.js';
 import { slugify } from '../helpers/organizations.slug.js';
 import { MEMBERSHIP_STATUSES, MEMBERSHIP_ROLES } from '../lib/constants.js';
 import { runOrganizationRemovedHandlers } from '../lib/orgRemoval.registry.js';
@@ -119,6 +120,14 @@ const create = async (body, user) => {
     await OrganizationsRepository.remove(result).catch((e) => logger.error('organizations.crud.create: rollback organization failed', { message: e?.message, stack: e?.stack }));
     throw err;
   }
+
+  // Best-effort signup grant — mirrors organizations.service.js::createOrganizationForUser.
+  // Every org-creation path (including this generic one behind POST /api/organizations)
+  // must credit the configured one-shot signupGrant, else a fresh org on a plan that
+  // defines one starts at 0 balance. Called outside the rollback try/catch so a billing
+  // failure never rolls back the org; grantOnSignup never throws and is idempotent
+  // (refId signup_grant-<orgId>). No-op when the plan defines no signupGrant.
+  await BillingSignupGrantService.grantOnSignup({ orgId: result._id.toString(), planId: result.plan || 'free' });
 
   return result;
 };
