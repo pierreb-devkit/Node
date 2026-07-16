@@ -206,6 +206,79 @@ describe('Organizations integration tests:', () => {
     });
   });
 
+  describe('POST /api/organizations/:organizationId/switch (#3963 — sanitized response)', () => {
+    let switchAgent;
+    let MembershipService;
+    let user;
+    let org2;
+
+    beforeAll(async () => {
+      config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
+      switchAgent = request.agent((await bootstrap()).app);
+      MembershipService = (await import(path.resolve('./modules/organizations/services/organizations.membership.service.js'))).default;
+
+      const signupRes = await switchAgent
+        .post('/api/auth/signup')
+        .send({
+          firstName: 'Switch',
+          lastName: 'User',
+          email: 'switch-3963@test.com',
+          password: 'W@os.jsI$Aw3$0m3',
+          provider: 'local',
+        })
+        .expect(200);
+      user = signupRes.body.user;
+
+      // A second organization the user OWNS (owner role needed — `switch` maps to
+      // the CASL `create` action on Organization, which only the owner's `manage`
+      // wildcard grants), so the switch has somewhere valid to go.
+      org2 = await OrganizationsRepository.create({ name: 'Switch Target Org', slug: `switch-target-3963-${Date.now()}` });
+      await MembershipService.create({ userId: user._id || user.id, organizationId: org2._id, role: 'owner' });
+
+      // Simulate what a real production user document carries — a linked OAuth
+      // account and a stray reset token — so the assertions below prove the
+      // response strips them rather than merely "happening" not to have them.
+      await UserService.updateById(user.id, {
+        providerData: { accessToken: 'leaked-switch-access-token', refreshToken: 'leaked-switch-refresh-token' },
+        resetPasswordToken: 'leaked-switch-reset-token',
+        resetPasswordExpires: new Date(Date.now() + 3600000),
+      });
+    });
+
+    test('response user must not leak password/providerData/reset tokens, and must keep legit fields', async () => {
+      const result = await switchAgent.post(`/api/organizations/${org2._id}/switch`).expect(200);
+
+      expect(result.body.type).toBe('success');
+      expect(result.body.message).toBe('organization switched');
+      const responseUser = result.body.data.user;
+      expect(responseUser).toBeInstanceOf(Object);
+
+      // Sensitive fields — must be ABSENT
+      expect(responseUser.password).toBeUndefined();
+      expect(responseUser.providerData).toBeUndefined();
+      expect(responseUser.additionalProvidersData).toBeUndefined();
+      expect(responseUser.resetPasswordToken).toBeUndefined();
+      expect(responseUser.resetPasswordExpires).toBeUndefined();
+      expect(responseUser.emailVerificationToken).toBeUndefined();
+      expect(responseUser.emailVerificationExpires).toBeUndefined();
+      expect(responseUser.failedLoginAttempts).toBeUndefined();
+      expect(responseUser.lockUntil).toBeUndefined();
+      expect(JSON.stringify(result.body)).not.toContain('leaked-switch-access-token');
+      expect(JSON.stringify(result.body)).not.toContain('leaked-switch-refresh-token');
+      expect(JSON.stringify(result.body)).not.toContain('leaked-switch-reset-token');
+
+      // Legit fields — must be PRESENT and correct
+      expect(responseUser.id).toBe(String(user.id));
+      expect(responseUser.email).toBe(user.email);
+      expect(responseUser.roles).toBeInstanceOf(Array);
+      expect(String(responseUser.currentOrganization._id || responseUser.currentOrganization)).toBe(String(org2._id));
+    });
+
+    afterAll(async () => {
+      await cleanupUser(user);
+    });
+  });
+
   // Mongoose disconnect
   afterAll(async () => {
     config.organizations = { ...originalOrganizations };

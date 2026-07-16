@@ -198,6 +198,32 @@ describe('User integration tests:', () => {
       }
     });
 
+    // #3963: providerData holds OAuth access+refresh tokens (see
+    // auth/strategies/local/{google,apple}.js). A local-signup user's providerData
+    // is an empty object, which would trivially pass a naive "is it falsy" check —
+    // simulate a linked OAuth account (real tokens) to prove the leak is actually
+    // closed, not just absent because this fixture never had anything to leak.
+    test('should NOT include providerData (OAuth tokens) in /me response', async () => {
+      try {
+        await UserService.updateById(user.id, {
+          providerData: { accessToken: 'leaked-me-access-token', refreshToken: 'leaked-me-refresh-token' },
+        });
+
+        const result = await agent.get('/api/users/me').expect(200);
+        expect(result.body.data.providerData).toBeUndefined();
+        expect(JSON.stringify(result.body.data)).not.toContain('leaked-me-access-token');
+        expect(JSON.stringify(result.body.data)).not.toContain('leaked-me-refresh-token');
+
+        // legit fields still present
+        expect(result.body.data.email).toBe(user.email);
+        expect(result.body.data.id).toBe(String(user.id));
+        expect(result.body.data.roles).toBeInstanceOf(Array);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
     test('should include terms in user details after signing them', async () => {
       // Sign terms first
       try {
