@@ -83,13 +83,17 @@ const config = {
     },
     // Path segments consumed by `lib/helpers/redactUrl.js` (`redactPathSecrets`)
     // to redact single-use secrets carried as a PATH parameter (e.g.
-    // `/api/auth/reset/:token`). A module that adds its own token-bearing route
-    // extends this list from its own config instead of editing shared lib/.
-    sensitivePathMarkers: ['reset', 'verify', 'verify-email'],
+    // `/api/auth/reset/:token`). Extension-only: unioned with the built-in
+    // defaults in lib/helpers/redactUrl.js, so a module adds its own
+    // token-bearing route here without editing shared lib/ or duplicating
+    // ['reset', 'verify', 'verify-email'], which already apply unconditionally.
+    sensitivePathMarkers: [],
     // Query-string parameter names consumed by `lib/helpers/redactUrl.js`
     // (`redactUrl`) to redact single-use secrets carried in the query string
-    // (e.g. `POST /api/auth/signup?inviteToken=…`).
-    sensitiveQueryKeys: ['inviteToken'],
+    // (e.g. `POST /api/auth/signup?inviteToken=…`). Extension-only: unioned
+    // with the built-in defaults in lib/helpers/redactUrl.js (already
+    // includes 'inviteToken' unconditionally).
+    sensitiveQueryKeys: [],
   },
   csrf: {
     csrf: false,
