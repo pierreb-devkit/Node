@@ -61,6 +61,26 @@ The issue `body` is the **primary scope source** — read it, not just the title
 - Fresh issue with matching references → continue silently.
 - If the user aborts at this gate, roll back the FULL claim from step 3 — `gh issue edit <N> --remove-assignee @me` AND delete the `WIP —` comment just posted (`gh api -X DELETE repos/<owner>/<repo>/issues/comments/<comment-id>` — capture the id when posting, or take the last own `WIP —` comment). Leaving the comment behind would make step 2 treat the aborted claim as resumable on the next run.
 
+### 4b. Non-interactive invocation (orchestrated runs)
+
+When the invoker's brief declares a **non-interactive run** (an orchestrating
+agent executes the issue headlessly — no human present to answer), every
+STOP-and-ask in this skill becomes a structured final line instead of a
+question:
+
+| Interactive behavior | Non-interactive replacement |
+|---|---|
+| Collision prompt (any `y/N` row of the table above) | Emit `SKIP: collision — <detail>` and stop |
+| `gh` command failure (step 1) or `state == closed` | Emit `STOP: claim — <error>` and stop |
+| Aged-scope drift confirmation (step 4) | Emit `STOP: freshness — <drift summary>` and stop |
+| Phase 0 "Present plan & wait for validation" | Satisfied by the issue body when the brief states the scope was validated upstream; insufficient scope → emit `STOP: scope — <gap>` and stop |
+
+Never wait on a prompt in a non-interactive run. If the stop happens after
+the claim (step 3) already landed, roll the claim back first (step 4's
+rollback: `--remove-assignee` + delete the `WIP —` comment) so the aborted
+attempt doesn't read as live work on the next run. Interactive sessions keep
+the exact behavior above.
+
 ### 5. Proceed to Phase 0
 
 Continue to scope analysis below.
@@ -104,7 +124,8 @@ For each user-facing flow this feature creates or modifies, identify:
 - Users impacted + notification plan
 - Open questions or scope decisions
 
-**Wait for user validation before coding.**
+**Wait for user validation before coding.** (Non-interactive runs: Phase 0.0
+§4b — a validated issue body satisfies this step; never wait.)
 
 ## Phase 1 — Implementation
 
