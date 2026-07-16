@@ -12,7 +12,6 @@ import UserService from '../../users/services/users.service.js';
 import { slugify, generateOrganizationSlug } from '../helpers/organizations.slug.js';
 import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../lib/constants.js';
 import organizationEvents from '../lib/events.js';
-import BillingSignupGrantService from '../../billing/services/billing.signupGrant.service.js';
 import { isPublicDomain, normalizeEmailDomain } from './organizations.domain.js';
 
 /**
@@ -96,9 +95,17 @@ const createOrganizationForUser = async ({ name, slug, domain, user, slugGenerat
     }
 
     if (created) {
-      // N2: best-effort signup grant — called outside the try/catch so billing failure
-      // never triggers org/membership rollback. grantOnSignup always resolves (never throws).
-      await BillingSignupGrantService.grantOnSignup({ orgId: organization._id.toString(), planId: 'free' });
+      // organization.created (#3952) — N2 signup grant moved off a direct billing import onto
+      // this event; billing subscribes from billing.init.js and credits the one-shot signupGrant.
+      // Emitted outside the try/catch above so billing failure never triggers org/membership
+      // rollback; the listener owns its own guard (never throws/rejects out). Fire-and-forget,
+      // synchronous emit — this try/catch only guards a SYNCHRONOUS listener throw (mirrors
+      // emitProvisioned below / see ../lib/events.js).
+      try {
+        organizationEvents.emit('organization.created', { orgId: organization._id.toString(), planId: 'free' });
+      } catch (err) {
+        logger.warn('organizations: organization.created listener threw', { message: err?.message });
+      }
       return { organization, membership };
     }
   }
@@ -124,8 +131,9 @@ const createOrganizationForUser = async ({ name, slug, domain, user, slugGenerat
  *   If domainMatching is on, the user's email domain is not public, and an existing org matches,
  *   a `suggestedJoin: { orgId, orgName }` hint (name-only) is returned alongside the new org.
  *
- * signupGrant: credited inside createOrganizationForUser (best-effort, never throws). Called
- * exactly once per real new org — no double-credit possible.
+ * signupGrant: createOrganizationForUser emits `organization.created` (#3952) exactly once per
+ * real new org — no double-credit possible; billing's subscriber (billing.init.js) credits the
+ * grant asynchronously, best-effort, never throwing back into this flow.
  *
  * @param {Object} user - The user object returned by UserService.create (with id, email, firstName, lastName).
  * @returns {Promise<{organization: Object|null, membership: Object|null, abilities: Array, emailVerificationRequired?: boolean, suggestedJoin?: {orgId: string, orgName: string}}>}

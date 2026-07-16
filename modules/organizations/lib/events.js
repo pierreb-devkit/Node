@@ -7,6 +7,20 @@ import { EventEmitter } from 'events';
  * Singleton emitter for organization events. Config-free / import-safe.
  *
  * Events:
+ *   - `organization.created` — emitted (#3952) by BOTH org-creation call sites
+ *     (organizations.crud.service.js::create, the generic POST /api/organizations path, AND
+ *     organizations.service.js::createOrganizationForUser, the signup path) immediately after
+ *     the organization + owner membership are durably created. This is the sanctioned seam for
+ *     billing's one-shot signupGrant (billing.init.js), replacing a direct import of
+ *     BillingSignupGrantService from organizations — the organizations module must stay
+ *     removable without billing. Fire-and-forget; the emit-site try/catch only guards a
+ *     SYNCHRONOUS listener throw — see the `organization.provisioned` note below for the
+ *     async-rejection caveat, which applies identically here (the listener owns its own guard).
+ *     Payload: {
+ *       orgId:  String — the freshly created organization's id
+ *       planId: String — the plan to evaluate the grant against (both call sites pass 'free' —
+ *         the only plan a fresh org can have at creation time)
+ *     }
  *   - `organization.provisioned` — emitted (#3844) by OrganizationsService.handleSignupOrganization
  *     on EVERY exit path that returns a real organization: the fresh-create paths AND the A4
  *     idempotent-convergence path (downstream consumers must be idempotent — a converged retry

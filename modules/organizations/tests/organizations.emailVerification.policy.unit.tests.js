@@ -88,11 +88,6 @@ jest.unstable_mockModule('../helpers/organizations.slug.js', () => ({
   generateOrganizationSlug: jest.fn().mockResolvedValue('test-slug'),
 }));
 
-const mockBillingGrantOnSignup = jest.fn().mockResolvedValue(undefined);
-jest.unstable_mockModule('../../billing/services/billing.signupGrant.service.js', () => ({
-  default: { grantOnSignup: mockBillingGrantOnSignup },
-}));
-
 // --- Dynamic imports after mocks ---
 
 const { default: OrganizationsService } = await import('../services/organizations.service.js');

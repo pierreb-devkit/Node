@@ -103,6 +103,13 @@ describe('Billing referral grant (#3842):', () => {
       .send({ email: ADMIN_EMAIL, password: PASSWORD })
       .expect(200);
 
+    // #3952: the admin's own org creation also fires `organization.created` → billing's
+    // fire-and-forget signupGrant listener. Wait for it to settle here so every downstream
+    // balance-delta assertion (referral credits) starts from a stable, fully-settled baseline.
+    const adminOrgId = String(brut.currentOrganization?._id || brut.currentOrganization);
+    const adminGrant = await waitForLedgerEntry(adminOrgId, `signup_grant-${adminOrgId}`);
+    expect(adminGrant).not.toBeNull();
+
     return adminAgent;
   }
 
@@ -165,6 +172,11 @@ describe('Billing referral grant (#3842):', () => {
 
     const inviterBalanceAfter = await BillingExtraBalanceRepository.getBalance(inviterOrgId);
     expect(inviterBalanceAfter - inviterBalanceBefore).toBe(REFERRER_UNITS);
+    // #3952: the referee's own org creation also fires `organization.created` → signupGrant.
+    // Wait for it to settle so the "unchanged after replay" check below (step 5) has a stable
+    // snapshot — otherwise a late-landing signup grant could be mistaken for a replay double-credit.
+    const refereeGrant = await waitForLedgerEntry(refereeOrgId, `signup_grant-${refereeOrgId}`);
+    expect(refereeGrant).not.toBeNull();
     const refereeBalanceAfter = await BillingExtraBalanceRepository.getBalance(refereeOrgId);
 
     // 4. Replay safety (deterministic): a direct service replay is the exact grant path

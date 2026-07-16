@@ -23,7 +23,7 @@ const normalizeDomain = (value = '') => value.trim().toLowerCase();
 import OrganizationsRepository from '../repositories/organizations.repository.js';
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
 import UserService from '../../users/services/users.service.js';
-import BillingSignupGrantService from '../../billing/services/billing.signupGrant.service.js';
+import organizationEvents from '../lib/events.js';
 import { slugify } from '../helpers/organizations.slug.js';
 import { MEMBERSHIP_STATUSES, MEMBERSHIP_ROLES } from '../lib/constants.js';
 import { runOrganizationRemovedHandlers } from '../lib/orgRemoval.registry.js';
@@ -121,13 +121,17 @@ const create = async (body, user) => {
     throw err;
   }
 
-  // Best-effort signup grant — mirrors organizations.service.js::createOrganizationForUser.
-  // Every org-creation path (including this generic one behind POST /api/organizations)
-  // must credit the configured one-shot signupGrant, else a fresh org on a plan that
-  // defines one starts at 0 balance. Called outside the rollback try/catch so a billing
-  // failure never rolls back the org; grantOnSignup never throws and is idempotent
-  // (refId signup_grant-<orgId>). No-op when the plan defines no signupGrant.
-  await BillingSignupGrantService.grantOnSignup({ orgId: result._id.toString(), planId: result.plan || 'free' });
+  // organization.created (#3952) — mirrors organizations.service.js::createOrganizationForUser.
+  // Billing subscribes from billing.init.js and credits the configured one-shot signupGrant,
+  // else a fresh org on a plan that defines one starts at 0 balance. Emitted outside the
+  // rollback try/catch so a billing failure never rolls back the org; the listener owns its
+  // idempotence (refId signup_grant-<orgId>) and never throws. Fire-and-forget, synchronous
+  // emit — the try/catch here only guards a SYNCHRONOUS listener throw (see ../lib/events.js).
+  try {
+    organizationEvents.emit('organization.created', { orgId: result._id.toString(), planId: result.plan || 'free' });
+  } catch (err) {
+    logger.warn('organizations: organization.created listener threw', { message: err?.message });
+  }
 
   return result;
 };

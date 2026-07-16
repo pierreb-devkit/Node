@@ -18,6 +18,7 @@ describe('billing.init unit tests:', () => {
   let mockOrganizationEvents;
   let mockUserService;
   let mockInvitationRepository;
+  let mockSignupGrantService;
 
   const mockApp = {};
 
@@ -92,6 +93,13 @@ describe('billing.init unit tests:', () => {
     mockInvitationRepository = { findByAcceptedUserId: jest.fn().mockResolvedValue(null) };
     jest.unstable_mockModule('../../invitations/repositories/invitations.repository.js', () => ({
       default: mockInvitationRepository,
+    }));
+
+    // #3952: the organization.created listener delegates to BillingSignupGrantService — stub it
+    // so the wiring tests stay isolated from the real grant/plan/repository resolution.
+    mockSignupGrantService = { grantOnSignup: jest.fn().mockResolvedValue({ applied: true }) };
+    jest.unstable_mockModule('../services/billing.signupGrant.service.js', () => ({
+      default: mockSignupGrantService,
     }));
 
     // Stub billing.email so boot validator tests don't wire real email listeners
@@ -270,6 +278,57 @@ describe('billing.init unit tests:', () => {
       await expect(handler(undefined)).resolves.toBeUndefined();
       expect(mockUserService.getBrut).not.toHaveBeenCalled();
       expect(mockReferralService.grantForInvitation).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('#3952 signup grant listener (organization.created):', () => {
+    const payload = { orgId: 'org1', planId: 'free' };
+
+    /**
+     * Boot the module and return the registered organization.created handler.
+     * @returns {Promise<Function>} The wired listener.
+     */
+    const getHandler = async () => {
+      await billingInit(mockApp);
+      const createdCall = mockOrganizationEvents.on.mock.calls.find(([evt]) => evt === 'organization.created');
+      expect(createdCall).toBeDefined();
+      return createdCall[1];
+    };
+
+    test('wires the listener on the organizations emitter', async () => {
+      const handler = await getHandler();
+      expect(typeof handler).toBe('function');
+    });
+
+    test('NOT config-gated — delegates to BillingSignupGrantService.grantOnSignup with no referral config set', async () => {
+      // mockConfig.billing has NO referral block — unlike the two referral listeners above,
+      // this one must still fire (grantOnSignup is core signup behavior, not a referral reward).
+      const handler = await getHandler();
+      await handler(payload);
+      expect(mockSignupGrantService.grantOnSignup).toHaveBeenCalledTimes(1);
+      expect(mockSignupGrantService.grantOnSignup).toHaveBeenCalledWith({ orgId: 'org1', planId: 'free' });
+    });
+
+    test('passes the payload through verbatim (orgId + planId from both org-creation call sites)', async () => {
+      const handler = await getHandler();
+      await handler({ orgId: 'org2', planId: 'growth' });
+      expect(mockSignupGrantService.grantOnSignup).toHaveBeenCalledWith({ orgId: 'org2', planId: 'growth' });
+    });
+
+    test('self-guard: a grant REJECTION is swallowed + logged, never escapes the listener', async () => {
+      mockSignupGrantService.grantOnSignup.mockRejectedValue(new Error('mongo down'));
+      const handler = await getHandler();
+      // The emit-site catch (organizations) is sync-only — the async listener must resolve, not reject.
+      await expect(handler(payload)).resolves.toBeUndefined();
+      const errCall = mockLogger.error.mock.calls.find(([msg]) => msg.includes('signup grant failed via organization.created listener'));
+      expect(errCall).toBeDefined();
+      expect(errCall[1]).toMatchObject({ orgId: 'org1', planId: 'free', err: 'mongo down' });
+    });
+
+    test('self-guard: even a malformed payload cannot make the listener throw/reject', async () => {
+      const handler = await getHandler();
+      await expect(handler(undefined)).resolves.toBeUndefined();
+      expect(mockSignupGrantService.grantOnSignup).toHaveBeenCalledWith({ orgId: undefined, planId: undefined });
     });
   });
 
