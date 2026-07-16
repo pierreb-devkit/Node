@@ -205,11 +205,15 @@ const remove = async (organization) => {
   // Remove all memberships for this organization
   await MembershipRepository.deleteMany({ organizationId: orgId });
 
-  // For each affected user, switch to their next available org or set null
+  // For each affected user, switch to their next available org or set null.
+  // Guard against a dangling membership whose populated organizationId is null (ref
+  // to another, already-deleted org) — otherwise `.organizationId._id` throws (#3709,
+  // centralized here from users.service.js's own cascade by #3965).
   await Promise.all(affectedUsers.map(async (u) => {
     const remaining = await MembershipRepository.list({ userId: u._id, status: MEMBERSHIP_STATUSES.ACTIVE });
-    const nextOrg = remaining.length > 0
-      ? (remaining[0].organizationId._id || remaining[0].organizationId)
+    const liveMemberships = remaining.filter((m) => m.organizationId != null);
+    const nextOrg = liveMemberships.length > 0
+      ? (liveMemberships[0].organizationId._id || liveMemberships[0].organizationId)
       : null;
     await UserService.updateById(u._id, { currentOrganization: nextOrg });
   }));

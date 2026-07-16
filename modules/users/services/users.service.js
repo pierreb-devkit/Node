@@ -11,7 +11,6 @@ import mailer from '../../../lib/helpers/mailer/index.js';
 import passwordHelper from '../../../lib/helpers/password.js';
 import UserRepository from '../repositories/users.repository.js';
 import MembershipService from '../../organizations/services/organizations.membership.service.js';
-import OrganizationsRepository from '../../organizations/repositories/organizations.repository.js';
 import MembershipRepository from '../../organizations/repositories/organizations.membership.repository.js';
 import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../../organizations/lib/constants.js';
 import { removeSensitive } from '../utils/sanitizeUser.js';
@@ -176,21 +175,35 @@ const remove = async (user) => {
       // Check if this user is the only owner of the org
       const ownerCount = await MembershipService.count({ organizationId: orgId, role: MEMBERSHIP_ROLES.OWNER, status: MEMBERSHIP_STATUSES.ACTIVE });
       if (ownerCount <= 1) {
-        // Sole owner — delete org and cascade: repair co-member currentOrganization
-        // Step 1: Collect co-members whose currentOrganization points to this org
-        const affectedUsers = await UserRepository.findWithFilter({ currentOrganization: orgId }, '_id');
-        // Step 2: Delete all memberships for this org (including this user's and all co-members')
-        await MembershipService.deleteMany({ organizationId: orgId });
-        // Step 3: For each affected co-member, switch to their next available org or set null
-        await Promise.all(affectedUsers.map(async (u) => {
-          const remaining = await MembershipRepository.list({ userId: u._id, status: MEMBERSHIP_STATUSES.ACTIVE });
-          const liveMemberships = remaining.filter((m) => m.organizationId != null);
-          const nextOrg = liveMemberships.length > 0 ? (liveMemberships[0].organizationId._id || liveMemberships[0].organizationId) : null;
-          await UserRepository.updateById(u._id, { currentOrganization: nextOrg });
-        }));
-        // Step 4: Delete the org (bare remove — org-scoped tasks are intentionally not deleted here)
-        await OrganizationsRepository.remove({ _id: orgId });
-        continue; // memberships for this org already cleaned up
+        // Sole owner — delete the org through the canonical removal seam rather than
+        // duplicating its cascade here. OrganizationsCrudService.remove() already does
+        // everything this branch used to hand-roll (co-member currentOrganization
+        // reassignment, membership cleanup, then runOrganizationRemovedHandlers before
+        // the repository remove) — routing through it is what makes org-scoped tasks
+        // (and any future onOrganizationRemoved consumer) get cleaned up (#3965).
+        //
+        // Lazy import: organizations.crud.service.js statically imports this module
+        // (UserService), so a static import here would create a cycle. Matches the
+        // lazy-import pattern already used for the same reason in billing.init.js /
+        // billing.referral.service.js.
+        //
+        // Best-effort at this call site: a downstream onOrganizationRemoved handler
+        // error (e.g. task cleanup) propagates out of the crud service by design — it
+        // aborts THAT org's removal (see organizations.crud.service.js#remove docblock,
+        // "no silent swallow") — but must never abort the surrounding user deletion, so
+        // it's caught + logged here and the cascade continues.
+        try {
+          const { default: OrganizationsCrudService } = await import('../../organizations/services/organizations.crud.service.js');
+          await OrganizationsCrudService.remove({ _id: orgId });
+        } catch (err) {
+          logger.error('users.remove: organization removal seam failed for sole-owned org', {
+            organizationId: String(orgId),
+            userId: String(userId),
+            message: err?.message,
+            stack: err?.stack,
+          });
+        }
+        continue; // memberships for this org already cleaned up by the removal seam above
       }
     }
     // Delete this user's membership

@@ -74,4 +74,33 @@ describe('OrgCrudService.remove() — org-removal registry', () => {
     await expect(OrgCrudService.remove(organization)).resolves.toEqual({ acknowledged: true });
     expect(mockOrgRemove).toHaveBeenCalledWith(organization);
   });
+
+  test('reassigns an affected user without throwing when their remaining membership.organizationId is null (dangling ref, #3709)', async () => {
+    mockFindWithFilter.mockResolvedValueOnce([{ _id: 'coUid' }]);
+    mockMembershipList.mockResolvedValueOnce([{ _id: 'm2', organizationId: null, status: 'active' }]);
+
+    await expect(OrgCrudService.remove(organization)).resolves.toEqual({ acknowledged: true });
+    expect(mockUpdateById).toHaveBeenCalledWith('coUid', { currentOrganization: null });
+  });
+
+  test('skips a null-org membership and picks the first live org when reassigning an affected user (mixed, #3709)', async () => {
+    mockFindWithFilter.mockResolvedValueOnce([{ _id: 'coUid' }]);
+    mockMembershipList.mockResolvedValueOnce([
+      { _id: 'm2', organizationId: null, status: 'active' },
+      { _id: 'm3', organizationId: { _id: 'orgY' }, status: 'active' },
+    ]);
+
+    await expect(OrgCrudService.remove(organization)).resolves.toEqual({ acknowledged: true });
+    expect(mockUpdateById).toHaveBeenCalledWith('coUid', { currentOrganization: 'orgY' });
+  });
+
+  test('reassigns to a non-populated (raw id) organizationId when the membership was not populated', async () => {
+    mockFindWithFilter.mockResolvedValueOnce([{ _id: 'coUid' }]);
+    mockMembershipList.mockResolvedValueOnce([
+      { _id: 'm4', organizationId: 'orgZ', status: 'active' },
+    ]);
+
+    await expect(OrgCrudService.remove(organization)).resolves.toEqual({ acknowledged: true });
+    expect(mockUpdateById).toHaveBeenCalledWith('coUid', { currentOrganization: 'orgZ' });
+  });
 });
