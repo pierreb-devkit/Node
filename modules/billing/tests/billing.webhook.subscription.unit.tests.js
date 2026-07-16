@@ -664,7 +664,7 @@ describe('Billing webhook subscription unit tests:', () => {
       );
     });
 
-    test('V8.1 — validatePlan warns on unrecognized non-empty planId (falls back to free)', async () => {
+    test('V8.1 — resolvePlanFromSubscription warns on unrecognized non-empty planId (falls back to free)', async () => {
       const existing = {
         _id: subId,
         organization: orgId,
@@ -684,9 +684,10 @@ describe('Billing webhook subscription unit tests:', () => {
         BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_456' }, makeEvent()),
       ).resolves.not.toThrow();
 
-      // validatePlan should have logged a warning for the unrecognized plan
+      // Shared resolver (billing.planResolver.js) should have logged a warning for the
+      // unrecognized plan (#3964 — now shared with the admin + reconcile call sites).
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        '[billing.webhook] validatePlan: unrecognized planId',
+        '[billing.webhook] resolvePlanFromSubscription: unrecognized planId in metadata',
         expect.objectContaining({ raw: 'prod_unknownXYZ' }),
       );
     });

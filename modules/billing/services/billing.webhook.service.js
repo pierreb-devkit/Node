@@ -16,6 +16,7 @@ import billingEvents from '../lib/events.js';
 import { SENTINEL_PENDING } from '../lib/billing.constants.js';
 import { retryWithBackoff } from '../lib/billing.retry.js';
 import { isNonTransientStripeError } from '../lib/billing.stripe-errors.js';
+import { resolvePlanFromSubscription, lookupPlanByPriceId } from '../lib/billing.planResolver.js';
 import AnalyticsService from '../../../lib/services/analytics.js';
 
 /**
@@ -59,60 +60,17 @@ const validatePlan = (plan) => {
 const planRanks = Object.fromEntries((config.billing?.plans || []).map((p, i) => [p, i]));
 
 /**
- * Build a reverse-map from Stripe price ID → plan name, sourced from `config.stripe.prices`
- * at module load. Shape: `{ growth: { monthly: 'price_xxx', annual: 'price_yyy' }, pro: {...} }`.
- *
- * Why: `price.metadata.planId` is empty on real Stripe webhook payloads — `planId` lives on
- * the Product, not the Price exposed by `customer.subscription.updated`. The reverse-map gives
- * a robust priceId→plan lookup without an extra Stripe API call per webhook. `resolvePlan`
- * keeps `price.metadata.planId` as a legacy fallback (test fixtures, manual Stripe edits).
- *
- * @returns {Record<string, string>} priceId → planId map (built once at module init)
- */
-const buildPriceIdToPlanMap = () => {
-  const map = {};
-  const stripePrices = config.stripe?.prices || {};
-  for (const [planId, intervals] of Object.entries(stripePrices)) {
-    if (!validPlans.has(planId)) continue;
-    if (intervals.monthly) map[intervals.monthly] = planId;
-    if (intervals.annual) map[intervals.annual] = planId;
-  }
-  return map;
-};
-const priceIdToPlan = buildPriceIdToPlanMap();
-
-/**
  * @description Resolve the plan name from a Stripe subscription object.
- * Strategy (most-specific first):
- *   1. config price-ID map (price_xxx → planId) — robust, no metadata dependency.
- *   2. price.metadata.planId legacy fallback (works only if metadata was explicitly set).
- *   3. plan.metadata.planId further legacy fallback.
- *   4. 'free' when nothing resolves.
+ * Delegates to the shared priceId→plan resolver (see `../lib/billing.planResolver.js`,
+ * also used by the admin force-sync tool and the reconcile cron — #3964/#1250). Strategy
+ * (most-specific first): config priceId map → price/plan.metadata.planId legacy fallback →
+ * 'free' when nothing resolves (webhook-specific last resort: an event still needs a plan
+ * written; unlike the admin/reconcile call sites, there is no "abort" option mid-webhook).
  * @param {Object} subscription - Stripe subscription object
  * @returns {string} plan name
  */
-const resolvePlan = (subscription) => {
-  const item = subscription.items?.data?.[0];
-  const priceId = item?.price?.id;
-  if (priceId && priceIdToPlan[priceId]) {
-    return priceIdToPlan[priceId];
-  }
-  // Legacy fallback: price metadata set explicitly (e.g. test fixtures or manual Stripe edits)
-  const rawMeta = item?.price?.metadata?.planId || item?.plan?.metadata?.planId;
-  const fromMeta = validatePlan(rawMeta);
-  if (fromMeta) return fromMeta;
-  // Last-resort fallback — warn only when metadata is also absent so misconfigured
-  // config.stripe.prices is visible (otherwise this silently downgrades paid orgs to 'free',
-  // which is the exact bug #1250 fixed). When metadata is present but invalid, validatePlan()
-  // above already emitted an "unrecognized planId" warning — no double-warn needed.
-  if (priceId && !rawMeta) {
-    logger.warn('[billing.webhook] resolvePlan: priceId not in priceIdToPlan map and no metadata — falling back to free', {
-      priceId,
-      stripeSubscriptionId: subscription?.id,
-    });
-  }
-  return 'free';
-};
+const resolvePlan = (subscription) =>
+  resolvePlanFromSubscription(subscription, { logPrefix: '[billing.webhook]' }) ?? 'free';
 
 /**
  * @description Sync the organization plan field to match the subscription plan.
@@ -480,7 +438,7 @@ const handleSubscriptionUpdated = async (subscription, event) => {
   let planChangeResetTriggered = false;
   if (previousItems) {
     const previousPriceId = previousItems[0]?.price?.id;
-    const previousRaw = (previousPriceId && priceIdToPlan[previousPriceId])
+    const previousRaw = lookupPlanByPriceId(previousPriceId)
       || previousItems[0]?.price?.metadata?.planId
       || previousItems[0]?.plan?.metadata?.planId
       || null;
