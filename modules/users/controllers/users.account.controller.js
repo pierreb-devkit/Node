@@ -59,6 +59,8 @@ const remove = async (req, res) => {
 const me = (req, res) => {
   // Sanitize the user - short term solution. Copied from core.controller.js
   // TODO create proper passport mock: See https://gist.github.com/mweibel/5219403
+  // providerData (OAuth access+refresh tokens, see auth/strategies/local/{google,apple}.js)
+  // is intentionally NOT whitelisted here — never forward it to the client (#3963).
   let user = null;
   if (req.user) {
     user = {
@@ -69,7 +71,6 @@ const me = (req, res) => {
       email: req.user.email,
       lastName: req.user.lastName,
       firstName: req.user.firstName,
-      providerData: req.user.providerData,
       // others
       complementary: req.user.complementary,
     };

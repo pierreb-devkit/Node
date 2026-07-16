@@ -4,12 +4,14 @@
 import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 
 const mockCrudRemove = jest.fn();
+const mockCrudSwitchOrganization = jest.fn();
 const mockListByUser = jest.fn();
 const mockLeave = jest.fn();
 
 jest.unstable_mockModule('../services/organizations.crud.service.js', () => ({
   default: {
     remove: mockCrudRemove,
+    switchOrganization: mockCrudSwitchOrganization,
   },
 }));
 
@@ -23,6 +25,19 @@ jest.unstable_mockModule('../services/organizations.membership.service.js', () =
 jest.unstable_mockModule('../../../lib/services/analytics.js', () => ({
   default: {
     groupIdentify: jest.fn(),
+  },
+}));
+
+// Mock the users service boundary with the REAL sanitizeUser.removeSensitive
+// (pure — lodash + config only, no mongoose) rather than a stub, so this test
+// exercises actual whitelist-based stripping (#3963) instead of merely
+// asserting a mock got called. Mocking the module at all is required because
+// users.service.js -> users.repository.js does `mongoose.model('User')` at
+// import time, which throws outside a bootstrapped app (see ERRORS.md 2026-06-04).
+const { removeSensitive } = await import('../../users/utils/sanitizeUser.js');
+jest.unstable_mockModule('../../users/services/users.service.js', () => ({
+  default: {
+    removeSensitive,
   },
 }));
 
@@ -54,6 +69,7 @@ describe('Organizations controller unit tests:', () => {
     const res = {};
     res.status = jest.fn().mockReturnValue(res);
     res.json = jest.fn().mockReturnValue(res);
+    res.cookie = jest.fn().mockReturnValue(res);
     return res;
   }
 
@@ -117,6 +133,92 @@ describe('Organizations controller unit tests:', () => {
       expect(mockListByUser).not.toHaveBeenCalled();
       expect(mockCrudRemove).toHaveBeenCalledTimes(1);
       expect(res.status).not.toHaveBeenCalledWith(422);
+    });
+  });
+
+  describe('switchOrganization', () => {
+    /**
+     * @desc Build a fake Mongoose-like updated-user document, the shape
+     * `UserService.findByIdAndUpdatePopulated` returns with no `.select()` —
+     * every sensitive field a real doc could carry, plus the fields the
+     * response legitimately needs.
+     * @returns {Object} fake mongoose document with a `toJSON` method
+     */
+    function fakeUpdatedUserDoc() {
+      const plain = {
+        _id: 'u1',
+        id: 'u1',
+        email: 'switcher@test.com',
+        roles: ['user'],
+        firstName: 'Switch',
+        lastName: 'User',
+        currentOrganization: 'org2',
+        password: '$2b$10$leakedHashShouldNeverReachClient',
+        providerData: { accessToken: 'leaked-access-token', refreshToken: 'leaked-refresh-token' },
+        additionalProvidersData: { google: { accessToken: 'leaked-additional-token' } },
+        resetPasswordToken: 'leaked-reset-token',
+        resetPasswordExpires: new Date(),
+        emailVerificationToken: 'leaked-verification-token',
+        emailVerificationExpires: new Date(),
+        failedLoginAttempts: 3,
+        lockUntil: null,
+      };
+      return { ...plain, toJSON: () => plain };
+    }
+
+    test('sanitizes the response user — strips password/providerData/reset tokens, keeps legit fields', async () => {
+      const updatedUser = fakeUpdatedUserDoc();
+      mockCrudSwitchOrganization.mockResolvedValue({
+        user: updatedUser,
+        membership: { role: 'owner', organizationId: 'org2' },
+      });
+
+      const req = mockReq({
+        params: { organizationId: 'org2' },
+        organization: { _id: 'org2', id: 'org2' },
+      });
+      const res = mockRes();
+
+      await organizationsController.switchOrganization(req, res);
+
+      expect(mockCrudSwitchOrganization).toHaveBeenCalledWith(req.user, 'org2');
+      expect(res.status).toHaveBeenCalledWith(200);
+      const [payload] = res.json.mock.calls[0];
+      const responseUser = payload.data.user;
+
+      // Sensitive fields — must be ABSENT
+      expect(responseUser.password).toBeUndefined();
+      expect(responseUser.providerData).toBeUndefined();
+      expect(responseUser.additionalProvidersData).toBeUndefined();
+      expect(responseUser.resetPasswordToken).toBeUndefined();
+      expect(responseUser.resetPasswordExpires).toBeUndefined();
+      expect(responseUser.emailVerificationToken).toBeUndefined();
+      expect(responseUser.emailVerificationExpires).toBeUndefined();
+      expect(responseUser.failedLoginAttempts).toBeUndefined();
+      expect(responseUser.lockUntil).toBeUndefined();
+
+      // Legit fields — must be PRESENT
+      expect(responseUser.id).toBe('u1');
+      expect(responseUser.email).toBe('switcher@test.com');
+      expect(responseUser.roles).toEqual(['user']);
+      expect(responseUser.currentOrganization).toBe('org2');
+      expect(responseUser.firstName).toBe('Switch');
+    });
+
+    test('returns 403 when the user is not a member of the target organization', async () => {
+      const err = new Error('User is not a member of this organization');
+      err.code = 'FORBIDDEN';
+      mockCrudSwitchOrganization.mockRejectedValue(err);
+
+      const req = mockReq({
+        params: { organizationId: 'org2' },
+        organization: { _id: 'org2', id: 'org2' },
+      });
+      const res = mockRes();
+
+      await organizationsController.switchOrganization(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
     });
   });
 

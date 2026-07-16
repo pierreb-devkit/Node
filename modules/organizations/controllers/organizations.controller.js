@@ -12,6 +12,7 @@ import serializeAbilities from '../../../lib/helpers/abilities.js';
 import OrganizationsService from '../services/organizations.crud.service.js';
 import MembershipService from '../services/organizations.membership.service.js';
 import AnalyticsService from '../../../lib/services/analytics.js';
+import UserService from '../../users/services/users.service.js';
 
 const tokenCookieOptions = {
   httpOnly: true,
@@ -257,7 +258,8 @@ const switchOrganization = async (req, res) => {
       expiresIn: config.jwt.expiresIn,
     });
 
-    // Build abilities for the new org context
+    // Build abilities for the new org context — uses the raw doc (needs
+    // user.roles/_id only), sanitization happens below, at the response boundary.
     const ability = await policy.defineAbilityFor(updatedUser, membership);
     const abilities = serializeAbilities(ability);
 
@@ -268,7 +270,10 @@ const switchOrganization = async (req, res) => {
         type: 'success',
         message: 'organization switched',
         data: {
-          user: updatedUser,
+          // updatedUser comes straight off an unselected findByIdAndUpdate().populate()
+          // (users.repository.js) and carries password/providerData/reset+verification
+          // tokens — sanitize before serializing (#3963).
+          user: UserService.removeSensitive(updatedUser),
           abilities,
           tokenExpiresIn: Date.now() + config.jwt.expiresIn * 1000,
         },
