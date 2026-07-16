@@ -78,6 +78,52 @@ describe('OrgCrudService.remove() — org-removal registry', () => {
     );
   });
 
+  test('isolates handler failures — a failing handler does not skip a later one, and every failure is logged (#3965)', async () => {
+    const failingFirst = jest.fn().mockRejectedValue(new Error('tasks cleanup failed'));
+    const succeedingSecond = jest.fn().mockResolvedValue(undefined);
+    onOrganizationRemoved(failingFirst);
+    onOrganizationRemoved(succeedingSecond);
+
+    await expect(OrgCrudService.remove(organization)).resolves.toEqual({ acknowledged: true });
+
+    // The second handler still ran despite the first throwing (per-handler isolation).
+    expect(failingFirst).toHaveBeenCalledTimes(1);
+    expect(succeedingSecond).toHaveBeenCalledTimes(1);
+    expect(succeedingSecond).toHaveBeenCalledWith({ organizationId: 'org-1', organization });
+    // The single failure is logged for reconciliation; the org is still fully removed.
+    expect(mockOrgRemove).toHaveBeenCalledWith(organization);
+    expect(mockLoggerError).toHaveBeenCalledTimes(1);
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      'organizations.crud.remove: org-removal cleanup handler failed after the org was removed (needs reconciliation)',
+      expect.objectContaining({ organizationId: 'org-1', message: 'tasks cleanup failed' }),
+    );
+  });
+
+  test('logs each failure when multiple handlers throw, and still runs every handler (#3965)', async () => {
+    const failingA = jest.fn().mockRejectedValue(new Error('tasks cleanup failed'));
+    const failingB = jest.fn().mockRejectedValue(new Error('files cleanup failed'));
+    const succeeding = jest.fn().mockResolvedValue(undefined);
+    onOrganizationRemoved(failingA);
+    onOrganizationRemoved(failingB);
+    onOrganizationRemoved(succeeding);
+
+    await expect(OrgCrudService.remove(organization)).resolves.toEqual({ acknowledged: true });
+
+    expect(failingA).toHaveBeenCalledTimes(1);
+    expect(failingB).toHaveBeenCalledTimes(1);
+    expect(succeeding).toHaveBeenCalledTimes(1);
+    // One log line per failing handler (both aggregated failures surfaced individually).
+    expect(mockLoggerError).toHaveBeenCalledTimes(2);
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      'organizations.crud.remove: org-removal cleanup handler failed after the org was removed (needs reconciliation)',
+      expect.objectContaining({ organizationId: 'org-1', message: 'tasks cleanup failed' }),
+    );
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      'organizations.crud.remove: org-removal cleanup handler failed after the org was removed (needs reconciliation)',
+      expect.objectContaining({ organizationId: 'org-1', message: 'files cleanup failed' }),
+    );
+  });
+
   test('a STRUCTURAL failure (org repository delete itself throws) propagates and is NOT swallowed', async () => {
     mockOrgRemove.mockRejectedValueOnce(new Error('db delete failed'));
 

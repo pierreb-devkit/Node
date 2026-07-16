@@ -35,7 +35,7 @@ describe('orgRemoval.registry', () => {
     expect(order).toEqual(['first', 'second']);
   });
 
-  test('propagates a handler error (does not swallow) and aborts the remaining handlers', async () => {
+  test('isolates a handler error — the remaining handlers still run, then failures re-raise as one AggregateError', async () => {
     const boom = new Error('cleanup failed');
     const after = jest.fn().mockResolvedValue(undefined);
     onOrganizationRemoved(async () => {
@@ -43,8 +43,27 @@ describe('orgRemoval.registry', () => {
     });
     onOrganizationRemoved(after);
 
-    await expect(runOrganizationRemovedHandlers({ organizationId: 'org-1' })).rejects.toThrow('cleanup failed');
-    expect(after).not.toHaveBeenCalled();
+    await expect(runOrganizationRemovedHandlers({ organizationId: 'org-1' })).rejects.toThrow(AggregateError);
+    // A failing handler must not block a later one (avoids orphaning another module's rows).
+    expect(after).toHaveBeenCalledTimes(1);
+  });
+
+  test('aggregates every handler failure — each error is carried on the AggregateError', async () => {
+    const boomA = new Error('tasks cleanup failed');
+    const boomB = new Error('files cleanup failed');
+    const middle = jest.fn().mockResolvedValue(undefined);
+    onOrganizationRemoved(async () => {
+      throw boomA;
+    });
+    onOrganizationRemoved(middle);
+    onOrganizationRemoved(async () => {
+      throw boomB;
+    });
+
+    await expect(runOrganizationRemovedHandlers({ organizationId: 'org-1' })).rejects.toMatchObject({
+      errors: [boomA, boomB],
+    });
+    expect(middle).toHaveBeenCalledTimes(1);
   });
 
   test('runs zero handlers without throwing when none are registered', async () => {

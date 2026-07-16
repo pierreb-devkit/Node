@@ -193,9 +193,10 @@ const update = async (organization, body) => {
  *   repository delete itself all happen BEFORE any onOrganizationRemoved handler runs —
  *   once removal starts, the org always ends fully removed (no zombie org doc, no
  *   memberships left pointing at it), regardless of what a handler does (#3965).
- *   Handlers (data owned by optional modules, e.g. tasks) then run sequentially,
- *   BEST-EFFORT: a handler error is logged here for manual reconciliation of that
- *   module's leftover org-scoped rows, but never re-thrown. This is deliberate — a
+ *   Handlers (data owned by optional modules, e.g. tasks) then run sequentially and
+ *   ISOLATED — one throwing never skips the rest — BEST-EFFORT: every handler error is
+ *   logged here for manual reconciliation of that module's leftover org-scoped rows, but
+ *   never re-thrown. This is deliberate — a
  *   handler failure must not resurrect/block a removal that has already committed, and
  *   must not propagate into an unrelated caller (e.g. users.service.js#remove's
  *   sole-owner cascade, which deletes the user right after this call and must not have
@@ -238,10 +239,15 @@ const remove = async (organization) => {
   try {
     await runOrganizationRemovedHandlers({ organizationId: orgId, organization });
   } catch (err) {
-    logger.error('organizations.crud.remove: org-removal cleanup handler failed after the org was removed (needs reconciliation)', {
-      organizationId: String(orgId),
-      message: err?.message,
-      stack: err?.stack,
+    // The registry isolates each handler and re-raises every failure as one AggregateError,
+    // so later handlers already ran. Log each failure individually for reconciliation.
+    const failures = err instanceof AggregateError ? err.errors : [err];
+    failures.forEach((failure) => {
+      logger.error('organizations.crud.remove: org-removal cleanup handler failed after the org was removed (needs reconciliation)', {
+        organizationId: String(orgId),
+        message: failure?.message,
+        stack: failure?.stack,
+      });
     });
   }
 
