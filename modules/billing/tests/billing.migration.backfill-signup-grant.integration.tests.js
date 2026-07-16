@@ -57,8 +57,18 @@ describe('backfill-missing-signup-grant migration (integration):', () => {
     const spy = jest.spyOn(mongoose.connection.db, 'collection').mockImplementation((name) => {
       const coll = realCollection(name);
       if (name !== 'organizations') return coll;
-      const realFind = coll.find.bind(coll);
-      return { find: (filter, options) => realFind({ ...filter, _id: { $in: orgIds } }, options) };
+      // Proxy (not a duck-typed `{ find }` object) so every other method/property
+      // on the real Collection instance stays reachable — only `find()` is
+      // intercepted to intersect in the fixture id scope.
+      return new Proxy(coll, {
+        get(target, prop) {
+          if (prop === 'find') {
+            return (filter, options) => target.find({ ...filter, _id: { $in: orgIds } }, options);
+          }
+          const val = target[prop];
+          return typeof val === 'function' ? val.bind(target) : val;
+        },
+      });
     });
     try {
       await backfillSignupGrants();
