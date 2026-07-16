@@ -34,6 +34,7 @@
 import mongoose from 'mongoose';
 import config from '../../../config/index.js';
 import BillingSignupGrantService from '../services/billing.signupGrant.service.js';
+import BillingPlanService from '../services/billing.plan.service.js';
 
 /**
  * @returns {Promise<void>}
@@ -57,9 +58,22 @@ export async function up() {
 
   let granted = 0;
   let skipped = 0;
-  let failed = 0;
+  let failedPlanNotFound = 0;
+  let failedGuardStripped = 0;
+  let failedError = 0;
 
   for await (const org of cursor) {
+    // grantOnSignup swallows ALL failure modes to a bare `null` by design
+    // (best-effort — never throws), so plan-not-found, co-presence-guard-stripped,
+    // and a genuine runtime error are otherwise indistinguishable from the outside.
+    // Pre-classify with the same read-only, config-static lookup grantOnSignup uses
+    // internally BEFORE calling it, purely for the completion-log breakdown below —
+    // this never short-circuits or skips the real call, so behavior is unchanged.
+    const plan = BillingPlanService.getActivePlan(org.plan);
+    let preclassifiedFailure = null;
+    if (!plan) preclassifiedFailure = 'planNotFound';
+    else if (!plan.signupGrant) preclassifiedFailure = 'guardStripped';
+
     // grantOnSignup is idempotent (refId) and never throws — reuses the runtime
     // path so ObjectId casting + validation + co-presence guard all apply.
     const result = await BillingSignupGrantService.grantOnSignup({
@@ -68,8 +82,11 @@ export async function up() {
     });
 
     if (result == null) {
-      // Plan has no exposed grant (co-presence guard) or a swallowed error — logged by the service.
-      failed += 1;
+      if (preclassifiedFailure === 'planNotFound') failedPlanNotFound += 1;
+      else if (preclassifiedFailure === 'guardStripped') failedGuardStripped += 1;
+      // Plan found + grant configured, yet still null: the repository call itself
+      // threw and grantOnSignup's catch swallowed it — a genuine runtime error.
+      else failedError += 1;
     } else if (result.applied === false) {
       // Idempotent no-op — org already had a signup_grant entry.
       skipped += 1;
@@ -78,7 +95,11 @@ export async function up() {
     }
   }
 
-  console.info(`[migration] backfill-signup-grant: complete — granted=${granted} skipped=${skipped} failed=${failed}`);
+  const failed = failedPlanNotFound + failedGuardStripped + failedError;
+  console.info(
+    `[migration] backfill-signup-grant: complete — granted=${granted} skipped=${skipped} failed=${failed} `
+    + `(planNotFound=${failedPlanNotFound} guardStripped=${failedGuardStripped} error=${failedError})`,
+  );
 }
 
 /**

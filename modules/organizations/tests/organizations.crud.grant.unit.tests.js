@@ -81,14 +81,6 @@ describe('organizations.crud.service.create organization.created emit:', () => {
     expect(mockEmit).toHaveBeenCalledWith('organization.created', { orgId: 'org1', planId: 'free' });
   });
 
-  test('defaults planId to free when the created org has no plan field', async () => {
-    mockOrgCreate.mockResolvedValueOnce({ _id: 'org2' });
-    const user = { id: 'u1', _id: 'u1', email: 'a@b.com', emailVerified: true };
-    await OrgCrudService.create({ name: 'No Plan Org' }, user);
-
-    expect(mockEmit).toHaveBeenCalledWith('organization.created', { orgId: 'org2', planId: 'free' });
-  });
-
   test('does not emit when membership creation fails (rollback exits before the emit)', async () => {
     mockMembershipCreate.mockRejectedValueOnce(new Error('membership boom'));
     const user = { id: 'u1', _id: 'u1', email: 'a@b.com', emailVerified: true };

@@ -13,18 +13,29 @@ import { jest } from '@jest/globals';
  * dependency graph needs, mirroring what each test's dynamic import expects.
  * Call this from `beforeEach` (not `beforeAll`) so the mocks are registered
  * before that test's `await import('.../auth.controller.js')`.
- * @returns {{authenticate: import('@jest/globals').Mock, _strategy: import('@jest/globals').Mock}} mockPassport - the passport mock, so callers can further customize per-test behavior (e.g. `mockPassport._strategy.mockReturnValue(...)`)
+ * @param {Object} [opts]
+ * @param {boolean} [opts.realPassport=false] - When true, skip mocking `passport` entirely
+ *   so the caller's own `await import('passport')` resolves the REAL package (issue #3954:
+ *   a regression test registers an actual strategy via `passport.use()` and asserts
+ *   `isEnabledOAuthProvider` sees it through the real `_strategy` API, so a passport
+ *   upgrade renaming that private API fails here instead of silently 404-ing OAuth
+ *   logins in prod — every other test in this suite mocks `_strategy` away and can't
+ *   catch that).
+ * @returns {{authenticate: import('@jest/globals').Mock, _strategy: import('@jest/globals').Mock}|undefined} mockPassport - the passport mock, so callers can further customize per-test behavior (e.g. `mockPassport._strategy.mockReturnValue(...)`). `undefined` when `realPassport` is true.
  */
-export function setupAuthControllerMocks() {
+export function setupAuthControllerMocks({ realPassport = false } = {}) {
   jest.resetModules();
 
-  const mockPassport = {
-    authenticate: jest.fn().mockReturnValue(jest.fn()),
-    _strategy: jest.fn().mockReturnValue(undefined),
-  };
-  jest.unstable_mockModule('passport', () => ({
-    default: mockPassport,
-  }));
+  let mockPassport;
+  if (!realPassport) {
+    mockPassport = {
+      authenticate: jest.fn().mockReturnValue(jest.fn()),
+      _strategy: jest.fn().mockReturnValue(undefined),
+    };
+    jest.unstable_mockModule('passport', () => ({
+      default: mockPassport,
+    }));
+  }
 
   jest.unstable_mockModule('../../../../lib/services/logger.js', () => ({
     default: { warn: jest.fn(), error: jest.fn(), info: jest.fn() },
