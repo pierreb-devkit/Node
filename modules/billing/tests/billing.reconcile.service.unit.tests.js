@@ -36,11 +36,13 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
 
   /**
    * Build a stub Stripe subscription.
+   * Realistic Stripe payload (#3964): price.id present, metadata.planId ABSENT — real Stripe
+   * Price objects carry no metadata.planId; resolveStripePlan must resolve via the priceId map.
    */
   const makeStripeSub = (overrides = {}) => ({
     id: stripeSubId,
     status: 'active',
-    items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
+    items: { data: [{ price: { id: 'price_pro_monthly', metadata: {} } }] },
     ...overrides,
   });
 
@@ -54,6 +56,14 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
       billing: {
         meterMode: true,
         plans: ['free', 'starter', 'pro', 'enterprise'],
+      },
+      // Real config.stripe.prices shape (#3964) — priceId → planId map used by the shared
+      // resolver (billing.planResolver.js), same as production config.
+      stripe: {
+        prices: {
+          starter: { monthly: 'price_starter_monthly', annual: 'price_starter_annual' },
+          pro: { monthly: 'price_pro_monthly', annual: 'price_pro_annual' },
+        },
       },
     };
 
@@ -141,6 +151,53 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
 
     expect(result).toMatchObject({ checked: 1, divergences: 0, errors: 0 });
     expect(mockEvents.emit).not.toHaveBeenCalled();
+  });
+
+  // ─── #3964 regression: priceId-map resolution replaces the metadata-only resolver ───
+  test('#3964: resolves plan via priceId map for a paid sub with NO metadata.planId — no false planMismatch', async () => {
+    // DB says 'pro'; Stripe price resolves to 'pro' via the priceId map (no metadata at all).
+    // Before the fix this resolver defaulted to 'free', producing a false planMismatch alert
+    // for every paid org — exactly the noise this issue reports.
+    const sub = makeDbSub({ plan: 'pro' });
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce([sub])
+      .mockResolvedValue([]);
+    mockStripeInstance.subscriptions.retrieve.mockResolvedValue(
+      makeStripeSub({ items: { data: [{ price: { id: 'price_pro_monthly', metadata: {} } }] } }),
+    );
+
+    const result = await BillingReconcileService.runReconciliation();
+
+    expect(result).toMatchObject({ checked: 1, divergences: 0, errors: 0 });
+    const planMismatchEmits = mockEvents.emit.mock.calls.filter(
+      ([, p]) => p?.planMismatch === true,
+    );
+    expect(planMismatchEmits).toHaveLength(0);
+  });
+
+  test('#3964: unresolvable Stripe price — skips plan comparison instead of emitting a false divergence', async () => {
+    // Neither the priceId map nor metadata resolves. The old resolver would have defaulted
+    // to 'free' here and (falsely) diverged against any non-free DB plan. The fix must skip
+    // the plan comparison entirely rather than guess.
+    const sub = makeDbSub({ plan: 'pro', status: 'active' });
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce([sub])
+      .mockResolvedValue([]);
+    mockStripeInstance.subscriptions.retrieve.mockResolvedValue(
+      makeStripeSub({ status: 'active', items: { data: [{ price: { id: 'price_unmapped_xyz', metadata: {} } }] } }),
+    );
+
+    const result = await BillingReconcileService.runReconciliation();
+
+    expect(result).toMatchObject({ checked: 1, divergences: 0, errors: 0 });
+    const planMismatchEmits = mockEvents.emit.mock.calls.filter(
+      ([, p]) => p?.planMismatch === true,
+    );
+    expect(planMismatchEmits).toHaveLength(0);
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      '[billing.reconcile] cannot resolve Stripe plan — skipping plan comparison for this subscription',
+      expect.objectContaining({ organizationId: orgId, dbPlan: 'pro' }),
+    );
   });
 
   test('detects status divergence — emits billing.reconciliation.divergence and logs', async () => {

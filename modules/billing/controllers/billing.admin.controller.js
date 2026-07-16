@@ -139,7 +139,11 @@ const adminSyncFromStripe = async (req, res) => {
     return responses.success(res, 'subscription synced from Stripe')(result);
   } catch (err) {
     const status = err.status ?? 500;
-    const title = status === 404 ? 'Not Found' : status === 422 ? 'Unprocessable Entity' : status === 502 ? 'Bad Gateway' : 'Internal Server Error';
+    const title = status === 404 ? 'Not Found'
+      : status === 422 ? 'Unprocessable Entity'
+      : status === 409 ? 'Conflict'
+      : status === 502 ? 'Bad Gateway'
+      : 'Internal Server Error';
     return responses.error(res, status, title, 'Failed to sync from Stripe')(err);
   }
 };

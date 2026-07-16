@@ -287,6 +287,25 @@ describe('Billing admin toolkit integration tests:', () => {
       expect(res.status).toHaveBeenCalledWith(502);
     });
 
+    // #3964 — resolveStripePlan aborts (409) rather than silently downgrading to 'free'
+    // when the Stripe price is unresolvable; the controller must surface that status.
+    test('returns 409 when service throws 409 (unresolvable plan — sync aborted)', async () => {
+      const routes = await buildRoutes();
+      const route = routes.get('/api/admin/billing/sync/:orgId');
+      const res = makeRes();
+      mockAdminService.syncOrgFromStripe.mockRejectedValue(
+        Object.assign(new Error('cannot resolve plan for Stripe subscription'), { status: 409 }),
+      );
+
+      await runHandlers(
+        [...route.all, ...route.post],
+        { headers: { 'x-role': 'admin' }, params: { orgId }, body: {} },
+        res,
+      );
+
+      expect(res.status).toHaveBeenCalledWith(409);
+    });
+
     test('returns 500 on unexpected error', async () => {
       const routes = await buildRoutes();
       const route = routes.get('/api/admin/billing/sync/:orgId');

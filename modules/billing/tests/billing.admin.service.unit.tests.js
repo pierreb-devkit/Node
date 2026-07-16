@@ -48,6 +48,15 @@ describe('BillingAdminService unit tests:', () => {
         meterMode: true,
         plans: ['free', 'starter', 'pro', 'enterprise'],
       },
+      // Real config.stripe.prices shape (#3964) — priceId → planId map, sourced by
+      // billing.planResolver.js. Real Stripe Price objects carry no metadata.planId;
+      // this map is what lets resolveStripePlan resolve without it.
+      stripe: {
+        prices: {
+          starter: { monthly: 'price_starter_monthly', annual: 'price_starter_annual' },
+          pro: { monthly: 'price_pro_monthly', annual: 'price_pro_annual' },
+        },
+      },
     };
 
     mockSubscriptionRepository = {
@@ -109,11 +118,13 @@ describe('BillingAdminService unit tests:', () => {
         }),
       },
       subscriptions: {
+        // Realistic Stripe payload (#3964): price.id present, metadata.planId ABSENT — this
+        // is the actual shape Stripe sends; resolveStripePlan must resolve via the priceId map.
         retrieve: jest.fn().mockResolvedValue({
           id: stripeSubId,
           status: 'active',
           current_period_start: 1699000000,
-          items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
+          items: { data: [{ price: { id: 'price_pro_monthly', metadata: {} } }] },
         }),
         cancel: jest.fn().mockResolvedValue({ id: stripeSubId, status: 'canceled' }),
       },
@@ -218,6 +229,41 @@ describe('BillingAdminService unit tests:', () => {
       expect(result).toHaveProperty('updated');
     });
 
+    // ─── #3964 regression: priceId-map resolution + no-silent-downgrade guard ───
+    test('#3964: resolves plan via priceId map for a paid subscription with NO metadata.planId (real Stripe shape)', async () => {
+      // Realistic payload — metadata is genuinely empty on real Stripe Price objects.
+      mockStripeInstance.subscriptions.retrieve.mockResolvedValue({
+        id: stripeSubId,
+        status: 'active',
+        current_period_start: 1699000000,
+        items: { data: [{ price: { id: 'price_starter_annual', metadata: {} } }] },
+      });
+
+      await BillingAdminService.syncOrgFromStripe(orgId);
+
+      const updateCall = mockSubscriptionRepository.update.mock.calls[0][0];
+      expect(updateCall.plan).toBe('starter');
+      expect(updateCall.plan).not.toBe('free');
+      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'starter');
+    });
+
+    test('#3964: ABORTS the sync (no DB write) when the Stripe price is unresolvable — never downgrades to free', async () => {
+      // Neither the priceId map nor metadata resolves — e.g. a manually-sold enterprise
+      // price never added to config.stripe.prices, or a misconfigured price map.
+      mockStripeInstance.subscriptions.retrieve.mockResolvedValue({
+        id: stripeSubId,
+        status: 'active',
+        current_period_start: 1699000000,
+        items: { data: [{ price: { id: 'price_unmapped_xyz', metadata: {} } }] },
+      });
+
+      await expect(BillingAdminService.syncOrgFromStripe(orgId)).rejects.toMatchObject({ status: 409 });
+
+      // Critical: no partial/incorrect write — the org's plan must be left untouched.
+      expect(mockSubscriptionRepository.update).not.toHaveBeenCalled();
+      expect(mockOrganizationRepository.setPlan).not.toHaveBeenCalled();
+    });
+
     test('throws 404 when no subscription exists', async () => {
       mockSubscriptionRepository.findByOrganization.mockResolvedValue(null);
 
@@ -251,7 +297,7 @@ describe('BillingAdminService unit tests:', () => {
         items: {
           data: [{
             current_period_start: periodStart,
-            price: { metadata: { planId: 'pro' } },
+            price: { id: 'price_pro_monthly', metadata: {} },
           }],
         },
       });
@@ -269,7 +315,7 @@ describe('BillingAdminService unit tests:', () => {
         status: 'active',
         current_period_start: periodStart,
         items: {
-          data: [{ price: { metadata: { planId: 'pro' } } }], // no current_period_start on item
+          data: [{ price: { id: 'price_pro_monthly', metadata: {} } }], // no current_period_start on item
         },
       });
 

@@ -6,6 +6,7 @@ import getStripe from '../lib/stripe.js';
 import logger from '../../../lib/services/logger.js';
 import billingEvents from '../lib/events.js';
 import { currentWeekKey, weekStartDate } from '../lib/billing.isoWeek.js';
+import { resolvePlanFromSubscription } from '../lib/billing.planResolver.js';
 
 /**
  * Page size for the reconciliation cursor — fetch in batches to avoid long-running queries.
@@ -18,22 +19,19 @@ const RECONCILE_PAGE_SIZE = 100;
 const RECONCILE_STATUSES = ['active', 'past_due', 'trialing', 'unpaid'];
 
 /**
- * Valid plan names from config.
- */
-const validPlans = new Set(config.billing?.plans || ['free', 'starter', 'pro', 'enterprise']);
-
-/**
  * @function resolveStripePlan
- * @description Resolve the plan name from a Stripe subscription object.
+ * @description Resolve the plan name from a Stripe subscription object, via the shared
+ *              priceId→plan resolver (`../lib/billing.planResolver.js` — also used by the
+ *              webhook handler and the admin force-sync tool; #3964/#1250). Returns `null`
+ *              when unresolved (LOG-ONLY caller — never guesses 'free', which previously
+ *              produced a false `planMismatch` divergence alert for every paid org whose
+ *              price lacked `metadata.planId`, i.e. every real Stripe subscription).
  * @param {Object} subscription - Stripe subscription object.
- * @returns {string} plan name.
+ * @returns {string|null} plan name, or null when unresolved.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const resolveStripePlan = (subscription) => {
-  const item = subscription.items?.data?.[0];
-  const raw = item?.price?.metadata?.planId || item?.plan?.metadata?.planId;
-  return validPlans.has(raw) ? raw : 'free';
-};
+const resolveStripePlan = (subscription) =>
+  resolvePlanFromSubscription(subscription, { logPrefix: '[billing.reconcile]' });
 
 /**
  * @function runReconciliation
@@ -193,7 +191,19 @@ const _reconcileOne = async (stripe, sub) => {
   const stripePlan = resolveStripePlan(stripeSub);
 
   const statusMismatch = sub.status !== stripeStatus;
-  const planMismatch = sub.plan !== stripePlan;
+  // stripePlan === null means the price is unresolvable (no priceId mapping, no valid
+  // metadata) — skip the plan comparison rather than risk a false divergence against a
+  // guessed 'free'. Log distinctly so a misconfigured config.stripe.prices stays visible.
+  if (stripePlan === null) {
+    logger.warn('[billing.reconcile] cannot resolve Stripe plan — skipping plan comparison for this subscription', {
+      organizationId: orgId,
+      subscriptionId: String(sub._id),
+      stripeSubscriptionId: subId,
+      stripePriceId: stripeSub.items?.data?.[0]?.price?.id ?? null,
+      dbPlan: sub.plan,
+    });
+  }
+  const planMismatch = stripePlan !== null && sub.plan !== stripePlan;
 
   // Check meter↔extras divergence for this org (Opus C1 detection layer).
   // This runs regardless of status/plan match — a healthy subscription can still

@@ -1,7 +1,6 @@
 /**
  * Module dependencies
  */
-import config from '../../../config/index.js';
 import getStripe from '../lib/stripe.js';
 import logger from '../../../lib/services/logger.js';
 import { bumpEventMarkers } from '../lib/billing.markerBump.js';
@@ -11,11 +10,7 @@ import OrganizationRepository from '../../organizations/repositories/organizatio
 import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
 import BillingWebhookService from './billing.webhook.service.js';
 import { getDollarsToUnitRatio } from '../lib/billing.constants.js';
-
-/**
- * Valid plan names from config (immutable set for O(1) lookups).
- */
-const validPlans = new Set(config.billing?.plans || ['free', 'starter', 'pro', 'enterprise']);
+import { resolvePlanFromSubscription } from '../lib/billing.planResolver.js';
 
 /**
  * @function getCustomerStatus
@@ -93,6 +88,29 @@ const syncOrgFromStripe = async (orgId) => {
 
   const stripeSub = await stripe.subscriptions.retrieve(existing.stripeSubscriptionId);
   const newPlan = resolveStripePlan(stripeSub);
+
+  // Safety guard (#3964): never silently downgrade a paying org to 'free'. If the Stripe
+  // subscription's price doesn't map via config.stripe.prices AND carries no valid
+  // metadata.planId, the plan is genuinely unresolvable (misconfigured price map, or an
+  // unmapped price such as a manually-sold enterprise plan) — abort the write entirely
+  // rather than guess. Ops must fix the config.stripe.prices mapping (or set the plan via
+  // bumpOrgPlan) before retrying sync.
+  if (!newPlan) {
+    logger.error('[billing.admin] syncOrgFromStripe — cannot resolve plan from Stripe subscription, aborting sync to avoid downgrading org', {
+      orgId,
+      stripeSubscriptionId: existing.stripeSubscriptionId,
+      stripePriceId: stripeSub.items?.data?.[0]?.price?.id ?? null,
+      currentDbPlan: existing.plan,
+    });
+    throw Object.assign(
+      new Error(
+        `cannot resolve plan for Stripe subscription ${existing.stripeSubscriptionId} (orgId=${orgId}) — `
+        + 'no priceId→plan mapping and no valid metadata.planId; aborting sync to avoid corrupting the org\'s plan',
+      ),
+      { status: 409 },
+    );
+  }
+
   const newStatus = stripeSub.status;
   // Stripe API ≥ 2025-08-27 moved current_period_start to items.data[0].
   // Read from items first, fall back to top-level for older API versions (mirrors webhook handler).
@@ -373,17 +391,19 @@ const creditDisputeReinstated = async (chargeId, amountCents, reason, refundRequ
 
 /**
  * @function resolveStripePlan
- * @description Resolve the plan name from a Stripe subscription object.
- *              Same heuristic as billing.webhook.service.js (price.metadata.planId first).
+ * @description Resolve the plan name from a Stripe subscription object, via the shared
+ *              priceId→plan resolver (`../lib/billing.planResolver.js` — also used by the
+ *              webhook handler and the reconcile cron; #3964/#1250).
+ *              Unlike the webhook resolver, this does NOT fall back to 'free' when
+ *              unresolved — `syncOrgFromStripe` is a direct DB write on the admin escape-hatch
+ *              path, and silently downgrading an unresolvable paid subscription to 'free' is
+ *              the exact defect this fixes. Returns `null` so the caller can abort instead.
  * @param {Object} subscription - Stripe subscription object.
- * @returns {string} plan name.
+ * @returns {string|null} plan name, or null when unresolved (caller must abort the write).
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const resolveStripePlan = (subscription) => {
-  const item = subscription.items?.data?.[0];
-  const raw = item?.price?.metadata?.planId || item?.plan?.metadata?.planId;
-  return validPlans.has(raw) ? raw : 'free';
-};
+const resolveStripePlan = (subscription) =>
+  resolvePlanFromSubscription(subscription, { logPrefix: '[billing.admin]' });
 
 /**
  * @function dispatchWebhookEvent
