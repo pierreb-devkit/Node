@@ -149,6 +149,26 @@ describe('Organizations integration tests:', () => {
     let grantUser;
     let BillingExtraBalanceRepository;
 
+    /**
+     * Poll the org ledger until a signup_grant entry appears. #3952 moved the grant off a
+     * direct synchronous call onto the `organization.created` event (organizations/lib/events.js) —
+     * billing's subscriber (billing.init.js) is fire-and-forget, so the signup response does not
+     * await it; the credit lands shortly after, not necessarily before the HTTP response returns.
+     * @param {string} orgId - Organization id whose ledger to poll.
+     * @param {number} [timeoutMs=5000] - Give-up timeout.
+     * @returns {Promise<Object|null>} The ledger entry, or null on timeout.
+     */
+    async function waitForSignupGrantEntry(orgId, timeoutMs = 5000) {
+      const start = Date.now();
+      while (Date.now() - start < timeoutMs) {
+        const ledger = await BillingExtraBalanceRepository.findLedgerByOrg(orgId);
+        const entry = (ledger ?? []).find((e) => e.source === 'signup_grant');
+        if (entry) return entry;
+        await new Promise((resolve) => { setTimeout(resolve, 100); });
+      }
+      return null;
+    }
+
     beforeAll(async () => {
       config.organizations = { enabled: false };
       BillingExtraBalanceRepository = (await import(path.resolve('./modules/billing/repositories/billing.extraBalance.repository.js'))).default;
@@ -173,14 +193,12 @@ describe('Organizations integration tests:', () => {
       expect(memberships.length).toBeGreaterThan(0);
       const orgId = (memberships[0].organizationId._id || memberships[0].organizationId).toString();
 
+      const grantEntry = await waitForSignupGrantEntry(orgId);
+      expect(grantEntry).not.toBeNull();
+      expect(grantEntry.amount).toBe(500);
+
       const balance = await BillingExtraBalanceRepository.getBalance(orgId);
       expect(balance).toBe(500);
-
-      const ledger = await BillingExtraBalanceRepository.findLedgerByOrg(orgId);
-      expect(ledger).not.toBeNull();
-      const grantEntry = ledger.find((e) => e.source === 'signup_grant');
-      expect(grantEntry).toBeDefined();
-      expect(grantEntry.amount).toBe(500);
     });
 
     afterAll(async () => {

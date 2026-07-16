@@ -9,6 +9,7 @@ import billingEvents from './lib/events.js';
 import invitationEvents from '../invitations/lib/events.js';
 import organizationEvents from '../organizations/lib/events.js';
 import BillingUsageRepository from './repositories/billing.usage.repository.js';
+import BillingSignupGrantService from './services/billing.signupGrant.service.js';
 import { getAlertThresholdPercents } from './lib/billing.constants.js';
 import { setupBillingEmails } from './billing.email.js';
 
@@ -126,6 +127,40 @@ export default async (app) => {
       // ⚠️ MANDATORY self-guard (see organizations/lib/events.js): never let a rejection escape.
       logger.error('[billing] instant referee grant failed — reconcile cron will back-fill', {
         userId: String(payload?.userId ?? ''),
+        err: err?.message,
+        stack: err?.stack,
+      });
+    }
+  });
+
+  // Signup grant (#3952) — billing is an OPTIONAL consumer of the organizations fire-and-forget
+  // `organization.created` event (dependency direction billing → organizations, same as
+  // `organization.provisioned` above: billing imports the events singleton, organizations never
+  // imports billing). BOTH organization-creation call sites (organizations.crud.service.js::create
+  // AND organizations.service.js::createOrganizationForUser) emit this instead of calling
+  // BillingSignupGrantService directly, so organizations stays removable without billing.
+  // Unlike the two referral listeners above, this one is NOT config-gated — grantOnSignup is core
+  // signup behavior (it already no-ops when the plan defines no signupGrant).
+  /**
+   * @desc One-shot signup grant listener for organization-creation events (#3952).
+   * Credits the configured signupGrant to the freshly created organization via
+   * BillingSignupGrantService.grantOnSignup (idempotent via refId `signup_grant-<orgId>`,
+   * never throws). Self-guarded: `EventEmitter.emit` is synchronous, so the emit-site
+   * try/catch in organizations only catches SYNC throws — an async rejection escaping
+   * here would surface as an unhandledRejection. It never does: grantOnSignup already
+   * swallows its own errors; this wraps it too for defense-in-depth (mirrors the instant
+   * referee grant listener above).
+   * @param {{orgId: string, planId: string}} payload - Created organization event payload.
+   * @returns {Promise<void>} settles when the grant attempt completes (never rejects)
+   */
+  organizationEvents.on('organization.created', async (payload) => {
+    try {
+      await BillingSignupGrantService.grantOnSignup({ orgId: payload?.orgId, planId: payload?.planId });
+    } catch (err) {
+      // ⚠️ MANDATORY self-guard (see organizations/lib/events.js): never let a rejection escape.
+      logger.error('[billing] signup grant failed via organization.created listener', {
+        orgId: String(payload?.orgId ?? ''),
+        planId: String(payload?.planId ?? ''),
         err: err?.message,
         stack: err?.stack,
       });

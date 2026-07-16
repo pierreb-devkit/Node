@@ -7,8 +7,8 @@
  *  - `suggestedJoin` returned ONLY when: domainMatching on + non-public domain + existing different org matches.
  *    Shape is name-only: { orgId: string, orgName: string } — no size/domain/membership keys.
  *  - Public domain (e.g. gmail.com) with same-domain existing org → NO suggestedJoin.
- *  - signupGrant credited exactly once per real new org creation (via BillingSignupGrantService.grantOnSignup);
- *    not double-credited on any path.
+ *  - `organization.created` (#3952) emitted exactly once per real new org creation (billing's
+ *    subscriber in billing.init.js owns crediting the grant); not double-emitted on any path.
  *
  * All assertions pass with the A2 implementation shipped in this PR.
  */
@@ -16,11 +16,6 @@ import mongoose from 'mongoose';
 import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 
 // --- Mocks (must precede dynamic imports) ---
-
-const mockGrantOnSignup = jest.fn().mockResolvedValue(null);
-jest.unstable_mockModule('../../billing/services/billing.signupGrant.service.js', () => ({
-  default: { grantOnSignup: mockGrantOnSignup },
-}));
 
 const mockIsConfigured = jest.fn().mockReturnValue(false);
 jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
@@ -80,12 +75,19 @@ jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
   default: { error: jest.fn(), warn: jest.fn(), info: jest.fn() },
 }));
 
-// #3844: capture organization.provisioned emits — the singleton is config-free, stub it
-// so assertions see the emit without wiring real listeners.
+// #3844/#3952: capture organization.provisioned + organization.created emits — the singleton
+// is config-free, stub it so assertions see the emits without wiring real listeners.
 const mockOrgEventsEmit = jest.fn();
 jest.unstable_mockModule('../lib/events.js', () => ({
   default: { emit: mockOrgEventsEmit, on: jest.fn() },
 }));
+
+/**
+ * Filter captured `organizationEvents.emit` calls down to one event name's payloads.
+ * @param {string} eventName - e.g. 'organization.created'.
+ * @returns {Array<Object>} the payload of each matching emit call, in call order.
+ */
+const emittedPayloads = (eventName) => mockOrgEventsEmit.mock.calls.filter(([name]) => name === eventName).map(([, payload]) => payload);
 
 // Config store — MUST be mutated in-place (not reassigned) because jest.unstable_mockModule
 // captures the default export value at import time. Object.assign ensures live updates.
@@ -169,7 +171,6 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
     mockIsConfigured.mockReturnValue(false);
     mockOrgExists.mockResolvedValue(false);
     mockUpdateById.mockResolvedValue({});
-    mockGrantOnSignup.mockResolvedValue(null);
     // Default: no active membership exists (fresh user — normal always-create path)
     mockMembershipFindOne.mockResolvedValue(null);
     // Re-establish policy + abilities mocks wiped by resetAllMocks
@@ -316,22 +317,21 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
     });
   });
 
-  // ─── signupGrant — credited exactly once per real new org ────────────────
+  // ─── organization.created (#3952) — emitted exactly once per real new org ─
 
-  describe('signupGrant (BillingSignupGrantService):', () => {
-    test('credited exactly once for a real new signup (autoCreate:false, no domain match)', async () => {
+  describe('organization.created emit (billing subscribes from billing.init.js):', () => {
+    test('emitted exactly once for a real new signup (autoCreate:false, no domain match)', async () => {
       setupConfig({ enabled: true, autoCreate: false, domainMatching: false });
       const user = makeUser('alice@acme.com');
 
       await OrganizationsService.handleSignupOrganization(user);
 
-      expect(mockGrantOnSignup).toHaveBeenCalledTimes(1);
-      expect(mockGrantOnSignup).toHaveBeenCalledWith(
-        expect.objectContaining({ planId: 'free' }),
-      );
+      const created = emittedPayloads('organization.created');
+      expect(created).toHaveLength(1);
+      expect(created[0]).toEqual(expect.objectContaining({ planId: 'free' }));
     });
 
-    test('credited exactly once for a real new signup (autoCreate:true, domain match → always-create)', async () => {
+    test('emitted exactly once for a real new signup (autoCreate:true, domain match → always-create)', async () => {
       setupConfig({ enabled: true, autoCreate: true, domainMatching: true });
       const existingOrg = makeFakeOrg({ name: 'Acme Corp', domain: 'acme.com' });
       mockOrgList.mockResolvedValue([existingOrg]);
@@ -339,11 +339,11 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
 
       await OrganizationsService.handleSignupOrganization(user);
 
-      // One grant for the newly created workspace (not for the existing org)
-      expect(mockGrantOnSignup).toHaveBeenCalledTimes(1);
+      // One event for the newly created workspace (not for the existing org)
+      expect(emittedPayloads('organization.created')).toHaveLength(1);
     });
 
-    test('NOT called on email-verification early-return path', async () => {
+    test('NOT emitted on email-verification early-return path', async () => {
       setupConfig({ enabled: true, autoCreate: false, domainMatching: false });
       mockIsConfigured.mockReturnValue(true);
       const user = makeUser('alice@acme.com');
@@ -351,9 +351,9 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
 
       const result = await OrganizationsService.handleSignupOrganization(user);
 
-      // Early return — no org created, no grant
+      // Early return — no org created, no emit
       expect(result.organization).toBeNull();
-      expect(mockGrantOnSignup).not.toHaveBeenCalled();
+      expect(emittedPayloads('organization.created')).toHaveLength(0);
     });
   });
 
@@ -483,7 +483,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
   // GREEN: guard detects existing active membership → converges to it, skips create.
 
   describe('A4 — idempotent convergence (retry-safe signup provisioning):', () => {
-    test('user already has active membership → returns existing org+membership, NO new org created, NO grant', async () => {
+    test('user already has active membership → returns existing org+membership, NO new org created, NO organization.created emit', async () => {
       setupConfig({ enabled: true, autoCreate: false, domainMatching: false });
       const existingOrg = makeFakeOrg({ name: 'Existing Corp', domain: 'acme.com' });
       const existingMembership = {
@@ -504,7 +504,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
       // No duplicate org created
       expect(mockOrgCreate).not.toHaveBeenCalled();
       // No double-credit on convergence path
-      expect(mockGrantOnSignup).not.toHaveBeenCalled();
+      expect(emittedPayloads('organization.created')).toHaveLength(0);
       // No footgun keys
       expect(result).not.toHaveProperty('organizationSetupRequired');
       expect(result).not.toHaveProperty('pendingJoin');
@@ -527,10 +527,10 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
       expect(result.organization).toBe(existingOrg);
       expect(result.membership).toBe(existingMembership);
       expect(mockOrgCreate).not.toHaveBeenCalled();
-      expect(mockGrantOnSignup).not.toHaveBeenCalled();
+      expect(emittedPayloads('organization.created')).toHaveLength(0);
     });
 
-    test('genuinely new user (no existing membership) → org IS created, grant credited once', async () => {
+    test('genuinely new user (no existing membership) → org IS created, organization.created emitted once', async () => {
       setupConfig({ enabled: true, autoCreate: false, domainMatching: false });
       // No active membership exists (default from beforeEach)
       mockMembershipFindOne.mockResolvedValue(null);
@@ -541,7 +541,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
       expect(result.organization).not.toBeNull();
       expect(result.membership).not.toBeNull();
       expect(mockOrgCreate).toHaveBeenCalledTimes(1);
-      expect(mockGrantOnSignup).toHaveBeenCalledTimes(1);
+      expect(emittedPayloads('organization.created')).toHaveLength(1);
     });
 
     test('converge path returns abilities from policy (same shape as fresh-signup path)', async () => {
@@ -579,7 +579,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
       expect(result.emailVerificationRequired).toBe(true);
       expect(mockMembershipFindOne).not.toHaveBeenCalled();
       expect(mockOrgCreate).not.toHaveBeenCalled();
-      expect(mockGrantOnSignup).not.toHaveBeenCalled();
+      expect(emittedPayloads('organization.created')).toHaveLength(0);
     });
 
     test('converge path does NOT return suggestedJoin (retry, not fresh corporate signup)', async () => {
@@ -603,13 +603,12 @@ describe('handleSignupOrganization — organization.provisioned emit (#3844):', 
     mockIsConfigured.mockReturnValue(false);
     mockOrgExists.mockResolvedValue(false);
     mockUpdateById.mockResolvedValue({});
-    mockGrantOnSignup.mockResolvedValue(null);
     mockMembershipFindOne.mockResolvedValue(null);
     mockDefineAbilityFor.mockResolvedValue({ rules: [] });
     mockSerializeAbilities.mockReturnValue(['ability-stub']);
   });
 
-  test('fresh-create path → emits ONCE with string userId + organizationId', async () => {
+  test('fresh-create path → emits organization.created THEN organization.provisioned, each once', async () => {
     setupConfig({ enabled: true });
     const fakeOrg = makeFakeOrg();
     mockOrgCreate.mockResolvedValue(fakeOrg);
@@ -618,8 +617,15 @@ describe('handleSignupOrganization — organization.provisioned emit (#3844):', 
     const result = await OrganizationsService.handleSignupOrganization(user);
 
     expect(result.organization).not.toBeNull();
-    expect(mockOrgEventsEmit).toHaveBeenCalledTimes(1);
-    expect(mockOrgEventsEmit).toHaveBeenCalledWith('organization.provisioned', {
+    // Two events on a genuinely new org: organization.created (#3952, billing's signupGrant
+    // seam) fires inside createOrganizationForUser, THEN organization.provisioned (#3844)
+    // fires back in handleSignupOrganization.
+    expect(mockOrgEventsEmit).toHaveBeenCalledTimes(2);
+    expect(mockOrgEventsEmit).toHaveBeenNthCalledWith(1, 'organization.created', {
+      orgId: String(fakeOrg._id),
+      planId: 'free',
+    });
+    expect(mockOrgEventsEmit).toHaveBeenNthCalledWith(2, 'organization.provisioned', {
       userId: String(user.id),
       organizationId: String(fakeOrg._id),
     });
@@ -640,6 +646,8 @@ describe('handleSignupOrganization — organization.provisioned emit (#3844):', 
 
     expect(result.organization).toBe(existingOrg);
     expect(mockOrgCreate).not.toHaveBeenCalled();
+    // No new org → no organization.created (that only fires from createOrganizationForUser,
+    // which the convergence path never calls); provisioned still fires for the converged org.
     expect(mockOrgEventsEmit).toHaveBeenCalledTimes(1);
     expect(mockOrgEventsEmit).toHaveBeenCalledWith('organization.provisioned', {
       userId: String(user.id),
