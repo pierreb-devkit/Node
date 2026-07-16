@@ -128,7 +128,11 @@ const create = async (body, user) => {
   // idempotence (refId signup_grant-<orgId>) and never throws. Fire-and-forget, synchronous
   // emit — the try/catch here only guards a SYNCHRONOUS listener throw (see ../lib/events.js).
   try {
-    organizationEvents.emit('organization.created', { orgId: result._id.toString(), planId: result.plan || 'free' });
+    // planId is a literal 'free' (not `result.plan`), matching organizations.service.js::
+    // createOrganizationForUser exactly — `plan: 'free'` is set unconditionally a few lines
+    // above, so `result.plan` is always 'free' here too; a `|| 'free'` fallback would be
+    // unreachable dead code (#3954 audit finding).
+    organizationEvents.emit('organization.created', { orgId: result._id.toString(), planId: 'free' });
   } catch (err) {
     logger.warn('organizations: organization.created listener threw', { message: err?.message });
   }

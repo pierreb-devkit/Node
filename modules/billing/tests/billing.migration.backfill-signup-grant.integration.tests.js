@@ -2,7 +2,7 @@
  * Module dependencies.
  */
 import mongoose from 'mongoose';
-import { describe, beforeAll, afterEach, afterAll, test, expect } from '@jest/globals';
+import { describe, beforeAll, afterEach, afterAll, test, expect, jest } from '@jest/globals';
 
 import mongooseService from '../../../lib/services/mongoose.js';
 import config from '../../../config/index.js';
@@ -15,6 +15,15 @@ import { up as backfillSignupGrants } from '../migrations/20260707100000-backfil
  * is Schema.ObjectId, so the migration MUST credit orgs through a path that casts to
  * ObjectId (it delegates to grantOnSignup → the Mongoose repository) — a raw-driver
  * write keyed on a string would create orphan, app-invisible ghost documents.
+ *
+ * The migration's `up()` takes no arguments — it scans the ENTIRE shared
+ * `organizations` collection filtered only by plan. Run unscoped against the real
+ * test DB, it would also silently credit any leftover grant-plan orgs left behind
+ * by other integration test files (crashed runs, ordering quirks), mutating state
+ * outside this test's ownership. `runScopedMigration` patches the `organizations`
+ * collection's `find()` for the duration of a single `up()` call so it only ever
+ * sees this test's own seeded fixture ids — the real migration logic (plan filter,
+ * grantOnSignup delegation, idempotency) is untouched, only its blast radius is.
  */
 describe('backfill-missing-signup-grant migration (integration):', () => {
   let organizations;
@@ -33,6 +42,39 @@ describe('backfill-missing-signup-grant migration (integration):', () => {
     await organizations.insertOne({ _id, name: `IT ${_id.toString()}`, plan });
     createdOrgIds.push(_id);
     return _id;
+  };
+
+  /**
+   * Run the real migration `up()` scoped to only the given org ids — intersects the
+   * migration's own `{ plan: { $in: grantPlanIds } }` query with `_id: { $in: orgIds }`
+   * for the duration of the call, so it can never reach an org outside this test's
+   * fixtures, then restores the unpatched collection.
+   * @param {import('mongoose').Types.ObjectId[]} orgIds - Fixture ids owned by this test.
+   * @returns {Promise<void>}
+   */
+  const runScopedMigration = async (orgIds) => {
+    const realCollection = mongoose.connection.db.collection.bind(mongoose.connection.db);
+    const spy = jest.spyOn(mongoose.connection.db, 'collection').mockImplementation((name) => {
+      const coll = realCollection(name);
+      if (name !== 'organizations') return coll;
+      // Proxy (not a duck-typed `{ find }` object) so every other method/property
+      // on the real Collection instance stays reachable — only `find()` is
+      // intercepted to intersect in the fixture id scope.
+      return new Proxy(coll, {
+        get(target, prop) {
+          if (prop === 'find') {
+            return (filter, options) => target.find({ ...filter, _id: { $in: orgIds } }, options);
+          }
+          const val = target[prop];
+          return typeof val === 'function' ? val.bind(target) : val;
+        },
+      });
+    });
+    try {
+      await backfillSignupGrants();
+    } finally {
+      spy.mockRestore();
+    }
   };
 
   beforeAll(async () => {
@@ -62,7 +104,7 @@ describe('backfill-missing-signup-grant migration (integration):', () => {
   test('credits the configured grant to an ObjectId-keyed org missing it, readable by ObjectId', async () => {
     const orgId = await seedOrg(grantPlanId);
 
-    await backfillSignupGrants();
+    await runScopedMigration(createdOrgIds);
 
     // Stored + readable keyed on the ObjectId — the critical-fix assertion.
     const eb = await extraBalances.findOne({ organization: orgId });
@@ -79,8 +121,8 @@ describe('backfill-missing-signup-grant migration (integration):', () => {
   test('is idempotent — a second run does not double-credit', async () => {
     const orgId = await seedOrg(grantPlanId);
 
-    await backfillSignupGrants();
-    await backfillSignupGrants();
+    await runScopedMigration(createdOrgIds);
+    await runScopedMigration(createdOrgIds);
 
     const docs = await extraBalances.find({ organization: orgId }).toArray();
     expect(docs).toHaveLength(1);
@@ -94,7 +136,7 @@ describe('backfill-missing-signup-grant migration (integration):', () => {
     const repo = (await import('../repositories/billing.extraBalance.repository.js')).default;
     await repo.creditGrant(orgId.toString(), grantAmount, 'signup_grant');
 
-    await backfillSignupGrants();
+    await runScopedMigration(createdOrgIds);
 
     const docs = await extraBalances.find({ organization: orgId }).toArray();
     expect(docs).toHaveLength(1);
