@@ -2,9 +2,14 @@
  * @module organizations/lib/orgRemoval.registry
  * @description Subscriber registry for organization-removal cleanup.
  *   Optional modules register a handler at load time via `onOrganizationRemoved`;
- *   the organization crud service runs them sequentially on org delete and
- *   propagates their errors (no silent swallow). Config-free, import-safe leaf —
- *   it must not import organization/tasks services (avoids an import cycle).
+ *   `runOrganizationRemovedHandlers` runs them sequentially and propagates a handler
+ *   error to ITS caller (no silent swallow inside this module). The current sole
+ *   caller, organizations.crud.service.js#remove, calls this AFTER the org doc and its
+ *   memberships are already gone, and deliberately catches + logs a propagated error
+ *   there (best-effort) so a handler bug can never leave a zombie org or abort an
+ *   unrelated caller's own work (#3965) — see that function's docblock. Config-free,
+ *   import-safe leaf — it must not import organization/tasks services (avoids an
+ *   import cycle).
  */
 
 const handlers = new Set();

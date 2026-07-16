@@ -176,33 +176,26 @@ const remove = async (user) => {
       const ownerCount = await MembershipService.count({ organizationId: orgId, role: MEMBERSHIP_ROLES.OWNER, status: MEMBERSHIP_STATUSES.ACTIVE });
       if (ownerCount <= 1) {
         // Sole owner — delete the org through the canonical removal seam rather than
-        // duplicating its cascade here. OrganizationsCrudService.remove() already does
-        // everything this branch used to hand-roll (co-member currentOrganization
-        // reassignment, membership cleanup, then runOrganizationRemovedHandlers before
-        // the repository remove) — routing through it is what makes org-scoped tasks
-        // (and any future onOrganizationRemoved consumer) get cleaned up (#3965).
+        // duplicating its cascade here. organizations.crud.service.js#remove() owns the
+        // full contract: membership cleanup, co-member currentOrganization reassignment,
+        // and the org repository delete ALL happen first (atomic-by-ordering — the org
+        // is never left half-removed), and only THEN do registered onOrganizationRemoved
+        // handlers (e.g. task cleanup) run, best-effort — a handler failure is caught and
+        // logged inside that service, never re-thrown (#3965).
+        //
+        // No try/catch here on purpose: because handler failures are already swallowed
+        // (logged) inside the seam, anything that DOES escape this call is a STRUCTURAL
+        // failure (membership wipe / reassignment / the org repository delete itself
+        // throwing) — and that must propagate and abort this entire user deletion, same
+        // as the pre-#3965 behavior, so a user is never deleted on top of an org whose
+        // teardown genuinely broke.
         //
         // Lazy import: organizations.crud.service.js statically imports this module
         // (UserService), so a static import here would create a cycle. Matches the
         // lazy-import pattern already used for the same reason in billing.init.js /
         // billing.referral.service.js.
-        //
-        // Best-effort at this call site: a downstream onOrganizationRemoved handler
-        // error (e.g. task cleanup) propagates out of the crud service by design — it
-        // aborts THAT org's removal (see organizations.crud.service.js#remove docblock,
-        // "no silent swallow") — but must never abort the surrounding user deletion, so
-        // it's caught + logged here and the cascade continues.
-        try {
-          const { default: OrganizationsCrudService } = await import('../../organizations/services/organizations.crud.service.js');
-          await OrganizationsCrudService.remove({ _id: orgId });
-        } catch (err) {
-          logger.error('users.remove: organization removal seam failed for sole-owned org', {
-            organizationId: String(orgId),
-            userId: String(userId),
-            message: err?.message,
-            stack: err?.stack,
-          });
-        }
+        const { default: OrganizationsCrudService } = await import('../../organizations/services/organizations.crud.service.js');
+        await OrganizationsCrudService.remove({ _id: orgId });
         continue; // memberships for this org already cleaned up by the removal seam above
       }
     }

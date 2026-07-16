@@ -1,5 +1,7 @@
 /**
- * Unit tests — OrgCrudService.remove() fires the org-removal registry and propagates handler errors.
+ * Unit tests — OrgCrudService.remove() fires the org-removal registry and is atomic:
+ * the org doc + memberships are always gone together before any handler runs, and a
+ * handler error is caught + logged (best-effort), never re-thrown (#3965).
  */
 import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 
@@ -8,9 +10,10 @@ const mockMembershipDeleteMany = jest.fn().mockResolvedValue({ deletedCount: 0 }
 const mockMembershipList = jest.fn().mockResolvedValue([]);
 const mockUpdateById = jest.fn().mockResolvedValue({});
 const mockFindWithFilter = jest.fn().mockResolvedValue([]);
+const mockLoggerError = jest.fn();
 
 jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
-  default: { error: jest.fn(), warn: jest.fn(), info: jest.fn() },
+  default: { error: mockLoggerError, warn: jest.fn(), info: jest.fn() },
 }));
 
 jest.unstable_mockModule('../../../config/index.js', () => ({
@@ -61,13 +64,24 @@ describe('OrgCrudService.remove() — org-removal registry', () => {
     expect(mockOrgRemove).toHaveBeenCalledWith(organization);
   });
 
-  test('propagates a handler error and aborts before the repository remove', async () => {
+  test('a handler error is best-effort — logged, never re-thrown, and the org is still fully removed (#3965)', async () => {
     onOrganizationRemoved(async () => {
       throw new Error('tasks cleanup failed');
     });
 
-    await expect(OrgCrudService.remove(organization)).rejects.toThrow('tasks cleanup failed');
-    expect(mockOrgRemove).not.toHaveBeenCalled();
+    await expect(OrgCrudService.remove(organization)).resolves.toEqual({ acknowledged: true });
+    // The org repository delete ran BEFORE the handler — removal is atomic-by-ordering.
+    expect(mockOrgRemove).toHaveBeenCalledWith(organization);
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      'organizations.crud.remove: org-removal cleanup handler failed after the org was removed (needs reconciliation)',
+      expect.objectContaining({ organizationId: 'org-1', message: 'tasks cleanup failed' }),
+    );
+  });
+
+  test('a STRUCTURAL failure (org repository delete itself throws) propagates and is NOT swallowed', async () => {
+    mockOrgRemove.mockRejectedValueOnce(new Error('db delete failed'));
+
+    await expect(OrgCrudService.remove(organization)).rejects.toThrow('db delete failed');
   });
 
   test('with zero handlers registered, removes the organization without throwing', async () => {

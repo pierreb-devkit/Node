@@ -5,6 +5,12 @@
  * Otherwise modules that register an onOrganizationRemoved handler (e.g. tasks —
  * see modules/tasks/tasks.init.js) never get to clean up org-scoped data. Issue #3965.
  *
+ * Also asserts the atomicity contract added to close a Phase-0 BLOCK finding: the org
+ * removal seam is atomic-by-ordering (org doc + memberships always gone together,
+ * handlers run best-effort AFTER), so a throwing onOrganizationRemoved handler can
+ * never leave a zombie org, and a STRUCTURAL failure in the seam propagates and aborts
+ * the whole user deletion (the user is never deleted on top of an inconsistent org).
+ *
  * Uses the REAL org-removal registry (not mocked) so the assertion exercises the actual
  * seam, mirroring the pattern in organizations.crud.orgRemoval.unit.tests.js.
  */
@@ -123,13 +129,17 @@ describe('users.service.remove — sole-owner org deletion routes through the or
     expect(mockOrgRepositoryRemove).toHaveBeenCalledWith({ _id: orgId });
   });
 
-  test('still deletes the user even when a registered handler throws (best-effort at the user-deletion call site)', async () => {
+  test('still deletes the user AND fully removes the org when a registered handler throws (no zombie org, no aborted user deletion)', async () => {
     const failingHandler = jest.fn().mockRejectedValue(new Error('task cleanup failed'));
     onOrganizationRemoved(failingHandler);
 
     await expect(UsersService.remove(ownerUser)).resolves.not.toThrow();
 
     expect(failingHandler).toHaveBeenCalledTimes(1);
+    // The org doc must still be removed despite the handler failure — a handler error
+    // is best-effort (logged) inside the removal seam, never a reason to leave a
+    // zombie org doc with its memberships already wiped.
+    expect(mockOrgRepositoryRemove).toHaveBeenCalledWith({ _id: orgId });
     // User deletion must still complete despite the downstream handler failure
     expect(mockUserRepositoryRemove).toHaveBeenCalledWith(ownerUser);
   });
@@ -138,5 +148,25 @@ describe('users.service.remove — sole-owner org deletion routes through the or
     await expect(UsersService.remove(ownerUser)).resolves.not.toThrow();
     expect(mockOrgRepositoryRemove).toHaveBeenCalledWith({ _id: orgId });
     expect(mockUserRepositoryRemove).toHaveBeenCalledWith(ownerUser);
+  });
+
+  test('aborts the user deletion when the org removal seam hits a STRUCTURAL failure (org repository delete throws) — user is NOT removed', async () => {
+    const structuralError = new Error('org repository delete failed (simulated DB error)');
+    mockOrgRepositoryRemove.mockRejectedValueOnce(structuralError);
+
+    await expect(UsersService.remove(ownerUser)).rejects.toThrow('org repository delete failed');
+
+    // The user must never be deleted on top of a teardown that genuinely broke.
+    expect(mockUserRepositoryRemove).not.toHaveBeenCalled();
+  });
+
+  test('aborts the user deletion when the org removal seam hits a STRUCTURAL failure (membership wipe throws) — user is NOT removed', async () => {
+    const structuralError = new Error('membership wipe failed (simulated DB error)');
+    mockMembershipRepositoryDeleteMany.mockRejectedValueOnce(structuralError);
+
+    await expect(UsersService.remove(ownerUser)).rejects.toThrow('membership wipe failed');
+
+    expect(mockOrgRepositoryRemove).not.toHaveBeenCalled();
+    expect(mockUserRepositoryRemove).not.toHaveBeenCalled();
   });
 });
