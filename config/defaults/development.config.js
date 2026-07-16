@@ -81,19 +81,22 @@ const config = {
       maxFiles: 2,
       json: false,
     },
-    // Path segments consumed by `lib/helpers/redactUrl.js` (`redactPathSecrets`)
-    // to redact single-use secrets carried as a PATH parameter (e.g.
-    // `/api/auth/reset/:token`). Extension-only: unioned with the built-in
-    // defaults in lib/helpers/redactUrl.js, so a module adds its own
-    // token-bearing route here without editing shared lib/ or duplicating
-    // ['reset', 'verify', 'verify-email'], which already apply unconditionally.
-    sensitivePathMarkers: [],
-    // Query-string parameter names consumed by `lib/helpers/redactUrl.js`
-    // (`redactUrl`) to redact single-use secrets carried in the query string
-    // (e.g. `POST /api/auth/signup?inviteToken=…`). Extension-only: unioned
-    // with the built-in defaults in lib/helpers/redactUrl.js (already
-    // includes 'inviteToken' unconditionally).
-    sensitiveQueryKeys: [],
+    // Redaction extension points (optional — do NOT declare either key here,
+    // not even as `[]`): a module or project config may set
+    // `log.sensitivePathMarkers` / `log.sensitiveQueryKeys` (array of
+    // strings) to extend the built-in redaction lists consumed by
+    // `lib/helpers/redactUrl.js` (`redactPathSecrets` for PATH segments e.g.
+    // `/api/auth/reset/:token`; `redactUrl` for query params e.g.
+    // `?inviteToken=…`). Values are UNIONED with the built-in defaults there
+    // (['reset', 'verify', 'verify-email'] / ['inviteToken']), never
+    // replacing them.
+    //
+    // These two keys are intentionally OMITTED from this file: `deepMerge`
+    // (config/index.js) replaces arrays wholesale rather than merging them,
+    // so an explicit value here (Layer 2: global defaults) would silently
+    // clobber a module's own extension of the same key (Layer 1: module
+    // config) instead of unioning with it. An omitted key lets a Layer-1
+    // value pass through untouched to redactUrl.js.
   },
   csrf: {
     csrf: false,
