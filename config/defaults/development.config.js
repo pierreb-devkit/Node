@@ -88,8 +88,8 @@ const config = {
     // `lib/helpers/redactUrl.js` (`redactPathSecrets` for PATH segments e.g.
     // `/api/auth/reset/:token`; `redactUrl` for query params e.g.
     // `?inviteToken=…`). Values are UNIONED with the built-in defaults there
-    // (['reset', 'verify', 'verify-email'] / ['inviteToken']), never
-    // replacing them.
+    // (['reset', 'verify', 'verify-email'] / ['inviteToken', 'code', 'state']),
+    // never replacing them.
     //
     // These two keys are intentionally OMITTED from this file: `deepMerge`
     // (config/index.js) replaces arrays wholesale rather than merging them,
