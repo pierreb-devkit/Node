@@ -23,7 +23,6 @@ describe('Tasks integration tests:', () => {
   let _user;
   let _tasks;
   let task1;
-  let task2;
 
   //  init
   beforeAll(async () => {
@@ -43,6 +42,49 @@ describe('Tasks integration tests:', () => {
   });
 
   describe('Logged', () => {
+    // A task belonging to a completely separate user/org, used to test cross-user
+    // authorization ("not a user's task"). Created ONCE via its own agent/session
+    // (not in the per-test beforeEach) so it survives this block's per-test afterEach
+    // (`UserService.remove(user)`) — which, since #3965, correctly cascades to delete
+    // a sole-owner's org-scoped tasks and would otherwise leave this fixture deleted
+    // partway through the suite (previously masked by the org-removal-seam bug: an
+    // orphaned-but-still-existing task used to linger regardless of its owner's fate).
+    let foreignAgent;
+    let foreignUser;
+    let foreignTask;
+
+    beforeAll(async () => {
+      foreignAgent = request.agent(app);
+      try {
+        const result = await foreignAgent.post('/api/auth/signup').send({
+          firstName: 'Foreign',
+          lastName: 'User',
+          email: 'task-foreign@test.com',
+          password: 'W@os.jsI$Aw3$0m3',
+          provider: 'local',
+        }).expect(200);
+        foreignUser = result.body.user;
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+      try {
+        const result = await foreignAgent.post('/api/tasks').send({ title: 'foreign-task', description: 'belongs to a different user' }).expect(200);
+        foreignTask = result.body.data;
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    afterAll(async () => {
+      try {
+        await UserService.remove(foreignUser);
+      } catch (err) {
+        console.log(err);
+      }
+    });
+
     beforeEach(async () => {
       // user
       _user = {
@@ -92,7 +134,6 @@ describe('Tasks integration tests:', () => {
       // add task
       try {
         const result = await agent.post('/api/tasks').send(_tasks[1]).expect(200);
-        task2 = result.body.data;
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('task created');
         expect(result.body.data.title).toBe(_tasks[1].title);
@@ -192,7 +233,7 @@ describe('Tasks integration tests:', () => {
     test('should not be able to update a task if it is not a user task', async () => {
       // edit task
       try {
-        const result = await agent.put(`/api/tasks/${task2.id}`).send(_tasks[0]).expect(403);
+        const result = await agent.put(`/api/tasks/${foreignTask.id}`).send(_tasks[0]).expect(403);
         expect(result.body.type).toBe('error');
         expect(result.body.message).toBe('Unauthorized');
         expect(result.body.description).toBe('User is not authorized');
@@ -218,7 +259,7 @@ describe('Tasks integration tests:', () => {
     test('should not be able to remove a task if it is not a user task', async () => {
       // edit task
       try {
-        const result = await agent.delete(`/api/tasks/${task2.id}`).send(_tasks[0]).expect(403);
+        const result = await agent.delete(`/api/tasks/${foreignTask.id}`).send(_tasks[0]).expect(403);
         expect(result.body.type).toBe('error');
         expect(result.body.message).toBe('Unauthorized');
         expect(result.body.description).toBe('User is not authorized');

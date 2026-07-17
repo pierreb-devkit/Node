@@ -11,7 +11,6 @@ import mailer from '../../../lib/helpers/mailer/index.js';
 import passwordHelper from '../../../lib/helpers/password.js';
 import UserRepository from '../repositories/users.repository.js';
 import MembershipService from '../../organizations/services/organizations.membership.service.js';
-import OrganizationsRepository from '../../organizations/repositories/organizations.repository.js';
 import MembershipRepository from '../../organizations/repositories/organizations.membership.repository.js';
 import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../../organizations/lib/constants.js';
 import { removeSensitive } from '../utils/sanitizeUser.js';
@@ -176,21 +175,28 @@ const remove = async (user) => {
       // Check if this user is the only owner of the org
       const ownerCount = await MembershipService.count({ organizationId: orgId, role: MEMBERSHIP_ROLES.OWNER, status: MEMBERSHIP_STATUSES.ACTIVE });
       if (ownerCount <= 1) {
-        // Sole owner — delete org and cascade: repair co-member currentOrganization
-        // Step 1: Collect co-members whose currentOrganization points to this org
-        const affectedUsers = await UserRepository.findWithFilter({ currentOrganization: orgId }, '_id');
-        // Step 2: Delete all memberships for this org (including this user's and all co-members')
-        await MembershipService.deleteMany({ organizationId: orgId });
-        // Step 3: For each affected co-member, switch to their next available org or set null
-        await Promise.all(affectedUsers.map(async (u) => {
-          const remaining = await MembershipRepository.list({ userId: u._id, status: MEMBERSHIP_STATUSES.ACTIVE });
-          const liveMemberships = remaining.filter((m) => m.organizationId != null);
-          const nextOrg = liveMemberships.length > 0 ? (liveMemberships[0].organizationId._id || liveMemberships[0].organizationId) : null;
-          await UserRepository.updateById(u._id, { currentOrganization: nextOrg });
-        }));
-        // Step 4: Delete the org (bare remove — org-scoped tasks are intentionally not deleted here)
-        await OrganizationsRepository.remove({ _id: orgId });
-        continue; // memberships for this org already cleaned up
+        // Sole owner — delete the org through the canonical removal seam rather than
+        // duplicating its cascade here. organizations.crud.service.js#remove() owns the
+        // full contract: membership cleanup, co-member currentOrganization reassignment,
+        // and the org repository delete ALL happen first (atomic-by-ordering — the org
+        // is never left half-removed), and only THEN do registered onOrganizationRemoved
+        // handlers (e.g. task cleanup) run, best-effort — a handler failure is caught and
+        // logged inside that service, never re-thrown (#3965).
+        //
+        // No try/catch here on purpose: because handler failures are already swallowed
+        // (logged) inside the seam, anything that DOES escape this call is a STRUCTURAL
+        // failure (membership wipe / reassignment / the org repository delete itself
+        // throwing) — and that must propagate and abort this entire user deletion, same
+        // as the pre-#3965 behavior, so a user is never deleted on top of an org whose
+        // teardown genuinely broke.
+        //
+        // Lazy import: organizations.crud.service.js statically imports this module
+        // (UserService), so a static import here would create a cycle. Matches the
+        // lazy-import pattern already used for the same reason in billing.init.js /
+        // billing.referral.service.js.
+        const { default: OrganizationsCrudService } = await import('../../organizations/services/organizations.crud.service.js');
+        await OrganizationsCrudService.remove({ _id: orgId });
+        continue; // memberships for this org already cleaned up by the removal seam above
       }
     }
     // Delete this user's membership

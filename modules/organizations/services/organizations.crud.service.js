@@ -188,11 +188,22 @@ const update = async (organization, body) => {
 
 /**
  * @function remove
- * @description Service to delete an organization, all its memberships, and any
- *   data owned by optional modules that registered an org-removal handler via
- *   `onOrganizationRemoved`. Handlers run sequentially after membership cleanup;
- *   any handler error propagates and aborts the delete before the repository
- *   removal (no silent swallow).
+ * @description Service to delete an organization and all its memberships. Removal is
+ *   atomic-by-ordering: membership cleanup, affected-user reassignment, and the org
+ *   repository delete itself all happen BEFORE any onOrganizationRemoved handler runs —
+ *   once removal starts, the org always ends fully removed (no zombie org doc, no
+ *   memberships left pointing at it), regardless of what a handler does (#3965).
+ *   Handlers (data owned by optional modules, e.g. tasks) then run sequentially and
+ *   ISOLATED — one throwing never skips the rest — BEST-EFFORT: every handler error is
+ *   logged here for manual reconciliation of that module's leftover org-scoped rows, but
+ *   never re-thrown. This is deliberate — a
+ *   handler failure must not resurrect/block a removal that has already committed, and
+ *   must not propagate into an unrelated caller (e.g. users.service.js#remove's
+ *   sole-owner cascade, which deletes the user right after this call and must not have
+ *   that deletion aborted by a downstream task-cleanup bug).
+ *   A STRUCTURAL failure — the membership wipe, the reassignment loop, or the org
+ *   repository delete itself throwing — is NOT caught here and propagates to the
+ *   caller, so a genuinely broken teardown is never reported as success.
  * @param {Object} organization - The organization to delete.
  * @returns {Promise<Object>} A promise resolving to a confirmation of the deletion.
  */
@@ -205,20 +216,41 @@ const remove = async (organization) => {
   // Remove all memberships for this organization
   await MembershipRepository.deleteMany({ organizationId: orgId });
 
-  // For each affected user, switch to their next available org or set null
+  // For each affected user, switch to their next available org or set null.
+  // Guard against a dangling membership whose populated organizationId is null (ref
+  // to another, already-deleted org) — otherwise `.organizationId._id` throws (#3709,
+  // centralized here from users.service.js's own cascade by #3965).
   await Promise.all(affectedUsers.map(async (u) => {
     const remaining = await MembershipRepository.list({ userId: u._id, status: MEMBERSHIP_STATUSES.ACTIVE });
-    const nextOrg = remaining.length > 0
-      ? (remaining[0].organizationId._id || remaining[0].organizationId)
+    const liveMemberships = remaining.filter((m) => m.organizationId != null);
+    const nextOrg = liveMemberships.length > 0
+      ? (liveMemberships[0].organizationId._id || liveMemberships[0].organizationId)
       : null;
     await UserService.updateById(u._id, { currentOrganization: nextOrg });
   }));
 
-  // Run org-removal cleanup handlers registered by optional modules (e.g. tasks).
-  // Errors propagate and abort the delete before the repository removal.
-  await runOrganizationRemovedHandlers({ organizationId: orgId, organization });
-
+  // Structural teardown is complete — memberships gone, affected users reassigned.
+  // Remove the org doc itself BEFORE running any optional cleanup handler, so the org
+  // can never be left half-removed by a handler throwing (#3965).
   const result = await OrganizationsRepository.remove(organization);
+
+  // Run org-removal cleanup handlers registered by optional modules (e.g. tasks) AFTER
+  // the org is structurally gone. Best-effort: log and continue on failure (see docblock).
+  try {
+    await runOrganizationRemovedHandlers({ organizationId: orgId, organization });
+  } catch (err) {
+    // The registry isolates each handler and re-raises every failure as one AggregateError,
+    // so later handlers already ran. Log each failure individually for reconciliation.
+    const failures = err instanceof AggregateError ? err.errors : [err];
+    failures.forEach((failure) => {
+      logger.error('organizations.crud.remove: org-removal cleanup handler failed after the org was removed (needs reconciliation)', {
+        organizationId: String(orgId),
+        message: failure?.message,
+        stack: failure?.stack,
+      });
+    });
+  }
+
   return result;
 };
 
