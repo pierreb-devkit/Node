@@ -850,7 +850,17 @@ const resendVerification = async (req, res) => {
     if (!acceptedCount) return responses.error(res, 400, 'Bad Request', 'Failure sending email')();
     return responses.success(res, 'Verification email sent')({ status: true });
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    // #3966 hardening: sendVerificationEmail (mailer.sendMail) now propagates a
+    // transport failure instead of swallowing it — the raw SMTP/provider error
+    // string must not leak to the client. Log the real error server-side with
+    // context (this catch is resend-email-scoped: an unexpected failure here is
+    // effectively always the mail send); respond with a stable generic message.
+    logger.error('[auth.resendVerification] failed', {
+      userId: req.user?.id,
+      message: err?.message,
+      stack: err?.stack,
+    });
+    responses.error(res, 422, 'Unprocessable Entity', 'Failed to send the email, please try again.')(err);
   }
 };
 
