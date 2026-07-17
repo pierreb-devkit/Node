@@ -140,8 +140,9 @@ describe('resolvePlan via priceId map (P0 fix — price.metadata.planId is empty
     );
   });
 
-  test('falls back to free when priceId is unknown and metadata is empty', async () => {
-    const existing = { _id: mocks.subId, organization: mocks.orgId };
+  test('#3970: retains current plan (does NOT force free) + emits alert when priceId is unknown and metadata is empty', async () => {
+    // Existing paid org — an unresolvable price on a webhook must never silently downgrade it.
+    const existing = { _id: mocks.subId, organization: mocks.orgId, plan: 'pro' };
     mocks.mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
 
     await BillingWebhookService.handleSubscriptionUpdated(
@@ -157,9 +158,39 @@ describe('resolvePlan via priceId map (P0 fix — price.metadata.planId is empty
       mocks.subId,
       1700000100,
       'evt_unknown_1',
+      expect.objectContaining({ plan: 'pro' }),
+      'subscription',
+    );
+    expect(mocks.mockOrganizationRepository.setPlan).toHaveBeenCalledWith(mocks.orgId, 'pro');
+    expect(mocks.mockEvents.emit).toHaveBeenCalledWith(
+      'billing.webhook.plan_unresolved',
+      expect.objectContaining({ organizationId: mocks.orgId, retainedPlan: 'pro', hadKnownPlan: true }),
+    );
+  });
+
+  test('#3970: a genuinely-free price (metadata.planId=free) still resolves to free, no alert', async () => {
+    // Distinguishes a REAL free plan (resolvable via the shared resolver) from the unresolvable
+    // case above — 'free' must stay reachable as a normal resolution, not just a fallback.
+    const existing = { _id: mocks.subId, organization: mocks.orgId, plan: 'pro' };
+    mocks.mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+
+    await BillingWebhookService.handleSubscriptionUpdated(
+      {
+        id: 'sub_456',
+        status: 'active',
+        items: { data: [{ price: { id: 'price_downgrade_to_free', metadata: { planId: 'free' } } }] },
+      },
+      { id: 'evt_free_1', created: 1700000100, data: { previous_attributes: {} } },
+    );
+
+    expect(mocks.mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
+      mocks.subId,
+      1700000100,
+      'evt_free_1',
       expect.objectContaining({ plan: 'free' }),
       'subscription',
     );
+    expect(mocks.mockEvents.emit).not.toHaveBeenCalledWith('billing.webhook.plan_unresolved', expect.anything());
   });
 
   test('legacy fallback: uses price.metadata.planId when priceId not in map (e.g. test fixtures)', async () => {
@@ -397,6 +428,29 @@ describe('handleSubscriptionCreated — safety-net handler:', () => {
     expect(mocks.mockOrganizationRepository.setPlan).not.toHaveBeenCalled();
   });
 
+  test('#3970: existing doc — retains current plan (does NOT force free) + emits alert on unresolvable price', async () => {
+    const existing = { _id: subId, organization: orgId, plan: 'enterprise' };
+    mocks.mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+
+    await BillingWebhookService.handleSubscriptionCreated(
+      makeSubscription({ items: { data: [{ price: { id: 'price_unmapped_manual', metadata: {} } }] } }),
+      makeEvent(),
+    );
+
+    expect(mocks.mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
+      subId,
+      1700000200,
+      'evt_created',
+      expect.objectContaining({ plan: 'enterprise' }),
+      'subscription',
+    );
+    expect(mocks.mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'enterprise');
+    expect(mocks.mockEvents.emit).toHaveBeenCalledWith(
+      'billing.webhook.plan_unresolved',
+      expect.objectContaining({ organizationId: orgId, retainedPlan: 'enterprise', hadKnownPlan: true }),
+    );
+  });
+
   test('Dashboard subscription: no existing doc via subscriptionId, found via customerId — creates row', async () => {
     const orgSub = { organization: orgId };
     mocks.mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(null);
@@ -428,6 +482,49 @@ describe('handleSubscriptionCreated — safety-net handler:', () => {
 
     expect(mocks.mockSubscriptionRepository.create).toHaveBeenCalledWith(
       expect.objectContaining({ plan: 'starter' }),
+    );
+  });
+
+  test('#3970: Dashboard subscription — orgSub already carries a plan, retains it (does NOT force free) on unresolvable price', async () => {
+    // Multi-subscription edge case: the org already has a Subscription row (found via
+    // stripeCustomerId) on plan 'pro'. syncOrganizationPlan writes the shared org-level plan
+    // field, so an unresolvable price on this second subscription must not downgrade it.
+    const orgSub = { organization: orgId, plan: 'pro' };
+    mocks.mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(null);
+    mocks.mockSubscriptionRepository.findByStripeCustomerId.mockResolvedValue(orgSub);
+
+    await BillingWebhookService.handleSubscriptionCreated(
+      makeSubscription({ items: { data: [{ price: { id: 'price_unmapped_manual', metadata: {} } }] } }),
+      makeEvent(),
+    );
+
+    expect(mocks.mockSubscriptionRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ plan: 'pro' }),
+    );
+    expect(mocks.mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
+    expect(mocks.mockEvents.emit).toHaveBeenCalledWith(
+      'billing.webhook.plan_unresolved',
+      expect.objectContaining({ organizationId: orgId, retainedPlan: 'pro', hadKnownPlan: true }),
+    );
+  });
+
+  test('#3970: Dashboard subscription — no prior plan reference at all, defaults free on unresolvable price + alerts', async () => {
+    // Genuinely new org/customer mapping with no plan on record yet — least-harmful default.
+    const orgSub = { organization: orgId };
+    mocks.mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(null);
+    mocks.mockSubscriptionRepository.findByStripeCustomerId.mockResolvedValue(orgSub);
+
+    await BillingWebhookService.handleSubscriptionCreated(
+      makeSubscription({ items: { data: [{ price: { id: 'price_unmapped_manual', metadata: {} } }] } }),
+      makeEvent(),
+    );
+
+    expect(mocks.mockSubscriptionRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ plan: 'free' }),
+    );
+    expect(mocks.mockEvents.emit).toHaveBeenCalledWith(
+      'billing.webhook.plan_unresolved',
+      expect.objectContaining({ organizationId: orgId, retainedPlan: 'free', hadKnownPlan: false }),
     );
   });
 
