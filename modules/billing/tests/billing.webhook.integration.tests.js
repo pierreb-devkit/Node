@@ -297,9 +297,11 @@ describe('Billing webhook integration tests:', () => {
       expect(mockOrganizationRepository.setPlan).not.toHaveBeenCalled();
     });
 
-    test('should fall back to free when plan metadata is invalid', async () => {
-      const existing = { _id: subId, organization: orgId };
+    test('#3970: retains current plan (does NOT force free) when plan metadata is invalid', async () => {
+      // Existing paid org — an unrecognized metadata.planId is unresolvable, must not downgrade.
+      const existing = { _id: subId, organization: orgId, plan: 'starter' };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      const { default: billingEvents } = await import('../lib/events.js');
 
       await WebhookService.handleSubscriptionUpdated(
         {
@@ -316,8 +318,13 @@ describe('Billing webhook integration tests:', () => {
         subId,
         expect.any(Number),
         expect.any(String),
-        expect.objectContaining({ plan: 'free' }),
+        expect.objectContaining({ plan: 'starter' }),
         'subscription',
+      );
+      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'starter');
+      expect(billingEvents.emit).toHaveBeenCalledWith(
+        'billing.webhook.plan_unresolved',
+        expect.objectContaining({ organizationId: orgId, retainedPlan: 'starter', hadKnownPlan: true }),
       );
     });
   });

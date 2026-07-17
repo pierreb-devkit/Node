@@ -60,17 +60,55 @@ const validatePlan = (plan) => {
 const planRanks = Object.fromEntries((config.billing?.plans || []).map((p, i) => [p, i]));
 
 /**
- * @description Resolve the plan name from a Stripe subscription object.
- * Delegates to the shared priceId→plan resolver (see `../lib/billing.planResolver.js`,
- * also used by the admin force-sync tool and the reconcile cron — #3964/#1250). Strategy
- * (most-specific first): config priceId map → price/plan.metadata.planId legacy fallback →
- * 'free' when nothing resolves (webhook-specific last resort: an event still needs a plan
- * written; unlike the admin/reconcile call sites, there is no "abort" option mid-webhook).
+ * @description Resolve the plan name from a Stripe subscription object for a webhook write path.
+ * Delegates to the shared priceId→plan resolver (see `../lib/billing.planResolver.js`, also used
+ * by the admin force-sync tool and the reconcile cron — #3964/#1250). Strategy (most-specific
+ * first): config priceId map → price/plan.metadata.planId legacy fallback → unresolvable.
+ *
+ * On unresolvable (unmapped priceId AND no valid metadata.planId — e.g. a manually-sold
+ * enterprise price, or a misconfigured `config.stripe.prices`), this does NOT force 'free'.
+ * Unlike the admin tool (aborts the write with a 409) or the reconcile cron (skips the plan
+ * comparison, log-only), a webhook cannot abort mid-flight — an event still needs a plan
+ * written. Instead it retains `fallbackPlan` (the org/subscription's last-known plan, passed by
+ * the caller from the already-loaded DB doc) so an ambiguous price never silently downgrades a
+ * paying org, and emits an alert for manual review (mirrors the `billing.refund.unresolved`
+ * alert pattern used elsewhere in this file). When `fallbackPlan` is itself unknown (no prior
+ * plan reference — a genuinely brand-new subscription/org), defaults to 'free': the
+ * least-harmful default for a fresh signup, an ops/config error either way, and still surfaced
+ * via the alert (#3970).
  * @param {Object} subscription - Stripe subscription object
+ * @param {string|null} [fallbackPlan] - Last-known plan to retain on ambiguity; null/undefined → 'free'.
+ * @param {Object} [ctx={}] - Alert context merged into the log/emit payload (e.g. organizationId, eventId).
  * @returns {string} plan name
  */
-const resolvePlan = (subscription) =>
-  resolvePlanFromSubscription(subscription, { logPrefix: '[billing.webhook]' }) ?? 'free';
+const resolvePlan = (subscription, fallbackPlan = null, ctx = {}) => {
+  const resolved = resolvePlanFromSubscription(subscription, { logPrefix: '[billing.webhook]' });
+  if (resolved !== null) return resolved;
+
+  const hadKnownPlan = fallbackPlan !== null && fallbackPlan !== undefined;
+  const retainedPlan = hadKnownPlan ? fallbackPlan : 'free';
+  const priceId = subscription?.items?.data?.[0]?.price?.id ?? null;
+
+  logger.error(
+    '[billing.webhook] resolvePlan — unresolvable price, NOT forcing free (retaining last-known plan)',
+    { ...ctx, stripeSubscriptionId: subscription?.id, priceId, retainedPlan, hadKnownPlan },
+  );
+  try {
+    billingEvents.emit('billing.webhook.plan_unresolved', {
+      ...ctx,
+      stripeSubscriptionId: subscription?.id,
+      priceId,
+      retainedPlan,
+      hadKnownPlan,
+    });
+  } catch (evtErr) {
+    logger.error('[billing.webhook] billing.webhook.plan_unresolved listener error (non-fatal)', {
+      error: evtErr?.message ?? String(evtErr),
+      stack: evtErr?.stack,
+    });
+  }
+  return retainedPlan;
+};
 
 /**
  * @description Sync the organization plan field to match the subscription plan.
@@ -369,7 +407,10 @@ const handleSubscriptionUpdated = async (subscription, event) => {
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(subscription.id);
   if (!existing) return;
 
-  const newPlan = resolvePlan(subscription);
+  // Hoisted so both resolvePlan's alert context and the rest of the handler share one value.
+  const organizationId = String(existing.organization?._id || existing.organization);
+
+  const newPlan = resolvePlan(subscription, existing.plan, { organizationId, eventId: event?.id });
   // Stripe API ≥ 2025-08-27 moved current_period_start/end to items.data[0].
   // Read from items first, fall back to top-level for older API versions.
   const rawPeriodStart = subscription.items?.data?.[0]?.current_period_start ?? subscription.current_period_start;
@@ -407,7 +448,6 @@ const handleSubscriptionUpdated = async (subscription, event) => {
     return;
   }
 
-  const organizationId = String(existing.organization?._id || existing.organization);
   await syncOrganizationPlan(organizationId, effectivePlan);
 
   if (isIncompleteExpired) {
@@ -633,13 +673,18 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
   const isPastDue = existing.pastDueSince !== null && existing.pastDueSince !== undefined;
   const fields = isPastDue ? { pastDueSince: null, status: 'active' } : {};
 
+  // Hoisted so both resolvePlan's alert context and the rest of the handler share one value.
+  const organizationId = String(existing.organization?._id || existing.organization);
+
   let resolvedPlan = null;
   if (isPastDue) {
     try {
       const stripe = getStripe();
       if (!stripe) throw new Error('Stripe not configured');
       const stripeSub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
-      resolvedPlan = resolvePlan(stripeSub);
+      // Restore path: an unresolvable price here must NOT re-write 'free' over a dunning-downgraded
+      // sub — retain existing.plan (the last-known plan) and alert instead (#3970).
+      resolvedPlan = resolvePlan(stripeSub, existing.plan, { organizationId, stripeSubscriptionId, eventId: event?.id });
       fields.plan = resolvedPlan;
     } catch (stripeErr) {
       logger.warn('[billing.webhook] invoice.payment_succeeded — Stripe re-fetch failed, plan not restored', {
@@ -648,8 +693,6 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
       });
     }
   }
-
-  const organizationId = String(existing.organization?._id || existing.organization);
 
   const updated = await SubscriptionRepository.updateIfEventNewer(
     String(existing._id),
@@ -1120,7 +1163,6 @@ const handleChargeDisputeFundsWithdrawn = async (dispute, event) => {
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleSubscriptionCreated = async (subscription, event) => {
-  const newPlan = resolvePlan(subscription);
   const rawPeriodStart = subscription.items?.data?.[0]?.current_period_start ?? subscription.current_period_start;
   const newPeriodStart = rawPeriodStart ? new Date(rawPeriodStart * 1000) : undefined;
 
@@ -1145,6 +1187,10 @@ const handleSubscriptionCreated = async (subscription, event) => {
     }
 
     const organizationId = String(orgSub.organization?._id || orgSub.organization);
+    // orgSub was found via stripeCustomerId, so the org already carries a plan (e.g. a Dashboard
+    // second-subscription edge case) — retain it on an unresolvable price rather than defaulting
+    // to 'free', since syncOrganizationPlan below writes the shared org-level plan field (#3970).
+    const newPlan = resolvePlan(subscription, orgSub.plan, { organizationId, eventId: event?.id });
     logger.info('[billing.webhook] subscription.created — creating DB row for Dashboard/Payment Link subscription', {
       stripeSubscriptionId: subscription.id,
       organizationId,
@@ -1179,6 +1225,9 @@ const handleSubscriptionCreated = async (subscription, event) => {
     return;
   }
 
+  const organizationId = String(existing.organization?._id || existing.organization);
+  const newPlan = resolvePlan(subscription, existing.plan, { organizationId, eventId: event?.id });
+
   const fields = {
     plan: newPlan,
     status: subscription.status,
@@ -1197,7 +1246,6 @@ const handleSubscriptionCreated = async (subscription, event) => {
     return;
   }
 
-  const organizationId = String(existing.organization?._id || existing.organization);
   await syncOrganizationPlan(organizationId, newPlan);
 };
 

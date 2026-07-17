@@ -664,7 +664,7 @@ describe('Billing webhook subscription unit tests:', () => {
       );
     });
 
-    test('V8.1 — resolvePlanFromSubscription warns on unrecognized non-empty planId (falls back to free)', async () => {
+    test('V8.1 — resolvePlanFromSubscription warns on unrecognized non-empty planId', async () => {
       const existing = {
         _id: subId,
         organization: orgId,
@@ -689,6 +689,38 @@ describe('Billing webhook subscription unit tests:', () => {
       expect(mockLogger.warn).toHaveBeenCalledWith(
         '[billing.webhook] resolvePlanFromSubscription: unrecognized planId in metadata',
         expect.objectContaining({ raw: 'prod_unknownXYZ' }),
+      );
+    });
+
+    test('#3970: unresolvable price on restore — retains current plan (does NOT force free) + emits alert', async () => {
+      // Existing PAID org (e.g. dunning-restore in flight) — an unresolvable price on the
+      // re-fetched Stripe subscription must not overwrite the plan with 'free'.
+      const existing = {
+        _id: subId,
+        organization: orgId,
+        pastDueSince: new Date('2026-04-01'),
+        status: 'past_due',
+        plan: 'pro',
+      };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+      mockStripe.subscriptions.retrieve.mockResolvedValue({
+        id: 'sub_456',
+        items: { data: [{ price: { id: 'price_unmapped_manual', metadata: {} } }] },
+      });
+
+      await BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_456' }, makeEvent());
+
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
+        subId,
+        1700000400,
+        'evt_succeeded',
+        expect.objectContaining({ plan: 'pro', status: 'active', pastDueSince: null }),
+        'invoice',
+      );
+      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
+      expect(mockEvents.emit).toHaveBeenCalledWith(
+        'billing.webhook.plan_unresolved',
+        expect.objectContaining({ organizationId: orgId, retainedPlan: 'pro', hadKnownPlan: true }),
       );
     });
   });
