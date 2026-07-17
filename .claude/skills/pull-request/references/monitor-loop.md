@@ -19,6 +19,7 @@ After `gh pr ready`, run this loop yourself — do not wait for the user.
 consecutive_zero = 0
 
 REPEAT:
+  0. Draft guard                        → if PR is still draft AND CI is green, flip to ready now (see 6-guard)
   1. Wait for CI                        → sleep 30 then gh pr checks $PR --watch
   2. If CI fails                        → fix, /verify, commit, push, consecutive_zero=0, GOTO 1
   2b. Check mergeable status            → STATUS=$(gh pr view $PR --json mergeable --jq .mergeable)
@@ -33,6 +34,25 @@ REPEAT:
                                            if consecutive_zero >= 3 (~9 min) → check branch protection (see 6f), then STOP ✓
                                            else GOTO 3
 ```
+
+## 6-guard. Draft ordering guard (belt-and-braces)
+
+CodeRabbit never reviews a draft PR. Section 5 already flips the PR to ready
+before this loop starts, but run this check at the top of **every** pass
+anyway — it covers a loop entered before that flip, or a rebase/force-push
+that reverted the PR back to draft:
+
+```bash
+STATUS=$(gh pr view "$PR" --json isDraft,statusCheckRollup)
+IS_DRAFT=$(echo "$STATUS" | jq -r '.isDraft')
+CI_GREEN=$(echo "$STATUS" | jq -r '[.statusCheckRollup[] | (.conclusion // .state)] | all(. == "SUCCESS")')
+
+if [ "$IS_DRAFT" = "true" ] && [ "$CI_GREEN" = "true" ]; then
+  gh pr ready "$PR"
+fi
+```
+
+If still draft with CI red, do nothing — wait for CI to go green first (step 1), then this check flips it on the next pass.
 
 ## 6a. Wait for CI
 
