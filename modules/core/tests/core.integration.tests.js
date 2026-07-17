@@ -315,12 +315,13 @@ describe('Core integration tests:', () => {
 
     it('should NOT serve a dedicated Redoc UI on /api/docs (decommissioned)', async () => {
       // The Redoc UI handler was removed. /api/docs is no longer a dedicated
-      // route, so it falls through to the generic catch-all landing (200) —
-      // NOT a Redoc reference page that loads /api/spec.json. We assert it IS
-      // the catch-all (positive) so the 200 is unambiguously the fall-through,
-      // not some other docs surface.
-      const res = await request(app).get('/api/docs').expect(200);
-      expect(res.text).toContain('Devkit Node Api'); // the generic catch-all landing
+      // route, so it falls through to the content-negotiated 404 catch-all
+      // (#3975) — NOT a Redoc reference page that loads /api/spec.json, and
+      // NOT the old implicit 200 HTML landing either. We assert the JSON 404
+      // (positive) so "decommissioned" is unambiguous: the path simply does
+      // not exist, not some other docs surface.
+      const res = await request(app).get('/api/docs').expect(404);
+      expect(res.body).toEqual({ error: 'not_found' });
       expect(res.text).not.toMatch(/redoc/i);
       expect(res.text).not.toContain('/api/spec.json');
     });
