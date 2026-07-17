@@ -19,8 +19,12 @@ After `gh pr ready`, run this loop yourself — do not wait for the user.
 consecutive_zero = 0
 
 REPEAT:
+  0. Draft guard                        → if PR is still draft AND CI is green, flip to ready now (see 6-guard)
   1. Wait for CI                        → sleep 30 then gh pr checks $PR --watch
   2. If CI fails                        → fix, /verify, commit, push, consecutive_zero=0, GOTO 1
+  2a. CI just turned green              → re-run the draft guard now, before proceeding (see 6-guard) —
+                                           catches a pass that started draft+CI-red so the PR doesn't
+                                           stay draft into the review wait below
   2b. Check mergeable status            → STATUS=$(gh pr view $PR --json mergeable --jq .mergeable)
                                            if STATUS == "UNKNOWN" → sleep 10, retry up to 3 times
                                            if STATUS == "CONFLICTING" → report to user and STOP
@@ -33,6 +37,38 @@ REPEAT:
                                            if consecutive_zero >= 3 (~9 min) → check branch protection (see 6f), then STOP ✓
                                            else GOTO 3
 ```
+
+## 6-guard. Draft ordering guard (belt-and-braces)
+
+CodeRabbit never reviews a draft PR. Section 5 already flips the PR to ready
+before this loop starts, but run this check at the top of **every** pass —
+and again the moment CI turns green mid-pass (step 2a) — anyway: it covers a
+loop entered before that flip, a rebase/force-push that reverted the PR back
+to draft, or a pass that started draft with CI red:
+
+```bash
+STATUS=$(gh pr view "$PR" --json isDraft,statusCheckRollup)
+IS_DRAFT=$(echo "$STATUS" | jq -r '.isDraft')
+# green = rollup non-empty (an empty rollup right after a force-push/rebase must NOT read as green) AND
+# every check is SUCCESS/NEUTRAL/SKIPPED (all non-blocking; a bare FAILURE/CANCELLED or still-pending check stays not-green)
+CI_GREEN=$(echo "$STATUS" | jq -r '[.statusCheckRollup[]? | (.conclusion // .state)] | length > 0 and all(. as $s | ["SUCCESS","NEUTRAL","SKIPPED"] | index($s) != null)')
+
+if [ "$IS_DRAFT" = "true" ] && [ "$CI_GREEN" = "true" ]; then
+  gh pr ready "$PR" || { sleep 5; gh pr ready "$PR"; } || {
+    echo "ERROR: gh pr ready failed twice — PR still draft, cannot proceed to review wait." >&2
+    exit 1
+  }
+fi
+```
+
+If `gh pr ready` fails, retry once after a short sleep; if the retry also
+fails, stop here — do not fall through to the review wait with the PR still
+draft (that deadlocks on CodeRabbit, which never reviews a draft).
+
+If still draft with CI red, do nothing — wait for CI to go green first (step
+1). The instant CI turns green, step 2a re-runs this same guard within the
+same pass (not "next pass") so a still-draft PR flips ready before
+mergeability, grace period, or review-wait ever run.
 
 ## 6a. Wait for CI
 

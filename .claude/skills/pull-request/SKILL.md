@@ -97,13 +97,15 @@ PR title must follow `type(scope): description` (conventional commits). Link the
 - Checkbox sections (Validation, Guardrails): check each box that applies (`- [x]`), leave unchecked only what genuinely does not apply
 - Follow any instructions in the template (e.g. "Delete this section if not applicable")
 
-Once **draft CI passes** and the PR is ready for human review, convert to ready:
+**Ordering invariant — as soon as draft CI is green, flip to ready before doing anything else:**
 
 ```bash
 gh pr ready <number>
 ```
 
-> Some bots (e.g. CodeRabbit) trigger on ready, not on CI completion. After converting, do a **preliminary review pass** before entering the main loop:
+CodeRabbit (and some other review bots) never review a draft PR — they trigger on ready, not on CI completion. Entering or continuing the CodeRabbit/threads wait while the PR is still draft is a guaranteed silent deadlock (observed 2026-07-16: a converging PR sat in draft, CI green, CodeRabbit check pending indefinitely, until manually un-drafted). `gh pr ready` MUST run before section 6 starts waiting on any review signal — never after.
+
+> After converting, do a **preliminary review pass** before entering the main loop:
 >
 > ```bash
 > sleep 180
@@ -126,6 +128,10 @@ PR=<number>
 ```
 
 Per pass:
+0. Draft guard — if `isDraft: true` AND CI green, `gh pr ready` immediately,
+   then continue the pass. CodeRabbit never reviews a draft; this catches a
+   loop that started before the flip, or a rebase/force-push that reverted
+   the PR to draft.
 1. Wait CI → fix + /verify + commit + push if red, else continue
 2. Check mergeable — `CONFLICTING` stops, `UNKNOWN` retries
 3. Grace `sleep 180` + adaptive recheck of pending review checks
