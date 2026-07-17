@@ -13,10 +13,12 @@ const successInner = jest.fn();
 const errorInner = jest.fn();
 const success = jest.fn(() => successInner);
 const error = jest.fn(() => errorInner);
+const mockLogger = { error: jest.fn(), warn: jest.fn(), info: jest.fn() };
 
 jest.unstable_mockModule('../services/invitations.service.js', () => ({ default: mockService }));
 jest.unstable_mockModule('../../../lib/helpers/responses.js', () => ({ default: { success, error } }));
 jest.unstable_mockModule('../../../lib/helpers/errors.js', () => ({ default: { getMessage: jest.fn((e) => e?.message || 'err') } }));
+jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mockLogger }));
 
 const controller = (await import('../controllers/invitations.controller.js')).default;
 
@@ -93,6 +95,26 @@ describe('invitations.controller.resend', () => {
     mockService.resend.mockRejectedValue(Object.assign(new Error('mailer is not configured'), { status: 422 }));
     await controller.resend({ invitation: { id: 'i1' } }, makeRes());
     expect(error).toHaveBeenCalledWith(expect.anything(), 422, 'Unprocessable Entity', expect.any(String));
+  });
+  // #3966 hardening: a bare transport rejection (no `.status`, unlike the
+  // deliberate AppErrors above) must not leak the raw provider/SMTP error
+  // string to the client — only a stable generic message — while the real
+  // error still gets logged server-side with context.
+  test('mail-transport failure (no .status) responds with a generic message, never the raw provider error, and logs server-side', async () => {
+    const providerError = new Error('Resend API error: 401 Unauthorized — invalid API key sk_live_abc123');
+    mockService.resend.mockRejectedValue(providerError);
+    await controller.resend({ invitation: { id: 'i1' } }, makeRes());
+
+    expect(error).toHaveBeenCalledWith(expect.anything(), 422, 'Unprocessable Entity', expect.any(String));
+    const clientMessage = error.mock.calls[0][3];
+    expect(clientMessage).not.toContain('sk_live_abc123');
+    expect(clientMessage).not.toContain('Resend API error');
+    expect(clientMessage).toBe('Failed to send the email, please try again.');
+
+    expect(mockLogger.error).toHaveBeenCalledWith('[invitations.resend] failed', expect.objectContaining({
+      invitationId: 'i1',
+      message: providerError.message,
+    }));
   });
 });
 

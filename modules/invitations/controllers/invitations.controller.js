@@ -3,6 +3,7 @@
  */
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
+import logger from '../../../lib/services/logger.js';
 import InvitationService from '../services/invitations.service.js';
 
 /**
@@ -83,10 +84,24 @@ const resend = async (req, res) => {
     responses.success(res, 'invitation resent')(invitation);
   } catch (err) {
     // Thread ANY service-thrown AppError status (409 duplicate-pending, 404
-    // unknown id, etc.) rather than flattening everything but 409 to 422 — a
-    // 404 must not surface as Unprocessable Entity if a future caller reaches
-    // the service without the invitationByID param-loader's 404 guard.
-    const status = err.status ?? 422;
+    // unknown id, 422 mailer-not-configured, etc.) rather than flattening
+    // everything but 409 to 422 — a 404 must not surface as Unprocessable
+    // Entity if a future caller reaches the service without the
+    // invitationByID param-loader's 404 guard.
+    // #3966 hardening: InvitationService.resend's mails.sendMail(...) call is
+    // unguarded and now propagates (#3966) — a raw transport rejection has no
+    // `.status` (unlike the AppErrors thrown deliberately above) and must not
+    // leak the raw SMTP/provider error string to the client. Log the real
+    // error server-side with context; respond with a stable generic message.
+    if (err.status == null) {
+      logger.error('[invitations.resend] failed', {
+        invitationId: req.invitation?.id,
+        message: err?.message,
+        stack: err?.stack,
+      });
+      return responses.error(res, 422, 'Unprocessable Entity', 'Failed to send the email, please try again.')(err);
+    }
+    const status = err.status;
     const title = status === 409 ? 'Conflict' : status === 404 ? 'Not Found' : 'Unprocessable Entity';
     responses.error(res, status, title, errors.getMessage(err))(err);
   }

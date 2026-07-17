@@ -411,3 +411,137 @@ describe('auth.password.controller silent-catch error logging:', () => {
     });
   });
 });
+
+describe('auth.controller resendVerification mail-transport failure hardening (#3966):', () => {
+  let mockError;
+
+  beforeEach(() => {
+    jest.resetModules();
+
+    mockError = jest.fn();
+
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: { warn: jest.fn(), error: mockError, info: jest.fn() },
+    }));
+  });
+
+  test('responds with a generic message (never the raw provider error) and still logs the real error server-side', async () => {
+    // sendVerificationEmail → mailer.sendMail is awaited directly (not
+    // fire-and-forget) and now propagates a transport failure (#3966) instead
+    // of swallowing it — the controller catch must not leak this raw string.
+    const providerError = new Error('Resend API error: 401 Unauthorized — invalid API key sk_live_abc123');
+
+    jest.unstable_mockModule('../../../modules/users/services/users.service.js', () => ({
+      default: {
+        create: jest.fn(),
+        getBrut: jest.fn().mockResolvedValue({ id: 'u1', email: 'x@y.com', emailVerified: false }),
+        update: jest.fn().mockResolvedValue({}),
+        remove: jest.fn(),
+        count: jest.fn().mockResolvedValue(0),
+      },
+    }));
+
+    jest.unstable_mockModule('../../../modules/auth/services/auth.eligibility.js', () => ({
+      default: {
+        registerSignupEligibility: jest.fn(),
+        assertSignupEligible: jest.fn().mockResolvedValue(undefined),
+        _reset: jest.fn(),
+      },
+    }));
+
+    jest.unstable_mockModule('../../../modules/organizations/services/organizations.service.js', () => ({
+      default: { handleSignupOrganization: jest.fn() },
+    }));
+
+    jest.unstable_mockModule('../../../modules/organizations/services/organizations.crud.service.js', () => ({
+      default: { autoSetCurrentOrganization: jest.fn() },
+    }));
+
+    jest.unstable_mockModule('../../../modules/organizations/services/organizations.membership.service.js', () => ({
+      default: { findByUserAndOrganization: jest.fn(), listPendingByUser: jest.fn().mockResolvedValue([]) },
+    }));
+
+    jest.unstable_mockModule('../../../config/index.js', () => ({
+      default: {
+        sign: { up: true, in: true },
+        jwt: { secret: 'test-secret', expiresIn: 3600 },
+        cookie: { secure: false, sameSite: 'lax' },
+        organizations: { enabled: false },
+        app: { title: 'Test', contact: 'test@test.com' },
+      },
+    }));
+
+    jest.unstable_mockModule('../../../lib/middlewares/model.js', () => ({
+      default: { getResultFromZod: jest.fn(), checkError: jest.fn() },
+    }));
+
+    // Mailer configured, sendMail rejects with a raw provider error
+    jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
+      default: {
+        isConfigured: jest.fn().mockReturnValue(true),
+        sendMail: jest.fn().mockRejectedValue(providerError),
+      },
+    }));
+
+    const successInner = jest.fn();
+    const errorInner = jest.fn();
+    const success = jest.fn(() => successInner);
+    const error = jest.fn(() => errorInner);
+    jest.unstable_mockModule('../../../lib/helpers/responses.js', () => ({
+      default: { success, error },
+    }));
+
+    jest.unstable_mockModule('../../../lib/helpers/errors.js', () => ({
+      default: { getMessage: jest.fn().mockReturnValue(providerError.message) },
+    }));
+
+    jest.unstable_mockModule('../../../lib/helpers/AppError.js', () => ({
+      default: class AppError extends Error {
+        constructor(msg, opts) {
+          super(msg);
+          this.status = opts?.status;
+          this.code = opts?.code;
+          this.details = opts?.details;
+        }
+      },
+    }));
+
+    jest.unstable_mockModule('../../../modules/users/models/users.schema.js', () => ({
+      default: { User: {} },
+    }));
+
+    jest.unstable_mockModule('../../../lib/middlewares/policy.js', () => ({
+      default: { defineAbilityFor: jest.fn().mockResolvedValue({}) },
+    }));
+
+    jest.unstable_mockModule('../../../lib/helpers/abilities.js', () => ({
+      default: jest.fn().mockReturnValue([]),
+    }));
+
+    jest.unstable_mockModule('../../../lib/helpers/getBaseUrl.js', () => ({
+      default: jest.fn().mockReturnValue('http://localhost:3000'),
+    }));
+
+    jest.unstable_mockModule('../../../lib/services/analytics.js', () => ({
+      default: { identify: jest.fn(), groupIdentify: jest.fn(), capture: jest.fn() },
+    }));
+
+    const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
+
+    const req = { user: { id: 'u1' } };
+    const res = {};
+
+    await AuthController.resendVerification(req, res);
+
+    expect(error).toHaveBeenCalledWith(res, 422, 'Unprocessable Entity', 'Failed to send the email, please try again.');
+    const clientMessage = error.mock.calls[0][3];
+    expect(clientMessage).not.toContain('sk_live_abc123');
+    expect(clientMessage).not.toContain('Resend API error');
+
+    // Real error still logged server-side with context, so it is not lost.
+    expect(mockError).toHaveBeenCalledWith('[auth.resendVerification] failed', expect.objectContaining({
+      userId: 'u1',
+      message: providerError.message,
+    }));
+  });
+});
