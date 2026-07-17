@@ -11,6 +11,7 @@ import { jest, describe, test, afterEach, expect } from '@jest/globals';
  *   - billing.dispute.lost    (priority 5)
  *   - billing.refund.unresolved (priority 4)
  *   - billing.reconciliation.divergence (priority 4)
+ *   - billing.webhook.plan_unresolved (priority 4)
  *   - error event listener on billingEvents singleton
  *
  * Each listener must:
@@ -90,6 +91,7 @@ describe('billing.init ops-listeners unit tests:', () => {
       realBillingEvents.removeAllListeners('billing.dispute.lost');
       realBillingEvents.removeAllListeners('billing.refund.unresolved');
       realBillingEvents.removeAllListeners('billing.reconciliation.divergence');
+      realBillingEvents.removeAllListeners('billing.webhook.plan_unresolved');
       realBillingEvents.removeAllListeners('error');
     }
     jest.restoreAllMocks();
@@ -250,6 +252,55 @@ describe('billing.init ops-listeners unit tests:', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // billing.webhook.plan_unresolved
+  // ---------------------------------------------------------------------------
+  describe('billing.webhook.plan_unresolved listener:', () => {
+    test('fires logger.error with full payload spread + ntfyPriority 4', async () => {
+      await setup();
+
+      const payload = {
+        organizationId: '507f1f77bcf86cd799439055',
+        eventId: 'evt_plan_unresolved',
+        stripeSubscriptionId: 'sub_live_bbb',
+        priceId: 'price_unmapped',
+        retainedPlan: 'growth',
+        hadKnownPlan: true,
+      };
+
+      realBillingEvents.emit('billing.webhook.plan_unresolved', payload);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        '[billing.init] ALERT: webhook plan unresolved — manual review required',
+        expect.objectContaining({
+          organizationId: '507f1f77bcf86cd799439055',
+          eventId: 'evt_plan_unresolved',
+          stripeSubscriptionId: 'sub_live_bbb',
+          priceId: 'price_unmapped',
+          retainedPlan: 'growth',
+          hadKnownPlan: true,
+          ntfyPriority: 4,
+        }),
+      );
+    });
+
+    test('plan_unresolved: emitting the event does not throw synchronously', async () => {
+      await setup();
+
+      const payload = {
+        organizationId: 'org',
+        eventId: 'evt_ok',
+        stripeSubscriptionId: 'sub_ok',
+        priceId: 'price_ok',
+        retainedPlan: 'free',
+        hadKnownPlan: false,
+      };
+      expect(() => realBillingEvents.emit('billing.webhook.plan_unresolved', payload)).not.toThrow();
+      await new Promise((resolve) => setImmediate(resolve));
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // Multiple listeners all fire (sanity)
   // ---------------------------------------------------------------------------
   test('multiple ops listeners all fire independently on their respective events', async () => {
@@ -259,11 +310,12 @@ describe('billing.init ops-listeners unit tests:', () => {
     realBillingEvents.emit('billing.dispute.lost', { disputeId: 'dp_b', chargeId: 'ch_b', organizationId: 'o', stripeSessionId: 'cs', amount: 200 });
     realBillingEvents.emit('billing.refund.unresolved', { chargeId: 'ch_c' });
     realBillingEvents.emit('billing.reconciliation.divergence', { organizationId: 'o', subscriptionId: 's', stripeSubscriptionId: 'sub_x', db: {}, stripe: {}, statusMismatch: true, planMismatch: false });
+    realBillingEvents.emit('billing.webhook.plan_unresolved', { organizationId: 'o', eventId: 'evt_d', stripeSubscriptionId: 'sub_y', priceId: 'price_y', retainedPlan: 'free', hadKnownPlan: false });
 
     await new Promise((resolve) => setImmediate(resolve));
 
-    // 4 listeners, 1 logger.error call each = 4 total
-    expect(mockLogger.error).toHaveBeenCalledTimes(4);
+    // 5 listeners, 1 logger.error call each = 5 total
+    expect(mockLogger.error).toHaveBeenCalledTimes(5);
   });
 
   // ---------------------------------------------------------------------------

@@ -234,6 +234,22 @@ export default async (app) => {
     });
   });
 
+  // billing.webhook.plan_unresolved — priority 4 (high): webhook couldn't resolve a Stripe
+  // subscription price to a plan; the write retained the last-known plan instead of forcing
+  // 'free' (#3970), and this alert is the manual-review half of that guard.
+  billingEvents.on('billing.webhook.plan_unresolved', (payload) => {
+    const { organizationId, eventId, stripeSubscriptionId, priceId, retainedPlan, hadKnownPlan } = payload;
+    logger.error('[billing.init] ALERT: webhook plan unresolved — manual review required', {
+      organizationId,
+      eventId,
+      stripeSubscriptionId,
+      priceId,
+      retainedPlan,
+      hadKnownPlan,
+      ntfyPriority: 4,
+    });
+  });
+
   // Prevent accidental crash if any future code emits 'error' with no listener
   // (Node default behaviour: throws if no 'error' listener is registered).
   // Registered here (after config is ready) so events.js stays config-free and importable without ordering hazards.
