@@ -161,12 +161,18 @@ describe('Authorization integration tests:', () => {
       await publicAgent.get('/api/users/stats').expect(200);
     });
 
-    test('GET /api/home/releases should return 200 for guests', async () => {
-      await publicAgent.get('/api/home/releases').expect(200);
+    // NOTE: /api/home/releases and /api/home/changelogs never existed as real
+    // routes (see modules/home/routes/home.route.js) — they only "passed" via
+    // the old implicit 200 catch-all (#3975), which is the exact false-positive
+    // the content-negotiated 404 fix removes. Repointed to real public routes
+    // so the guest-authorization intent ("guest can reach a public endpoint")
+    // still means something.
+    test('GET /api/health should return 200 for guests', async () => {
+      await publicAgent.get('/api/health').expect(200);
     });
 
-    test('GET /api/home/changelogs should return 200 for guests', async () => {
-      await publicAgent.get('/api/home/changelogs').expect(200);
+    test('GET /api/home/pages/terms should return 200 for guests', async () => {
+      await publicAgent.get('/api/home/pages/terms').expect(200);
     });
 
     test('GET /api/home/team should return 200 for guests', async () => {
