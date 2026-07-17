@@ -257,7 +257,7 @@ describe('Audit middleware unit tests:', () => {
     expect(mockLog).not.toHaveBeenCalled();
   });
 
-  test('should not throw when AuditService.log rejects and should log the error', async () => {
+  test('should not throw when AuditService.log rejects and should log the error with request context', async () => {
     const dbError = new Error('DB down');
     mockLog = jest.fn().mockRejectedValue(dbError);
     const middleware = createAuditMiddleware();
@@ -266,13 +266,21 @@ describe('Audit middleware unit tests:', () => {
     const next = jest.fn();
 
     middleware(req, res, next);
-    // Should not throw
+    // Should not throw — a rejected AuditService.log() must never break the request flow
     expect(() => res.emit('finish')).not.toThrow();
     // Allow the .catch() handler to run
     await new Promise((r) => setTimeout(r, 10));
     expect(mockLoggerError).toHaveBeenCalledWith(
       'audit.middleware: audit log write failed',
-      { message: dbError.message, stack: dbError.stack },
+      {
+        message: dbError.message,
+        stack: dbError.stack,
+        action: 'auth.signin',
+        userId: '507f1f77bcf86cd799439011',
+        organizationId: '507f1f77bcf86cd799439012',
+        targetType: 'User',
+        targetId: '',
+      },
     );
   });
 });

@@ -2,7 +2,6 @@
  * Module dependencies
  */
 import config from '../../../config/index.js';
-import logger from '../../../lib/services/logger.js';
 import AuditRepository from '../repositories/audit.repository.js';
 
 /**
@@ -17,7 +16,12 @@ import AuditRepository from '../repositories/audit.repository.js';
  * @param {string} [params.targetType] - Type of the target entity
  * @param {string} [params.targetId] - ID of the target entity
  * @param {Object} [params.metadata] - Additional metadata
- * @returns {Promise<Object|null>} The created audit log entry or null if disabled
+ * @returns {Promise<Object|null>} The created audit log entry, or null if disabled
+ * @throws {Error} If `AuditRepository.create` fails — propagated so the caller's
+ *   own `.catch()` can log with its request context (action, userId, orgId,
+ *   targetType, ...). Audit must never break the main flow — that guarantee is
+ *   enforced by the caller's `.catch()` (see `audit.middleware.js`), not by
+ *   swallowing the write failure here.
  */
 const log = async ({ action, userId, organizationId, ip, userAgent, targetType, targetId, metadata } = {}) => {
   if (!config.audit?.enabled) return null;
@@ -35,13 +39,7 @@ const log = async ({ action, userId, organizationId, ip, userAgent, targetType, 
   if (ip !== undefined) entry.ip = ip || '';
   if (userAgent !== undefined) entry.userAgent = userAgent || '';
 
-  try {
-    return await AuditRepository.create(entry);
-  } catch (err) {
-    // Audit must never break the main flow
-    logger.error('AuditLog write failed:', { message: err.message });
-    return null;
-  }
+  return AuditRepository.create(entry);
 };
 
 /**

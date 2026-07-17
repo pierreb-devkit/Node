@@ -22,15 +22,6 @@ jest.unstable_mockModule('../../../config/index.js', () => ({
   default: mockConfig,
 }));
 
-// Mock logger to avoid winston config dependency in unit tests
-jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
-  default: {
-    error: jest.fn(),
-    warn: jest.fn(),
-    info: jest.fn(),
-  },
-}));
-
 /**
  * Unit tests
  */
@@ -90,11 +81,28 @@ describe('AuditService unit tests:', () => {
     expect(arg.userAgent).toBeFalsy();
   });
 
-  test('should not throw when repository create fails', async () => {
+  test('should propagate (reject) when repository create fails, instead of swallowing to null', async () => {
     mockCreate = jest.fn().mockRejectedValue(new Error('DB down'));
 
-    const result = await AuditService.log({ action: 'test.fail' });
-    expect(result).toBeNull();
+    await expect(AuditService.log({ action: 'test.fail' })).rejects.toThrow('DB down');
+  });
+
+  test('should let a repository rejection reach a caller-attached .catch() with its own context', async () => {
+    mockCreate = jest.fn().mockRejectedValue(new Error('DB down'));
+    const callerLogger = { error: jest.fn() };
+
+    // Mirrors audit.middleware.js's pattern: fire-and-forget log() with a
+    // local .catch() that logs request context (action/userId/orgId).
+    await AuditService.log({ action: 'test.fail', userId: 'u1', organizationId: 'o1' }).catch((err) =>
+      callerLogger.error('audit.middleware: audit log write failed', { message: err?.message, action: 'test.fail', userId: 'u1', orgId: 'o1' }),
+    );
+
+    expect(callerLogger.error).toHaveBeenCalledWith('audit.middleware: audit log write failed', {
+      message: 'DB down',
+      action: 'test.fail',
+      userId: 'u1',
+      orgId: 'o1',
+    });
   });
 
   test('should list audit logs with filters', async () => {

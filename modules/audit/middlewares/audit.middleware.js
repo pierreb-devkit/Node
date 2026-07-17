@@ -118,15 +118,26 @@ const createAuditMiddleware = (options = {}) => {
       const targetType = deriveTargetType(routePath, req.baseUrl);
       const targetId = deriveTargetId(req.params);
 
+      const userId = req.user?._id || req.user?.id;
+      const organizationId = req.organization?._id || req.organization?.id;
+
       AuditService.log({
         action,
-        userId: req.user?._id || req.user?.id,
-        organizationId: req.organization?._id || req.organization?.id,
+        userId,
+        organizationId,
         ip: config.audit?.captureIp !== false ? (req.ip || req.connection?.remoteAddress || '') : undefined,
         userAgent: config.audit?.captureUserAgent !== false ? (req.headers?.['user-agent'] || '') : undefined,
         targetType,
         targetId,
-      }).catch((err) => logger.error('audit.middleware: audit log write failed', { message: err?.message, stack: err?.stack }));
+      }).catch((err) => logger.error('audit.middleware: audit log write failed', {
+        message: err?.message,
+        stack: err?.stack,
+        action,
+        userId,
+        organizationId,
+        targetType,
+        targetId,
+      }));
     });
 
     return next();

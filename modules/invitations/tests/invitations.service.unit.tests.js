@@ -448,4 +448,11 @@ describe('InvitationService.resend', () => {
     await expect(InvitationService.resend('i1')).rejects.toMatchObject({ status: 422 });
     expect(mockMailer.sendMail).not.toHaveBeenCalled();
   });
+
+  test('propagates a transport failure as a rejection (resend IS the email — no silent success)', async () => {
+    const transportError = new Error('SMTP timeout');
+    InvitationRepository.get.mockResolvedValue(pending);
+    mockMailer.sendMail.mockRejectedValue(transportError);
+    await expect(InvitationService.resend('i1')).rejects.toThrow('SMTP timeout');
+  });
 });
