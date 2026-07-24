@@ -154,6 +154,37 @@ describe('auth.controller getConfig:', () => {
     expect(data.billing.equivalences).toBeNull();
   });
 
+  test('data.invitations.userFacing defaults to false, exposed unauthenticated (#3981, config.invitations undefined)', async () => {
+    // No `invitations` key on mockConfig at all — must default safely, and must be
+    // present WITHOUT req.user (same top-level, unauthenticated shape as `sign`).
+    const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
+
+    const req = {}; // no req.user
+    const res = {};
+
+    await AuthController.getConfig(req, res);
+
+    const [data] = mockResponses.successCb.mock.calls[0];
+    expect(data.invitations).toBeDefined();
+    expect(data.invitations.userFacing).toBe(false);
+  });
+
+  test('data.invitations.userFacing reflects config:true, unauthenticated (#3981)', async () => {
+    mockConfig.invitations = { userFacing: true };
+
+    const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
+
+    const req = {}; // no req.user — must not require auth, unlike billing
+    const res = {};
+
+    await AuthController.getConfig(req, res);
+
+    const [data] = mockResponses.successCb.mock.calls[0];
+    expect(data.invitations.userFacing).toBe(true);
+    // ONLY the boolean is exposed — no other invitations config (e.g. rate-limit tuning).
+    expect(Object.keys(data.invitations)).toEqual(['userFacing']);
+  });
+
   test('data.billing.equivalences is returned verbatim when set in config (authenticated)', async () => {
     const equivalences = {
       plans: {

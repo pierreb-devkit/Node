@@ -19,8 +19,14 @@ const config = {
      * link) and `read` (scoped server-side to invitations THEY sent — see
      * InvitationsService.list(), #3833); platform admins keep `manage all`
      * regardless. Pair with `billing.referral.enabled` (billing.development.config.js)
-     * to actually reward accepted referrals — this flag only controls WHO can see/
-     * create invitations, not whether a reward is granted.
+     * to actually reward accepted referrals.
+     *
+     * #3981: ALSO controls whether the signup flow claims/finalizes a presented
+     * invite token while public signup is OPEN (`config.sign.up: true`) — the
+     * open-signup hole documented in this module's README point 3. With signup
+     * CLOSED, a valid invite always claims/finalizes regardless of this flag (it is
+     * what opens the gate). Exposed read-only via `GET /api/auth/config`
+     * (`invitations.userFacing`) so the frontend can gate referral UI on it.
      */
     userFacing: false,
   },
