@@ -913,10 +913,12 @@ describe('Signup invitations:', () => {
 
   describe('Open-signup userFacing claim/finalize (#3981)', () => {
     let invitationEvents;
+    let InvitationService;
     let originalUp; let originalCap; let originalUserFacing;
 
     beforeAll(async () => {
       invitationEvents = (await import(path.resolve('./modules/invitations/lib/events.js'))).default;
+      InvitationService = (await import(path.resolve('./modules/invitations/services/invitations.service.js'))).default;
     });
 
     beforeEach(() => {
@@ -937,6 +939,7 @@ describe('Signup invitations:', () => {
         '3981-open-mismatch-plain@example.com',
         '3981-open-notoken@example.com',
         '3981-closed-userfacing@example.com',
+        '3981-open-race@example.com',
       ]) {
         try {
           const existing = await UserService.getBrut({ email });
@@ -997,6 +1000,39 @@ describe('Signup invitations:', () => {
       // dead (accepted), proving it was truly burned, not merely ignored.
       const verify = await request(app).get(`/api/invitations/verify/${token}`);
       expect(verify.body.data.valid).toBe(false);
+    });
+
+    test('userFacing:true + OPEN signup: a lost claim race (double-submit) does NOT hard-fail the signup — it downgrades to a plain signup', async () => {
+      // Pre-push review finding: open signup's own invariant is that a presented token
+      // must never be able to BLOCK an otherwise-valid signup — that must hold even when
+      // userFacing tries to claim it. Force the underlying claim() to reject once
+      // (simulating a lost CAS race from a concurrent double-submit) and assert the
+      // signup still succeeds with 200, not a 422.
+      const adminAgent = await createAdminAndSignin();
+      const email = '3981-open-race@example.com';
+      const created = await adminAgent.post('/api/invitations').send({ email });
+      const { token } = created.body.data;
+
+      config.invitations.userFacing = true;
+      config.sign.up = true; config.sign.cap = null;
+
+      const claimSpy = jest.spyOn(InvitationService, 'claim').mockRejectedValueOnce(
+        Object.assign(new Error('invitation is no longer valid'), { status: 422, code: 'VALIDATION_ERROR' }),
+      );
+
+      const res = await request(app)
+        .post(`/api/auth/signup?inviteToken=${token}`)
+        .send({ email, password: 'Sup3rStr0ng!' });
+
+      expect(claimSpy).toHaveBeenCalledTimes(1);
+      expect(res.status).toBe(200); // NOT 422 — the race must not block open signup
+
+      // Downgraded to unclaimed: no attribution, and the invite is untouched (neither
+      // consumed nor stuck mid-claim) — reusable for whoever actually holds it next.
+      const brut = await UserService.getBrut({ email });
+      expect(brut.referredBy == null).toBe(true);
+      const verify = await request(app).get(`/api/invitations/verify/${token}`);
+      expect(verify.body.data.valid).toBe(true);
     });
 
     test('userFacing:false (default) + OPEN signup + valid token ⇒ still NOT claimed/burned (unchanged baseline, byte-for-byte)', async () => {

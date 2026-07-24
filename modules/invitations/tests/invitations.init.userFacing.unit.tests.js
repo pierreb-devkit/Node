@@ -86,4 +86,36 @@ describe('invitations.init — userFacing open-signup claim (#3981)', () => {
     await result.release();
     expect(mockService.release).toHaveBeenCalledWith('i4');
   });
+
+  test('open signup + userFacing:true + claim() loses a race (AppError 422) ⇒ downgrades to unclaimed, does NOT throw/block signup', async () => {
+    // Pre-push review finding: open signup's own invariant is that a presented token
+    // must NEVER be able to fail an otherwise-valid signup. A double-submit / client
+    // retry on the same invite link is realistic; the loser of the claim CAS must
+    // proceed as a plain (unattributed) signup, not propagate the 422.
+    mockConfig.invitations.userFacing = true;
+    const invite = { id: 'i5', email: 'a@b.co' };
+    mockService.assertInvited.mockResolvedValue(invite);
+    mockService.claim.mockRejectedValue(Object.assign(new Error('invitation is no longer valid'), { status: 422, code: 'VALIDATION_ERROR' }));
+    const req = { query: { inviteToken: 'tok' }, body: { email: 'a@b.co' } };
+
+    const result = await Eligibility.assertSignupEligible({ email: 'a@b.co', body: req.body, req, signupOpen: true });
+
+    expect(mockService.claim).toHaveBeenCalledWith('tok');
+    expect(result.invite).toEqual(invite); // still resolved — email-pin behavior downstream is a no-op anyway
+    expect(result.claimed).toBe(false); // NOT claimed — auth.controller will skip finalize/release
+    expect(mockLogger.warn).toHaveBeenCalled(); // the race is surfaced, not silently dropped
+  });
+
+  test('closed signup + claim() loses a race (AppError 422) ⇒ STILL throws/blocks signup (unaffected — the invite was required here)', async () => {
+    // Regression guard: the #3981 downgrade-on-race fix must be scoped to the
+    // open-signup + userFacing branch only. Closed signup's replay guard (a lost
+    // claim race legitimately blocks signup, since the invite was the only thing
+    // that opened the gate) must keep throwing exactly as before.
+    mockService.assertInvited.mockResolvedValue({ id: 'i6', email: 'a@b.co' });
+    mockService.claim.mockRejectedValue(Object.assign(new Error('invitation is no longer valid'), { status: 422, code: 'VALIDATION_ERROR' }));
+    const req = { query: { inviteToken: 'tok' }, body: { email: 'a@b.co' } };
+
+    await expect(Eligibility.assertSignupEligible({ email: 'a@b.co', body: req.body, req, signupOpen: false }))
+      .rejects.toMatchObject({ status: 422 });
+  });
 });

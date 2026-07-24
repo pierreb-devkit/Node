@@ -80,23 +80,45 @@ export default async () => {
       const token = carrier.query?.inviteToken ?? carrier.body?.inviteToken;
       // E5: "no email supplied with a token ⇒ no eligibility" lives in assertInvited.
       invite = await InvitationsService.assertInvited({ token, email: ctx.email });
-      // E2: atomically CLAIM the resolved invite BEFORE the user is created — when the
-      // invite is REQUIRED to open the gate (closed signup), OR when public signup is
-      // open AND `invitations.userFacing` is on (#3981): the open-signup hole documented
-      // in this module's README point 3 — a presented token used to resolve but never
-      // claim/finalize while signup was open, so the referral loop could never convert
-      // on open-signup deployments. userFacing opts a deployment INTO honoring a
-      // presented token even though it is not required, mirroring the closed-signup path
-      // exactly. Outside both cases the token is presented but not required, so we
-      // resolve WITHOUT claiming: `claimed` stays false, so auth won't finalize it
-      // either — claiming would only lock the token mid-claim for no reason (preserves
-      // the original P2 gating). A replay / concurrent accept races here and loses
-      // (claim throws 422). assertInvited already enforced the email pin (E5); the
-      // claim filters token+pending+unclaimed+unexpired.
-      if (invite && (!ctx.signupOpen || config.invitations?.userFacing)) {
+      if (invite && !ctx.signupOpen) {
+        // E2: closed signup — the invite is REQUIRED to open the gate, so atomically
+        // CLAIM it BEFORE the user is created. A replay / concurrent accept races here
+        // and loses: claim() throws AppError(422), which propagates out of this checker
+        // and blocks signup entirely — correct here, because without the invite this
+        // signup was never eligible in the first place (the throw IS the eligibility
+        // decision on this path).
         await InvitationsService.claim(token); // throws AppError(422) if not claimable
         claimed = true;
+      } else if (invite && config.invitations?.userFacing) {
+        // #3981: public signup is OPEN, but userFacing opts a deployment INTO honoring a
+        // presented token anyway (the open-signup hole documented in this module's
+        // README point 3 — a presented token used to resolve but never claim/finalize
+        // while signup was open, so the referral loop could never convert on open-signup
+        // deployments). CRITICAL DIFFERENCE from the closed-signup branch above: the
+        // invite is a BONUS here, never required — open signup's own invariant is that a
+        // presented token must NEVER be able to block or fail an otherwise-valid signup.
+        // So a lost claim race (two near-simultaneous submits of the same invite link —
+        // plausible: a double-click or a client retry) must NOT propagate; it must
+        // downgrade to "unclaimed" and let signup proceed as if the token had merely been
+        // presented-but-not-required (pre-#3981 behavior for this exact case). `invite`
+        // stays resolved (harmless — the email-pin downstream is already a no-op, since
+        // assertInvited required the submitted email to match it), but `claimed` stays
+        // false, so auth.controller's `eligibility.claimed` gate correctly skips
+        // finalize/release for a token this checker never actually got to burn.
+        try {
+          await InvitationsService.claim(token);
+          claimed = true;
+        } catch (claimErr) {
+          logger.warn('[invitations] userFacing open-signup claim lost a race or the invite was already consumed — proceeding as a plain (unattributed) signup', {
+            message: claimErr?.message,
+          });
+        }
       }
+      // Outside both branches (open signup, userFacing off) the token is presented but
+      // not required, so we resolve WITHOUT claiming: `claimed` stays false, so auth
+      // won't finalize it either — claiming would only lock the token mid-claim for no
+      // reason (preserves the original P2 gating). assertInvited already enforced the
+      // email pin (E5); the claim filters token+pending+unclaimed+unexpired.
     }
     if (!invite) return undefined;
     // Return the resolved (+claimed, local) invite plus `claimed` + finalize/release

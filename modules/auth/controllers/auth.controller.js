@@ -70,10 +70,12 @@ const signup = async (req, res) => {
     // invited users included; (2) eligibility — public signup open OR a valid
     // invite token. The eligibility check is supplied by optional modules via the
     // generic registry (auth never imports invitation code). The invitations
-    // checker resolves the email-pinned invite, atomically CLAIMS it (the replay
-    // guard, E2), and RETURNS `{ invite, finalize, release }`, which auth relays
-    // back here verbatim (opaque result) so this controller can canonicalize the
-    // account email + finalize/release the invite below.
+    // checker resolves the email-pinned invite, atomically CLAIMS it when required
+    // (closed signup) or opted into (open signup + `invitations.userFacing`, #3981;
+    // a lost claim race there downgrades to unclaimed instead of blocking signup —
+    // see invitations.init.js), and RETURNS `{ invite, claimed, finalize, release }`,
+    // which auth relays back here verbatim (opaque result) so this controller can
+    // canonicalize the account email + finalize/release the invite below.
     // E4: cap is computed by computeSignupCapacity (single source of truth shared
     // with getConfig) — a BLANK cap ('') means UNCAPPED. The old inline Number('')→0
     // hard-rejected everyone while getConfig advertised the deployment as open.
@@ -89,9 +91,13 @@ const signup = async (req, res) => {
     // positive ceiling that filled up (which DOES reject invites — they count in the cap).
     const capReached = cap != null && cap > 0 && remaining <= 0;
     // `signupOpen` tells the checker whether the invite is REQUIRED to open the gate.
-    // When public signup is open a token may be PRESENTED but is not required — the
-    // checker must then resolve WITHOUT claiming (E2), so an open-signup signup never
-    // burns / locks a presented token (preserves the P2 `!config.sign.up` gating).
+    // When public signup is open a token may be PRESENTED but is not required — by
+    // default (`invitations.userFacing: false`) the checker resolves WITHOUT claiming
+    // (E2), so an open-signup signup never burns / locks a presented token (preserves
+    // the P2 `!config.sign.up` gating). With `userFacing: true` the checker DOES claim
+    // it (#3981), but open signup's own invariant — a presented token must never be
+    // able to fail an otherwise-valid signup — still holds: a lost claim race there
+    // downgrades to unclaimed rather than throwing (see invitations.init.js).
     const eligibility = await Eligibility.assertSignupEligible({ email: req.body.email, body: req.body, req, signupOpen: !!config.sign.up });
     // null when no optional module opened the gate (registry empty or no valid invite).
     const invite = eligibility?.invite || null;
