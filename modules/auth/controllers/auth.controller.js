@@ -220,7 +220,17 @@ const signup = async (req, res) => {
       AnalyticsService.capture({
         distinctId: String(user.id),
         event: 'user_signed_up',
-        properties: { email: user.email, plan: user.plan, createdAt: user.createdAt },
+        properties: {
+          email: user.email,
+          plan: user.plan,
+          createdAt: user.createdAt,
+          // #3945: carry invite/referral attribution on the signup event so the
+          // referral funnel is measurable. `invite` is the resolved (opaque) result
+          // from the eligibility registry — already in scope, no invitations import.
+          invited: Boolean(invite),
+          invitationId: invite ? String(invite.id) : null,
+          invitedBy: invite?.invitedBy ? String(invite.invitedBy) : null,
+        },
       });
     } catch (_) { /* analytics must not break auth */ }
 

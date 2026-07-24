@@ -11,6 +11,19 @@ const config = {
   sign: {
     inviteExpiresInDays: 14, // signup invite link validity (days)
   },
+  invitations: {
+    /**
+     * User-facing referral invitations (#3945) — stack default OFF, preserves
+     * existing deployments' admin-only behavior. When true, invitationAbilities
+     * grants any authenticated user `create` on Invitation (their own referral
+     * link) and `read` (scoped server-side to invitations THEY sent — see
+     * InvitationsService.list(), #3833); platform admins keep `manage all`
+     * regardless. Pair with `billing.referral.enabled` (billing.development.config.js)
+     * to actually reward accepted referrals — this flag only controls WHO can see/
+     * create invitations, not whether a reward is granted.
+     */
+    userFacing: false,
+  },
 };
 
 export default config;

@@ -329,6 +329,276 @@ describe('auth.controller signup mass-assignment strip:', () => {
   });
 });
 
+describe('auth.controller signup analytics: invite/referral attribution (#3945):', () => {
+  beforeEach(() => {
+    jest.resetModules();
+
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: { warn: jest.fn(), error: jest.fn(), info: jest.fn() },
+    }));
+  });
+
+  test('user_signed_up carries invited:true + invitationId + invitedBy when the eligibility registry resolved an invite', async () => {
+    const mockCreate = jest.fn().mockResolvedValue({
+      id: 'u1', email: 'invitee@y.com', firstName: 'A', lastName: 'B', provider: 'local',
+    });
+
+    jest.unstable_mockModule('../../../modules/users/services/users.service.js', () => ({
+      default: {
+        create: mockCreate,
+        getBrut: jest.fn().mockResolvedValue({ id: 'u1' }),
+        update: jest.fn().mockResolvedValue({}),
+        remove: jest.fn(),
+        count: jest.fn().mockResolvedValue(0),
+      },
+    }));
+
+    // Closed-signup, invite-gated path: the eligibility registry resolves + claims
+    // the invite and returns { invite, finalize, release } — auth relays it verbatim.
+    jest.unstable_mockModule('../../../modules/auth/services/auth.eligibility.js', () => ({
+      default: {
+        registerSignupEligibility: jest.fn(),
+        assertSignupEligible: jest.fn().mockResolvedValue({
+          invite: { id: 'inv1', email: 'invitee@y.com', invitedBy: 'inviter1' },
+          finalize: jest.fn().mockResolvedValue({ id: 'inv1', status: 'accepted' }),
+          release: jest.fn(),
+        }),
+        _reset: jest.fn(),
+      },
+    }));
+
+    jest.unstable_mockModule('../../../modules/organizations/services/organizations.service.js', () => ({
+      default: {
+        handleSignupOrganization: jest.fn().mockResolvedValue({
+          organization: null, joined: false, pendingJoin: false,
+          abilities: [], organizationSetupRequired: false,
+          emailVerificationRequired: false, suggestedOrganization: null,
+        }),
+      },
+    }));
+
+    jest.unstable_mockModule('../../../modules/organizations/services/organizations.crud.service.js', () => ({
+      default: { autoSetCurrentOrganization: jest.fn() },
+    }));
+
+    jest.unstable_mockModule('../../../modules/organizations/services/organizations.membership.service.js', () => ({
+      default: { findByUserAndOrganization: jest.fn(), listPendingByUser: jest.fn().mockResolvedValue([]) },
+    }));
+
+    jest.unstable_mockModule('../../../config/index.js', () => ({
+      default: {
+        sign: { up: false, in: true }, // closed signup — invite is required to open the gate
+        jwt: { secret: 'test-secret', expiresIn: 3600 },
+        cookie: { secure: false, sameSite: 'lax' },
+        organizations: { enabled: false },
+        app: { title: 'Test', contact: 'test@test.com' },
+      },
+    }));
+
+    jest.unstable_mockModule('../../../lib/middlewares/model.js', () => ({
+      default: { getResultFromZod: jest.fn(), checkError: jest.fn() },
+    }));
+
+    jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
+      default: { isConfigured: jest.fn().mockReturnValue(false), sendMail: jest.fn() },
+    }));
+
+    jest.unstable_mockModule('../../../lib/helpers/responses.js', () => ({
+      default: {
+        success: jest.fn().mockReturnValue(jest.fn()),
+        error: jest.fn().mockReturnValue(jest.fn()),
+      },
+    }));
+
+    jest.unstable_mockModule('../../../lib/helpers/errors.js', () => ({
+      default: { getMessage: jest.fn().mockReturnValue('error') },
+    }));
+
+    jest.unstable_mockModule('../../../lib/helpers/AppError.js', () => ({
+      default: class AppError extends Error {
+        constructor(msg, opts) {
+          super(msg);
+          this.status = opts?.status;
+          this.code = opts?.code;
+          this.details = opts?.details;
+        }
+      },
+    }));
+
+    jest.unstable_mockModule('../../../modules/users/models/users.schema.js', () => ({
+      default: { User: {}, SignupUser: {} },
+    }));
+
+    jest.unstable_mockModule('../../../lib/middlewares/policy.js', () => ({
+      default: { defineAbilityFor: jest.fn().mockResolvedValue({}) },
+    }));
+
+    jest.unstable_mockModule('../../../lib/helpers/abilities.js', () => ({
+      default: jest.fn().mockReturnValue([]),
+    }));
+
+    jest.unstable_mockModule('../../../lib/helpers/getBaseUrl.js', () => ({
+      default: jest.fn().mockReturnValue('http://localhost:3000'),
+    }));
+
+    const mockCapture = jest.fn();
+    jest.unstable_mockModule('../../../lib/services/analytics.js', () => ({
+      default: { identify: jest.fn(), groupIdentify: jest.fn(), capture: mockCapture },
+    }));
+
+    const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
+
+    const req = {
+      body: { email: 'invitee@y.com', firstName: 'A', lastName: 'B', password: 'P@ss1234!' },
+      query: { inviteToken: 'tok' },
+    };
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      cookie: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+    };
+
+    await AuthController.signup(req, res);
+
+    expect(mockCapture).toHaveBeenCalledWith(expect.objectContaining({
+      distinctId: 'u1',
+      event: 'user_signed_up',
+      properties: expect.objectContaining({
+        invited: true,
+        invitationId: 'inv1',
+        invitedBy: 'inviter1',
+      }),
+    }));
+  });
+
+  test('user_signed_up carries invited:false + null invitationId/invitedBy on a non-invited (open) signup', async () => {
+    const mockCreate = jest.fn().mockResolvedValue({
+      id: 'u2', email: 'self@y.com', firstName: 'C', lastName: 'D', provider: 'local',
+    });
+
+    jest.unstable_mockModule('../../../modules/users/services/users.service.js', () => ({
+      default: {
+        create: mockCreate,
+        getBrut: jest.fn().mockResolvedValue({ id: 'u2' }),
+        update: jest.fn().mockResolvedValue({}),
+        remove: jest.fn(),
+        count: jest.fn().mockResolvedValue(0),
+      },
+    }));
+
+    jest.unstable_mockModule('../../../modules/auth/services/auth.eligibility.js', () => ({
+      default: {
+        registerSignupEligibility: jest.fn(),
+        assertSignupEligible: jest.fn().mockResolvedValue(undefined), // no invite opened the gate
+        _reset: jest.fn(),
+      },
+    }));
+
+    jest.unstable_mockModule('../../../modules/organizations/services/organizations.service.js', () => ({
+      default: {
+        handleSignupOrganization: jest.fn().mockResolvedValue({
+          organization: null, joined: false, pendingJoin: false,
+          abilities: [], organizationSetupRequired: false,
+          emailVerificationRequired: false, suggestedOrganization: null,
+        }),
+      },
+    }));
+
+    jest.unstable_mockModule('../../../modules/organizations/services/organizations.crud.service.js', () => ({
+      default: { autoSetCurrentOrganization: jest.fn() },
+    }));
+
+    jest.unstable_mockModule('../../../modules/organizations/services/organizations.membership.service.js', () => ({
+      default: { findByUserAndOrganization: jest.fn(), listPendingByUser: jest.fn().mockResolvedValue([]) },
+    }));
+
+    jest.unstable_mockModule('../../../config/index.js', () => ({
+      default: {
+        sign: { up: true, in: true }, // open signup — no invite required
+        jwt: { secret: 'test-secret', expiresIn: 3600 },
+        cookie: { secure: false, sameSite: 'lax' },
+        organizations: { enabled: false },
+        app: { title: 'Test', contact: 'test@test.com' },
+      },
+    }));
+
+    jest.unstable_mockModule('../../../lib/middlewares/model.js', () => ({
+      default: { getResultFromZod: jest.fn(), checkError: jest.fn() },
+    }));
+
+    jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
+      default: { isConfigured: jest.fn().mockReturnValue(false), sendMail: jest.fn() },
+    }));
+
+    jest.unstable_mockModule('../../../lib/helpers/responses.js', () => ({
+      default: {
+        success: jest.fn().mockReturnValue(jest.fn()),
+        error: jest.fn().mockReturnValue(jest.fn()),
+      },
+    }));
+
+    jest.unstable_mockModule('../../../lib/helpers/errors.js', () => ({
+      default: { getMessage: jest.fn().mockReturnValue('error') },
+    }));
+
+    jest.unstable_mockModule('../../../lib/helpers/AppError.js', () => ({
+      default: class AppError extends Error {
+        constructor(msg, opts) {
+          super(msg);
+          this.status = opts?.status;
+          this.code = opts?.code;
+          this.details = opts?.details;
+        }
+      },
+    }));
+
+    jest.unstable_mockModule('../../../modules/users/models/users.schema.js', () => ({
+      default: { User: {}, SignupUser: {} },
+    }));
+
+    jest.unstable_mockModule('../../../lib/middlewares/policy.js', () => ({
+      default: { defineAbilityFor: jest.fn().mockResolvedValue({}) },
+    }));
+
+    jest.unstable_mockModule('../../../lib/helpers/abilities.js', () => ({
+      default: jest.fn().mockReturnValue([]),
+    }));
+
+    jest.unstable_mockModule('../../../lib/helpers/getBaseUrl.js', () => ({
+      default: jest.fn().mockReturnValue('http://localhost:3000'),
+    }));
+
+    const mockCapture = jest.fn();
+    jest.unstable_mockModule('../../../lib/services/analytics.js', () => ({
+      default: { identify: jest.fn(), groupIdentify: jest.fn(), capture: mockCapture },
+    }));
+
+    const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
+
+    const req = {
+      body: { email: 'self@y.com', firstName: 'C', lastName: 'D', password: 'P@ss1234!' },
+      query: {},
+    };
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      cookie: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+    };
+
+    await AuthController.signup(req, res);
+
+    expect(mockCapture).toHaveBeenCalledWith(expect.objectContaining({
+      distinctId: 'u2',
+      event: 'user_signed_up',
+      properties: expect.objectContaining({
+        invited: false,
+        invitationId: null,
+        invitedBy: null,
+      }),
+    }));
+  });
+});
+
 describe('auth.password.controller silent-catch error logging:', () => {
   let mockWarn;
   let mockError;

@@ -79,21 +79,23 @@ describe('invitations.controller.remove', () => {
 });
 
 describe('invitations.controller.resend', () => {
+  const admin = { roles: ['admin'] };
+
   test('resends via the service and responds success', async () => {
     mockService.resend.mockResolvedValue({ id: 'i1', status: 'pending' });
-    await controller.resend({ invitation: { id: 'i1' } }, makeRes());
+    await controller.resend({ invitation: { id: 'i1' }, user: admin }, makeRes());
     expect(mockService.resend).toHaveBeenCalledWith('i1');
     expect(success).toHaveBeenCalledWith(expect.anything(), 'invitation resent');
     expect(successInner).toHaveBeenCalledWith({ id: 'i1', status: 'pending' });
   });
   test('threads a 409 (non-pending) as Conflict', async () => {
     mockService.resend.mockRejectedValue(Object.assign(new Error('Only pending invitations can be resent'), { status: 409 }));
-    await controller.resend({ invitation: { id: 'i1' } }, makeRes());
+    await controller.resend({ invitation: { id: 'i1' }, user: admin }, makeRes());
     expect(error).toHaveBeenCalledWith(expect.anything(), 409, 'Conflict', expect.any(String));
   });
   test('maps a 422 (mailer unconfigured) as Unprocessable Entity', async () => {
     mockService.resend.mockRejectedValue(Object.assign(new Error('mailer is not configured'), { status: 422 }));
-    await controller.resend({ invitation: { id: 'i1' } }, makeRes());
+    await controller.resend({ invitation: { id: 'i1' }, user: admin }, makeRes());
     expect(error).toHaveBeenCalledWith(expect.anything(), 422, 'Unprocessable Entity', expect.any(String));
   });
   // #3966 hardening: a bare transport rejection (no `.status`, unlike the
@@ -103,7 +105,7 @@ describe('invitations.controller.resend', () => {
   test('mail-transport failure (no .status) responds with a generic message, never the raw provider error, and logs server-side', async () => {
     const providerError = new Error('Resend API error: 401 Unauthorized — invalid API key sk_live_abc123');
     mockService.resend.mockRejectedValue(providerError);
-    await controller.resend({ invitation: { id: 'i1' } }, makeRes());
+    await controller.resend({ invitation: { id: 'i1' }, user: admin }, makeRes());
 
     expect(error).toHaveBeenCalledWith(expect.anything(), 422, 'Unprocessable Entity', expect.any(String));
     const clientMessage = error.mock.calls[0][3];
@@ -115,6 +117,28 @@ describe('invitations.controller.resend', () => {
       invitationId: 'i1',
       message: providerError.message,
     }));
+  });
+
+  // #3945: resend stays admin-only even though invitationAbilities can widen 'create'
+  // to authenticated users — see invitations.policy.js / invitations.controller.js
+  // comments for why CASL alone cannot close this gap (POST→'create' method-mapping
+  // collision with new-invitation creation).
+  describe('#3945 admin-only gate (defense-in-depth, independent of CASL)', () => {
+    test('403s a non-admin caller and never calls the service', async () => {
+      await controller.resend({ invitation: { id: 'i1' }, user: { roles: ['user'] } }, makeRes());
+      expect(error).toHaveBeenCalledWith(expect.anything(), 403, 'Forbidden', 'Only platform admins can resend invitations');
+      expect(mockService.resend).not.toHaveBeenCalled();
+    });
+    test('403s a caller with no roles array and never calls the service', async () => {
+      await controller.resend({ invitation: { id: 'i1' }, user: {} }, makeRes());
+      expect(error).toHaveBeenCalledWith(expect.anything(), 403, 'Forbidden', expect.any(String));
+      expect(mockService.resend).not.toHaveBeenCalled();
+    });
+    test('403s when req.user is missing entirely and never calls the service', async () => {
+      await controller.resend({ invitation: { id: 'i1' } }, makeRes());
+      expect(error).toHaveBeenCalledWith(expect.anything(), 403, 'Forbidden', expect.any(String));
+      expect(mockService.resend).not.toHaveBeenCalled();
+    });
   });
 });
 
