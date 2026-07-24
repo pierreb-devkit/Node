@@ -32,7 +32,9 @@ export const registerSignupEligibility = (fn) => {
  * Returns the FIRST non-null result collected across all checks (in registration
  * order), or null when no check returned one. The result is opaque to auth: it is
  * handed straight back to the caller (e.g. the invitations checker returns
- * `{ invite, finalize, release }`, which auth relays without importing any invitation code).
+ * `{ invite, claimed, finalize, release }` — `claimed` (#3981) tells the caller whether
+ * THIS check actually claimed the invite, the single source of truth for whether a
+ * finalize/release is meaningful — which auth relays without importing any invitation code).
  *
  * NOTE for future check authors (P5/P8 will register more): a THROW from ANY
  * check aborts the whole chain and blocks signup — even a check that runs AFTER
