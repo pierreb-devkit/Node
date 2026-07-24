@@ -43,6 +43,9 @@ const config = {
     publicImage: {
       max: Number.MAX_SAFE_INTEGER, // disable rate limiting in tests
     },
+    invitationsCreate: {
+      max: Number.MAX_SAFE_INTEGER, // disable rate limiting in tests
+    },
   },
   uploads: {
     avatar: {

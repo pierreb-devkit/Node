@@ -164,8 +164,8 @@ const grantSide = async ({ userId, units, key, expiresAt }) => {
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const notifyReferrer = async (userId, units) => {
-  if (!mailer.isConfigured()) return;
   try {
+    if (!mailer.isConfigured()) return;
     const { default: UserService } = await import('../../users/services/users.service.js');
     const user = await UserService.getBrut({ id: String(userId) });
     if (!user?.email) return;

@@ -24,6 +24,22 @@ const config = {
      */
     userFacing: false,
   },
+  // #3945: POST /api/invitations already had no rate limiter under admin-only access
+  // (a trusted caller); with `invitations.userFacing` able to widen `create` to any
+  // authenticated user, an unbounded create is a DB-bloat / outbound-email-spam
+  // abuse surface (mirrors the verify/:token route, which already uses `limiters.auth`).
+  // Lives in this base layer so the profile is present — and the limiter active —
+  // under EVERY env, not only the literal `production`; a missing profile means a
+  // no-op limiter. Stricter cap applied in config/defaults/production.config.js.
+  rateLimit: {
+    invitationsCreate: {
+      windowMs: 15 * 60 * 1000, // 15 min
+      max: 200, // lenient in dev; production overrides to a stricter cap
+      message: { message: 'Too many requests, please try again later.' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    },
+  },
 };
 
 export default config;
