@@ -95,18 +95,16 @@ const signup = async (req, res) => {
     const eligibility = await Eligibility.assertSignupEligible({ email: req.body.email, body: req.body, req, signupOpen: !!config.sign.up });
     // null when no optional module opened the gate (registry empty or no valid invite).
     const invite = eligibility?.invite || null;
-    // #3981: an invite is CLAIMED (and therefore needs finalize on success / release on
-    // failure) whenever it was REQUIRED to open the gate (closed signup) OR when public
-    // signup is open AND `invitations.userFacing` is on — the open-signup hole documented
-    // in the invitations module README point 3: userFacing opts a deployment INTO
-    // honoring a presented token even though signup does not require one, so the referral
-    // loop can convert on open-signup deployments. Read directly off config (not an
-    // invitations import — auth stays import-free of invitation code), and MUST mirror
-    // the identical claim condition in invitations.init.js's eligibility checker exactly —
-    // a mismatch would either try to finalize an invite that was never claimed (repository
-    // finalize() does not require consumingAt, so it would silently accept an unclaimed
-    // token) or leave a claimed invite stuck until the stale-claim sweep.
-    const inviteHonored = !!invite && (!config.sign.up || !!config.invitations?.userFacing);
+    // #3981: whether the invite needs finalize on success / release on failure is
+    // decided by `eligibility.claimed` — relayed verbatim from the checker that
+    // actually called claim() (invitations.init.js), the single source of truth for
+    // "was this atomically claimed". Reading it here rather than re-deriving the
+    // closed-signup / userFacing condition a second time from config avoids the two
+    // sides ever drifting out of lockstep (a duplicated condition could finalize an
+    // invite that was never claimed, or leave a claimed one stuck) — auth stays
+    // import-free of invitation code either way, since `claimed` is just a boolean on
+    // the opaque relayed result, not a call into invitations.
+    const inviteHonored = !!eligibility?.claimed;
     if (capReached || (!config.sign.up && !invite)) {
       // On the closed-signup (or userFacing open-signup) path the eligibility checker
       // CLAIMED the invite (E2) before the cap was found exhausted — release it so a

@@ -38,29 +38,32 @@ beforeEach(async () => {
 });
 
 describe('invitations.init — userFacing open-signup claim (#3981)', () => {
-  test('open signup + userFacing:false (default) ⇒ still NOT claimed (unchanged from pre-#3981)', async () => {
+  test('open signup + userFacing:false (default) ⇒ still NOT claimed (unchanged from pre-#3981), result.claimed is false', async () => {
     mockService.assertInvited.mockResolvedValue({ id: 'i1', email: 'a@b.co' });
     const req = { query: { inviteToken: 'tok' }, body: { email: 'a@b.co' } };
     const result = await Eligibility.assertSignupEligible({ email: 'a@b.co', body: req.body, req, signupOpen: true });
     expect(mockService.claim).not.toHaveBeenCalled();
     expect(result.invite).toEqual({ id: 'i1', email: 'a@b.co' });
+    expect(result.claimed).toBe(false);
   });
 
-  test('open signup + userFacing:true ⇒ CLAIMED (#3981 fix)', async () => {
+  test('open signup + userFacing:true ⇒ CLAIMED (#3981 fix), result.claimed is true (auth.controller trusts this, not config)', async () => {
     mockConfig.invitations.userFacing = true;
     mockService.assertInvited.mockResolvedValue({ id: 'i2', email: 'a@b.co' });
     const req = { query: { inviteToken: 'tok' }, body: { email: 'a@b.co' } };
     const result = await Eligibility.assertSignupEligible({ email: 'a@b.co', body: req.body, req, signupOpen: true });
     expect(mockService.claim).toHaveBeenCalledWith('tok');
     expect(result.invite).toEqual({ id: 'i2', email: 'a@b.co' });
+    expect(result.claimed).toBe(true);
   });
 
   test('closed signup + userFacing:true ⇒ still CLAIMED (flag is a no-op when signup is closed, invite already required)', async () => {
     mockConfig.invitations.userFacing = true;
     mockService.assertInvited.mockResolvedValue({ id: 'i3', email: 'a@b.co' });
     const req = { query: { inviteToken: 'tok' }, body: { email: 'a@b.co' } };
-    await Eligibility.assertSignupEligible({ email: 'a@b.co', body: req.body, req, signupOpen: false });
+    const result = await Eligibility.assertSignupEligible({ email: 'a@b.co', body: req.body, req, signupOpen: false });
     expect(mockService.claim).toHaveBeenCalledWith('tok');
+    expect(result.claimed).toBe(true);
   });
 
   test('open signup + userFacing:true + no invite resolved (no/invalid token) ⇒ no claim, nothing relayed', async () => {

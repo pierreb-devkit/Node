@@ -360,6 +360,9 @@ describe('auth.controller signup analytics: invite/referral attribution (#3945):
         registerSignupEligibility: jest.fn(),
         assertSignupEligible: jest.fn().mockResolvedValue({
           invite: { id: 'inv1', email: 'invitee@y.com', invitedBy: 'inviter1' },
+          // closed signup ⇒ the checker claimed it (#3981: auth.controller trusts this
+          // flag verbatim rather than re-deriving it from config).
+          claimed: true,
           finalize: jest.fn().mockResolvedValue({ id: 'inv1', status: 'accepted' }),
           release: jest.fn(),
         }),
