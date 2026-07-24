@@ -71,14 +71,23 @@ const remove = async (req, res) => {
 };
 
 /**
- * @desc Admin: re-send the invitation email for a pending invitation (existing token)
+ * @desc Admin: re-send the invitation email for a pending invitation (existing token).
+ * Explicitly admin-gated regardless of `config.invitations.userFacing` (#3945): CASL
+ * has no per-document Invitation subject registered, and this POST route resolves to
+ * the SAME 'create' action (methodToAction) as new-invitation creation — a widened
+ * non-admin 'create' grant would otherwise also open resend to ANY invitation, not just
+ * the caller's own. This is the defense-in-depth mirror (see invitations.policy.js).
  * @param {Object} req - Express request object
+ * @param {Object} req.user - Authenticated caller
  * @param {Object} req.invitation - Loaded invitation document (set by invitationByID middleware)
  * @param {string} req.invitation.id - Invitation id
  * @param {Object} res - Express response object
- * @returns {Promise<void>} Sends HTTP 200 with the invitation, 409 when not pending, or 422 on error
+ * @returns {Promise<void>} Sends HTTP 200 with the invitation, 403 when not admin, 409 when not pending, or 422 on error
  */
 const resend = async (req, res) => {
+  if (!Array.isArray(req.user?.roles) || !req.user.roles.includes('admin')) {
+    return responses.error(res, 403, 'Forbidden', 'Only platform admins can resend invitations')();
+  }
   try {
     const invitation = await InvitationService.resend(req.invitation.id);
     responses.success(res, 'invitation resent')(invitation);

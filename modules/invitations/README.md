@@ -141,9 +141,17 @@ and hard to cap/expire/audit ("when was this credited?"). Good for simple boosts
    service: admins read the platform-global list; any other caller reads only the
    invitations they sent (`invitedBy`-scoped — the `{ invitedBy: 1 }` index covers
    it; a caller with no resolvable id gets `[]`, never the `invitedBy:null`
-   admin-created rows). CASL still grants the route to admins only — widening the
-   `Invitation` abilities to regular users is the referral phase's flip; the scoping
-   ships first so that flip can never leak invitee emails (PII) platform-wide.
+   admin-created rows). **CASL widening — SHIPPED (#3945), config-gated**:
+   `config.invitations.userFacing` (stack default OFF — preserves existing
+   deployments) flips `invitationAbilities` to grant any authenticated user
+   `create` + `read` on `Invitation` (still TYPE-level; the real invitedBy-scoping
+   is the service list() above — see `invitations.policy.js` for why no
+   document-subject is registered). `resend` stays explicitly admin-gated in the
+   controller regardless of the flag (the POST→`create` method-mapping collision
+   with new-invitation creation). Also shipped: an `invitation_redeemed` analytics
+   event on accept, invite/referral properties on `user_signed_up`, and a
+   best-effort referrer notification email (`referral-reward-earned` template)
+   when a referral reward is freshly credited.
 2. **Self-referral guard — SHIPPED (#3833), with a known residual**: `create()`
    rejects 422 "You cannot invite yourself" when the invitee email equals the
    inviter's own, before the E9 registered-email check. The grant-side floor
@@ -160,7 +168,9 @@ and hard to cap/expire/audit ("when was this credited?"). Good for simple boosts
    `billing.referral` there is a silent no-op. The Vue Referrals tab reads
    `GET /api/auth/config` (`sign.up`) and replaces the invite form with an
    informational state when signup is open (the referrals list stays read-only).
-4. **Index `referredBy`** alongside the first real referral query.
+4. **Index `referredBy` — SHIPPED (#3945)**: `{ referredBy: 1 }` on the `User` model,
+   added alongside the CASL widening above (the account Referrals view is the first
+   real referral query).
 
 ## UI
 

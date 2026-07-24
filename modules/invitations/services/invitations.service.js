@@ -12,6 +12,7 @@ import mails from '../../../lib/helpers/mailer/index.js';
 import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
 import logger from '../../../lib/services/logger.js';
 import AppError from '../../../lib/helpers/AppError.js';
+import AnalyticsService from '../../../lib/services/analytics.js';
 
 /**
  * @desc Build the signup-invite email payload for an invitation. Shared by
@@ -250,7 +251,9 @@ const finalize = async (id, userId) => {
  *      via UserService.updateById (raw update — bypasses the client whitelist + Zod,
  *      so this is the ONLY way the field is ever written; never from a client body).
  *      invitations already depends on users (the E9 guard), so this keeps auth import-free.
- *   3. emits `invitation.accepted` so optional consumers (the billing #3842 credit-grant)
+ *   3. captures an `invitation_redeemed` analytics event (#3945, best-effort, never
+ *      breaks accept),
+ *   4. emits `invitation.accepted` so optional consumers (the billing #3842 credit-grant)
  *      can react fire-and-forget.
  *
  * Referral substrate — NO credit-grant logic here; this only wires the field + event
@@ -299,6 +302,19 @@ const accept = async (invite, userId) => {
       });
     }
   }
+  // Analytics — fire-and-forget, never break accept (#3945). Mirrors the try/catch
+  // convention already used around AnalyticsService calls elsewhere (auth.controller,
+  // billing.init) even though the service's own capture() never throws — belt+suspenders.
+  try {
+    AnalyticsService.capture({
+      distinctId: String(userId),
+      event: 'invitation_redeemed',
+      properties: {
+        invitationId: String(invite.id),
+        invitedBy: invitedBy ? String(invitedBy) : null,
+      },
+    });
+  } catch (_) { /* analytics must never break accept */ }
   // Always emit on accept (invitedBy may be null) so the event is the single canonical
   // "invite consumed" signal. Guard the emit so a synchronous listener throw cannot
   // escape into the signup flow (an emitted 'error' would crash without the init listener).

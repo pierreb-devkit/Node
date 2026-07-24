@@ -29,6 +29,10 @@ import InvitationSchema from '../../invitations/models/invitations.schema.js';
  */
 export default (app) => {
   const authLimiter = limiters.auth;
+  // #3945: mirrors the same profile applied on the canonical mount
+  // (invitations.routes.js) — this alias points at the SAME controller.create, so
+  // leaving it unlimited would let a caller bypass the canonical route's cap.
+  const createLimiter = limiters.invitationsCreate;
 
   // Signup invitations — DEPRECATION ALIAS for the canonical /api/invitations mount
   // (modules/invitations). MUST be declared before the greedy `/api/auth/:strategy`
@@ -42,7 +46,7 @@ export default (app) => {
     .route('/api/auth/invitations')
     .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
     .get(invitations.list)
-    .post(model.isValid(InvitationSchema.Invitation), invitations.create);
+    .post(createLimiter, model.isValid(InvitationSchema.Invitation), invitations.create);
   app
     .route('/api/auth/invitations/:invitationId')
     .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)

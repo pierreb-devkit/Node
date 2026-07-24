@@ -62,6 +62,16 @@ const config = {
       standardHeaders: true,
       legacyHeaders: false,
     },
+    // Authenticated POST /api/invitations. Stricter prod cap to harden against
+    // mass-invite abuse once `invitations.userFacing` widens create beyond admins
+    // (see invitations.development.config.js for the base-layer profile).
+    invitationsCreate: {
+      windowMs: 15 * 60 * 1000,
+      max: 20,
+      message: { message: 'Too many requests, please try again later.' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    },
   },
   log: {
     format: 'custom',

@@ -11,6 +11,35 @@ const config = {
   sign: {
     inviteExpiresInDays: 14, // signup invite link validity (days)
   },
+  invitations: {
+    /**
+     * User-facing referral invitations (#3945) — stack default OFF, preserves
+     * existing deployments' admin-only behavior. When true, invitationAbilities
+     * grants any authenticated user `create` on Invitation (their own referral
+     * link) and `read` (scoped server-side to invitations THEY sent — see
+     * InvitationsService.list(), #3833); platform admins keep `manage all`
+     * regardless. Pair with `billing.referral.enabled` (billing.development.config.js)
+     * to actually reward accepted referrals — this flag only controls WHO can see/
+     * create invitations, not whether a reward is granted.
+     */
+    userFacing: false,
+  },
+  // #3945: POST /api/invitations already had no rate limiter under admin-only access
+  // (a trusted caller); with `invitations.userFacing` able to widen `create` to any
+  // authenticated user, an unbounded create is a DB-bloat / outbound-email-spam
+  // abuse surface (mirrors the verify/:token route, which already uses `limiters.auth`).
+  // Lives in this base layer so the profile is present — and the limiter active —
+  // under EVERY env, not only the literal `production`; a missing profile means a
+  // no-op limiter. Stricter cap applied in config/defaults/production.config.js.
+  rateLimit: {
+    invitationsCreate: {
+      windowMs: 15 * 60 * 1000, // 15 min
+      max: 200, // lenient in dev; production overrides to a stricter cap
+      message: { message: 'Too many requests, please try again later.' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    },
+  },
 };
 
 export default config;

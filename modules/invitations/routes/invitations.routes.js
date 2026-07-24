@@ -19,6 +19,12 @@ import InvitationSchema from '../models/invitations.schema.js';
  */
 export default (app) => {
   const authLimiter = limiters.auth;
+  // #3945: create is no longer admin-only-by-trust once `invitations.userFacing`
+  // widens it — rate-limit it the same way verify/:token already is (mass-create
+  // is a DB-bloat / outbound-email-spam abuse surface). Passthrough no-op if the
+  // `invitationsCreate` profile is absent from config (mirrors every other named
+  // limiter in this stack).
+  const createLimiter = limiters.invitationsCreate;
 
   // Public: report whether a token is a valid invite (+ prefill email).
   app.route('/api/invitations/verify/:token').get(authLimiter, invitations.verify);
@@ -33,7 +39,7 @@ export default (app) => {
     .route('/api/invitations')
     .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
     .get(invitations.list)
-    .post(model.isValid(InvitationSchema.Invitation), invitations.create);
+    .post(createLimiter, model.isValid(InvitationSchema.Invitation), invitations.create);
 
   // Admin CRUD — revoke.
   app

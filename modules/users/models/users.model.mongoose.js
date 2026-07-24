@@ -58,7 +58,8 @@ const UserMongoose = new Schema(
     // client signup/update body. It is intentionally absent from the Zod schemas
     // and from every users update whitelist, so a client cannot self-assign a
     // referrer. null for self-serve signups and admin-created invites with no
-    // inviter. No index yet (default:null, no referral-list query in P8a).
+    // inviter. Indexed (#3945) — the user-facing Referrals view queries "who did I
+    // refer" (`{ referredBy: <inviterId> }`).
     referredBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -86,6 +87,9 @@ UserMongoose.index(
   { email: 1 },
   { unique: true, name: 'email_ci_unique', collation: { locale: 'en', strength: 2 } },
 );
+
+// #3945 — supports the user-facing Referrals view's "who did I refer" query.
+UserMongoose.index({ referredBy: 1 });
 
 function addID() {
   return this._id.toHexString();

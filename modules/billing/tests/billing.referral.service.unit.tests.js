@@ -23,6 +23,7 @@ describe('billing.referral.service unit tests:', () => {
   let mockUserService;
   let mockMembershipRepository;
   let mockLogger;
+  let mockMailer;
 
   const invitationId = '64b2f0000000000000000001';
   const inviterId = '64b2f0000000000000000010';
@@ -34,6 +35,7 @@ describe('billing.referral.service unit tests:', () => {
     jest.resetModules();
 
     mockConfig = {
+      app: { title: 'Test App' },
       billing: {
         referral: { enabled: true, referrerUnits: 1000, refereeUnits: 500, expiryDays: 365 },
       },
@@ -46,7 +48,7 @@ describe('billing.referral.service unit tests:', () => {
 
     // Users keyed by id — getBrut({ id }) resolves from this map.
     const users = {
-      [inviterId]: { _id: inviterId, currentOrganization: inviterOrgId },
+      [inviterId]: { _id: inviterId, currentOrganization: inviterOrgId, email: 'inviter@example.com', firstName: 'In', lastName: 'Viter' },
       [refereeId]: { _id: refereeId, currentOrganization: refereeOrgId },
     };
     mockUserService = {
@@ -56,9 +58,13 @@ describe('billing.referral.service unit tests:', () => {
 
     mockMembershipRepository = { findOne: jest.fn().mockResolvedValue(null) };
     mockLogger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    // Mailer OFF by default (matches the mailer.isConfigured() gate default in most
+    // deployments) — tests that need to assert notifyReferrer's email flip it ON.
+    mockMailer = { isConfigured: jest.fn().mockReturnValue(false), sendMail: jest.fn().mockResolvedValue({}) };
 
     jest.unstable_mockModule('../../../config/index.js', () => ({ default: mockConfig }));
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mockLogger }));
+    jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({ default: mockMailer }));
     jest.unstable_mockModule('../repositories/billing.extraBalance.repository.js', () => ({ default: mockRepository }));
     jest.unstable_mockModule('../../users/services/users.service.js', () => ({ default: mockUserService }));
     jest.unstable_mockModule('../../organizations/repositories/organizations.membership.repository.js', () => ({
@@ -258,5 +264,64 @@ describe('billing.referral.service unit tests:', () => {
 
     expect(result).toEqual({ skipped: 'no_invitation_id' });
     expect(mockRepository.creditGrant).not.toHaveBeenCalled();
+  });
+
+  describe('notifyReferrer (#3945 referrer email on a freshly applied grant)', () => {
+    test('mailer OFF (default in this suite) → no email lookup, no send', async () => {
+      await BillingReferralService.grantForInvitation({ invitationId, invitedBy: inviterId, acceptedUserId: refereeId });
+      expect(mockMailer.sendMail).not.toHaveBeenCalled();
+    });
+
+    test('mailer ON + referrer grant freshly applied → sends the referral-reward-earned email to the referrer', async () => {
+      mockMailer.isConfigured.mockReturnValue(true);
+
+      await BillingReferralService.grantForInvitation({ invitationId, invitedBy: inviterId, acceptedUserId: refereeId });
+
+      expect(mockMailer.sendMail).toHaveBeenCalledTimes(1);
+      const mail = mockMailer.sendMail.mock.calls[0][0];
+      expect(mail.to).toBe('inviter@example.com');
+      expect(mail.template).toBe('referral-reward-earned');
+      expect(mail.params).toMatchObject({ units: 1000, appName: 'Test App', displayName: 'In Viter' });
+    });
+
+    test('mailer ON but referrer side not applied (e.g. self-referral) → no email', async () => {
+      mockMailer.isConfigured.mockReturnValue(true);
+
+      await BillingReferralService.grantForInvitation({ invitationId, invitedBy: refereeId, acceptedUserId: refereeId });
+
+      expect(mockMailer.sendMail).not.toHaveBeenCalled();
+    });
+
+    test('mailer ON but referrer grant is a duplicate replay (applied:false) → no email (never double-notifies)', async () => {
+      mockMailer.isConfigured.mockReturnValue(true);
+      mockRepository.creditGrant.mockResolvedValue({ doc: null, applied: false, reason: 'duplicate_grant' });
+
+      await BillingReferralService.grantForInvitation({ invitationId, invitedBy: inviterId, acceptedUserId: refereeId });
+
+      expect(mockMailer.sendMail).not.toHaveBeenCalled();
+    });
+
+    test('mailer ON but the referrer user has no email → no send, no throw', async () => {
+      mockMailer.isConfigured.mockReturnValue(true);
+      mockUserService._users[inviterId] = { _id: inviterId, currentOrganization: inviterOrgId }; // no email
+
+      const result = await BillingReferralService.grantForInvitation({ invitationId, invitedBy: inviterId, acceptedUserId: refereeId });
+
+      expect(mockMailer.sendMail).not.toHaveBeenCalled();
+      expect(result.referrer).toMatchObject({ applied: true });
+    });
+
+    test('a mailer send failure is swallowed — the grant result is unaffected, error is logged', async () => {
+      mockMailer.isConfigured.mockReturnValue(true);
+      mockMailer.sendMail.mockRejectedValue(new Error('SMTP down'));
+
+      const result = await BillingReferralService.grantForInvitation({ invitationId, invitedBy: inviterId, acceptedUserId: refereeId });
+
+      expect(result.referrer).toMatchObject({ applied: true, organizationId: inviterOrgId });
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        '[billing.referral] referrer notification failed (non-fatal)',
+        expect.objectContaining({ userId: inviterId, message: 'SMTP down' }),
+      );
+    });
   });
 });

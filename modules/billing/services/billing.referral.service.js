@@ -3,6 +3,7 @@
  */
 import config from '../../../config/index.js';
 import logger from '../../../lib/services/logger.js';
+import mailer from '../../../lib/helpers/mailer/index.js';
 import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
 
 /**
@@ -146,6 +147,47 @@ const grantSide = async ({ userId, units, key, expiresAt }) => {
 };
 
 /**
+ * @function notifyReferrer
+ * @description Best-effort email to the referrer once their referral reward is
+ *              CREDITED (#3945) — today the grant is a silent ledger credit; this closes
+ *              that gap by reusing the stack's EXISTING mailer abstraction (mirrors
+ *              org-request-approved / org-member-added in
+ *              organizations.membership.service.js), not a new notification channel.
+ *              Called ONLY when grantSide reports `applied:true` for the referrer side —
+ *              the repository's atomic refId dedup guard means that happens exactly ONCE
+ *              per invitation, so a reconcile-cron back-fill or a replayed event can never
+ *              double-notify. Self-guarded: a mailer/lookup failure is logged and never
+ *              propagates — the grant itself already landed and must not be affected.
+ * @param {string} userId - The referrer's user id.
+ * @param {number} units - Units credited to the referrer (config-driven).
+ * @returns {Promise<void>}
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const notifyReferrer = async (userId, units) => {
+  try {
+    if (!mailer.isConfigured()) return;
+    const { default: UserService } = await import('../../users/services/users.service.js');
+    const user = await UserService.getBrut({ id: String(userId) });
+    if (!user?.email) return;
+    await mailer.sendMail({
+      to: user.email,
+      subject: `You earned a referral reward — ${config.app.title}`,
+      template: 'referral-reward-earned',
+      params: {
+        displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
+        units,
+        appName: config.app.title,
+      },
+    });
+  } catch (err) {
+    logger.warn('[billing.referral] referrer notification failed (non-fatal)', {
+      userId: String(userId),
+      message: err?.message,
+    });
+  }
+};
+
+/**
  * @function grantForInvitation
  * @description Apply the standard referral grant for one accepted invitation:
  *              - referee grant → the accepted user's organization (`refereeUnits`),
@@ -159,6 +201,9 @@ const grantSide = async ({ userId, units, key, expiresAt }) => {
  *              reconcile cron) — the branches below only label WHY an absent side was
  *              skipped (observability). Each side is keyed
  *              `referral:<invitationId>:<side>` so replays can never double-credit.
+ *              A freshly APPLIED referrer grant (first successful credit for this
+ *              invitation) also triggers a best-effort referrer notification email
+ *              (#3945, notifyReferrer) — never on a duplicate/idempotent replay.
  *              May reject on infrastructure errors — callers own their failure handling
  *              (the listener self-guards, the cron counts errors).
  * @param {Object} payload - The `invitation.accepted` payload (or its cron reconstruction).
@@ -195,6 +240,11 @@ const grantForInvitation = async ({ invitationId, invitedBy, acceptedUserId } = 
   // Referrer side — skip actor-less invites and trivial self-referrals (#3833 owns the full guard).
   if (expected.has('referrer')) {
     result.referrer = await grantSide({ userId: invitedBy, units: cfg.referrerUnits, key: expected.get('referrer'), expiresAt });
+    // #3945: notify ONLY on a freshly applied grant — never on an idempotent replay
+    // (grantSide's atomic dedup guard means `applied:true` fires exactly once).
+    if (result.referrer.applied) {
+      await notifyReferrer(invitedBy, cfg.referrerUnits);
+    }
   } else if (!invitedBy) {
     result.referrer = { applied: false, reason: 'no_inviter' };
   } else if (String(invitedBy) === String(acceptedUserId)) {

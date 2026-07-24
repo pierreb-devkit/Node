@@ -39,6 +39,11 @@ jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
   default: { warn: jest.fn(), error: jest.fn(), info: jest.fn() },
 }));
 
+const mockAnalytics = { capture: jest.fn() };
+jest.unstable_mockModule('../../../lib/services/analytics.js', () => ({
+  default: mockAnalytics,
+}));
+
 const InvitationRepository = (await import('../repositories/invitations.repository.js')).default;
 const InvitationService = (await import('../services/invitations.service.js')).default;
 // Real events singleton — the service emits on it; we spy to assert the payload.
@@ -279,6 +284,42 @@ describe('InvitationService.accept (P8a — referral substrate seam)', () => {
     expect(result).toBeNull();
     expect(mockUserService.updateById).not.toHaveBeenCalled();
     expect(emitSpy).not.toHaveBeenCalledWith('invitation.accepted', expect.anything());
+  });
+
+  // #3945: analytics — an accepted invite captures a redemption event.
+  test('captures an invitation_redeemed analytics event with invitationId + invitedBy', async () => {
+    const invite = { id: 'i1', email: 'a@b.co', invitedBy: 'inviter1' };
+    await InvitationService.accept(invite, 'u1');
+    expect(mockAnalytics.capture).toHaveBeenCalledWith({
+      distinctId: 'u1',
+      event: 'invitation_redeemed',
+      properties: { invitationId: 'i1', invitedBy: 'inviter1' },
+    });
+  });
+
+  test('invitedBy null (admin-created invite): invitation_redeemed still fires with invitedBy:null', async () => {
+    const invite = { id: 'i2', email: 'c@d.co', invitedBy: null };
+    await InvitationService.accept(invite, 'u2');
+    expect(mockAnalytics.capture).toHaveBeenCalledWith({
+      distinctId: 'u2',
+      event: 'invitation_redeemed',
+      properties: { invitationId: 'i2', invitedBy: null },
+    });
+  });
+
+  test('does NOT capture invitation_redeemed when finalize() returns null (no side-effects fire)', async () => {
+    InvitationRepository.finalize.mockResolvedValue(null);
+    const invite = { id: 'i1', email: 'a@b.co', invitedBy: 'inviter1' };
+    await InvitationService.accept(invite, 'u1');
+    expect(mockAnalytics.capture).not.toHaveBeenCalled();
+  });
+
+  test('best-effort: an analytics capture throw is swallowed (still emits, still returns the doc)', async () => {
+    mockAnalytics.capture.mockImplementationOnce(() => { throw new Error('analytics boom'); });
+    const invite = { id: 'i1', email: 'a@b.co', invitedBy: 'inviter1' };
+    const result = await InvitationService.accept(invite, 'u1');
+    expect(result).toMatchObject({ status: 'accepted' });
+    expect(emitSpy).toHaveBeenCalledWith('invitation.accepted', expect.objectContaining({ acceptedUserId: 'u1' }));
   });
 });
 
