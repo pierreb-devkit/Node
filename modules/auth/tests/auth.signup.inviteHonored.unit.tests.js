@@ -252,6 +252,51 @@ describe('auth.controller signup: inviteHonored gate (#3981)', () => {
     expect(release).not.toHaveBeenCalled();
   });
 
+  test('open signup + invite present, claimed:true + email-verification step throws ⇒ claim is RELEASED', async () => {
+    const { eligibility, release } = mockEligibilityWithInvite(undefined, true);
+    mockCommonDeps({ config: baseConfig({ sign: { up: true } }), eligibility });
+    // Mailer configured ⇒ the verification-token branch runs; make the persist step
+    // (UserService.update) throw so the outer try/catch's `verifyErr` path fires.
+    jest.unstable_mockModule('../../../modules/users/services/users.service.js', () => ({
+      default: {
+        create: jest.fn().mockResolvedValue({ id: 'u1', email: 'x@y.com', firstName: 'A', lastName: 'B', provider: 'local' }),
+        getBrut: jest.fn().mockResolvedValue({ id: 'u1' }),
+        update: jest.fn().mockRejectedValue(new Error('DB write failed persisting verification token')),
+        remove: jest.fn(),
+        count: jest.fn().mockResolvedValue(0),
+      },
+    }));
+    jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
+      default: { isConfigured: jest.fn().mockReturnValue(true), sendMail: jest.fn() },
+    }));
+
+    const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
+    const req = { body: { email: 'x@y.com', firstName: 'A', lastName: 'B', password: 'P@ss1234!' }, query: { inviteToken: 'tok' } };
+    const res = { status: jest.fn().mockReturnThis(), cookie: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() };
+
+    await AuthController.signup(req, res);
+
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  test('open signup + invite present, claimed:true + org-provisioning throws ⇒ claim is RELEASED', async () => {
+    const { eligibility, release } = mockEligibilityWithInvite(undefined, true);
+    mockCommonDeps({ config: baseConfig({ sign: { up: true } }), eligibility });
+    jest.unstable_mockModule('../../../modules/organizations/services/organizations.service.js', () => ({
+      default: {
+        handleSignupOrganization: jest.fn().mockRejectedValue(new Error('org provisioning DB error')),
+      },
+    }));
+
+    const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
+    const req = { body: { email: 'x@y.com', firstName: 'A', lastName: 'B', password: 'P@ss1234!' }, query: { inviteToken: 'tok' } };
+    const res = { status: jest.fn().mockReturnThis(), cookie: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() };
+
+    await AuthController.signup(req, res);
+
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
   test('capacity gate: open signup + invite claimed:true + cap reached ⇒ 404 AND the claim is released', async () => {
     const { eligibility, release } = mockEligibilityWithInvite(undefined, true);
     mockCommonDeps({
