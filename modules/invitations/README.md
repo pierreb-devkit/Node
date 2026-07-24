@@ -160,14 +160,17 @@ and hard to cap/expire/audit ("when was this credited?"). Good for simple boosts
    same-account pairs only. **Alias/variant self-invites (a second personal email
    → a separate account) are NOT prevented** — accepted residual risk; revisit
    (fraud review / email-normalization dedup) before any paid-rewards launch.
-3. **Open-signup hole — DOCUMENTED, intentionally NOT changed**: claim/finalize stay
-   gated on `!config.sign.up` (the "open signup never burns a token" invariant).
-   **Referral rewards therefore require `sign.up: false`.** On an open-signup
-   deployment a presented token is *resolved* but never *claimed/finalized*, so
-   `invitation.accepted` never fires and no grant occurs — enabling
-   `billing.referral` there is a silent no-op. The Vue Referrals tab reads
-   `GET /api/auth/config` (`sign.up`) and replaces the invite form with an
-   informational state when signup is open (the referrals list stays read-only).
+3. **Open-signup hole — CLOSED behind `invitations.userFacing` (#3981)**: claim/finalize
+   are gated on `!config.sign.up`, EXCEPT when `config.invitations.userFacing` is `true`
+   — then a presented, valid (email-pinned, unexpired, single-use) token still claims
+   and finalizes even on an open-signup deployment, so `invitation.accepted` +
+   `invitation_redeemed` + the referral grant fire exactly as on closed signup. With
+   `userFacing: false` (the default) the original invariant holds unchanged: a
+   presented token on open signup is *resolved* but never *claimed/finalized*, so
+   enabling `billing.referral` there is still a silent no-op. `GET /api/auth/config`
+   now exposes `invitations.userFacing` (same top-level, unauthenticated shape as
+   `sign.up`) so a consumer can tell the two open-signup states apart and gate the
+   Referrals tab's invite-form-vs-informational-state accordingly.
 4. **Index `referredBy` — SHIPPED (#3945)**: `{ referredBy: 1 }` on the `User` model,
    added alongside the CASL widening above (the account Referrals view is the first
    real referral query).

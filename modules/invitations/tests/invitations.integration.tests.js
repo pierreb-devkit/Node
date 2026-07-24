@@ -910,4 +910,182 @@ describe('Signup invitations:', () => {
       expect(res.status).toBe(200);
     });
   });
+
+  describe('Open-signup userFacing claim/finalize (#3981)', () => {
+    let invitationEvents;
+    let originalUp; let originalCap; let originalUserFacing;
+
+    beforeAll(async () => {
+      invitationEvents = (await import(path.resolve('./modules/invitations/lib/events.js'))).default;
+    });
+
+    beforeEach(() => {
+      originalUp = config.sign.up;
+      originalCap = config.sign.cap;
+      originalUserFacing = config.invitations.userFacing;
+    });
+    afterEach(async () => {
+      config.sign.up = originalUp;
+      config.sign.cap = originalCap;
+      config.invitations.userFacing = originalUserFacing;
+      jest.restoreAllMocks();
+      for (const email of [
+        '3981-open-userfacing@example.com',
+        '3981-open-userfacing-replay@example.com',
+        '3981-open-nofacing@example.com',
+        '3981-open-mismatch@example.com',
+        '3981-open-mismatch-plain@example.com',
+        '3981-open-notoken@example.com',
+        '3981-closed-userfacing@example.com',
+      ]) {
+        try {
+          const existing = await UserService.getBrut({ email });
+          if (existing) await UserService.remove(existing);
+        } catch (_) { /* cleanup */ }
+      }
+    });
+
+    test('userFacing:true + OPEN signup + valid matching-email token ⇒ CLAIMED + FINALIZED (referredBy set, invitation.accepted fires — the #3981 fix)', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const email = '3981-open-userfacing@example.com';
+      const created = await adminAgent.post('/api/invitations').send({ email });
+      const { token } = created.body.data;
+      const admin = await UserService.getBrut({ email: 'inv-admin@test.com' });
+      const inviterId = String(admin._id);
+
+      config.invitations.userFacing = true;
+      config.sign.up = true; config.sign.cap = null;
+
+      const emitSpy = jest.spyOn(invitationEvents, 'emit');
+
+      const res = await request(app)
+        .post(`/api/auth/signup?inviteToken=${token}`)
+        .send({ email, password: 'Sup3rStr0ng!' });
+      expect(res.status).toBe(200);
+
+      // The invite was CONSUMED (unlike the userFacing:false open-signup case below) —
+      // single-use is enforced exactly as on closed signup.
+      const verify = await request(app).get(`/api/invitations/verify/${token}`);
+      expect(verify.body.data.valid).toBe(false);
+
+      const brut = await UserService.getBrut({ email });
+      expect(String(brut.referredBy)).toBe(inviterId);
+
+      const acceptedCall = emitSpy.mock.calls.find(([evt]) => evt === 'invitation.accepted');
+      expect(acceptedCall).toBeDefined();
+      expect(acceptedCall[1].invitationId).toBe(created.body.data.id);
+      expect(String(acceptedCall[1].invitedBy)).toBe(inviterId);
+      expect(String(acceptedCall[1].acceptedUserId)).toBe(String(brut._id));
+    });
+
+    test('userFacing:true + OPEN signup: single-use still enforced — a replay of the same token is rejected', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const email = '3981-open-userfacing-replay@example.com';
+      const created = await adminAgent.post('/api/invitations').send({ email });
+      const { token } = created.body.data;
+
+      config.invitations.userFacing = true;
+      config.sign.up = true; config.sign.cap = null;
+
+      const first = await request(app)
+        .post(`/api/auth/signup?inviteToken=${token}`)
+        .send({ email, password: 'Sup3rStr0ng!' });
+      expect(first.status).toBe(200);
+
+      // Same token again, different email this time (open signup does not require the
+      // invite, so a plain signup would otherwise succeed) — the invite itself must be
+      // dead (accepted), proving it was truly burned, not merely ignored.
+      const verify = await request(app).get(`/api/invitations/verify/${token}`);
+      expect(verify.body.data.valid).toBe(false);
+    });
+
+    test('userFacing:false (default) + OPEN signup + valid token ⇒ still NOT claimed/burned (unchanged baseline, byte-for-byte)', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const email = '3981-open-nofacing@example.com';
+      const created = await adminAgent.post('/api/invitations').send({ email });
+      const { token } = created.body.data;
+
+      config.invitations.userFacing = false;
+      config.sign.up = true; config.sign.cap = null;
+
+      const res = await request(app)
+        .post(`/api/auth/signup?inviteToken=${token}`)
+        .send({ email, password: 'Sup3rStr0ng!' });
+      expect(res.status).toBe(200);
+
+      // The invite must remain VALID — presented, never consumed.
+      const verify = await request(app).get(`/api/invitations/verify/${token}`);
+      expect(verify.body.data.valid).toBe(true);
+
+      const brut = await UserService.getBrut({ email });
+      expect(brut.referredBy == null).toBe(true); // no attribution invented
+    });
+
+    test('userFacing:true + OPEN signup + token presented but email MISMATCH ⇒ invite never resolves, falls back to a plain signup (no attribution invented)', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const pinnedEmail = '3981-open-mismatch@example.com';
+      const created = await adminAgent.post('/api/invitations').send({ email: pinnedEmail });
+      const { token } = created.body.data;
+
+      config.invitations.userFacing = true;
+      config.sign.up = true; config.sign.cap = null;
+
+      const submittedEmail = '3981-open-mismatch-plain@example.com';
+      const res = await request(app)
+        .post(`/api/auth/signup?inviteToken=${token}`)
+        .send({ email: submittedEmail, password: 'Sup3rStr0ng!' });
+      // Open signup never requires the invite, so a mismatched token does not block
+      // signup — it just never opens the referral gate.
+      expect(res.status).toBe(200);
+      expect(res.body.user.email).toBe(submittedEmail); // NOT canonicalized to pinnedEmail
+
+      const brut = await UserService.getBrut({ email: submittedEmail });
+      expect(brut.referredBy == null).toBe(true);
+
+      // The pinned invite is untouched — still valid, awaiting its actual invitee.
+      const verify = await request(app).get(`/api/invitations/verify/${token}`);
+      expect(verify.body.data.valid).toBe(true);
+    });
+
+    test('userFacing:true + OPEN signup + NO token ⇒ plain signup, no attribution invented', async () => {
+      config.invitations.userFacing = true;
+      config.sign.up = true; config.sign.cap = null;
+
+      const email = '3981-open-notoken@example.com';
+      const res = await request(app).post('/api/auth/signup').send({ email, password: 'Sup3rStr0ng!' });
+      expect(res.status).toBe(200);
+
+      const brut = await UserService.getBrut({ email });
+      expect(brut.referredBy == null).toBe(true);
+    });
+
+    test('userFacing:true + CLOSED signup + valid token ⇒ unaffected — claims/finalizes exactly as before #3981', async () => {
+      const adminAgent = await createAdminAndSignin();
+      const email = '3981-closed-userfacing@example.com';
+      const created = await adminAgent.post('/api/invitations').send({ email });
+      const { token } = created.body.data;
+
+      config.invitations.userFacing = true;
+      config.sign.up = false; config.sign.cap = null;
+
+      const res = await request(app)
+        .post(`/api/auth/signup?inviteToken=${token}`)
+        .send({ email, password: 'Sup3rStr0ng!' });
+      expect(res.status).toBe(200);
+
+      const verify = await request(app).get(`/api/invitations/verify/${token}`);
+      expect(verify.body.data.valid).toBe(false);
+    });
+
+    test('GET /api/auth/config exposes invitations.userFacing (unauthenticated, mirrors sign.up)', async () => {
+      config.invitations.userFacing = true;
+      const on = await request(app).get('/api/auth/config');
+      expect(on.status).toBe(200);
+      expect(on.body.data.invitations.userFacing).toBe(true);
+
+      config.invitations.userFacing = false;
+      const off = await request(app).get('/api/auth/config');
+      expect(off.body.data.invitations.userFacing).toBe(false);
+    });
+  });
 });

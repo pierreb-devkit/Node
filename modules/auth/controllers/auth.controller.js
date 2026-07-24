@@ -95,13 +95,25 @@ const signup = async (req, res) => {
     const eligibility = await Eligibility.assertSignupEligible({ email: req.body.email, body: req.body, req, signupOpen: !!config.sign.up });
     // null when no optional module opened the gate (registry empty or no valid invite).
     const invite = eligibility?.invite || null;
+    // #3981: an invite is CLAIMED (and therefore needs finalize on success / release on
+    // failure) whenever it was REQUIRED to open the gate (closed signup) OR when public
+    // signup is open AND `invitations.userFacing` is on — the open-signup hole documented
+    // in the invitations module README point 3: userFacing opts a deployment INTO
+    // honoring a presented token even though signup does not require one, so the referral
+    // loop can convert on open-signup deployments. Read directly off config (not an
+    // invitations import — auth stays import-free of invitation code), and MUST mirror
+    // the identical claim condition in invitations.init.js's eligibility checker exactly —
+    // a mismatch would either try to finalize an invite that was never claimed (repository
+    // finalize() does not require consumingAt, so it would silently accept an unclaimed
+    // token) or leave a claimed invite stuck until the stale-claim sweep.
+    const inviteHonored = !!invite && (!config.sign.up || !!config.invitations?.userFacing);
     if (capReached || (!config.sign.up && !invite)) {
-      // On the closed-signup path the eligibility checker CLAIMED the invite (E2)
-      // before the cap was found exhausted — release it so a cap bump later does not
-      // leave it stuck mid-claim (the lazy sweep would also recover it; this is
-      // immediate). Only the closed-signup path claims, so gate the release on it to
-      // avoid a no-op release (+ misleading log) on an open-signup presented token.
-      if (invite && !config.sign.up) {
+      // On the closed-signup (or userFacing open-signup) path the eligibility checker
+      // CLAIMED the invite (E2) before the cap was found exhausted — release it so a
+      // cap bump later does not leave it stuck mid-claim (the lazy sweep would also
+      // recover it; this is immediate). Gate the release on `inviteHonored` to avoid a
+      // no-op release (+ misleading log) on a presented-but-never-claimed token.
+      if (inviteHonored) {
         try {
           await eligibility?.release?.();
         } catch (releaseErr) {
@@ -150,13 +162,14 @@ const signup = async (req, res) => {
     // stays locked until the 15-min sweep. The most realistic throw is an E11000 from
     // the case-insensitive unique-email index (email_ci_unique) when two case-variant signups race the same
     // invited email (validation/transient errors land here as well). Mirror the three
-    // release sites below + the same `!config.sign.up` gating (only the closed-signup
-    // path claimed). Best-effort: a release failure must not mask the create error.
+    // release sites below + the same `inviteHonored` gating (only a claimed invite —
+    // closed signup, or userFacing open signup — needs releasing). Best-effort: a
+    // release failure must not mask the create error.
     let user;
     try {
       user = await UserService.create(safeBody);
     } catch (createErr) {
-      if (invite && !config.sign.up) { try { await eligibility?.release?.(); } catch (_releaseErr) { /* best-effort */ } }
+      if (inviteHonored) { try { await eligibility?.release?.(); } catch (_releaseErr) { /* best-effort */ } }
       throw createErr;
     }
 
@@ -185,9 +198,10 @@ const signup = async (req, res) => {
     } catch (verifyErr) {
       try { await UserService.remove(user); } catch (_cleanupErr) { /* best-effort */ }
       // E2: a claimed invite must be released on a pre-response failure so the token
-      // is reusable (it was only claimed, never finalized). Only the closed-signup
-      // path claimed, so gate the release on it (open signup never claimed).
-      if (invite && !config.sign.up) { try { await eligibility?.release?.(); } catch (_releaseErr) { /* best-effort */ } }
+      // is reusable (it was only claimed, never finalized). Gate the release on
+      // `inviteHonored` — only a claimed invite (closed signup, or userFacing open
+      // signup) needs releasing.
+      if (inviteHonored) { try { await eligibility?.release?.(); } catch (_releaseErr) { /* best-effort */ } }
       throw verifyErr;
     }
 
@@ -204,8 +218,8 @@ const signup = async (req, res) => {
         // Best-effort cleanup; log but don't mask original error
       }
       // E2: release the claimed invite on org-provisioning failure so it can retry
-      // (only the closed-signup path claimed — open signup never did).
-      if (invite && !config.sign.up) { try { await eligibility?.release?.(); } catch (_releaseErr) { /* best-effort */ } }
+      // (gate on `inviteHonored` — only a claimed invite needs releasing).
+      if (inviteHonored) { try { await eligibility?.release?.(); } catch (_releaseErr) { /* best-effort */ } }
       throw orgErr;
     }
 
@@ -234,17 +248,19 @@ const signup = async (req, res) => {
       });
     } catch (_) { /* analytics must not break auth */ }
 
-    // E2 single-use: FINALIZE only when the invite actually opened the gate (signup
-    // was closed, so the invite was required). When signup is open, a token can be
-    // presented but is not required — and the checker never claimed it, so there is
-    // nothing to finalize. finalize burns single-use (usedAt + status:'accepted')
-    // and records the user; it runs through the closure returned by the eligibility
-    // checker (invitations module owns it; auth never imports invitation code). This
-    // is the last pre-response step, and every earlier failure path (create-throw,
-    // verify-failure, org-failure) already released the claim, so reaching finalize
-    // means the claim is still ours to burn. finalize itself is best-effort (see
-    // catch below).
-    if (invite && !config.sign.up) {
+    // E2 single-use: FINALIZE only when the invite was actually CLAIMED — closed
+    // signup (the invite was required), or open signup with `invitations.userFacing`
+    // on (#3981: a presented token still converts even though it wasn't required —
+    // closes the open-signup hole documented in the invitations README). Otherwise a
+    // token can be presented but is not required, and the checker never claimed it,
+    // so there is nothing to finalize. finalize burns single-use (usedAt +
+    // status:'accepted') and records the user; it runs through the closure returned
+    // by the eligibility checker (invitations module owns it; auth never imports
+    // invitation code). This is the last pre-response step, and every earlier failure
+    // path (create-throw, verify-failure, org-failure) already released the claim
+    // under the same `inviteHonored` condition, so reaching finalize means the claim
+    // is still ours to burn. finalize itself is best-effort (see catch below).
+    if (inviteHonored) {
       try {
         await eligibility?.finalize?.(user._id || user.id);
       } catch (finalizeErr) {
@@ -775,6 +791,15 @@ const getConfig = async (req, res) => {
           if (v && !String(v).startsWith('DEVKIT_NODE_')) return v;
           return config.package?.version || 'dev';
         })(),
+      },
+      // #3981: same top-level, unauthenticated pattern as `sign` above — the invitations
+      // module's own README (point 3) documents that its Vue Referrals tab already reads
+      // `sign.up` from this same endpoint to decide whether the open-signup deployment
+      // can still convert referrals; `userFacing` is the second half of that gate. Expose
+      // ONLY this boolean — nothing else from `config.invitations` (rate-limit tuning,
+      // etc.) is public API surface.
+      invitations: {
+        userFacing: !!config.invitations?.userFacing,
       },
     };
 
