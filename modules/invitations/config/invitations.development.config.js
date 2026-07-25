@@ -39,6 +39,9 @@ const config = {
      * `rateLimit.invitationsCreate` (bounds burst rate, not lifetime volume).
      * Downstream consumers opt in with a number in their config layer, e.g.:
      *   invitations: { maxLifetime: 50 }
+     * NOTE: `0` is a valid (if unusual) opt-in, not an alias for "disabled" — it
+     * rejects every invitation immediately (count >= 0 is always true). Use
+     * `null`/omit the key to disable the cap.
      */
     maxLifetime: null,
   },
