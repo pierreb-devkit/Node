@@ -14,6 +14,7 @@ describe('Billing webhook checkout unit tests:', () => {
   let mockSubscriptionRepository;
   let mockOrganizationRepository;
   let mockExtraService;
+  let mockResetService;
   let mockStripeInstance;
 
   const orgId = '507f1f77bcf86cd799439011';
@@ -70,8 +71,12 @@ describe('Billing webhook checkout unit tests:', () => {
       default: mockExtraService,
     }));
 
+    mockResetService = {
+      resetWeek: jest.fn(),
+      forceRotateForPlanChange: jest.fn().mockResolvedValue({}),
+    };
     jest.unstable_mockModule('../services/billing.reset.service.js', () => ({
-      default: { resetWeek: jest.fn() },
+      default: mockResetService,
     }));
 
     jest.unstable_mockModule('../lib/events.js', () => ({
@@ -329,6 +334,50 @@ describe('Billing webhook checkout unit tests:', () => {
         'evt_co_2',
         expect.objectContaining({ plan: 'pro', status: 'active' }),
         'subscription',
+      );
+    });
+
+    test('forceRotateForPlanChange called (preserveUsage: true) after activation', async () => {
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue(existing);
+      mockSubscriptionRepository.updateIfEventNewer.mockResolvedValue({ _id: subId });
+
+      await BillingWebhookService.handleCheckoutCompleted(
+        {
+          customer: 'cus_123',
+          subscription: 'sub_456',
+          metadata: { organizationId: orgId, plan: 'pro' },
+        },
+        checkoutEvent,
+      );
+
+      expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledWith(orgId, { preserveUsage: true });
+    });
+
+    test('forceRotateForPlanChange error is non-fatal (logged, does not throw)', async () => {
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue(existing);
+      mockSubscriptionRepository.updateIfEventNewer.mockResolvedValue({ _id: subId });
+      mockResetService.forceRotateForPlanChange.mockRejectedValue(new Error('db unavailable'));
+
+      const { default: mockLogger } = await import('../../../lib/services/logger.js');
+
+      await expect(
+        BillingWebhookService.handleCheckoutCompleted(
+          {
+            customer: 'cus_123',
+            subscription: 'sub_456',
+            metadata: { organizationId: orgId, plan: 'pro' },
+          },
+          checkoutEvent,
+        ),
+      ).resolves.not.toThrow();
+      // The subscription write already committed before the rotation call — a rotation
+      // failure must not roll it back or propagate.
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalled();
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        '[billing.webhook] forceRotateForPlanChange failed after checkout.session.completed',
+        expect.objectContaining({ organizationId: orgId }),
       );
     });
 

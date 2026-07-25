@@ -216,6 +216,22 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       expect(result.meterUsed).toBe(100);
     });
 
+    test('replay returns the LIVE plan quota, not the stored (possibly stale) snapshot', async () => {
+      // Same rationale as the non-replay overflow path: the stored week-doc snapshot can be
+      // stale after a mid-week plan change (e.g. rotation hasn't run yet, or failed non-fatally).
+      // A replayed call must report the live quota too, not a pre-rotation value.
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan({ meterQuota: 1000 }));
+      mockUsageRepository.incrementMeter.mockResolvedValue(null);
+      // Stored doc still carries the stale pre-upgrade quota (0).
+      mockUsageRepository.findByWeek.mockResolvedValue(makeUsageDoc({ meterUsed: 100, meterQuota: 0 }));
+
+      const result = await BillingUsageService.incrementMeter(orgId, 100, {}, 'hist_replay_stale_snapshot');
+
+      expect(result.applied).toBe(false);
+      expect(result.meterQuota).toBe(1000);
+    });
+
     test('incrementMeter same idempotencyKey twice → second is no-op', async () => {
       mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockReturnValue(makePlan());

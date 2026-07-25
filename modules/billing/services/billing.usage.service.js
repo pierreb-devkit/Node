@@ -114,14 +114,20 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
     return {
       applied: false,
       meterUsed: existing?.meterUsed ?? 0,
-      meterQuota: existing?.meterQuota ?? meterQuota,
+      // Live plan quota (fetched above), not the stored snapshot — same rationale as the
+      // non-replay path below: the stored week-doc snapshot goes stale after a mid-week
+      // plan change, so a replayed call must not report a pre-rotation quota either.
+      meterQuota,
       extrasConsumed: 0,
       alertCrossed: null,
     };
   }
 
   const newMeterUsed = updatedDoc.meterUsed ?? 0;
-  const effectiveQuota = updatedDoc.meterQuota ?? meterQuota;
+  // Use the LIVE plan quota (fetched above), not updatedDoc.meterQuota — the stored
+  // week-doc snapshot goes stale after a mid-week plan change: the live plan config
+  // is authoritative for overflow decisions (mirrors the display fix in billing.controller.js).
+  const effectiveQuota = meterQuota;
 
   // Overflow detection: units consumed beyond the plan quota go to extras.
   // Free plan (effectiveQuota === 0): every unit must be debited from extras —

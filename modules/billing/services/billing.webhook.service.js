@@ -308,6 +308,19 @@ const handleCheckoutCompleted = async (session, event) => {
   }
 
   await syncOrganizationPlan(organizationId, plan);
+
+  // Checkout activation can land mid-week on a pre-existing week doc (created earlier under
+  // the prior plan) — refresh the stored quota snapshot so it stays honest for reconcile/
+  // display-fallback. Non-fatal: usage attribution itself reads the live quota
+  // (billing.usage.service.js), so a failure here does not misprice usage, only the snapshot.
+  try {
+    await BillingResetService.forceRotateForPlanChange(organizationId, { preserveUsage: true });
+  } catch (err) {
+    logger.warn('[billing.webhook] forceRotateForPlanChange failed after checkout.session.completed', {
+      organizationId,
+      error: err?.message ?? String(err),
+    });
+  }
 };
 
 /**
@@ -1222,6 +1235,17 @@ const handleSubscriptionCreated = async (subscription, event) => {
       throw err;
     }
     await syncOrganizationPlan(organizationId, newPlan);
+
+    // Keeps the stored week snapshot honest for reconcile/display-fallback — same
+    // rationale as the checkout.session.completed activation path above.
+    try {
+      await BillingResetService.forceRotateForPlanChange(organizationId, { preserveUsage: true });
+    } catch (err) {
+      logger.warn('[billing.webhook] forceRotateForPlanChange failed after subscription.created (new row)', {
+        organizationId,
+        error: err?.message ?? String(err),
+      });
+    }
     return;
   }
 
@@ -1247,6 +1271,17 @@ const handleSubscriptionCreated = async (subscription, event) => {
   }
 
   await syncOrganizationPlan(organizationId, newPlan);
+
+  // Keeps the stored week snapshot honest for reconcile/display-fallback — same
+  // rationale as the checkout.session.completed activation path above.
+  try {
+    await BillingResetService.forceRotateForPlanChange(organizationId, { preserveUsage: true });
+  } catch (err) {
+    logger.warn('[billing.webhook] forceRotateForPlanChange failed after subscription.created (existing row)', {
+      organizationId,
+      error: err?.message ?? String(err),
+    });
+  }
 };
 
 /**
