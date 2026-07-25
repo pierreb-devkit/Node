@@ -13,7 +13,7 @@ about organizations: getting an invited person into an org is the 2-step flow
 - Signup gate: two-phase claim/finalize (`consumingAt` CAS + lazy 15-min stale sweep),
   email pin, soft revoke. See `services/invitations.service.js`.
 
-## The referral substrate (what "Referral rewards — coming soon" hooks into)
+## The referral substrate (what the reward grants hook into)
 
 The reward **seam** ships, and the STANDARD reward logic now ships too (#3842 — the
 config-gated grant listener in `billing.init.js`, default OFF; product gates in #3833).
@@ -178,6 +178,6 @@ and hard to cap/expire/audit ("when was this credited?"). Good for simple boosts
 ## UI
 
 The Vue module (`src/modules/invitations/` in Devkit Vue) ships the admin beta-gate tab and
-the account **Referrals** tab (invite a contact, my invites + status chips, a referral
-summary, and the "Referral rewards — coming soon" placeholder where the #3842 grant
-balance lands — the placeholder is contractually digit-free until real numbers exist).
+the account **Referrals** tab (invite a contact, my invites + status chips, and a referral
+summary). Reward grants happen server-side (#3842) with no client-visible balance UI —
+the former "coming soon" placeholder was removed once the grant path shipped (#4504).
