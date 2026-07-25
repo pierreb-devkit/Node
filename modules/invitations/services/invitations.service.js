@@ -68,6 +68,12 @@ const create = async (email, invitedBy) => {
   // revoking them. Bounds cumulative volume — the exposure that matters when
   // billing.referral rewards are enabled (credit farming via fake referrer/referee
   // pairs) — as a complement to rateLimit.invitationsCreate (bounds burst rate only).
+  // Best-effort, same accepted shape as the outstanding-pending-invite guard below (no
+  // atomic counter): two racing creates at count === maxLifetime-1 can both pass the
+  // check and both land, admitting the cap by a document or two. Acceptable for an
+  // admin/owner surface already bounded by rateLimit.invitationsCreate — turning this
+  // into a hard ceiling needs an atomically-incremented counter (a schema change), out
+  // of this fix's scope.
   const inviterId = invitedBy?.id || invitedBy?._id || null;
   const maxLifetime = config.invitations?.maxLifetime;
   if (typeof maxLifetime === 'number' && inviterId) {

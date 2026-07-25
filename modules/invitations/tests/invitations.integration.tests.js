@@ -697,6 +697,34 @@ describe('Signup invitations:', () => {
     });
   });
 
+  describe('#3986 lifetime cap per inviter', () => {
+    let originalMaxLifetime;
+    beforeEach(() => { originalMaxLifetime = config.invitations.maxLifetime; });
+    afterEach(() => { config.invitations.maxLifetime = originalMaxLifetime; });
+
+    test('rejects (422) once the REAL DB count reaches config.invitations.maxLifetime, via the real HTTP path', async () => {
+      config.invitations.maxLifetime = 2;
+      // createAdminAndSignin() always (re)creates a fresh admin, so this admin's
+      // invitedBy count starts at 0 — no cross-test bleed.
+      const adminAgent = await createAdminAndSignin();
+      const first = await adminAgent.post('/api/invitations').send({ email: 'cap1-3986@example.com' });
+      expect(first.status).toBe(200);
+      const second = await adminAgent.post('/api/invitations').send({ email: 'cap2-3986@example.com' });
+      expect(second.status).toBe(200); // boundary: count was 1 (cap - 1), passes
+      const third = await adminAgent.post('/api/invitations').send({ email: 'cap3-3986@example.com' });
+      expect(third.status).toBe(422); // count is now 2 (== cap), rejected
+    });
+
+    test('default-off (maxLifetime null): unaffected regardless of how many invitations already exist', async () => {
+      config.invitations.maxLifetime = null;
+      const adminAgent = await createAdminAndSignin();
+      const first = await adminAgent.post('/api/invitations').send({ email: 'cap4-3986@example.com' });
+      expect(first.status).toBe(200);
+      const second = await adminAgent.post('/api/invitations').send({ email: 'cap5-3986@example.com' });
+      expect(second.status).toBe(200);
+    });
+  });
+
   describe('P8a referral substrate (referredBy + invitation.accepted)', () => {
     let invitationEvents;
     let originalUp; let originalCap;
