@@ -418,6 +418,32 @@ describe('handleSubscriptionCreated — safety-net handler:', () => {
     expect(mocks.mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
   });
 
+  test('existing doc: forceRotateForPlanChange called (preserveUsage: true) after successful update', async () => {
+    const existing = { _id: subId, organization: orgId };
+    mocks.mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+
+    await BillingWebhookService.handleSubscriptionCreated(makeSubscription(), makeEvent());
+
+    expect(mocks.mockResetService.forceRotateForPlanChange).toHaveBeenCalledWith(orgId, { preserveUsage: true });
+  });
+
+  test('existing doc: forceRotateForPlanChange error is non-fatal (logged, does not throw)', async () => {
+    const existing = { _id: subId, organization: orgId };
+    mocks.mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+    mocks.mockResetService.forceRotateForPlanChange.mockRejectedValue(new Error('db unavailable'));
+
+    const { default: mockLogger } = await import('../../../lib/services/logger.js');
+
+    await expect(
+      BillingWebhookService.handleSubscriptionCreated(makeSubscription(), makeEvent()),
+    ).resolves.not.toThrow();
+    expect(mocks.mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      '[billing.webhook] forceRotateForPlanChange failed after subscription.created (existing row)',
+      expect.objectContaining({ organizationId: orgId }),
+    );
+  });
+
   test('existing doc: stale event — updateIfEventNewer returns null, syncOrganizationPlan NOT called', async () => {
     const existing = { _id: subId, organization: orgId };
     mocks.mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
@@ -485,6 +511,26 @@ describe('handleSubscriptionCreated — safety-net handler:', () => {
     await BillingWebhookService.handleSubscriptionCreated(makeSubscription(), makeEvent());
 
     expect(mocks.mockResetService.forceRotateForPlanChange).toHaveBeenCalledWith(orgId, { preserveUsage: true });
+  });
+
+  test('Dashboard subscription: forceRotateForPlanChange error is non-fatal (logged, does not throw)', async () => {
+    const orgSub = { organization: orgId };
+    mocks.mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(null);
+    mocks.mockSubscriptionRepository.findByStripeCustomerId.mockResolvedValue(orgSub);
+    mocks.mockResetService.forceRotateForPlanChange.mockRejectedValue(new Error('db unavailable'));
+
+    const { default: mockLogger } = await import('../../../lib/services/logger.js');
+
+    await expect(
+      BillingWebhookService.handleSubscriptionCreated(makeSubscription(), makeEvent()),
+    ).resolves.not.toThrow();
+    // Row creation + plan sync already committed before the rotation call — a rotation
+    // failure must not roll those back or propagate.
+    expect(mocks.mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      '[billing.webhook] forceRotateForPlanChange failed after subscription.created (new row)',
+      expect.objectContaining({ organizationId: orgId }),
+    );
   });
 
   test('Dashboard subscription: resolves plan from priceId map (no metadata)', async () => {
