@@ -23,6 +23,7 @@ InvitationModel.find = jest.fn(() => chain);
 InvitationModel.findById = jest.fn(() => chain);
 InvitationModel.deleteOne = jest.fn(() => chain);
 InvitationModel.updateMany = jest.fn(() => chain);
+InvitationModel.countDocuments = jest.fn(() => chain);
 
 const isValid = jest.fn(() => true);
 
@@ -134,6 +135,14 @@ describe('InvitationRepository', () => {
     expect(chain.select).toHaveBeenCalledWith('-token');
     expect(chain.populate).toHaveBeenCalledWith('invitedBy', 'email firstName lastName');
     expect(chain.sort).toHaveBeenCalledWith('-createdAt');
+  });
+
+  test('countByInvitedBy counts across ALL statuses for a given inviter (#3986)', async () => {
+    exec.mockResolvedValue(5);
+    const result = await InvitationRepository.countByInvitedBy('u1');
+    // No status filter — the lifetime cap must not reset on expire/revoke.
+    expect(InvitationModel.countDocuments).toHaveBeenCalledWith({ invitedBy: 'u1' });
+    expect(result).toBe(5);
   });
 
   test('findAccepted scans status:accepted lean with the minimal referral projection (#3842)', async () => {
