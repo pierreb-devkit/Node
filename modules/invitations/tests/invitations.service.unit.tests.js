@@ -5,6 +5,7 @@ jest.unstable_mockModule('../repositories/invitations.repository.js', () => ({
     create: jest.fn(),
     findByToken: jest.fn(),
     findByEmail: jest.fn(),
+    countByInvitedBy: jest.fn(),
     claim: jest.fn(),
     finalize: jest.fn(),
     release: jest.fn(),
@@ -28,6 +29,8 @@ jest.unstable_mockModule('../../../config/index.js', () => ({
   default: {
     sign: { inviteExpiresInDays: 14 },
     app: { title: 'Test App', contact: 'contact@test.com' },
+    // #3986: stack default OFF (mirrors production config/index.js absent/null shape).
+    invitations: { maxLifetime: null },
   },
 }));
 
@@ -48,6 +51,9 @@ const InvitationRepository = (await import('../repositories/invitations.reposito
 const InvitationService = (await import('../services/invitations.service.js')).default;
 // Real events singleton — the service emits on it; we spy to assert the payload.
 const invitationEvents = (await import('../lib/events.js')).default;
+// Mocked config singleton — mutated per-test for the #3986 lifetime-cap describe block
+// (mirrors how integration tests flip config.sign.up/cap, kept + restored per test).
+const config = (await import('../../../config/index.js')).default;
 
 beforeEach(() => {
   // Default: no stale claims to sweep, no pre-existing user (E9), no outstanding
@@ -55,8 +61,10 @@ beforeEach(() => {
   // mockResolvedValue, so a prior test's findByEmail value would otherwise leak in.
   InvitationRepository.releaseStaleClaims.mockResolvedValue({ modifiedCount: 0 });
   InvitationRepository.findByEmail.mockResolvedValue(undefined);
+  InvitationRepository.countByInvitedBy.mockResolvedValue(0);
   mockUserService.findByEmail.mockResolvedValue(null);
   mockUserService.updateById.mockResolvedValue({});
+  config.invitations.maxLifetime = null; // stack default OFF, reset between tests
 });
 
 describe('InvitationService.findValid', () => {
@@ -398,6 +406,57 @@ describe('InvitationService.create — #3833 self-invite guard', () => {
     InvitationRepository.create.mockImplementation((doc) => Promise.resolve({ ...doc, id: '2' }));
     const inv = await InvitationService.create('someone@example.com', { id: 'u1' });
     expect(inv.email).toBe('someone@example.com');
+  });
+});
+
+describe('InvitationService.create — #3986 lifetime cap per inviter', () => {
+  test('default-off (config absent/null): create succeeds regardless of count, countByInvitedBy never consulted', async () => {
+    InvitationRepository.countByInvitedBy.mockResolvedValue(999); // would be way over any real cap
+    InvitationRepository.create.mockImplementation((doc) => Promise.resolve({ ...doc, id: '1' }));
+    const inv = await InvitationService.create('friend@example.com', { id: 'admin1' });
+    expect(inv.email).toBe('friend@example.com');
+    expect(InvitationRepository.countByInvitedBy).not.toHaveBeenCalled();
+    expect(InvitationRepository.create).toHaveBeenCalledTimes(1);
+  });
+
+  test('boundary: count at cap−1 passes (create proceeds)', async () => {
+    config.invitations.maxLifetime = 5;
+    InvitationRepository.countByInvitedBy.mockResolvedValue(4); // cap - 1
+    InvitationRepository.create.mockImplementation((doc) => Promise.resolve({ ...doc, id: '1' }));
+    const inv = await InvitationService.create('friend@example.com', { id: 'admin1' });
+    expect(inv.email).toBe('friend@example.com');
+    expect(InvitationRepository.countByInvitedBy).toHaveBeenCalledWith('admin1');
+    expect(InvitationRepository.create).toHaveBeenCalledTimes(1);
+  });
+
+  test('capped path: count at threshold rejects (422), same AppError shape as the self-invite guard', async () => {
+    config.invitations.maxLifetime = 5;
+    InvitationRepository.countByInvitedBy.mockResolvedValue(5); // == cap
+    await expect(InvitationService.create('friend@example.com', { id: 'admin1' })).rejects.toMatchObject({
+      status: 422,
+      code: 'VALIDATION_ERROR',
+    });
+    expect(InvitationRepository.create).not.toHaveBeenCalled();
+    // Fires BEFORE E9 / the outstanding-invite lookup, same fail-fast ordering as self-invite.
+    expect(mockUserService.findByEmail).not.toHaveBeenCalled();
+  });
+
+  test('capped path: count past threshold also rejects (422)', async () => {
+    config.invitations.maxLifetime = 5;
+    InvitationRepository.countByInvitedBy.mockResolvedValue(6); // > cap
+    await expect(InvitationService.create('friend@example.com', { id: 'admin1' })).rejects.toMatchObject({
+      status: 422,
+      code: 'VALIDATION_ERROR',
+    });
+    expect(InvitationRepository.create).not.toHaveBeenCalled();
+  });
+
+  test('an inviter with no resolvable id (defensive) skips the cap entirely, even when configured', async () => {
+    config.invitations.maxLifetime = 1;
+    InvitationRepository.create.mockImplementation((doc) => Promise.resolve({ ...doc, id: '1' }));
+    const inv = await InvitationService.create('friend@example.com', {});
+    expect(inv.email).toBe('friend@example.com');
+    expect(InvitationRepository.countByInvitedBy).not.toHaveBeenCalled();
   });
 });
 

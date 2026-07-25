@@ -29,6 +29,21 @@ const config = {
      * (`invitations.userFacing`) so the frontend can gate referral UI on it.
      */
     userFacing: false,
+    /**
+     * Lifetime cap per inviter (#3986) — stack default OFF (absent/null = disabled,
+     * no behavior change). DB-backed: InvitationsService.create() counts ALL
+     * invitations (any status) already sent by the same `invitedBy` and rejects
+     * (422) once the count reaches this value. Bounds cumulative volume — the
+     * exposure that matters when `billing.referral` rewards are enabled (credit
+     * farming via fake referrer/referee pairs) — as a complement to
+     * `rateLimit.invitationsCreate` (bounds burst rate, not lifetime volume).
+     * Downstream consumers opt in with a number in their config layer, e.g.:
+     *   invitations: { maxLifetime: 50 }
+     * NOTE: `0` is a valid (if unusual) opt-in, not an alias for "disabled" — it
+     * rejects every invitation immediately (count >= 0 is always true). Use
+     * `null`/omit the key to disable the cap.
+     */
+    maxLifetime: null,
   },
   // #3945: POST /api/invitations already had no rate limiter under admin-only access
   // (a trusted caller); with `invitations.userFacing` able to widen `create` to any

@@ -41,7 +41,7 @@ const inviteMailPayload = (invitation) => ({
  * @param {String} email - invitee email (any case)
  * @param {Object} invitedBy - the admin user creating the invite
  * @returns {Promise<Object>} created invitation
- * @throws {AppError} 409 when a pending invitation already exists for the email; 422 when the invitee email is the inviter's own, or a user already exists for this email
+ * @throws {AppError} 409 when a pending invitation already exists for the email; 422 when the invitee email is the inviter's own, a user already exists for this email, or the inviter has reached `config.invitations.maxLifetime` (if set)
  */
 const create = async (email, invitedBy) => {
   const normalizedEmail = String(email).toLowerCase().trim();
@@ -60,6 +60,31 @@ const create = async (email, invitedBy) => {
       code: 'VALIDATION_ERROR',
       details: { message: 'You cannot invite yourself.' },
     });
+  }
+  // #3986: config-gated lifetime cap per inviter. Absent/null = disabled (stack default,
+  // mirrors billing.referral) — no behavior change until a downstream consumer opts in
+  // with a number. DB-backed, not a rate window: counts ALL invitations ever created by
+  // this inviter (any status), so the cap cannot be reset by letting invites expire or
+  // revoking them. Bounds cumulative volume — the exposure that matters when
+  // billing.referral rewards are enabled (credit farming via fake referrer/referee
+  // pairs) — as a complement to rateLimit.invitationsCreate (bounds burst rate only).
+  // Best-effort, same accepted shape as the outstanding-pending-invite guard below (no
+  // atomic counter): two racing creates at count === maxLifetime-1 can both pass the
+  // check and both land, admitting the cap by a document or two. Acceptable for an
+  // admin/owner surface already bounded by rateLimit.invitationsCreate — turning this
+  // into a hard ceiling needs an atomically-incremented counter (a schema change), out
+  // of this fix's scope.
+  const inviterId = invitedBy?.id || invitedBy?._id || null;
+  const maxLifetime = config.invitations?.maxLifetime;
+  if (typeof maxLifetime === 'number' && inviterId) {
+    const lifetimeCount = await InvitationRepository.countByInvitedBy(inviterId);
+    if (lifetimeCount >= maxLifetime) {
+      throw new AppError('You have reached the maximum number of invitations you can send', {
+        status: 422,
+        code: 'VALIDATION_ERROR',
+        details: { message: 'You have reached the maximum number of invitations you can send.' },
+      });
+    }
   }
   // E9: an already-registered email must not be invited — they are already a user.
   const existing = await UserService.findByEmail(normalizedEmail);
@@ -91,7 +116,7 @@ const create = async (email, invitedBy) => {
     email: normalizedEmail,
     token,
     expiresAt,
-    invitedBy: invitedBy?.id || invitedBy?._id || null,
+    invitedBy: inviterId,
   });
   if (mails.isConfigured()) {
     mails

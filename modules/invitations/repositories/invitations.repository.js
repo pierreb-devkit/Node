@@ -34,6 +34,17 @@ const findByEmail = (email) =>
     .exec();
 
 /**
+ * @desc #3986 — count ALL invitations ever created by a given inviter, across every
+ * status (pending, accepted, revoked, expired). Unlike findByEmail (pending-only,
+ * gate-opening), this is the cumulative-volume signal for the maxLifetime cap: a
+ * status filter here would let the cap reset by letting invites expire or revoking
+ * them, defeating the guard.
+ * @param {String} invitedBy - the inviter's user id
+ * @returns {Promise<Number>}
+ */
+const countByInvitedBy = (invitedBy) => Invitation.countDocuments({ invitedBy }).exec();
+
+/**
  * @desc E2 — atomically CLAIM a pending, unclaimed invite by token. Stamps
  * `consumingAt` so a concurrent claim (or the email-resolved path) sees it as
  * in-flight/invalid. Returns the claimed doc, or null when nothing matched
@@ -165,4 +176,4 @@ const revoke = (id) =>
     { returnDocument: 'after' },
   ).exec();
 
-export default { create, findByToken, findByEmail, claim, finalize, release, releaseStaleClaims, list, findAccepted, findByAcceptedUserId, get, revoke };
+export default { create, findByToken, findByEmail, countByInvitedBy, claim, finalize, release, releaseStaleClaims, list, findAccepted, findByAcceptedUserId, get, revoke };
