@@ -470,6 +470,23 @@ describe('handleSubscriptionCreated — safety-net handler:', () => {
     expect(mocks.mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
   });
 
+  test('Dashboard subscription: create succeeds — forceRotateForPlanChange called (preserveUsage: true)', async () => {
+    // Unit-level coverage of the new-row branch's rotation call. A real-DB integration test
+    // cannot exercise this: `organization` is a unique field on the Subscription schema
+    // (billing.subscription.model.mongoose.js), so `orgSub` being found via
+    // findByStripeCustomerId always means a row already exists for that org, and a real
+    // Subscription.create() for the same org always throws E11000 (see the sibling
+    // "race condition: E11000" test below) before reaching this call. Mocking the repository
+    // lets us assert the rotation wiring on the success branch in isolation.
+    const orgSub = { organization: orgId };
+    mocks.mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(null);
+    mocks.mockSubscriptionRepository.findByStripeCustomerId.mockResolvedValue(orgSub);
+
+    await BillingWebhookService.handleSubscriptionCreated(makeSubscription(), makeEvent());
+
+    expect(mocks.mockResetService.forceRotateForPlanChange).toHaveBeenCalledWith(orgId, { preserveUsage: true });
+  });
+
   test('Dashboard subscription: resolves plan from priceId map (no metadata)', async () => {
     const orgSub = { organization: orgId };
     mocks.mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(null);
@@ -565,6 +582,9 @@ describe('handleSubscriptionCreated — safety-net handler:', () => {
     const result = await BillingWebhookService.handleSubscriptionCreated(makeSubscription(), makeEvent());
 
     expect(result).toEqual({ skipped: true, reason: 'duplicate' });
+    // The duplicate-skip return happens before syncOrganizationPlan — rotation must not fire
+    // on a row this handler never actually wrote.
+    expect(mocks.mockResetService.forceRotateForPlanChange).not.toHaveBeenCalled();
   });
 
   test('non-duplicate DB error on create — rethrows', async () => {
