@@ -114,7 +114,10 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
     return {
       applied: false,
       meterUsed: existing?.meterUsed ?? 0,
-      meterQuota: existing?.meterQuota ?? meterQuota,
+      // Live plan quota (fetched above), not the stored snapshot — same rationale as the
+      // non-replay path below: the stored week-doc snapshot goes stale after a mid-week
+      // plan change, so a replayed call must not report a pre-rotation quota either.
+      meterQuota,
       extrasConsumed: 0,
       alertCrossed: null,
     };
