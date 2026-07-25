@@ -46,6 +46,20 @@ describe('Billing meter lifecycle integration tests:', () => {
     // to the test DB before tests run. Prevents E11000 flakes on the first resetWeek sweep.
     await Subscription.syncIndexes();
 
+    // Mock Stripe so handleCheckoutCompleted can call stripe.subscriptions.retrieve without a
+    // real network call — mirrors billing.webhook.integration.tests.js. Only handleCheckoutCompleted
+    // and handleCheckoutPaymentCompleted read getStripe() in this service; neither of the other
+    // handlers exercised in this file (handleSubscriptionUpdated, handleSubscriptionCreated,
+    // BillingMeterService.attribute, BillingUsageService.incrementMeter) touch it, so this mock
+    // is inert for those tests.
+    jest.unstable_mockModule('../lib/stripe.js', () => ({
+      default: jest.fn(() => ({
+        subscriptions: {
+          retrieve: jest.fn().mockResolvedValue({ status: 'active' }),
+        },
+      })),
+    }));
+
     BillingWebhookService = (await import('../services/billing.webhook.service.js')).default;
     BillingMeterService = (await import('../services/billing.meter.service.js')).default;
     BillingUsageService = (await import('../services/billing.usage.service.js')).default;
@@ -135,6 +149,146 @@ describe('Billing meter lifecycle integration tests:', () => {
     expect(usage.planVersion).toBe(upgradeVersion);
     expect(usage.meterUsed).toBe(25);
     expect(usage.meterBreakdown).toEqual({ scrap: 25 });
+  });
+
+  test('checkout activation refreshes the active week quota snapshot and attribution reads the live quota', async () => {
+    // Two distinct plan tiers from the project's enum, same rationale as the test above: this
+    // repo's validPlans enum (billing.webhook.service.js) is frozen at import time from
+    // config.billing.plans, not the planDefinitions this test overrides below — so pick real,
+    // already-valid plan ids rather than hardcoding literals.
+    const plans = Array.isArray(config.billing?.plans) && config.billing.plans.length >= 2
+      ? config.billing.plans
+      : ['starter', 'pro'];
+    const initialPlan = plans[0];
+    const upgradePlan = plans[plans.length - 1];
+    const initialVersion = `${initialPlan}-v1`;
+    const upgradeVersion = `${upgradePlan}-v2`;
+    const upgradeQuota = 1000;
+
+    config.billing.planDefinitions = [
+      { planId: initialPlan, version: initialVersion, meterQuota: 0, ratios: { scrap: 1 } },
+      { planId: upgradePlan, version: upgradeVersion, meterQuota: upgradeQuota, ratios: { scrap: 1 } },
+    ];
+
+    const organizationId = new mongoose.Types.ObjectId();
+    const weekKey = isoWeekKey(new Date());
+    await Organization.create({ _id: organizationId, name: 'Checkout Activation Org', slug: 'checkout-activation-org', plan: initialPlan });
+    await Subscription.create({
+      organization: organizationId,
+      stripeCustomerId: 'cus_checkout_activation',
+      stripeSubscriptionId: 'sub_checkout_activation',
+      plan: initialPlan,
+      status: 'active',
+    });
+
+    // Current-week doc pre-exists under the initial plan (created earlier that day, before checkout
+    // completed) — reproduces the latent gap: no activation handler ever rotated this snapshot, so
+    // it stayed stale at quota=0 after the mid-week upgrade. organizationId must be the ObjectId,
+    // not its string form — the schema field is ObjectId-typed.
+    await BillingUsage.create({
+      organizationId,
+      month: '2026-07',
+      weekKey,
+      counters: {},
+      meterUsed: 500,
+      meterQuota: 0,
+      planVersion: initialVersion,
+      meterBreakdown: { scrap: 500 },
+      consumedAttributionKeys: [],
+    });
+
+    await BillingWebhookService.handleCheckoutCompleted(
+      {
+        customer: 'cus_checkout_activation',
+        subscription: 'sub_checkout_activation',
+        metadata: { organizationId: organizationId.toString(), plan: upgradePlan },
+      },
+      { id: 'evt_checkout_activation', created: Math.floor(Date.now() / 1000) },
+    );
+
+    // (a) refresh-on-activation: the stored week snapshot must be rotated to the new plan's quota.
+    const usageAfterActivation = await BillingUsage.findOne({ organizationId, weekKey }).lean();
+    expect(usageAfterActivation.meterQuota).toBe(upgradeQuota);
+    expect(usageAfterActivation.planVersion).toBe(upgradeVersion);
+    expect(usageAfterActivation.meterUsed).toBe(500);
+
+    // (b) live-quota attribution: further usage is measured against the live upgraded quota, so it
+    // stays within quota (500 + 50 = 550 < 1000) and never drains extras.
+    const result = await BillingUsageService.incrementMeter(
+      organizationId.toString(),
+      50,
+      { scrap: 50 },
+      `${organizationId.toString()}:post-activation`,
+    );
+
+    expect(result.applied).toBe(true);
+    expect(result.meterUsed).toBe(550);
+    expect(result.meterQuota).toBe(upgradeQuota);
+    expect(result.extrasConsumed).toBe(0);
+
+    // No extras balance/ledger doc was ever created — quota-first, extras untouched.
+    const balance = await BillingExtraBalance.findOne({ organization: organizationId }).lean();
+    expect(balance).toBeNull();
+  });
+
+  test('subscription.created (existing row) refreshes the active week quota snapshot on a mid-week plan change', async () => {
+    const plans = Array.isArray(config.billing?.plans) && config.billing.plans.length >= 2
+      ? config.billing.plans
+      : ['starter', 'pro'];
+    const initialPlan = plans[0];
+    const upgradePlan = plans[plans.length - 1];
+    const initialVersion = `${initialPlan}-v1`;
+    const upgradeVersion = `${upgradePlan}-v2`;
+    const upgradeQuota = 2000;
+
+    config.billing.planDefinitions = [
+      { planId: initialPlan, version: initialVersion, meterQuota: 0, ratios: { scrap: 1 } },
+      { planId: upgradePlan, version: upgradeVersion, meterQuota: upgradeQuota, ratios: { scrap: 1 } },
+    ];
+
+    const organizationId = new mongoose.Types.ObjectId();
+    const weekKey = isoWeekKey(new Date());
+    await Organization.create({ _id: organizationId, name: 'Subscription Created Org', slug: 'subscription-created-org', plan: initialPlan });
+    // Existing row (found via stripeSubscriptionId) exercises the "existing row" branch of
+    // handleSubscriptionCreated — a subscription.created delivered for an already-known
+    // subscription (e.g. a Dashboard-driven plan swap) rather than a fresh checkout.
+    await Subscription.create({
+      organization: organizationId,
+      stripeCustomerId: 'cus_subscription_created',
+      stripeSubscriptionId: 'sub_subscription_created',
+      plan: initialPlan,
+      status: 'active',
+    });
+    await BillingUsage.create({
+      organizationId,
+      month: '2026-07',
+      weekKey,
+      counters: {},
+      meterUsed: 300,
+      meterQuota: 0,
+      planVersion: initialVersion,
+      meterBreakdown: { scrap: 300 },
+      consumedAttributionKeys: [],
+    });
+
+    await BillingWebhookService.handleSubscriptionCreated(
+      {
+        id: 'sub_subscription_created',
+        customer: 'cus_subscription_created',
+        status: 'active',
+        current_period_start: Math.floor(Date.now() / 1000) - 24 * 60 * 60,
+        items: { data: [{ price: { metadata: { planId: upgradePlan } } }] },
+      },
+      { id: 'evt_subscription_created', created: Math.floor(Date.now() / 1000) },
+    );
+
+    const usageAfterActivation = await BillingUsage.findOne({ organizationId, weekKey }).lean();
+    expect(usageAfterActivation.meterQuota).toBe(upgradeQuota);
+    expect(usageAfterActivation.planVersion).toBe(upgradeVersion);
+    expect(usageAfterActivation.meterUsed).toBe(300);
+
+    const subscription = await Subscription.findOne({ organization: organizationId }).lean();
+    expect(subscription.plan).toBe(upgradePlan);
   });
 
   test('attribute applies usage inline — no outbox collection created', async () => {

@@ -121,7 +121,10 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
   }
 
   const newMeterUsed = updatedDoc.meterUsed ?? 0;
-  const effectiveQuota = updatedDoc.meterQuota ?? meterQuota;
+  // Use the LIVE plan quota (fetched above), not updatedDoc.meterQuota — the stored
+  // week-doc snapshot goes stale after a mid-week plan change: the live plan config
+  // is authoritative for overflow decisions (mirrors the display fix in billing.controller.js).
+  const effectiveQuota = meterQuota;
 
   // Overflow detection: units consumed beyond the plan quota go to extras.
   // Free plan (effectiveQuota === 0): every unit must be debited from extras —
