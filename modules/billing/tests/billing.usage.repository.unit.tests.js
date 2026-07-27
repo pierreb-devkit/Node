@@ -455,4 +455,62 @@ describe('BillingUsageRepository — meter extensions unit tests:', () => {
       expect(result).toBe(2);
     });
   });
+
+  /**
+   * #3990 — the (organizationId, month) unique partial index now filters on the
+   * `legacyPeriod` discriminator (unsupported `weekKey: { $exists: false }` before).
+   * `increment` is the only writer that creates new legacy documents, so it must
+   * mark them via $setOnInsert for the index's partial filter to ever cover them.
+   */
+  describe('increment (legacy month-keyed)', () => {
+    const month = '2026-06';
+
+    test('upserts with $inc AND $setOnInsert: { legacyPeriod: true }', async () => {
+      const exec = jest.fn().mockResolvedValue(makeUsageDoc({ month, weekKey: undefined, counters: { executions: 1 } }));
+      mockModel.findOneAndUpdate.mockReturnValue({ exec });
+
+      await BillingUsageRepository.increment(orgId, month, 'executions', 1);
+
+      expect(mockModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { organizationId: orgId, month },
+        { $inc: { 'counters.executions': 1 }, $setOnInsert: { legacyPeriod: true } },
+        { upsert: true, returnDocument: 'after', runValidators: true },
+      );
+      expect(exec).toHaveBeenCalled();
+    });
+
+    test('on a duplicate-key race, retries WITHOUT upsert (existing doc already carries legacyPeriod)', async () => {
+      const dupErr = Object.assign(new Error('E11000 duplicate key'), { code: 11000 });
+      const firstExec = jest.fn().mockRejectedValue(dupErr);
+      const retryExec = jest.fn().mockResolvedValue(makeUsageDoc({ month, weekKey: undefined, counters: { executions: 2 } }));
+      mockModel.findOneAndUpdate
+        .mockReturnValueOnce({ exec: firstExec })
+        .mockReturnValueOnce({ exec: retryExec });
+
+      const result = await BillingUsageRepository.increment(orgId, month, 'executions', 1);
+
+      expect(mockModel.findOneAndUpdate).toHaveBeenNthCalledWith(
+        2,
+        { organizationId: orgId, month },
+        { $inc: { 'counters.executions': 1 } },
+        { returnDocument: 'after', runValidators: true },
+      );
+      expect(result.counters.executions).toBe(2);
+    });
+
+    test('rejects an unsafe counter key without touching the model', async () => {
+      await expect(BillingUsageRepository.increment(orgId, month, 'bad key!', 1)).rejects.toThrow('Invalid counter key');
+      expect(mockModel.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    test('returns null for an invalid organizationId without touching the model', async () => {
+      const { default: mongooseMock } = await import('mongoose');
+      mongooseMock.Types.ObjectId.isValid.mockReturnValueOnce(false);
+
+      const result = await BillingUsageRepository.increment('not-an-id', month, 'executions', 1);
+
+      expect(result).toBeNull();
+      expect(mockModel.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+  });
 });

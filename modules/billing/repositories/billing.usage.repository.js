@@ -23,6 +23,10 @@ const get = (organizationId, month) => {
 /**
  * @function increment
  * @description Atomically increment a counter key for the given org+month, with upsert.
+ *              `$setOnInsert: { legacyPeriod: true }` marks newly-created documents as
+ *              legacy (non-meter) — the discriminator the (organizationId, month) unique
+ *              partial index filters on (see model comment; meter-mode documents, created
+ *              via incrementMeter/upsertWeekSnapshot, never set this field).
  * @param {String} organizationId - The organization ID.
  * @param {String} month - The month in YYYY-MM format.
  * @param {String} key - The counter key to increment (e.g. 'executions').
@@ -35,7 +39,7 @@ const increment = async (organizationId, month, key, amount) => {
   try {
     return await BillingUsage.findOneAndUpdate(
       { organizationId, month },
-      { $inc: { [`counters.${key}`]: amount } },
+      { $inc: { [`counters.${key}`]: amount }, $setOnInsert: { legacyPeriod: true } },
       { upsert: true, returnDocument: 'after', runValidators: true },
     ).exec();
   } catch (err) {
