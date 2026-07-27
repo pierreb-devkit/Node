@@ -3,7 +3,7 @@
  */
 import mongoose from 'mongoose';
 
-import { beforeAll, afterAll, describe, test, expect } from '@jest/globals';
+import { jest, beforeAll, afterAll, describe, test, expect } from '@jest/globals';
 import { bootstrap } from '../../../lib/app.js';
 import mongooseService from '../../../lib/services/mongoose.js';
 
@@ -217,11 +217,70 @@ describe('Migration usage-month-index-partial-filter:', () => {
       expect(ix.partialFilterExpression).toEqual({ legacyPeriod: { $exists: true } });
     } finally {
       await usages.deleteMany({ _id: { $in: [dupA, dupB] } });
+      // Replay the FULL captured descriptor rather than a hand-picked
+      // key/name/unique/sparse subset: any other option on the original spec
+      // (partialFilterExpression, collation, ...) must round-trip too, or the
+      // restored index silently diverges from the schema declaration and the
+      // later `syncIndexes()` test fails on an unrelated, confusing mismatch.
       for (const ix of weekKeyIndexes) {
-        await usages.createIndex(ix.key, { name: ix.name, unique: ix.unique, sparse: ix.sparse });
+        const { key, name, ...options } = ix;
+        delete options.v; // server-assigned index format version — not a createIndex option
+        await usages.createIndex(key, { name, ...options });
       }
       await up(); // restore the migrated end state for the suites that follow
     }
+  });
+
+  test('createIndex E11000 during the drop→recreate window aborts loud, same shape as the pre-check (#3990 review)', async () => {
+    // Simulates a concurrent old-instance write landing a duplicate pair in
+    // the (b)-(d) window on a rolling deploy (see migration header): force
+    // the full path to run (drop the index, seed an un-backfilled legacy
+    // doc), then make the FINAL createIndex reject with a raw E11000 the way
+    // the MongoDB server would on a genuine race — proving the migration
+    // converts that into the same documented, actionable abort as the
+    // upfront pre-check rather than letting a bare driver error escape.
+    const docId = new mongoose.Types.ObjectId();
+    try {
+      try { await usages.dropIndex(INDEX_NAME); } catch (_) { /* already absent */ }
+      await usages.insertOne({ _id: docId, organizationId: orgId, month: '2024-01', counters: {} });
+
+      const realCollection = mongoose.connection.db.collection('billingusages');
+      const createIndexSpy = jest.spyOn(realCollection, 'createIndex').mockRejectedValueOnce(
+        Object.assign(new Error('E11000 duplicate key error collection: billingusages index: organizationId_1_month_1'), { code: 11000 }),
+      );
+      const collectionSpy = jest.spyOn(mongoose.connection.db, 'collection').mockReturnValue(realCollection);
+
+      try {
+        await expect(up()).rejects.toThrow(/duplicate \(organizationId, month\) pair landed during the drop.{1,3}recreate window/);
+      } finally {
+        collectionSpy.mockRestore();
+        createIndexSpy.mockRestore();
+      }
+    } finally {
+      await usages.deleteMany({ _id: docId });
+      await up(); // restore the migrated end state for the suites that follow
+    }
+  });
+
+  test('skip-window fast path — a converged database does not drop/recreate the index (#3990 review)', async () => {
+    // Converge first (idempotent, matches whatever end state prior tests left).
+    await up();
+
+    const infoSpy = jest.spyOn(console, 'info').mockImplementation(() => {});
+    try {
+      await up();
+      const messages = infoSpy.mock.calls.map((args) => args[0]);
+      expect(messages.some((m) => m.includes('skipping drop/recreate window entirely'))).toBe(true);
+      expect(messages.some((m) => m.includes('dropped index'))).toBe(false);
+      expect(messages.some((m) => m.includes('created partial-unique index'))).toBe(false);
+    } finally {
+      infoSpy.mockRestore();
+    }
+
+    const ix = await findIndex(INDEX_NAME);
+    expect(ix).toBeDefined();
+    expect(ix.unique).toBe(true);
+    expect(ix.partialFilterExpression).toEqual({ legacyPeriod: { $exists: true } });
   });
 
   test('schema twin is IDENTICAL — syncIndexes() has nothing to drop or rebuild', async () => {
