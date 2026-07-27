@@ -41,44 +41,52 @@ const sameKey = (ix) => {
  * $exists:true check while preserving the original intent: only legacy,
  * non-meter usage documents are covered by this uniqueness constraint.
  *
- * Safety / ordering:
- *   (a) Backfill `legacyPeriod: true` onto existing documents that have no
- *       weekKey and no legacyPeriod yet — exactly the pre-existing legacy
- *       documents this index is meant to cover. No-ops on a fresh database
- *       (empty/missing collection).
- *   (b) Pre-check for existing duplicate (organizationId, month) pairs among
- *       legacy documents that would violate the unique index. If any exist we
- *       ABORT (throw) WITHOUT touching indexes — picking which duplicate row
- *       wins is an operator decision, not a migration's call.
- *   (c) Drop any divergent index first: a same-key index under another name
- *       (phantom/legacy spec) or a namesake whose options drifted.
- *   (d) Create the index. Idempotent: re-running after success is a no-op.
+ * Ordering (REWORKED — #3990 review): boot now runs
+ * `startMongoose()` (autoIndex + `awaitIndexBuilds()`) BEFORE
+ * `migrations.run()` (see lib/app.js#bootstrap). That means on a first boot
+ * after this schema change deploys, the partial index above may ALREADY be
+ * LIVE (built empty by autoIndex) by the time this migration's `up()` runs —
+ * this migration must be safe against that, not just against a fresh/absent
+ * index:
+ *   (a) Duplicate pre-check FIRST, ZERO writes. Query (not index-filter) the
+ *       legacy shape directly — `weekKey: { $exists: false }` is a supported
+ *       QUERY filter (only partial-INDEX filters forbid `$exists: false`) —
+ *       group by (organizationId, month), abort loud on any count > 1. This
+ *       must run before any write below, because if the index is already
+ *       live-and-empty (boot-built), the backfill write in (c) would
+ *       otherwise hit a raw E11000 mid-`updateMany` on the first duplicate
+ *       pair, leaving the collection partially backfilled.
+ *   (b) Drop the partial index if present — it may be live-and-empty from
+ *       boot, a divergent same-key index under another name, or absent on an
+ *       old/never-migrated database. Dropping first guarantees no unique
+ *       constraint is live while (c) writes.
+ *   (c) Backfill `legacyPeriod: true` onto existing legacy documents. Safe
+ *       now — no index is live to race against, and (a) already proved no
+ *       duplicate pair exists.
+ *   (d) Recreate the index (same spec as the schema declaration).
+ * Idempotent on re-run: a second `up()` finds no duplicates (backfill is a
+ * no-op the second time), drops the index it just created, and recreates it
+ * — same end state, just an extra drop/create round-trip.
  *
  * autoIndex race: mongoose autoIndex:true (the default — db.options sets no
  * override) builds the schema-declared twin on connect; identical specs make
- * the race benign and syncIndexes() idempotent. This migration is the
- * AUTHORITATIVE creator for already-deployed databases.
+ * the race benign. This migration is the AUTHORITATIVE creator on
+ * already-deployed databases (it owns the backfill autoIndex cannot do).
  *
  * @returns {Promise<void>}
  */
 export async function up() {
   const usages = mongoose.connection.db.collection('billingusages');
 
-  // ── (a) Backfill the discriminator onto existing legacy documents ──
-  // No-op (matches nothing) on a fresh database where the collection is empty
-  // or does not exist yet.
-  const backfillResult = await usages.updateMany(
-    { weekKey: { $exists: false }, legacyPeriod: { $exists: false } },
-    { $set: { legacyPeriod: true } },
-  );
-  if (backfillResult.modifiedCount > 0) {
-    console.info(`[migration] usage-month-index-partial-filter: backfilled legacyPeriod on ${backfillResult.modifiedCount} document(s)`);
-  }
-
-  // ── (b) Pre-check: refuse to run if duplicate (organizationId, month) pairs exist ──
+  // ── (a) Duplicate pre-check FIRST — zero writes so far. Safe whether the
+  // partial index is already live (boot-built empty) or absent: this reads
+  // via a plain query filter, never a partial-index filter, so `$exists:
+  // false` is fine here. `.aggregate()` on a missing/empty collection just
+  // returns an empty result (unlike `.listIndexes()` below), so this is also
+  // safe on a fresh database.
   const duplicates = await usages
     .aggregate([
-      { $match: { legacyPeriod: true } },
+      { $match: { weekKey: { $exists: false } } },
       { $group: { _id: { organizationId: '$organizationId', month: '$month' }, count: { $sum: 1 }, ids: { $push: '$_id' } } },
       { $match: { count: { $gt: 1 } } },
     ])
@@ -111,34 +119,40 @@ export async function up() {
     throw err;
   }
 
-  // ── (c) Drop divergent indexes / detect the exact expected shape ──
-  let hasIndex = false;
+  // ── (b) Drop the partial index if present, BEFORE the backfill write below.
+  // It may already be LIVE AND EMPTY — boot's awaitIndexBuilds() builds the
+  // schema-declared twin before this migration runs — or a divergent
+  // same-key index living under another name. Either way it must not be live
+  // while (c) writes `legacyPeriod`, since (a) already proved there is no
+  // duplicate to violate it, but a stale/empty index would still intercept
+  // every write in the updateMany one document at a time.
   for (const ix of existing) {
     if (ix.name === '_id_') continue;
-    const keyMatches = sameKey(ix);
-    const exactShape = keyMatches
-      && ix.name === INDEX_NAME
-      && ix.unique === true
-      && ix.partialFilterExpression?.legacyPeriod?.$exists === true;
-    if (exactShape) {
-      hasIndex = true;
-    } else if (keyMatches || ix.name === INDEX_NAME) {
+    if (sameKey(ix) || ix.name === INDEX_NAME) {
       await usages.dropIndex(ix.name);
-      console.info(`[migration] usage-month-index-partial-filter: dropped divergent index '${ix.name}'`);
+      console.info(`[migration] usage-month-index-partial-filter: dropped index '${ix.name}' before backfill (boot-built empty or divergent)`);
     }
   }
 
-  // ── (d) Create the partial-unique index (idempotent) ──
-  if (!hasIndex) {
-    await usages.createIndex(INDEX_KEY, {
-      unique: true,
-      name: INDEX_NAME,
-      partialFilterExpression: { legacyPeriod: { $exists: true } },
-    });
-    console.info('[migration] usage-month-index-partial-filter: created partial-unique index on (organizationId, month)');
-  } else {
-    console.info('[migration] usage-month-index-partial-filter: partial-unique index already present — skipping create');
+  // ── (c) Backfill the discriminator onto existing legacy documents ──
+  // No-op (matches nothing) on a fresh database where the collection is empty,
+  // and safe here — no unique constraint is live to race against, and (a)
+  // already confirmed no duplicate (organizationId, month) pair exists.
+  const backfillResult = await usages.updateMany(
+    { weekKey: { $exists: false }, legacyPeriod: { $exists: false } },
+    { $set: { legacyPeriod: true } },
+  );
+  if (backfillResult.modifiedCount > 0) {
+    console.info(`[migration] usage-month-index-partial-filter: backfilled legacyPeriod on ${backfillResult.modifiedCount} document(s)`);
   }
+
+  // ── (d) Recreate the partial-unique index (same spec as the schema declaration) ──
+  await usages.createIndex(INDEX_KEY, {
+    unique: true,
+    name: INDEX_NAME,
+    partialFilterExpression: { legacyPeriod: { $exists: true } },
+  });
+  console.info('[migration] usage-month-index-partial-filter: created partial-unique index on (organizationId, month)');
 }
 
 /**
