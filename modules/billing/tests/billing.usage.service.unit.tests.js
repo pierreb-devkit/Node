@@ -137,6 +137,48 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
     });
   });
 
+  /**
+   * #3991 follow-up — `UsageRepository.increment` can (anomalously, post-fix)
+   * return null when its duplicate-key retry matches nothing. The service
+   * wrapper must convert that silent null into a LOUD, logged one (silent-catch
+   * convention) without throwing (no caller — in this repo or downstream —
+   * ever treated a non-null return as guaranteed, and throwing would be a
+   * breaking behavior change for this generic devkit module).
+   */
+  describe('increment (legacy month-keyed) — #3991 loud-null hardening', () => {
+    test('happy path — returns the doc, never logs', async () => {
+      const loggerMod = await import('../../../lib/services/logger.js');
+      const mockLoggerError = loggerMod.default.error;
+      const doc = makeUsageDoc({ month: '2026-06' });
+      mockUsageRepository.increment.mockResolvedValue(doc);
+
+      const result = await BillingUsageService.increment(orgId, 'executions', 1);
+
+      expect(result).toBe(doc);
+      expect(mockUsageRepository.increment).toHaveBeenCalledWith(
+        orgId,
+        expect.stringMatching(/^\d{4}-\d{2}$/),
+        'executions',
+        1,
+      );
+      expect(mockLoggerError).not.toHaveBeenCalled();
+    });
+
+    test('anomalous lost write (duplicate-key retry matched nothing) — logs error with context, still returns null', async () => {
+      const loggerMod = await import('../../../lib/services/logger.js');
+      const mockLoggerError = loggerMod.default.error;
+      mockUsageRepository.increment.mockResolvedValue(null);
+
+      const result = await BillingUsageService.increment(orgId, 'executions', 5);
+
+      expect(result).toBeNull();
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        '[billing.usage] increment lost a write — duplicate-key retry matched no document',
+        expect.objectContaining({ organizationId: orgId, key: 'executions', amount: 5 }),
+      );
+    });
+  });
+
   describe('incrementMeter — no-op when meterMode=false', () => {
     test('should return applied=false immediately', async () => {
       mockConfig.billing.meterMode = false;

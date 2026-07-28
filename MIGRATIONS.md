@@ -4,6 +4,39 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Billing usage weekKey-index partial-filter fix (2026-07-28)
+
+Fixes a silent write-loss bug: the meter-mode `(organizationId, weekKey)` unique index on `billingusages` declared `sparse: true` on a COMPOUND index. MongoDB's sparse-exclusion rule for a compound index only skips a document when it is missing **ALL** indexed fields — since `organizationId` is always present (on legacy AND meter-mode documents alike), sparse never excluded anything: every legacy (weekKey-less) document was indexed too, with `weekKey` treated as `null`. A second legacy document for the **same organization** — regardless of month — then collided on `{organizationId, weekKey: null}` and was rejected as a duplicate key; `BillingUsageRepository.increment`'s duplicate-key retry filter (`{organizationId, month}`) matched nothing for the new month, so the write silently resolved to `null` with **no error surfaced**. Net effect: under `meterMode: false` (the default), a downstream consumer's legacy usage counters could only ever be recorded for the **first** month an organization was active — every subsequent month's write was lost.
+
+### What changed (this repo)
+
+- **`modules/billing/models/billing.usage.model.mongoose.js`** — the `(organizationId, weekKey)` index now declares `partialFilterExpression: { weekKey: { $exists: true } }` instead of `sparse: true`, and an **explicit distinct name** `organizationId_1_weekKey_1_partial` (was the default `organizationId_1_weekKey_1`). The distinct name is required, not cosmetic: the old `sparse: true` spec is valid MongoDB syntax and is already LIVE on every deployed database (unlike #3990's invalid spec, which never built anywhere) — reusing the same default name would make autoIndex (which now runs BEFORE migrations and surfaces build failures loudly, #3990) reject with `IndexOptionsConflict` on every boot until an operator manually dropped the old index, a self-inflicted boot-crash loop. The distinct name lets the new index build ALONGSIDE the still-live old one with no conflict (mirrors `modules/users/migrations/20260610120000-users-email-ci-unique-index.js`'s coexistence technique).
+- **New migration `modules/billing/migrations/20260728120000-fix-usage-weekkey-index-partial.js`** — the authoritative creator (new index) + old-index dropper on already-deployed databases: **(a)** duplicate pre-check on the meter shape (`weekKey` present, grouped by `organizationId`+`weekKey`, count>1), abort loud on any pre-existing duplicate; **(b)** create the new partial index first (idempotent — skipped if already exact-spec), so there is never a window without a uniqueness guard on meter-mode documents; **(c)** drop the old sparse index (and any other divergent same-key index). Skip-window fast path when the new index is already exact-spec and the old one is already gone (steady-state no-op). A duplicate-key error on the final `createIndex` call (a concurrent race landing a duplicate between the pre-check and the create) is caught and converted into the same actionable abort as the pre-check, never a bare driver error. Idempotent on re-run.
+- **`modules/billing/services/billing.usage.service.js`** — `increment()` now logs `logger.error` with full context (`organizationId`, `month`, `key`, `amount`) whenever the repository's duplicate-key retry matches nothing (an anomaly that should not occur post-fix, but is no longer silently invisible if it ever does — silent-catch convention: a swallowed write failure must never be invisible). Does not throw — no caller (in this repo or any downstream consumer, since `increment` is public API) ever treated a non-null return as guaranteed, and throwing would be a breaking behavior change for a generic stack module.
+
+### Pre-deploy duplicate-data audit (downstreams using meter-mode billing usage)
+
+Run this against your production `billingusages` collection **before** deploying this change. Any result means the migration will abort boot until you remediate (delete/merge the offending rows) — better to catch it ahead of time:
+
+```js
+db.billingusages.aggregate([
+  { $match: { weekKey: { $exists: true } } },
+  { $group: { _id: { organizationId: '$organizationId', weekKey: '$weekKey' }, count: { $sum: 1 }, ids: { $push: '$_id' } } },
+  { $match: { count: { $gt: 1 } } },
+]);
+```
+
+In practice this should always return empty — the old `sparse: true` index already enforced uniqueness correctly for documents that DO have `weekKey` set (sparse behaves as intended when the field is present); this audit is a defensive pre-check, not a known-affected case. Downstreams running exclusively in legacy (non-meter) mode will also always get an empty result (no document ever has `weekKey` set).
+
+### Action required for downstream projects (`/update-stack`)
+
+1. All changes are devkit-owned stack files → arrive via `/update-stack` (`--theirs`).
+2. Run the duplicate-data audit above against prod before deploying — expected empty, but confirm.
+3. No manual index action needed: the migration creates the new index and drops the old one automatically at boot, with no window where meter-mode documents lack a uniqueness guard.
+4. If your downstream project runs `meterMode: false` (the default) and has been live for more than one month per organization, expect this migration to un-block legacy usage tracking that was previously silently stuck at month one — verify your usage dashboards after deploying.
+
+---
+
 ## Boot awaits index builds; billing usage month-index partial-filter fix (2026-07-27)
 
 Fixes a silent index-creation failure: the legacy `(organizationId, month)` unique index on `billingusages` declared `partialFilterExpression: { weekKey: { $exists: false } }`, which MongoDB does not support (only `$eq`, `$exists: true`, `$gt`, `$gte`, `$lt`, `$lte`, `$type`, and top-level `$and` are allowed inside a partial filter). Mongoose autoIndex reported the creation failure on the model's unlistened `'index'` event, so the index **never existed on any deployed database** — the uniqueness guard ran on application code alone (a racy upsert). While fixing it, boot itself was hardened: it no longer treats `mongoose.connect()` resolving as "ready" (autoIndex builds run in the background).

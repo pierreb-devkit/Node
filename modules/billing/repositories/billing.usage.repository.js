@@ -31,7 +31,13 @@ const get = (organizationId, month) => {
  * @param {String} month - The month in YYYY-MM format.
  * @param {String} key - The counter key to increment (e.g. 'executions').
  * @param {Number} amount - The amount to increment by.
- * @returns {Promise<Object>} The updated usage document.
+ * @returns {Promise<Object|null>} The updated usage document, or (anomalous —
+ *   see `BillingUsageService.increment`, which logs this loudly) `null` when a
+ *   duplicate-key retry's exact-match filter finds nothing, meaning the write
+ *   was lost. Should not happen in normal operation post-#3991 (the retry
+ *   filter is `{organizationId, month}`, identical to what the winning
+ *   concurrent upsert just created), but is not asserted against here — the
+ *   repository stays a thin data layer; callers decide how loud to be.
  */
 const increment = async (organizationId, month, key, amount) => {
   if (!mongoose.Types.ObjectId.isValid(organizationId)) return null;
