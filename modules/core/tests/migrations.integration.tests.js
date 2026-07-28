@@ -2,11 +2,15 @@
  * Module dependencies.
  */
 import { jest } from '@jest/globals';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import mongoose from 'mongoose';
 
 import mongooseService from '../../../lib/services/mongoose.js';
 import { bootstrap } from '../../../lib/app.js';
 import migrations from '../../../lib/services/migrations.js';
+import migrationRepository from '../repositories/migration.repository.js';
 import logger from '../../../lib/services/logger.js';
 
 /**
@@ -102,11 +106,13 @@ describe('Migrations integration tests:', () => {
   });
 
   describe('boot-time stale-claim resolution (#3992)', () => {
-    // Re-use the same no-op, side-effect-free real migration as the
-    // resume target — re-running its up() is a genuine no-op, so tampering
-    // with its claim record here is safe and requires no cleanup of DB state
-    // beyond the Migration record itself.
-    const targetName = 'modules/billing/migrations/20260501000000-add-meter-fields.js';
+    // A core-owned, no-op, side-effect-free real migration as the resume
+    // target (`modules/core/migrations/20260728130000-noop-core-test-fixture.js`)
+    // — re-running its up() is a genuine no-op, so tampering with its claim
+    // record here is safe and requires no cleanup of DB state beyond the
+    // Migration record itself. Core-owned (not modules/billing's fixture) so
+    // this suite never depends on an unrelated, optional module (#3992 follow-up).
+    const targetName = 'modules/core/migrations/20260728130000-noop-core-test-fixture.js';
     let originalRecord;
 
     beforeEach(async () => {
@@ -117,6 +123,10 @@ describe('Migrations integration tests:', () => {
     });
 
     afterEach(async () => {
+      // If the beforeEach sanity check failed, originalRecord was never
+      // snapshotted — skip restoration so that assertion failure surfaces
+      // instead of being masked by a TypeError reading .status off undefined.
+      if (!originalRecord) return;
       // Restore the record to its pre-tampering state so later suites/tests
       // (and any other assertion relying on stable migration history) see
       // consistent state.
@@ -182,6 +192,67 @@ describe('Migrations integration tests:', () => {
 
       const record = await Migration.findOne({ name: targetName }).lean();
       expect(record.status).toBe('done');
+    });
+  });
+
+  // #3992 follow-up: a late failure from a runner must only ever remove ITS
+  // OWN claim (name + status:'running' + matching pid/host), never a
+  // differently-owned record — real Mongo coverage of migration.repository.js#deleteClaim,
+  // not just the mocked call-shape assertions in the unit suite.
+  describe('ownership-scoped unclaim on failure (#3992 follow-up)', () => {
+    it('a failing runMigration deletes only the claim it just inserted', async () => {
+      const Migration = mongoose.model('Migration');
+      // Real ESM file outside modules/&#42;/migrations/ so discoverMigrationFiles()'s
+      // glob can never pick up a leftover if cleanup failed.
+      const tmpFile = path.join(os.tmpdir(), `__3992-ownership-throws-${process.pid}-${Date.now()}.mjs`);
+      const name = path.relative(process.cwd(), tmpFile).replace(/\\/g, '/');
+      fs.writeFileSync(tmpFile, "export async function up() { throw new Error('boom'); }\n");
+      try {
+        await expect(migrations.runMigration(tmpFile, new Set())).rejects.toThrow('boom');
+        expect(await Migration.findOne({ name }).lean()).toBeNull();
+      } finally {
+        fs.unlinkSync(tmpFile);
+        await Migration.deleteOne({ name });
+      }
+    });
+
+    it('deleteClaim never removes a still-running claim owned by a different pid/host', async () => {
+      const Migration = mongoose.model('Migration');
+      const name = `__3992_ownership_running_${Date.now()}.js`;
+      // Simulate a genuinely different, still-in-flight runner's claim
+      // (status:'running', foreign pid/host) — isolates the ownership check
+      // itself, distinct from markDone's separate status:'running' guard.
+      await Migration.create({ name, executedAt: new Date(), status: 'running', startedAt: new Date(), pid: 999999, host: 'a-different-host' });
+      try {
+        const result = await migrationRepository.deleteClaim(name, { pid: process.pid, host: os.hostname() });
+        expect(result.deletedCount).toBe(0);
+        const record = await Migration.findOne({ name }).lean();
+        expect(record).toBeTruthy();
+        expect(record.status).toBe('running');
+        expect(record.pid).toBe(999999);
+      } finally {
+        await Migration.deleteOne({ name });
+      }
+    });
+
+    it('deleteClaim never removes an already-completed record, even one this pid/host once owned', async () => {
+      const Migration = mongoose.model('Migration');
+      const name = `__3992_ownership_done_${Date.now()}.js`;
+      const context = { pid: process.pid, host: os.hostname() };
+      // Simulate THIS process's own claim having already been flipped to
+      // done by the time a (hypothetically delayed) failure handler runs —
+      // status:'running' in the filter must block the delete even when
+      // pid/host match exactly.
+      await Migration.create({ name, executedAt: new Date(), status: 'done', startedAt: new Date(), finishedAt: new Date(), ...context });
+      try {
+        const result = await migrationRepository.deleteClaim(name, context);
+        expect(result.deletedCount).toBe(0);
+        const record = await Migration.findOne({ name }).lean();
+        expect(record).toBeTruthy();
+        expect(record.status).toBe('done');
+      } finally {
+        await Migration.deleteOne({ name });
+      }
     });
   });
 

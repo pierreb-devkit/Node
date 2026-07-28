@@ -84,19 +84,42 @@ const claim = (name, { pid, host } = {}) => {
  * @function markDone
  * @description Flip a claimed migration's status from `'running'` to `'done'`
  * after its `up()` resolves successfully, stamping `finishedAt` (#3992).
+ * Scoped to `status:'running'` so a late success from a runner whose claim
+ * was already cleared as stale (and possibly re-claimed/completed by a
+ * newer runner) can never overwrite that newer runner's already-`'done'`
+ * record — the update simply matches zero documents (#3992 follow-up).
  * @param {string} name - Migration filename.
  * @returns {Promise<object>} Mongo update result.
  */
-const markDone = (name) => mongoose.model('Migration').updateOne({ name }, { $set: { status: 'done', finishedAt: new Date() } });
+const markDone = (name) =>
+  mongoose.model('Migration').updateOne({ name, status: 'running' }, { $set: { status: 'done', finishedAt: new Date() } });
 
 /**
  * @function deleteByName
- * @description Remove a Migration record by name. Used to unclaim a migration
- * when its execution fails so it can be retried on the next boot, and to
- * clear a stale `'running'` claim so it can be resumed (#3992).
+ * @description Remove a Migration record by name, regardless of ownership.
+ * Used ONLY to clear a stale `'running'` claim left by a DIFFERENT,
+ * presumed-dead process during boot-time stale-claim resolution (#3992) —
+ * the caller does not own that claim, so this is intentionally unscoped.
+ * For a runner unclaiming its OWN claim on failure, use {@link deleteClaim}
+ * instead so a late failure can never delete a newer runner's record.
  * @param {string} name - Migration filename to delete.
  * @returns {Promise<object>} Mongo deletion result.
  */
 const deleteByName = (name) => mongoose.model('Migration').deleteOne({ name });
 
-export default { syncIndexes, listExecuted, listRunning, findByName, create, claim, markDone, deleteByName };
+/**
+ * @function deleteClaim
+ * @description Remove a `'running'` claim only if it is still owned by the
+ * calling process (matching `name` + `status:'running'` + `pid`/`host`).
+ * Used by a runner's own failure path to unclaim its claim so it can be
+ * retried on the next boot — scoped so a late failure from a process whose
+ * claim was already cleared as stale by another boot (and possibly
+ * re-claimed/completed by a newer runner) can never delete that newer
+ * runner's record (#3992 follow-up).
+ * @param {string} name - Migration filename.
+ * @param {{pid?: number, host?: string}} [context] - claim ownership context.
+ * @returns {Promise<object>} Mongo deletion result.
+ */
+const deleteClaim = (name, { pid, host } = {}) => mongoose.model('Migration').deleteOne({ name, status: 'running', pid, host });
+
+export default { syncIndexes, listExecuted, listRunning, findByName, create, claim, markDone, deleteByName, deleteClaim };
