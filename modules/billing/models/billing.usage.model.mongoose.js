@@ -35,6 +35,19 @@ const UsageMongoose = new Schema(
       type: Schema.Types.Mixed,
       default: () => ({}),
     },
+    /**
+     * Discriminator set ONLY on legacy (non-meter) usage documents — written by
+     * BillingUsageRepository.increment's `$setOnInsert`, never by the meter-mode
+     * write paths (incrementMeter / upsertWeekSnapshot, which key by weekKey).
+     * Exists purely to express "this document has no weekKey" as a SUPPORTED
+     * partial-filter condition on the legacy unique index below: MongoDB
+     * partial filter expressions do not support `$exists: false` / `$ne` (see
+     * that index's comment), so the condition is phrased as a positive
+     * `$exists: true` check on a field only legacy documents ever carry.
+     */
+    legacyPeriod: {
+      type: Boolean,
+    },
 
     // ── Meter fields (sparse — only populated in meter mode) ─────────────────
 
@@ -122,13 +135,26 @@ const UsageMongoose = new Schema(
 
 /**
  * Legacy unique index: (organizationId, month) — kept for non-meter downstream.
- * Partial filter: only applies to documents without weekKey (non-meter mode).
+ *
+ * Partial filter: only applies to legacy (non-meter) documents, identified by
+ * the `legacyPeriod` discriminator (see field comment above) rather than by
+ * "weekKey is absent" directly. `$exists: false` (and `$ne`) are NOT supported
+ * inside a partialFilterExpression — MongoDB only allows `$eq`, `$exists: true`,
+ * `$gt`, `$gte`, `$lt`, `$lte`, `$type`, and the top-level `$and`. The previous
+ * `{ weekKey: { $exists: false } }` spec silently never built on ANY database:
+ * mongoose autoIndex reports the creation failure on the model's unlistened
+ * 'index' event, so this uniqueness guard ran on application code alone
+ * (upsert-based, racy under a concurrent create) until fixed (#3990). Migration
+ * `20260727120000-fix-usage-month-index-partial-filter.js` is the authoritative
+ * creator on already-deployed databases (backfills `legacyPeriod` first).
+ *
  * Meter-mode documents have weekKey set and can have multiple docs per month
- * (one per ISO week), so they are excluded from this uniqueness constraint.
+ * (one per ISO week); they never carry `legacyPeriod`, so they stay excluded
+ * from this uniqueness constraint.
  */
 UsageMongoose.index(
   { organizationId: 1, month: 1 },
-  { unique: true, partialFilterExpression: { weekKey: { $exists: false } } },
+  { unique: true, partialFilterExpression: { legacyPeriod: { $exists: true } } },
 );
 
 /**

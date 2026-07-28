@@ -42,6 +42,15 @@ const config = {
   db: {
     uri: 'mongodb://127.0.0.1:27017/NodeDev',
     debug: true,
+    // Bounds lib/services/mongoose.js#awaitIndexBuilds (#3990 follow-up): boot
+    // awaits every model's index build up to timeoutMs before continuing, so a
+    // unique-index idempotency guard can't be raced by an early write. On
+    // timeout, boot continues in a degraded (pre-#3990) state and logs a loud
+    // warning instead of hanging forever — set to `false` to disable the wait
+    // entirely (fire-and-forget autoIndex, pre-#3990 behavior).
+    awaitIndexBuilds: {
+      timeoutMs: 60000,
+    },
     options: {
       user: '',
       pass: '',

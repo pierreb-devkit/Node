@@ -23,6 +23,12 @@ const BillingUsage = z.object({
   month: z.string().trim().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'month must be in YYYY-MM format'),
   counters: z.record(z.string(), z.number()).default(() => ({})),
 
+  /**
+   * Discriminator set only on legacy (non-meter) usage documents — see the
+   * model field comment. Never set on meter-mode (weekKey-keyed) documents.
+   */
+  legacyPeriod: z.boolean().optional(),
+
   // ── Meter fields (optional — only populated in meter mode) ───────────────
 
   /**

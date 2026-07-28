@@ -4,6 +4,42 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Boot awaits index builds; billing usage month-index partial-filter fix (2026-07-27)
+
+Fixes a silent index-creation failure: the legacy `(organizationId, month)` unique index on `billingusages` declared `partialFilterExpression: { weekKey: { $exists: false } }`, which MongoDB does not support (only `$eq`, `$exists: true`, `$gt`, `$gte`, `$lt`, `$lte`, `$type`, and top-level `$and` are allowed inside a partial filter). Mongoose autoIndex reported the creation failure on the model's unlistened `'index'` event, so the index **never existed on any deployed database** — the uniqueness guard ran on application code alone (a racy upsert). While fixing it, boot itself was hardened: it no longer treats `mongoose.connect()` resolving as "ready" (autoIndex builds run in the background).
+
+### What changed (this repo)
+
+- **`lib/services/mongoose.js`** — new `awaitIndexBuilds()`, called by `lib/app.js#startMongoose()` right after `connect()` and BEFORE `migrations.run()`. It awaits every registered model's `Model#init()` (mongoose already triggers this once on model compile; this just awaits the in-flight promise) and now SURFACES a rejection instead of it being swallowed on the unlistened `'index'` event — **this applies to every module**, not just billing: any schema that declares an unsupported/invalid index will now fail loudly at boot (or time out — see the config knob below) instead of silently never building.
+- **New config knob `db.awaitIndexBuilds`** (`config/defaults/development.config.js`, inherited by all envs) — bounds the wait so a big-collection index build can't stall readiness stack-wide on a rolling deploy: default `{ timeoutMs: 60000 }`. On timeout, boot **continues** in a degraded (pre-fix) state — the build keeps going in the background and a loud warning names the still-building model(s); an eventual build failure is still logged after the fact. Set to `false` to skip the wait entirely (restores the pre-#3990 fire-and-forget behavior).
+- **`modules/billing/models/billing.usage.model.mongoose.js`** — the index now filters on a new `legacyPeriod: Boolean` discriminator (`partialFilterExpression: { legacyPeriod: { $exists: true } }`) instead of the unsupported `weekKey` negative check. `legacyPeriod` is set only by the legacy (non-meter) write path (`BillingUsageRepository.increment`'s `$setOnInsert`) — meter-mode documents never carry it.
+- **New migration `modules/billing/migrations/20260727120000-fix-usage-month-index-partial-filter.js`** — the authoritative index creator on already-deployed databases. Ordering is deliberately boot-ordering-safe (boot now awaits index builds BEFORE migrations run, so the partial index above may already be LIVE AND EMPTY by the time this migration executes): **(a)** duplicate pre-check FIRST via a plain query (`weekKey: { $exists: false }`, not an index filter — zero writes), abort loud on any pre-existing duplicate `(organizationId, month)` pair; then, only if the index isn't already the exact target shape with nothing left to backfill (fast-path skip, the steady-state case): **(b)** drop the index if present (boot-built-empty or divergent); **(c)** backfill `legacyPeriod: true` onto legacy documents; **(d)** recreate the index — a duplicate-key error here (a still-serving old instance racing a write into the (b)-(d) window on a rolling deploy) is caught and re-thrown as the same actionable abort as (a), never a bare driver error. Idempotent on re-run.
+
+### Pre-deploy duplicate-data audit (downstreams using legacy/non-meter billing usage)
+
+Run this against your production `billingusages` collection **before** deploying this change. Any result means the migration will abort boot until you remediate (delete/merge the offending rows) — better to catch it ahead of time:
+
+```js
+db.billingusages.aggregate([
+  { $match: { weekKey: { $exists: false } } },
+  { $group: { _id: { organizationId: '$organizationId', month: '$month' }, count: { $sum: 1 }, ids: { $push: '$_id' } } },
+  { $match: { count: { $gt: 1 } } },
+]);
+```
+
+Downstreams running exclusively in meter mode (every `billingusages` document has `weekKey` set) will always get an empty result — this only applies to legacy (non-meter) usage tracking.
+
+### Action required for downstream projects (`/update-stack`)
+
+1. All changes are devkit-owned stack files → arrive via `/update-stack` (`--theirs`).
+2. **Run the duplicate-data audit above against prod before deploying.** If it returns any group, resolve the duplicates first — otherwise the migration aborts boot on next deploy (loud error naming the offending doc ids, zero writes performed).
+3. No action needed on the `db.awaitIndexBuilds` knob — default (`{ timeoutMs: 60000 }`) is safe for normal collection sizes. Only override it (in `config/defaults/{project}.config.js`) if you have an unusually large collection with a slow index build and want a longer/shorter timeout, or `false` to opt back into fire-and-forget autoIndex.
+4. Because index-build failures now surface loudly stack-wide (not just for billing), watch the first post-deploy boot log for any `Index builds still in flight` warning or a boot failure — it means some model's schema declares an index MongoDB rejects, previously silent.
+5. Migrations run at boot before `listen()`; the index swap + `legacyPeriod` backfill land automatically once the duplicate-data audit passes.
+6. **Rolling deploys only:** the very first successful run of this migration on a given database briefly drops the index while backfilling (old, still-serving instances writing into that window can trip a duplicate-key abort — self-healing, retried on next boot). For a strict no-window guarantee, run this specific deploy during a maintenance window or scale to a single instance first. Every later boot (including every other instance in the same rolling deploy once the database has converged) skips the window entirely.
+
+---
+
 ## Config: `docs.excludeModules` — doc-only module exclusion (2026-06-29)
 
 New opt-in `config.docs.excludeModules` (default `[]` → **no behavior change**). It drops a module's `doc/*.yml` (OpenAPI) + `doc/guides/*.md` (guide tree) from the public spec (`/api/spec.json`) and guide tree (`/api/public/docs`), **independent of module runtime activation** — so it works even for **core** modules (`core`/`auth`/`users`/`home`), which `filterByActivation` never filters.
