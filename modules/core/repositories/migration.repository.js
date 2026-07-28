@@ -68,15 +68,17 @@ const create = (name) => mongoose.model('Migration').create({ name, executedAt: 
  * @param {{pid?: number, host?: string}} [context] - forensic claim context.
  * @returns {Promise<object>} The created Migration document.
  */
-const claim = (name, { pid, host } = {}) =>
-  mongoose.model('Migration').create({
+const claim = (name, { pid, host } = {}) => {
+  const claimedAt = new Date();
+  return mongoose.model('Migration').create({
     name,
-    executedAt: new Date(),
+    executedAt: claimedAt,
     status: 'running',
-    startedAt: new Date(),
+    startedAt: claimedAt,
     pid,
     host,
   });
+};
 
 /**
  * @function markDone

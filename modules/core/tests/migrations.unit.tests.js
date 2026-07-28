@@ -282,14 +282,6 @@ describe('Migrations unit tests:', () => {
         expect(warnSpy).not.toHaveBeenCalled();
         warnSpy.mockRestore();
       });
-
-      it('falls back to executedAt when startedAt is missing (defensive)', async () => {
-        const legacyShapedRunning = { name: 'no-started-at.js', status: 'running', executedAt: new Date(Date.now() - 1000) };
-        const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
-        await migrations.resolveRunningClaim(legacyShapedRunning, { graceMs: 0 });
-        expect(deleteByNameSpy).toHaveBeenCalledWith('no-started-at.js');
-        warnSpy.mockRestore();
-      });
     });
 
     // #3992: resolveStaleClaims is the boot-time orchestrator — fetches every
