@@ -2,6 +2,8 @@
  * Module dependencies.
  */
 import { jest } from '@jest/globals';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import mongoose from 'mongoose';
 
@@ -10,6 +12,7 @@ import '../models/migration.model.mongoose.js';
 
 import migrations from '../../../lib/services/migrations.js';
 import migrationRepository from '../repositories/migration.repository.js';
+import logger from '../../../lib/services/logger.js';
 
 /**
  * Unit tests for the migration system (no DB connection required)
@@ -88,22 +91,44 @@ describe('Migrations unit tests:', () => {
   // no longer re-runs migrations.run() per suite (it sets DEVKIT_MIGRATIONS_RAN
   // in globalSetup), so these branches must be covered explicitly.
   describe('repository-mocked branches', () => {
-    let createSpy;
+    let claimSpy;
+    let markDoneSpy;
     let deleteByNameSpy;
+    let deleteClaimSpy;
     let listExecutedSpy;
+    let listRunningSpy;
+    let findByNameSpy;
     let syncIndexesSpy;
 
     beforeEach(() => {
-      createSpy = jest.spyOn(migrationRepository, 'create');
+      claimSpy = jest.spyOn(migrationRepository, 'claim');
+      markDoneSpy = jest.spyOn(migrationRepository, 'markDone').mockResolvedValue({ acknowledged: true, modifiedCount: 1 });
       deleteByNameSpy = jest.spyOn(migrationRepository, 'deleteByName').mockResolvedValue({ acknowledged: true, deletedCount: 1 });
+      // Ownership-scoped unclaim used by runMigration's own failure paths
+      // (#3992 follow-up) — distinct from the unscoped deleteByName used by
+      // resolveRunningClaim's stale-residue path.
+      deleteClaimSpy = jest.spyOn(migrationRepository, 'deleteClaim').mockResolvedValue({ acknowledged: true, deletedCount: 1 });
       listExecutedSpy = jest.spyOn(migrationRepository, 'listExecuted');
+      // #3992: run() now calls resolveStaleClaims() before the files/executed
+      // comparison — default to "nothing running" so pre-existing tests below
+      // that don't care about stale-claim resolution are unaffected.
+      listRunningSpy = jest.spyOn(migrationRepository, 'listRunning').mockResolvedValue([]);
+      // Default to null (never a real DB round-trip): a test that reaches the
+      // poll branch without explicitly mocking a resolved value would otherwise
+      // silently fall through to the REAL mongoose call and hang/timeout on
+      // buffering instead of failing fast on an unexpected call.
+      findByNameSpy = jest.spyOn(migrationRepository, 'findByName').mockResolvedValue(null);
       syncIndexesSpy = jest.spyOn(migrationRepository, 'syncIndexes').mockResolvedValue([]);
     });
 
     afterEach(() => {
-      createSpy.mockRestore();
+      claimSpy.mockRestore();
+      markDoneSpy.mockRestore();
       deleteByNameSpy.mockRestore();
+      deleteClaimSpy.mockRestore();
       listExecutedSpy.mockRestore();
+      listRunningSpy.mockRestore();
+      findByNameSpy.mockRestore();
       syncIndexesSpy.mockRestore();
     });
 
@@ -111,25 +136,76 @@ describe('Migrations unit tests:', () => {
       it('returns false when another runner already claimed the migration (E11000)', async () => {
         // Simulate the unique-index duplicate-key error from a concurrent runner
         const dup = Object.assign(new Error('E11000 duplicate key'), { code: 11000 });
-        createSpy.mockRejectedValueOnce(dup);
+        claimSpy.mockRejectedValueOnce(dup);
         const result = await migrations.runMigration('modules/core/migrations/__never-run-claim-fail.js', new Set());
         expect(result).toBe(false);
-        expect(createSpy).toHaveBeenCalledTimes(1);
+        expect(claimSpy).toHaveBeenCalledTimes(1);
       });
 
       it('rethrows non-duplicate errors from the repository', async () => {
-        createSpy.mockRejectedValueOnce(new Error('boom'));
+        claimSpy.mockRejectedValueOnce(new Error('boom'));
         await expect(
           migrations.runMigration('modules/core/migrations/__never-run-other-error.js', new Set()),
         ).rejects.toThrow('boom');
       });
 
       it('unclaims when the migration file fails to import', async () => {
-        createSpy.mockResolvedValueOnce({ name: 'doesNotExist' });
+        claimSpy.mockResolvedValueOnce({ name: 'doesNotExist', status: 'running' });
         await expect(
           migrations.runMigration('modules/core/migrations/__file-does-not-exist.js', new Set()),
         ).rejects.toThrow();
-        expect(deleteByNameSpy).toHaveBeenCalledTimes(1);
+        // Ownership-scoped unclaim (#3992 follow-up) — not the unscoped
+        // deleteByName, which is reserved for resolveRunningClaim's
+        // stale-residue path.
+        expect(deleteClaimSpy).toHaveBeenCalledTimes(1);
+        expect(deleteByNameSpy).not.toHaveBeenCalled();
+        expect(markDoneSpy).not.toHaveBeenCalled();
+      });
+
+      it('claims with status:running + pid/host forensic context, then marks done on success (#3992)', async () => {
+        claimSpy.mockResolvedValueOnce({ name: 'ok', status: 'running' });
+        // A real, side-effect-free migration module (no-op up()) so the import + up()
+        // call succeed for real. A core-owned test fixture (not a real migration file —
+        // lives under tests/fixtures/, outside discoverMigrationFiles()'s glob), so
+        // this suite never depends on an unrelated module like billing (#3992 follow-up).
+        const realNoopMigration = path.resolve('modules/core/tests/fixtures/noop-migration.js');
+        const result = await migrations.runMigration(realNoopMigration, new Set());
+        expect(result).toBe(true);
+        expect(claimSpy).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({ pid: expect.any(Number), host: expect.any(String) }),
+        );
+        expect(markDoneSpy).toHaveBeenCalledTimes(1);
+        expect(deleteByNameSpy).not.toHaveBeenCalled();
+        expect(deleteClaimSpy).not.toHaveBeenCalled();
+      });
+
+      it('unclaims (never marks done) when up() itself throws', async () => {
+        claimSpy.mockResolvedValueOnce({ name: 'boom-up', status: 'running' });
+        // A real ESM module living outside modules/&#42;/migrations/ (so a leftover
+        // file, if cleanup ever failed, could never be picked up by
+        // discoverMigrationFiles()'s glob and re-run against a real DB).
+        // `.mjs` (not `.js`): this file lives outside the project root, so
+        // there is no ancestor package.json with "type":"module" for Node's
+        // loader to find — a plain `.js` extension there is parsed as
+        // CommonJS and `export` throws a syntax error. `.mjs` is always ESM.
+        const tmpFile = path.join(os.tmpdir(), `__3992-throws-in-up-${process.pid}-${Date.now()}.mjs`);
+        const expectedName = path.relative(process.cwd(), tmpFile).replace(/\\/g, '/');
+        fs.writeFileSync(tmpFile, "export async function up() { throw new Error('boom-up'); }\n");
+        try {
+          await expect(migrations.runMigration(tmpFile, new Set())).rejects.toThrow('boom-up');
+          // Ownership-scoped unclaim (#3992 follow-up), keyed on this
+          // process's own pid/host so a late failure can never delete a
+          // different (newer) runner's record.
+          expect(deleteClaimSpy).toHaveBeenCalledWith(
+            expectedName,
+            expect.objectContaining({ pid: expect.any(Number), host: expect.any(String) }),
+          );
+          expect(deleteByNameSpy).not.toHaveBeenCalled();
+          expect(markDoneSpy).not.toHaveBeenCalled();
+        } finally {
+          fs.unlinkSync(tmpFile);
+        }
       });
     });
 
@@ -142,17 +218,140 @@ describe('Migrations unit tests:', () => {
         const result = await migrations.run();
         expect(result.total).toBe(files.length);
         expect(result.executed).toBe(0);
+        // resolveStaleClaims() runs before the executed-set comparison on every run()
+        expect(listRunningSpy).toHaveBeenCalledTimes(1);
       });
 
       it('unclaims and rethrows when the imported migration has no up() export', async () => {
         // claim succeeds; the file we point at exists but exports no up()
-        createSpy.mockResolvedValueOnce({ name: 'no-up' });
+        claimSpy.mockResolvedValueOnce({ name: 'no-up', status: 'running' });
         // This very test file is a real ESM module that does not export up()
         const realFileWithoutUp = path.resolve('modules/core/tests/migrations.unit.tests.js');
         await expect(
           migrations.runMigration(realFileWithoutUp, new Set()),
         ).rejects.toThrow(/does not export an up\(\) function/);
-        expect(deleteByNameSpy).toHaveBeenCalled();
+        // Ownership-scoped unclaim (#3992 follow-up)
+        expect(deleteClaimSpy).toHaveBeenCalled();
+        expect(deleteByNameSpy).not.toHaveBeenCalled();
+        expect(markDoneSpy).not.toHaveBeenCalled();
+      });
+    });
+
+    // #3992: getExecutedMigrations() decides what "already done" means —
+    // legacy records (no status field) and status:'done' are both skippable;
+    // status:'running' must NEVER be treated as done (resolveStaleClaims owns it).
+    describe('getExecutedMigrations status filtering (#3992)', () => {
+      it('treats a legacy record (no status field) as done', async () => {
+        listExecutedSpy.mockResolvedValueOnce([{ name: 'legacy-no-status.js' }]);
+        const executed = await migrations.getExecutedMigrations();
+        expect(executed.has('legacy-no-status.js')).toBe(true);
+      });
+
+      it('treats status:"done" as done', async () => {
+        listExecutedSpy.mockResolvedValueOnce([{ name: 'finished.js', status: 'done' }]);
+        const executed = await migrations.getExecutedMigrations();
+        expect(executed.has('finished.js')).toBe(true);
+      });
+
+      it('does NOT treat status:"running" as done', async () => {
+        listExecutedSpy.mockResolvedValueOnce([{ name: 'in-flight.js', status: 'running' }]);
+        const executed = await migrations.getExecutedMigrations();
+        expect(executed.has('in-flight.js')).toBe(false);
+      });
+
+      it('filters a mixed batch correctly', async () => {
+        listExecutedSpy.mockResolvedValueOnce([
+          { name: 'legacy.js' },
+          { name: 'done.js', status: 'done' },
+          { name: 'running.js', status: 'running' },
+        ]);
+        const executed = await migrations.getExecutedMigrations();
+        expect([...executed].sort()).toEqual(['done.js', 'legacy.js']);
+      });
+    });
+
+    // #3992: resolveRunningClaim is the boot-time decision unit for a single
+    // status:'running' claim — stale (past grace) vs genuinely concurrent
+    // (within grace, waits/polls).
+    describe('resolveRunningClaim (#3992)', () => {
+      it('stale claim (age >= grace) logs a WARN and deletes it so it can re-run', async () => {
+        const staleRecord = { name: 'stale.js', status: 'running', startedAt: new Date(Date.now() - 1000) };
+        const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+        await migrations.resolveRunningClaim(staleRecord, { graceMs: 0 });
+        expect(deleteByNameSpy).toHaveBeenCalledWith('stale.js');
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        expect(warnSpy.mock.calls[0][0]).toEqual(expect.stringContaining('stale.js'));
+        warnSpy.mockRestore();
+      });
+
+      it('running record with a missing startedAt resolves immediately as stale (non-finite age, #3992 follow-up)', async () => {
+        const noStartedAtRecord = { name: 'no-started-at.js', status: 'running' };
+        const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+        // A generous grace window proves this isn't just "aged past a tiny
+        // graceMs" — a non-finite age must resolve as stale regardless.
+        await migrations.resolveRunningClaim(noStartedAtRecord, { graceMs: 5000 });
+        expect(deleteByNameSpy).toHaveBeenCalledWith('no-started-at.js');
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        expect(warnSpy.mock.calls[0][0]).toEqual(expect.stringContaining('no-started-at.js'));
+        warnSpy.mockRestore();
+      });
+
+      it('fresh claim within grace waits (polls), then returns quietly once it flips to done', async () => {
+        const freshRecord = { name: 'fresh.js', status: 'running', startedAt: new Date() };
+        findByNameSpy.mockResolvedValueOnce({ ...freshRecord, status: 'done' });
+        const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+        await migrations.resolveRunningClaim(freshRecord, { graceMs: 5000, pollIntervalMs: 5 });
+        expect(findByNameSpy).toHaveBeenCalledWith('fresh.js');
+        expect(deleteByNameSpy).not.toHaveBeenCalledWith('fresh.js');
+        expect(warnSpy).not.toHaveBeenCalled();
+        warnSpy.mockRestore();
+      });
+
+      it('claim that disappears mid-wait (unclaimed elsewhere on failure) returns quietly', async () => {
+        const freshRecord = { name: 'vanishing.js', status: 'running', startedAt: new Date() };
+        findByNameSpy.mockResolvedValueOnce(null);
+        const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+        await migrations.resolveRunningClaim(freshRecord, { graceMs: 5000, pollIntervalMs: 5 });
+        expect(findByNameSpy).toHaveBeenCalledWith('vanishing.js');
+        expect(deleteByNameSpy).not.toHaveBeenCalledWith('vanishing.js');
+        expect(warnSpy).not.toHaveBeenCalled();
+        warnSpy.mockRestore();
+      });
+    });
+
+    // #3992: resolveStaleClaims is the boot-time orchestrator — fetches every
+    // running claim and resolves each one.
+    describe('resolveStaleClaims (#3992)', () => {
+      it('resolves every running claim returned by listRunning', async () => {
+        listRunningSpy.mockResolvedValueOnce([
+          { name: 'stale-a.js', status: 'running', startedAt: new Date(Date.now() - 1000) },
+          { name: 'stale-b.js', status: 'running', startedAt: new Date(Date.now() - 1000) },
+        ]);
+        const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+        await migrations.resolveStaleClaims({ migrations: { staleRunningGraceMs: 0 } });
+        expect(deleteByNameSpy).toHaveBeenCalledWith('stale-a.js');
+        expect(deleteByNameSpy).toHaveBeenCalledWith('stale-b.js');
+        warnSpy.mockRestore();
+      });
+
+      it('is a no-op when nothing is running', async () => {
+        listRunningSpy.mockResolvedValueOnce([]);
+        await migrations.resolveStaleClaims({ migrations: { staleRunningGraceMs: 0 } });
+        expect(deleteByNameSpy).not.toHaveBeenCalled();
+      });
+
+      it('falls back to the default grace window when config value is not a positive number', async () => {
+        listRunningSpy.mockResolvedValueOnce([{ name: 'edge.js', status: 'running', startedAt: new Date() }]);
+        findByNameSpy.mockResolvedValueOnce({ name: 'edge.js', status: 'done' });
+        // An invalid config value (negative / NaN / string) must not crash —
+        // it falls back to DEFAULT_STALE_RUNNING_GRACE_MS (10 min), so the
+        // fresh claim above takes the "wait" branch, not "stale". Small
+        // pollIntervalMs override keeps this test fast.
+        const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+        await migrations.resolveStaleClaims({ migrations: { staleRunningGraceMs: -5 } }, { pollIntervalMs: 5 });
+        expect(warnSpy).not.toHaveBeenCalled();
+        expect(deleteByNameSpy).not.toHaveBeenCalledWith('edge.js');
+        warnSpy.mockRestore();
       });
     });
   });

@@ -15,28 +15,111 @@ const syncIndexes = () => mongoose.model('Migration').syncIndexes();
 
 /**
  * @function listExecuted
- * @description Fetch the name of every migration recorded as executed.
- * @returns {Promise<Array<{name: string}>>} Lean records with only the `name` field.
+ * @description Fetch the name + status of every Migration record. Despite the
+ * name (kept for back-compat with existing callers), this returns records
+ * regardless of status — `status` is included precisely so callers (see
+ * `lib/services/migrations.js#getExecutedMigrations`) can distinguish a
+ * genuinely completed migration (status `'done'` or absent/legacy) from one
+ * still `'running'` (#3992).
+ * @returns {Promise<Array<{name: string, status?: string}>>} Lean records with `name` + `status`.
  */
-const listExecuted = () => mongoose.model('Migration').find({}, { name: 1, _id: 0 }).lean();
+const listExecuted = () => mongoose.model('Migration').find({}, { name: 1, status: 1, _id: 0 }).lean();
+
+/**
+ * @function listRunning
+ * @description Fetch every Migration record whose claim is still `'running'`
+ * — candidates for `resolveStaleClaims()`'s boot-time stale-claim check
+ * (#3992). A record in this state was either claimed by a runner still
+ * genuinely in flight (another instance mid-deploy), or is crash residue from
+ * a hard-killed process.
+ * @returns {Promise<Array<object>>} Lean records with all fields (name, status, startedAt, pid, host, ...).
+ */
+const listRunning = () => mongoose.model('Migration').find({ status: 'running' }).lean();
+
+/**
+ * @function findByName
+ * @description Fetch a single Migration record by name. Used to re-check a
+ * `'running'` claim's live status while polling in `resolveStaleClaims()`.
+ * @param {string} name - Migration filename.
+ * @returns {Promise<object|null>} Lean record, or null if no longer present (unclaimed).
+ */
+const findByName = (name) => mongoose.model('Migration').findOne({ name }).lean();
 
 /**
  * @function create
  * @description Insert a new Migration record. Relies on the unique index on
- * `name` to reject duplicates — used both by the public `recordMigration()`
- * flow and the atomic claim logic in `claimMigration()`.
+ * `name` to reject duplicates — used by the public `recordMigration()` flow.
+ * No `status` is set: a record inserted this way is legacy-shaped by design
+ * and is treated as `'done'` under the back-compat rule (missing status =
+ * done), which is correct here too — this call represents an already-complete
+ * migration, not a claim-in-progress.
  * @param {string} name - Migration filename, unique key for the collection.
  * @returns {Promise<object>} The created Migration document.
  */
 const create = (name) => mongoose.model('Migration').create({ name, executedAt: new Date() });
 
 /**
+ * @function claim
+ * @description Atomically claim a migration by inserting a `status:'running'`
+ * record before its `up()` runs (#3992). Relies on the unique index on `name`
+ * to reject a concurrent claim (E11000) exactly like `create()`. Captures
+ * forensic context (`pid`, `host`) so a stale claim can be diagnosed later.
+ * @param {string} name - Migration filename, unique key for the collection.
+ * @param {{pid?: number, host?: string}} [context] - forensic claim context.
+ * @returns {Promise<object>} The created Migration document.
+ */
+const claim = (name, { pid, host } = {}) => {
+  const claimedAt = new Date();
+  return mongoose.model('Migration').create({
+    name,
+    executedAt: claimedAt,
+    status: 'running',
+    startedAt: claimedAt,
+    pid,
+    host,
+  });
+};
+
+/**
+ * @function markDone
+ * @description Flip a claimed migration's status from `'running'` to `'done'`
+ * after its `up()` resolves successfully, stamping `finishedAt` (#3992).
+ * Scoped to `status:'running'` so a late success from a runner whose claim
+ * was already cleared as stale (and possibly re-claimed/completed by a
+ * newer runner) can never overwrite that newer runner's already-`'done'`
+ * record — the update simply matches zero documents (#3992 follow-up).
+ * @param {string} name - Migration filename.
+ * @returns {Promise<object>} Mongo update result.
+ */
+const markDone = (name) =>
+  mongoose.model('Migration').updateOne({ name, status: 'running' }, { $set: { status: 'done', finishedAt: new Date() } });
+
+/**
  * @function deleteByName
- * @description Remove a Migration record by name. Used to unclaim a migration
- * when its execution fails so it can be retried on the next boot.
+ * @description Remove a Migration record by name, regardless of ownership.
+ * Used ONLY to clear a stale `'running'` claim left by a DIFFERENT,
+ * presumed-dead process during boot-time stale-claim resolution (#3992) —
+ * the caller does not own that claim, so this is intentionally unscoped.
+ * For a runner unclaiming its OWN claim on failure, use {@link deleteClaim}
+ * instead so a late failure can never delete a newer runner's record.
  * @param {string} name - Migration filename to delete.
  * @returns {Promise<object>} Mongo deletion result.
  */
 const deleteByName = (name) => mongoose.model('Migration').deleteOne({ name });
 
-export default { syncIndexes, listExecuted, create, deleteByName };
+/**
+ * @function deleteClaim
+ * @description Remove a `'running'` claim only if it is still owned by the
+ * calling process (matching `name` + `status:'running'` + `pid`/`host`).
+ * Used by a runner's own failure path to unclaim its claim so it can be
+ * retried on the next boot — scoped so a late failure from a process whose
+ * claim was already cleared as stale by another boot (and possibly
+ * re-claimed/completed by a newer runner) can never delete that newer
+ * runner's record (#3992 follow-up).
+ * @param {string} name - Migration filename.
+ * @param {{pid?: number, host?: string}} [context] - claim ownership context.
+ * @returns {Promise<object>} Mongo deletion result.
+ */
+const deleteClaim = (name, { pid, host } = {}) => mongoose.model('Migration').deleteOne({ name, status: 'running', pid, host });
+
+export default { syncIndexes, listExecuted, listRunning, findByName, create, claim, markDone, deleteByName, deleteClaim };

@@ -74,6 +74,18 @@ const config = {
   //   key: './config/sslcerts/key.pem',
   //   cert: './config/sslcerts/cert.pem',
   // },
+  migrations: {
+    // Bounds lib/services/migrations.js#resolveStaleClaims (#3992): on boot, a
+    // migration claim stuck in status:'running' younger than this is presumed
+    // to be a genuinely concurrent runner (another instance mid-deploy) and is
+    // waited on (polled) until it flips to 'done' or crosses this window. Once
+    // a claim's age reaches this window, it is presumed to be crash residue
+    // (OOM/SIGKILL/pod eviction hard-killed the process mid-up()) — the claim
+    // is deleted and the migration re-runs (all in-tree migrations are
+    // required to be idempotent, see MIGRATIONS.md). 10 minutes comfortably
+    // exceeds any single migration's expected runtime in this stack.
+    staleRunningGraceMs: 10 * 60 * 1000,
+  },
   log: {
     // logging with Morgan - https://github.com/expressjs/morgan
     // Can specify one of 'combined', 'common', 'dev', 'short', 'tiny', 'custom'
