@@ -152,6 +152,23 @@ describe('Migration usage-weekkey-index-partial:', () => {
     expect(ix.unique).toBe(true);
   });
 
+  test('an index already under NEW_INDEX_NAME with divergent options is dropped and recreated to the target spec (not a permanent IndexOptionsConflict)', async () => {
+    try { await usages.dropIndex(NEW_INDEX_NAME); } catch (_) { /* already absent */ }
+    try { await usages.dropIndex(OLD_INDEX_NAME); } catch (_) { /* already absent */ }
+    // A same-name index with a divergent spec (e.g. a hand-fix or an earlier
+    // iteration of this migration) must not be a permanent IndexOptionsConflict
+    // — up() must drop and recreate it under the target spec, not crash-loop.
+    await usages.createIndex(INDEX_KEY, { name: NEW_INDEX_NAME, unique: false });
+
+    await up();
+
+    const ix = await findIndex(NEW_INDEX_NAME);
+    expect(ix).toBeDefined();
+    expect(ix.key).toEqual({ organizationId: 1, weekKey: 1 });
+    expect(ix.unique).toBe(true);
+    expect(ix.partialFilterExpression).toEqual({ weekKey: { $exists: true } });
+  });
+
   test('ABORTS on pre-existing duplicate meter-mode (organizationId, weekKey) pairs without touching indexes', async () => {
     const dupA = new mongoose.Types.ObjectId();
     const dupB = new mongoose.Types.ObjectId();

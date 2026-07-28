@@ -177,6 +177,16 @@ export async function up() {
   // the old one, so there is never a window without SOME uniqueness
   // constraint on meter-mode documents.
   if (!existing.some(isExactTargetIndex)) {
+    // A same-name index under NEW_INDEX_NAME with a divergent spec (a hand-fix
+    // or an earlier iteration) would make createIndex reject forever with
+    // IndexOptionsConflict (code 85) — step (c) below explicitly skips
+    // NEW_INDEX_NAME, so that divergent index would never get dropped and
+    // every subsequent boot would fail identically. Drop it first so the
+    // target spec can converge.
+    if (existing.some((ix) => ix.name === NEW_INDEX_NAME)) {
+      await usages.dropIndex(NEW_INDEX_NAME);
+      console.info(`[migration] usage-weekkey-index-partial: dropped divergent index '${NEW_INDEX_NAME}' before recreating it with the target spec`);
+    }
     try {
       await usages.createIndex(INDEX_KEY, {
         unique: true,
