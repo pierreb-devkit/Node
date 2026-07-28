@@ -4,6 +4,40 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Migration runner: claim-with-status — interrupted runs resume instead of being skipped forever (2026-07-28)
+
+Fixes a data-integrity gap in `lib/services/migrations.js`: the runner previously claimed a migration as executed (an insert into the `migrations` collection) BEFORE calling its `up()`. A hard process kill mid-`up()` (OOM, SIGKILL, pod eviction) left that claim in place with no completion signal — on the next boot the migration was treated as already done and permanently skipped, even though `up()` never finished (found reviewing #3990's backfill: an interrupted `updateMany` could strand a subset of documents; the runner semantics were the generic root cause).
+
+### ⚠️ New house rule: migrations MUST be idempotent
+
+Every migration's `up()` MUST be safe to re-run from scratch — this was already the de facto style in this repo (every existing migration backfills/creates conditionally, e.g. skip-if-already-set, skip-if-index-already-exact-spec), but it is now a **hard requirement**, not a convention: the boot-time stale-claim resume below re-runs a migration whenever a `'running'` claim is found stuck past the grace window, with no way to know how far the interrupted run got. A non-idempotent `up()` would corrupt data on resume.
+
+### What changed (this repo)
+
+- **`modules/core/models/migration.model.mongoose.js`** — the Migration schema gains `status: 'running' | 'done'` (no default), `startedAt`, `finishedAt`, and forensic context `pid` / `host` (captured at claim time).
+- **`modules/core/repositories/migration.repository.js`** — new `claim(name, {pid, host})` (inserts `status:'running'`), `markDone(name)` (atomic `$set: {status:'done', finishedAt}`), `listRunning()`, `findByName(name)`. `listExecuted()` now projects `status` too. `create(name)` (used by `recordMigration`) is unchanged — it never sets `status`, which is correct: see back-compat below.
+- **`lib/services/migrations.js`**:
+  - `claimMigration` now calls `repository.claim(...)` instead of a bare insert — the claim record is `status:'running'` from the moment it's written.
+  - On `up()` success, `runMigration` calls the new `markMigrationDone(name)` to atomically flip the claim to `status:'done'`. **The thrown-error path is unchanged** — `up()` throwing still unclaims (deletes) the record so the next boot retries, exactly as before.
+  - **New `resolveStaleClaims(cfg)`**, called by `run()` BEFORE the files/executed comparison. Scans every `status:'running'` claim:
+    - **Age < `config.migrations.staleRunningGraceMs`** (default **10 minutes**): presumed a genuinely concurrent runner (another instance mid-deploy) — WAITS, polling the live record every ~1s until it flips to `'done'` or disappears (unclaimed elsewhere on failure). The unique claim index already serializes any brand-new claim against this one; this wait only covers an already-existing claim.
+    - **Age ≥ grace window**: presumed crash residue from a hard kill. Logs a loud `WARN` naming the migration, deletes the stale claim, and lets the normal claim/run loop in `run()` re-claim and re-execute it — safe because of the idempotence requirement above.
+  - **New config knob** `config.migrations.staleRunningGraceMs` (`config/defaults/development.config.js`, default `10 * 60 * 1000`).
+  - `getExecutedMigrations()` now filters `listExecuted()` by status: only `status:'done'` OR **no `status` field at all** count as "already done" and are skipped. `status:'running'` is never treated as done — it is exclusively `resolveStaleClaims`'s concern.
+
+### Back-compat (critical — read before deploying)
+
+An existing claim record predating this change has **no `status` field**. It is **always** treated as `'done'` — it completed under the old semantics (a bare insert WAS the completion signal), and there is no way to distinguish it from a genuinely-finished migration after the fact. This is explicit and unconditional in `getExecutedMigrations()`: `status == null || status === 'done'`. Getting this wrong in either direction is bad — reinterpreting a legacy record as anything else would re-run migration history on every already-deployed database.
+
+### Action required for downstream projects (`/update-stack`)
+
+1. All changes are devkit-owned stack files → arrive via `/update-stack` (`--theirs`). No data migration — the new `status`/`startedAt`/`finishedAt`/`pid`/`host` fields are additive; existing `migrations` collection rows are untouched (and correctly treated as done, see back-compat above).
+2. **No action needed for the default 10-minute grace window** unless a project has a migration whose `up()` is expected to legitimately run longer than that under normal (non-crashed) conditions — override `config.migrations.staleRunningGraceMs` in `config/defaults/{project}.config.js` if so.
+3. **Confirm every project-owned migration (`modules/{name}/migrations/*.js` outside the stack) is idempotent** — re-runnable after a partial application. This was already best practice; it is now enforced by the resume behavior above.
+4. No env var changes, no breaking API/contract change.
+
+---
+
 ## Billing usage weekKey-index partial-filter fix (2026-07-28)
 
 Fixes a silent write-loss bug: the meter-mode `(organizationId, weekKey)` unique index on `billingusages` declared `sparse: true` on a COMPOUND index. MongoDB's sparse-exclusion rule for a compound index only skips a document when it is missing **ALL** indexed fields — since `organizationId` is always present (on legacy AND meter-mode documents alike), sparse never excluded anything: every legacy (weekKey-less) document was indexed too, with `weekKey` treated as `null`. A second legacy document for the **same organization** — regardless of month — then collided on `{organizationId, weekKey: null}` and was rejected as a duplicate key; `BillingUsageRepository.increment`'s duplicate-key retry filter (`{organizationId, month}`) matched nothing for the new month, so the write silently resolved to `null` with **no error surfaced**. Net effect: under `meterMode: false` (the default), a downstream consumer's legacy usage counters could only ever be recorded for the **first** month an organization was active — every subsequent month's write was lost.
