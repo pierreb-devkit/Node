@@ -22,7 +22,7 @@ describe('BillingUsageRepository integration tests:', () => {
     collection = mongoose.connection.db.collection('billingusages');
     await collection.createIndex(
       { organizationId: 1, weekKey: 1 },
-      { unique: true, sparse: true, name: 'organizationId_1_weekKey_1' },
+      { unique: true, name: 'organizationId_1_weekKey_1_partial', partialFilterExpression: { weekKey: { $exists: true } } },
     );
     BillingUsageRepository = (await import('../repositories/billing.usage.repository.js')).default;
   });

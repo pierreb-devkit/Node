@@ -29,12 +29,41 @@ const thresholdFields = {
 
 /**
  * @desc Increment a usage counter for the given organization (current month).
+ *              Hardens the repository's silent-null anomaly (#3991 follow-up):
+ *              `UsageRepository.increment` can return `null` when its
+ *              duplicate-key retry's exact-match filter finds nothing — meaning
+ *              the write was lost. This should not happen in normal operation
+ *              post-#3991 (the (organizationId, weekKey) index no longer
+ *              collides across legacy documents for the same org, and the
+ *              retry filter exactly matches what a winning concurrent upsert
+ *              on the SAME org+month would have just created), so hitting it
+ *              now signals a genuine anomaly worth operator visibility — not a
+ *              thrown error, since no caller in this repo (or, being public
+ *              devkit API, any downstream consumer we cannot audit here) ever
+ *              treated a non-null return as guaranteed, and throwing would be
+ *              a breaking behavior change for a generic stack module. Per the
+ *              silent-catch convention (a swallowed write failure must never
+ *              be invisible), this converts the silent null into a LOUD,
+ *              logged one instead.
  * @param {String} organizationId - The organization ID.
  * @param {String} key - The counter key to increment.
  * @param {Number} amount - The amount to increment by.
- * @returns {Promise<Object>} The updated usage document.
+ * @returns {Promise<Object|null>} The updated usage document, or `null` on the
+ *   (now logged) anomalous lost-write case.
  */
-const increment = (organizationId, key, amount) => UsageRepository.increment(organizationId, currentMonth(), key, amount);
+const increment = async (organizationId, key, amount) => {
+  const month = currentMonth();
+  const doc = await UsageRepository.increment(organizationId, month, key, amount);
+  if (!doc) {
+    logger.error('[billing.usage] increment lost a write — duplicate-key retry matched no document', {
+      organizationId,
+      month,
+      key,
+      amount,
+    });
+  }
+  return doc;
+};
 
 /**
  * @desc Get usage for the given organization (current month).

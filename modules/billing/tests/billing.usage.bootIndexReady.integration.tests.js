@@ -58,8 +58,33 @@ describe('BillingUsage — boot-time index readiness (#3990):', () => {
     expect(monthIx.partialFilterExpression).toEqual({ legacyPeriod: { $exists: true } });
 
     expect(weekIx).toBeDefined();
+    expect(weekIx.name).toBe('organizationId_1_weekKey_1_partial');
     expect(weekIx.unique).toBe(true);
-    expect(weekIx.sparse).toBe(true);
+    expect(weekIx.partialFilterExpression).toEqual({ weekKey: { $exists: true } });
+  });
+
+  test('legacy (weekKey-less) increments for the same org across two DIFFERENT months both persist (#3991)', async () => {
+    // The regression this migration fixes: the old compound `sparse: true`
+    // index indexed every document (organizationId is never missing), so a
+    // second legacy month for the same org collided on {organizationId,
+    // weekKey: null} and silently lost the write. Reproduces the issue's own
+    // repro verbatim against the real repository functions.
+    const orgId = new mongoose.Types.ObjectId();
+    trackedOrgIds.push(orgId);
+
+    const january = await BillingUsageRepository.increment(orgId.toString(), '2199-01', 'executions', 5);
+    expect(january).not.toBeNull();
+    expect(january.counters.executions).toBe(5);
+
+    const february = await BillingUsageRepository.increment(orgId.toString(), '2199-02', 'executions', 7);
+    expect(february).not.toBeNull();
+    expect(february.counters.executions).toBe(7);
+
+    const docs = await collection.find({ organizationId: orgId }).toArray();
+    expect(docs).toHaveLength(2);
+    const byMonth = Object.fromEntries(docs.map((d) => [d.month, d.counters.executions]));
+    expect(byMonth['2199-01']).toBe(5);
+    expect(byMonth['2199-02']).toBe(7);
   });
 
   test('meter replay is deterministic immediately after boot', async () => {

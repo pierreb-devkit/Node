@@ -158,10 +158,44 @@ UsageMongoose.index(
 );
 
 /**
- * Meter-mode unique index: (organizationId, weekKey) — sparse so it only
- * indexes documents that have weekKey populated (meter-mode docs only).
+ * Meter-mode unique index: (organizationId, weekKey).
+ *
+ * Partial filter: `{ weekKey: { $exists: true } }` — only meter-mode documents
+ * (which always set weekKey) are covered by this uniqueness constraint. The
+ * previous `sparse: true` looked equivalent but is WRONG for a COMPOUND index:
+ * MongoDB's sparse-exclusion rule only skips a document from a compound sparse
+ * index when it is missing ALL indexed fields, not just some. `organizationId`
+ * is always present on every document (legacy or meter), so sparse never
+ * excluded anything here — every legacy (weekKey-less) document was indexed
+ * too, with weekKey treated as `null`. A second legacy document for the SAME
+ * org (any month) then collided on `{organizationId, weekKey: null}` and was
+ * rejected as a duplicate key — `BillingUsageRepository.increment`'s
+ * duplicate-key retry filter (`{organizationId, month}`) matched nothing for
+ * the new month, so the write silently resolved to `null` with no document
+ * ever created. Net effect: under `meterMode: false` (the default), legacy
+ * usage could only ever be recorded for the FIRST month an organization was
+ * active (#3991).
+ *
+ * Explicit name `organizationId_1_weekKey_1_partial` — deliberately DIFFERENT
+ * from the default `organizationId_1_weekKey_1` the old `sparse: true` spec
+ * used, so the new partial index can be created ALONGSIDE the still-live old
+ * one on an already-deployed database without an IndexOptionsConflict. Boot
+ * now awaits + surfaces index-build failures loudly (#3990's
+ * `awaitIndexBuilds()`, which runs BEFORE migrations): reusing the same
+ * default name here would make `createIndex` reject with IndexOptionsConflict
+ * (same name, different options as the live old index) on every boot until an
+ * operator manually dropped the old index out of band — a self-inflicted
+ * boot-crash loop, since the migration that is supposed to drop it never gets
+ * a chance to run. Mirrors the distinct-name coexistence technique in
+ * `modules/users/migrations/20260610120000-users-email-ci-unique-index.js`.
+ * Migration `modules/billing/migrations/20260728120000-fix-usage-weekkey-index-partial.js`
+ * is the authoritative creator (new index) + old-index dropper on
+ * already-deployed databases.
  */
-UsageMongoose.index({ organizationId: 1, weekKey: 1 }, { unique: true, sparse: true });
+UsageMongoose.index(
+  { organizationId: 1, weekKey: 1 },
+  { unique: true, name: 'organizationId_1_weekKey_1_partial', partialFilterExpression: { weekKey: { $exists: true } } },
+);
 
 /**
  * TTL index: automatically purge archived usage documents after 1 year.
