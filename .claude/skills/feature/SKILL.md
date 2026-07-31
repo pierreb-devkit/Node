@@ -117,11 +117,29 @@ For each user-facing flow this feature creates or modifies, identify:
 - Works WITHOUT organizations enabled?
 - No hard dependency on external services for core flow?
 
+### 4b. Minimal-code ladder (run before presenting)
+
+Challenge every **mechanism** this change would introduce — a schema field, a flag, a collection, an abstraction, a scheduled job. Stop at the first rung that holds:
+
+0. **Does a product decision remove it?** — accept the cost, accept the failure, do nothing, or surface it to the user. This rung holds **only if the mechanism then disappears**; if the product still needs it, keep going down the ladder.
+1. **Already in this codebase?** — reuse the helper, service or pattern.
+2. **In the standard library?** — use it.
+3. **A native platform feature?** (DB constraint/index, framework built-in) — use it.
+4. **An already-installed dependency?** — use it.
+5. **One line, a constant, or config?** — make it that.
+6. Only then: build it, minimal.
+
+**Persisted state is the expensive rung.** A schema field, collection or flag encoding a *policy* (a known-bad marker, a cap, a memo of a past failure) is not a code choice — code is deleted, data is migrated. Rung 0 is mandatory for it, and it needs an **explicit, blocking user confirmation in §5** before it is built — a yes on that specific state, never implied by the general plan validation.
+
+**Never traded away** (lazy ≠ negligent): understanding the problem before picking a rung, validation at trust boundaries, error handling that prevents data loss, security, and anything the user explicitly asked for.
+
 ### 5. Present plan & ask questions
 
 **STOP and present to the user:**
 - Flows identified (happy + error + edge cases)
 - Users impacted + notification plan
+- **Ladder outcome (§4b)** — the **selected rung** first (`<rung> — <what it resolves to>`, e.g. `1 reuse — existing users service`), then one line per rejected mechanism (`<mechanism> — simpler option <X> rejected because <reason>`). A change that adds a mechanism and rejects nothing means nobody looked.
+- **Persisted state, if any** — name it and **wait for an explicit yes on it**; a general "plan validated" does not cover it, and it is not built without that yes.
 - Open questions or scope decisions
 
 **Wait for user validation before coding.** (Non-interactive runs: Phase 0.0
