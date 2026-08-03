@@ -4,6 +4,14 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Unmatched routes return 404 on every HTTP verb, not just GET (2026-08-03, closes gap from #3975)
+
+An earlier change replaced the implicit 200 previously returned for any unmatched path with a content-negotiated 404 (JSON `{ error: 'not_found' }` for API paths/JSON-accepting clients, minimal HTML otherwise) — but that catch-all was registered with `app.get`, so an unmatched POST/PUT/PATCH/DELETE still fell through to Express's default HTML finalhandler (`Cannot POST /...`) instead of getting the same negotiated 404. It is now registered with `app.all`, so every unmatched verb gets the same behavior. `OPTIONS` is unaffected: the `cors` middleware answers preflight requests before this route is ever reached.
+
+**Action required:** any readiness/health check that polls a path that isn't a declared route — regardless of HTTP verb — must instead target a real, declared route, e.g. `GET /api/health`. A check pointed at an undeclared path previously got an implicit 200 and now gets a `404`; that check will start failing instead of silently passing.
+
+---
+
 ## Migration runner: claim-with-status — interrupted runs resume instead of being skipped forever (2026-07-28)
 
 Fixes a data-integrity gap in `lib/services/migrations.js`: the runner previously claimed a migration as executed (an insert into the `migrations` collection) BEFORE calling its `up()`. A hard process kill mid-`up()` (OOM, SIGKILL, pod eviction) left that claim in place with no completion signal — on the next boot the migration was treated as already done and permanently skipped, even though `up()` never finished (found reviewing #3990's backfill: an interrupted `updateMany` could strand a subset of documents; the runner semantics were the generic root cause).
