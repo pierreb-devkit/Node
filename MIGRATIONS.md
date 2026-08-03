@@ -4,11 +4,11 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
-## Unmatched routes return 404 on every HTTP verb, not just GET (2026-08-03, closes gap from #3975)
+## Unmatched routes return the same content-negotiated 404 on every HTTP verb (2026-08-03, closes gap from #3975)
 
-An earlier change replaced the implicit 200 previously returned for any unmatched path with a content-negotiated 404 (JSON `{ error: 'not_found' }` for API paths/JSON-accepting clients, minimal HTML otherwise) — but that catch-all was registered with `app.get`, so an unmatched POST/PUT/PATCH/DELETE still fell through to Express's default HTML finalhandler (`Cannot POST /...`) instead of getting the same negotiated 404. It is now registered with `app.all`, so every unmatched verb gets the same behavior. `OPTIONS` is unaffected: the `cors` middleware answers preflight requests before this route is ever reached.
+An earlier change (#3975) replaced the implicit 200 previously returned for any unmatched **GET** with a content-negotiated 404 (JSON `{ error: 'not_found' }` for API paths/JSON-accepting clients, minimal HTML otherwise) — but the catch-all was registered with `app.get` only. Unmatched POST/PUT/PATCH/DELETE were unaffected by that change and already 404'd via Express's own default finalhandler, just as unstructured HTML (`Cannot POST /...`) rather than the negotiated shape. The catch-all is now registered with `app.all`, so every unmatched verb gets the same negotiated 404 body/content-type as GET. `OPTIONS` is unaffected: the `cors` middleware answers preflight requests before this route is ever reached.
 
-**Action required:** any readiness/health check that polls a path that isn't a declared route — regardless of HTTP verb — must instead target a real, declared route, e.g. `GET /api/health`. A check pointed at an undeclared path previously got an implicit 200 and now gets a `404`; that check will start failing instead of silently passing.
+**Action required:** this only changes the response *shape* for non-GET verbs (still a 404, now content-negotiated); the status-code flip from implicit 200 to 404 only ever applied to GET, and only ever needed action there (per #3975: any readiness/health check must target a real, declared route, e.g. `GET /api/health`, not an undeclared path). If any tooling parses the *body* of a 404 on a non-GET verb expecting HTML, it now gets the negotiated JSON/HTML shape instead.
 
 ---
 
