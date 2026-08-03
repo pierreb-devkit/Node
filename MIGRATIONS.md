@@ -4,6 +4,14 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Unmatched routes return the same content-negotiated 404 on every HTTP verb (2026-08-03, closes gap from #3975)
+
+An earlier change (#3975) replaced the implicit 200 previously returned for any unmatched **GET** with a content-negotiated 404 (JSON `{ error: 'not_found' }` for API paths/JSON-accepting clients, minimal HTML otherwise) — but the catch-all was registered with `app.get` only. Unmatched POST/PUT/PATCH/DELETE were unaffected by that change and already 404'd via Express's own default finalhandler, just as unstructured HTML (`Cannot POST /...`) rather than the negotiated shape. The catch-all is now registered with `app.all`, so every unmatched verb gets the same negotiated 404 body/content-type as GET. `OPTIONS` is unaffected: the `cors` middleware answers preflight requests before this route is ever reached.
+
+**Action required:** this only changes the response *shape* for non-GET verbs (still a 404, now content-negotiated); the status-code flip from implicit 200 to 404 only ever applied to GET, and only ever needed action there (per #3975: any readiness/health check must target a real, declared route, e.g. `GET /api/health`, not an undeclared path). If any tooling parses the *body* of a 404 on a non-GET verb expecting HTML, it now gets the negotiated JSON/HTML shape instead.
+
+---
+
 ## Migration runner: claim-with-status — interrupted runs resume instead of being skipped forever (2026-07-28)
 
 Fixes a data-integrity gap in `lib/services/migrations.js`: the runner previously claimed a migration as executed (an insert into the `migrations` collection) BEFORE calling its `up()`. A hard process kill mid-`up()` (OOM, SIGKILL, pod eviction) left that claim in place with no completion signal — on the next boot the migration was treated as already done and permanently skipped, even though `up()` never finished (found reviewing #3990's backfill: an interrupted `updateMany` could strand a subset of documents; the runner semantics were the generic root cause).
