@@ -120,6 +120,8 @@ describe('Public docs integration tests — slug-collision precedence:', () => {
   let PublicDocsService;
   let tmpDir;
   let appGuidePath;
+  let reverseFixtureDir;
+  let reverseGuidePath;
   const originalOrgEnabled = config.organizations?.enabled;
   const originalGuides = Array.isArray(config.files?.guides) ? [...config.files.guides] : [];
 
@@ -133,20 +135,37 @@ describe('Public docs integration tests — slug-collision precedence:', () => {
     // simulates a consumer/application module shipping its own "welcome"
     // guide, colliding with the framework-shipped modules/home/00-welcome.md.
     // Path substring only needs to contain "modules/<name>/", it does not
-    // need to live under the app's real modules/ directory.
+    // need to live under the app's real modules/ directory. loadGuideEntries
+    // sorts ALL guide paths alphabetically before assigning scan order, and an
+    // absolute OS-tmpdir path always sorts before the relative "modules/..."
+    // path config.files.guides uses for real guides — so this fixture is
+    // scanned BEFORE modules/home/00-welcome.md (app is the earlier entry).
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'public-docs-precedence-'));
     const appModuleDir = path.join(tmpDir, 'modules', 'app-fixture', 'doc', 'guides');
     fs.mkdirSync(appModuleDir, { recursive: true });
     appGuidePath = path.join(appModuleDir, '00-welcome.md');
     fs.writeFileSync(appGuidePath, '# App Welcome\n\nApplication-level welcome guide.\n');
 
-    config.files.guides = [...originalGuides, appGuidePath];
+    // Second fixture, deliberately scanned in the OPPOSITE direction: a
+    // relative path (resolved against process.cwd(), the repo root under
+    // jest) starting with "zzz-" sorts AFTER "modules/home/...", so this one
+    // is scanned AFTER modules/home/01-quickstart.md (app is the LATER
+    // entry here). Proves the override is scan-order independent in both
+    // directions end-to-end, not just via the unit-level resolveGuideEntries
+    // tests (public.docs.tree.unit.tests.js) which mock the entry order.
+    reverseFixtureDir = path.join(process.cwd(), 'zzz-tmp-pr3979-fixture', 'doc', 'guides');
+    fs.mkdirSync(reverseFixtureDir, { recursive: true });
+    reverseGuidePath = path.join(reverseFixtureDir, '01-quickstart.md');
+    fs.writeFileSync(reverseGuidePath, '# App Quickstart\n\nApplication-level quickstart guide.\n');
+
+    config.files.guides = [...originalGuides, appGuidePath, reverseGuidePath];
   });
 
   afterAll(async () => {
     if (config.organizations) config.organizations.enabled = originalOrgEnabled;
     config.files.guides = originalGuides;
     if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+    if (reverseFixtureDir) fs.rmSync(path.join(process.cwd(), 'zzz-tmp-pr3979-fixture'), { recursive: true, force: true });
     await mongooseService.disconnect();
   });
 
@@ -154,7 +173,7 @@ describe('Public docs integration tests — slug-collision precedence:', () => {
     if (PublicDocsService) PublicDocsService.clearCache();
   });
 
-  test('the application guide wins the "welcome" slug in the listing (no duplicate)', async () => {
+  test('the application guide wins the "welcome" slug in the listing (no duplicate) — app scanned BEFORE the framework guide', async () => {
     const result = await request(app).get('/api/public/docs').expect(200);
     const { categories } = result.body.data;
     const guides = categories.flatMap((c) => c.guides);
@@ -169,5 +188,19 @@ describe('Public docs integration tests — slug-collision precedence:', () => {
     const result = await request(app).get('/api/public/docs/welcome.md').expect(200);
     expect(result.text).toContain('Application-level welcome guide.');
     expect(result.text).not.toContain('Welcome to');
+  });
+
+  test('the application guide wins the "quickstart" slug — app scanned AFTER the framework guide (opposite scan-order direction)', async () => {
+    const result = await request(app).get('/api/public/docs').expect(200);
+    const { categories } = result.body.data;
+    const guides = categories.flatMap((c) => c.guides);
+    const quickstartGuides = guides.filter((g) => g.slug === 'quickstart');
+
+    expect(quickstartGuides).toHaveLength(1);
+    expect(quickstartGuides[0].title).toBe('App Quickstart');
+
+    const fetchResult = await request(app).get('/api/public/docs/quickstart.md').expect(200);
+    expect(fetchResult.text).toContain('Application-level quickstart guide.');
+    expect(fetchResult.text).not.toContain('<YOUR_API_KEY>');
   });
 });
