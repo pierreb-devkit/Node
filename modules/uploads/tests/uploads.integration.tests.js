@@ -16,6 +16,8 @@ describe('Uploads integration tests:', () => {
   let UploadsService;
   let UploadsDataService;
   let UploadRepository;
+  let mongoose;
+  let gridfs;
   let agent;
   let credentials;
   let user;
@@ -30,6 +32,8 @@ describe('Uploads integration tests:', () => {
       UploadsService = (await import(path.resolve('./modules/uploads/services/uploads.service.js'))).default;
       UploadsDataService = (await import(path.resolve('./modules/uploads/services/uploads.data.service.js'))).default;
       UploadRepository = (await import(path.resolve('./modules/uploads/repositories/uploads.repository.js'))).default;
+      mongoose = (await import('mongoose')).default;
+      gridfs = (await import(path.resolve('./lib/services/gridfs.js'))).default;
       agent = request.agent(init.app);
     } catch (err) {
       console.log(err);
@@ -392,6 +396,64 @@ describe('Uploads integration tests:', () => {
   });
 
   describe('Cron', () => {
+    test('sweepUnreferenced sweeps multi-path-unreferenced blobs past the grace window, against a real aggregation pipeline', async () => {
+      try {
+        const kind = 'sweepIntegrationTest';
+        const referencingCollection = 'sweep_test_docs';
+
+        const [scalarRefUpload, arrayRefUpload, multiPathUpload, oldOrphanUpload, youngOrphanUpload] = await Promise.all([
+          gridfs.createFromBuffer(Buffer.from('scalar'), 'sweep-scalar-ref.bin', 'application/octet-stream', { kind }),
+          gridfs.createFromBuffer(Buffer.from('array'), 'sweep-array-ref.bin', 'application/octet-stream', { kind }),
+          gridfs.createFromBuffer(Buffer.from('multi'), 'sweep-multi-path-ref.bin', 'application/octet-stream', { kind }),
+          gridfs.createFromBuffer(Buffer.from('old-orphan'), 'sweep-old-orphan.bin', 'application/octet-stream', { kind }),
+          gridfs.createFromBuffer(Buffer.from('young-orphan'), 'sweep-young-orphan.bin', 'application/octet-stream', { kind }),
+        ]);
+
+        // Referenced via the scalar path `refA`.
+        // Referenced via the array-of-subdocuments path `refs.file`.
+        // Referenced ONLY via `refs.file`, not `refA` — the data-loss guard:
+        // a single-path check would have missed this and deleted it.
+        await mongoose.connection.db.collection(referencingCollection).insertMany([
+          { refA: scalarRefUpload.filename },
+          { refs: [{ file: arrayRefUpload.filename }] },
+          { refs: [{ file: multiPathUpload.filename }] },
+        ]);
+
+        // Backdate the old orphan past the grace window; leave the young
+        // orphan fresh (both unreferenced) — one call exercises both the
+        // "past grace -> deleted" and "within grace -> kept" branches.
+        await mongoose.connection.db
+          .collection('uploads.files')
+          .updateOne({ _id: oldOrphanUpload._id }, { $set: { uploadDate: new Date(Date.now() - 10_000) } });
+
+        const counters = await UploadRepository.sweepUnreferenced(kind, referencingCollection, ['refA', 'refs.file'], 5_000);
+
+        expect(counters).toMatchObject({ scanned: 5, referenced: 3, orphaned: 2, deleted: 1, deleteFailed: 0, skippedTooYoung: 1 });
+
+        const [scalarStillThere, arrayStillThere, multiPathStillThere, oldOrphanGone, youngOrphanStillThere] = await Promise.all([
+          UploadRepository.get(scalarRefUpload.filename),
+          UploadRepository.get(arrayRefUpload.filename),
+          UploadRepository.get(multiPathUpload.filename),
+          UploadRepository.get(oldOrphanUpload.filename),
+          UploadRepository.get(youngOrphanUpload.filename),
+        ]);
+
+        expect(scalarStillThere).toBeTruthy();
+        expect(arrayStillThere).toBeTruthy();
+        expect(multiPathStillThere).toBeTruthy();
+        expect(oldOrphanGone).toBeFalsy();
+        expect(youngOrphanStillThere).toBeTruthy();
+
+        await mongoose.connection.db.collection(referencingCollection).deleteMany({});
+        await Promise.all(
+          [scalarRefUpload, arrayRefUpload, multiPathUpload, youngOrphanUpload].map((u) => UploadRepository.remove(u)),
+        );
+      } catch (err) {
+        expect(err).toBeFalsy();
+        console.log(err);
+      }
+    });
+
     test('should be able to purge data not linked to another entity', async () => {
       try {
         const _user2 = { ..._user };

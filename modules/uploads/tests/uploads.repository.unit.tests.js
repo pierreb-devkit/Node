@@ -85,7 +85,7 @@ describe('UploadRepository unit tests:', () => {
       expect(mockBucket.delete).not.toHaveBeenCalled();
       expect(mockLogger.debug).toHaveBeenCalledWith(
         'Upload: remove - no matching file, treating as already removed',
-        { filename: 'gone.png' },
+        { filename: 'gone.png', lookup: { filename: 'gone.png' } },
       );
     });
 
@@ -138,6 +138,13 @@ describe('UploadRepository unit tests:', () => {
       await expect(UploadRepository.sweepUnreferenced(kind, 'typo_collection', ['snapshot'], 1000)).rejects.toThrow(
         'target collection "typo_collection" does not exist',
       );
+    });
+
+    test.each([[-1], [NaN], [Infinity]])('throws for an invalid minAgeMs (%p)', async (minAgeMs) => {
+      await expect(UploadRepository.sweepUnreferenced(kind, collection, ['snapshot'], minAgeMs)).rejects.toThrow(
+        'sweepUnreferenced requires a non-negative minAgeMs',
+      );
+      expect(mockBucket.delete).not.toHaveBeenCalled();
     });
 
     test('a partial sweep (one delete fails) is visible in the counters, not silently reported as a clean sweep', async () => {

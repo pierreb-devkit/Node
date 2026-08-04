@@ -58,15 +58,25 @@ const update = (id, update) => Uploads.findOneAndUpdate({ _id: id }, update, { r
  * a file that DOES exist) still throws — only the "nothing to delete" case
  * is swallowed.
  * @param {Object} upload - an Upload doc (with `_id`), or a bare lookup key
- *   (e.g. `{ filename }`)
- * @return {Object} confirmation of delete, or a no-op marker when no
- *   matching file was found
+ *   (e.g. `{ filename }`); `null`/`undefined`/`{}` are also valid — all
+ *   resolve to a lookup that matches nothing and hit the no-op path below
+ * @return {Object} a no-op marker ({ deletedCount: 0, notFound: true }) when
+ *   no matching file was found, or otherwise whatever the underlying GridFS
+ *   bucket delete resolves with (unchanged from before this no-op path was
+ *   added — callers on the delete-success path never relied on a specific
+ *   shape here)
  */
 const remove = async (upload) => {
+  const lookup = upload ?? null;
   const filename = upload?.filename;
   if (!upload || !upload._id) upload = await Uploads.findOne({ filename }).exec();
   if (!upload) {
-    logger.debug('Upload: remove - no matching file, treating as already removed', { filename });
+    // `filename` is undefined (not just falsy-but-present) whenever `upload`
+    // itself was null/undefined/{} — logging the ORIGINAL lookup argument
+    // (captured before the findOne reassignment above overwrites `upload`)
+    // keeps this debug line useful in that case instead of showing
+    // `filename: undefined` with no other context.
+    logger.debug('Upload: remove - no matching file, treating as already removed', { filename: filename ?? null, lookup });
     return { deletedCount: 0, notFound: true };
   }
   try {
@@ -172,6 +182,21 @@ const purge = async (kind, collection, key) => {
  * a mistyped name as "nothing is referenced" — the latter would silently
  * delete every candidate blob once past the grace window: a wrong
  * collection name must never look like a clean, empty result.
+ *
+ * Known trade-off (accepted, not fixed here): the reference-Set snapshot is
+ * taken at the START of the run, then read against for the whole candidate
+ * scan. A blob whose age already exceeds `minAgeMs` — i.e. NOT protected by
+ * the grace window, which only covers the gap between a blob's own write and
+ * its first reference — that gets referenced by a brand-new document for the
+ * FIRST TIME after the snapshot but before the scan reaches it will still
+ * look unreferenced and get deleted. Closing this would need either a
+ * point-in-time consistent read across both passes (session/causal
+ * consistency) or re-checking each candidate's reference status
+ * transactionally right before delete — real complexity for a scenario this
+ * sweep's intended use (referencing a blob at write time, not reattaching a
+ * reference to an already-old, already-orphaned one later) does not
+ * exercise. Not addressed without a product decision to actually protect
+ * against it.
  *
  * @param {String} kind - metadata.kind to sweep (e.g. 'htmlSnapshot')
  * @param {String} collection - name of the collection to check references against
