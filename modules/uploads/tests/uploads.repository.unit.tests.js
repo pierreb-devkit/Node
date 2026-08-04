@@ -54,7 +54,10 @@ describe('UploadRepository unit tests:', () => {
         lean: jest.fn().mockReturnThis(),
         cursor: jest.fn(() => asCursor([])),
       })),
-      aggregate: jest.fn(),
+      // No `aggregate` mock here — this file only exercises remove() and
+      // sweepUnreferenced(); the latter uses the raw driver's
+      // db.collection().aggregate(), not Uploads.aggregate() (that's
+      // purge()'s path, untested in this file).
     };
 
     jest.unstable_mockModule('mongoose', () => ({
@@ -125,6 +128,13 @@ describe('UploadRepository unit tests:', () => {
   describe('sweepUnreferenced', () => {
     const kind = 'htmlSnapshot';
     const collection = 'histories';
+
+    test.each([[undefined], [null], ['']])('throws for a missing/empty kind (%p) instead of silently matching every kind', async (badKind) => {
+      await expect(UploadRepository.sweepUnreferenced(badKind, collection, ['snapshot'], 1000)).rejects.toThrow(
+        'sweepUnreferenced requires a non-empty kind',
+      );
+      expect(mockBucket.delete).not.toHaveBeenCalled();
+    });
 
     test('throws when paths is missing/empty', async () => {
       await expect(UploadRepository.sweepUnreferenced(kind, collection, [], 1000)).rejects.toThrow(

@@ -208,6 +208,13 @@ const purge = async (kind, collection, key) => {
  *   count that silently looks complete.
  */
 const sweepUnreferenced = async (kind, collection, paths, minAgeMs) => {
+  // A missing/empty `kind` would make `Uploads.find({ 'metadata.kind': kind })`
+  // below match every upload of every kind instead of quietly matching none —
+  // the same "must fail loudly, not silently look like a clean/empty result"
+  // requirement already applied to `collection` and `paths`.
+  if (typeof kind !== 'string' || kind.length === 0) {
+    throw new AppError('Upload: sweepUnreferenced requires a non-empty kind', { code: 'REPOSITORY_ERROR' });
+  }
   if (!Array.isArray(paths) || paths.length === 0) {
     throw new AppError('Upload: sweepUnreferenced requires at least one reference path', { code: 'REPOSITORY_ERROR' });
   }

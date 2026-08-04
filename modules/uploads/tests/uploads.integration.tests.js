@@ -419,12 +419,21 @@ describe('Uploads integration tests:', () => {
           { refs: [{ file: multiPathUpload.filename }] },
         ]);
 
-        // Backdate the old orphan past the grace window; leave the young
-        // orphan fresh (both unreferenced) — one call exercises both the
-        // "past grace -> deleted" and "within grace -> kept" branches.
-        await mongoose.connection.db
-          .collection('uploads.files')
-          .updateOne({ _id: oldOrphanUpload._id }, { $set: { uploadDate: new Date(Date.now() - 10_000) } });
+        // Backdate the old orphan past the grace window and pin the young
+        // orphan's uploadDate to right now — both explicit, neither
+        // dependent on how much real wall-clock time elapses between
+        // creating the fixtures above and the sweep call below (a source of
+        // flake under CI load if left to the ambient `createFromBuffer`
+        // timestamp instead). One call exercises both the "past grace ->
+        // deleted" and "within grace -> kept" branches deterministically.
+        await Promise.all([
+          mongoose.connection.db
+            .collection('uploads.files')
+            .updateOne({ _id: oldOrphanUpload._id }, { $set: { uploadDate: new Date(Date.now() - 10_000) } }),
+          mongoose.connection.db
+            .collection('uploads.files')
+            .updateOne({ _id: youngOrphanUpload._id }, { $set: { uploadDate: new Date() } }),
+        ]);
 
         const counters = await UploadRepository.sweepUnreferenced(kind, referencingCollection, ['refA', 'refs.file'], 5_000);
 
