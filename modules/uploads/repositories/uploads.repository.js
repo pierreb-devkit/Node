@@ -177,7 +177,10 @@ const purge = async (kind, collection, key) => {
  * @param {String} collection - name of the collection to check references against
  * @param {String[]} paths - dot-paths on `collection` docs that may reference an upload's filename
  * @param {Number} minAgeMs - minimum age (ms, from GridFS `uploadDate`) before an unreferenced blob is eligible for deletion
- * @return {Object} counters — { scanned, referenced, orphaned, deleted, skippedTooYoung }
+ * @return {Object} counters — { scanned, referenced, orphaned, deleted, deleteFailed, skippedTooYoung }.
+ *   `deleteFailed` lets a caller detect a partial sweep (some eligible blobs
+ *   left undeleted after a transient bucket error) instead of a `deleted`
+ *   count that silently looks complete.
  */
 const sweepUnreferenced = async (kind, collection, paths, minAgeMs) => {
   if (!Array.isArray(paths) || paths.length === 0) {
@@ -227,6 +230,7 @@ const sweepUnreferenced = async (kind, collection, paths, minAgeMs) => {
   let scanned = 0;
   let referencedCount = 0;
   let deleted = 0;
+  let deleteFailed = 0;
   let skippedTooYoung = 0;
 
   const candidateCursor = Uploads.find({ 'metadata.kind': kind }).select('filename uploadDate').lean().cursor();
@@ -247,6 +251,11 @@ const sweepUnreferenced = async (kind, collection, paths, minAgeMs) => {
       await bucket.delete(candidate._id);
       deleted += 1;
     } catch (err) {
+      // Logged (not just counted): a caught delete failure that a caller
+      // never inspects the counters for would otherwise vanish with no
+      // record of which file failed. `deleteFailed` lets a caller detect a
+      // partial sweep programmatically; the log gives the "which one".
+      deleteFailed += 1;
       logger.error('Upload: sweepUnreferenced - delete failed', {
         filename: candidate.filename,
         kind,
@@ -257,13 +266,14 @@ const sweepUnreferenced = async (kind, collection, paths, minAgeMs) => {
 
   // orphaned is derivable — every scanned candidate is either referenced or
   // orphaned, no third state — so it's computed once here rather than
-  // tracked as its own mutable counter through the loop.
+  // tracked as its own mutable counter through the loop. Within "orphaned",
+  // deleted + deleteFailed + skippedTooYoung together account for the total.
   const orphaned = scanned - referencedCount;
   // Only the counters are returned — summary observability is the caller's
   // concern (this repository has no other function that logs on success;
   // the per-item `logger.error` above is the one exception, kept because a
   // caught delete failure here is otherwise swallowed with no record of it).
-  return { scanned, referenced: referencedCount, orphaned, deleted, skippedTooYoung };
+  return { scanned, referenced: referencedCount, orphaned, deleted, deleteFailed, skippedTooYoung };
 };
 
 export default {

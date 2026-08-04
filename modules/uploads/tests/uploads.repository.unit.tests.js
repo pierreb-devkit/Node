@@ -89,6 +89,20 @@ describe('UploadRepository unit tests:', () => {
       );
     });
 
+    test.each([[null], [undefined], [{}]])(
+      'does not query with an unbound filter when called with %p (findOne receives filename: undefined, not a stripped-key match-all)',
+      async (arg) => {
+        const findOneExec = jest.fn().mockResolvedValue(null);
+        mockUploadsModel.findOne.mockReturnValue({ exec: findOneExec });
+
+        const result = await UploadRepository.remove(arg);
+
+        expect(mockUploadsModel.findOne).toHaveBeenCalledWith({ filename: undefined });
+        expect(result).toEqual({ deletedCount: 0, notFound: true });
+        expect(mockBucket.delete).not.toHaveBeenCalled();
+      },
+    );
+
     test('deletes the GridFS file when the doc already carries an _id', async () => {
       const upload = { _id: 'abc123', filename: 'present.png' };
 
@@ -123,6 +137,21 @@ describe('UploadRepository unit tests:', () => {
 
       await expect(UploadRepository.sweepUnreferenced(kind, 'typo_collection', ['snapshot'], 1000)).rejects.toThrow(
         'target collection "typo_collection" does not exist',
+      );
+    });
+
+    test('a partial sweep (one delete fails) is visible in the counters, not silently reported as a clean sweep', async () => {
+      const now = Date.now();
+      setReferences([]);
+      setCandidates([{ _id: 'flaky1', filename: 'flaky.png', uploadDate: new Date(now - 120_000) }]);
+      mockBucket.delete.mockRejectedValueOnce(new Error('bucket unreachable'));
+
+      const counters = await UploadRepository.sweepUnreferenced(kind, collection, ['snapshot'], 60_000);
+
+      expect(counters).toMatchObject({ scanned: 1, orphaned: 1, deleted: 0, deleteFailed: 1 });
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Upload: sweepUnreferenced - delete failed',
+        expect.objectContaining({ filename: 'flaky.png', kind }),
       );
     });
 
