@@ -171,7 +171,27 @@ describe('Public docs integration tests — slug-collision precedence:', () => {
     fs.writeFileSync(reverseFixtureAbsPath, '# App Quickstart\n\nApplication-level quickstart guide.\n');
     reverseGuideRelPath = path.relative(process.cwd(), reverseFixtureAbsPath);
 
-    config.files.guides = [...originalGuides, appGuidePath, reverseGuideRelPath];
+    // The block fully controls its own input — no `...originalGuides` spread.
+    // Spreading the real on-disk `config.files.guides` implicitly assumed at
+    // most one real guide per slug (the framework's own `modules/home/`); a
+    // downstream consumer shipping a second real guide at the same slug from
+    // its own (non-core) module lands at the SAME precedence tier as this
+    // fixture and silently wins the same-tier tiebreak, defeating the test
+    // (#4012). The two framework sample guides these fixtures collide
+    // against are listed explicitly instead, by their known real path — both
+    // cross-tier assertions below need a framework guide actually present
+    // (as the silently-losing incumbent for "welcome", the explicitly
+    // overridden incumbent for "quickstart"), so removing the spread can't
+    // also drop them.
+    const frameworkWelcomeGuide = 'modules/home/doc/guides/00-welcome.md';
+    const frameworkQuickstartGuide = 'modules/home/doc/guides/01-quickstart.md';
+
+    config.files.guides = [
+      frameworkWelcomeGuide,
+      frameworkQuickstartGuide,
+      appGuidePath,
+      reverseGuideRelPath,
+    ];
   });
 
   afterAll(async () => {
