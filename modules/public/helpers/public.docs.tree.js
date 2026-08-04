@@ -19,11 +19,18 @@
  * every audience ({@link DEFAULT_PERSONA}). A guide whose prefix falls outside
  * every configured range (or when no sections are configured) is grouped under
  * its capitalised module name so it is never silently dropped.
+ *
+ * A slug collision between two guide files is resolved by {@link resolveGuideEntries}
+ * BEFORE the tree is built, using a precedence policy (application-level guide
+ * overrides a framework-provided one) — see that function for details. The
+ * caller (the public docs service) runs the same deduped list through both
+ * `buildDocsTree` and its slug index, so the two endpoints can never disagree.
  */
 import fs from 'fs';
 import path from 'path';
 
 import logger from '../../../lib/services/logger.js';
+import configHelper from '../../../lib/helpers/config.js';
 
 /**
  * Default persona audience applied when a section declares none.
@@ -183,6 +190,77 @@ const loadGuideEntries = (filePaths) => {
 };
 
 /**
+ * Precedence tier for a guide entry on a slug collision. A module in
+ * `configHelper.CORE_MODULES` (`core`/`auth`/`users`/`home` — the stack's
+ * existing "ships with the framework, never deactivated" classification,
+ * see `lib/helpers/config.js`) is framework-provided; every other module is
+ * application-level — added by the downstream consumer project (either a
+ * wholly new module, or extra guides dropped into an existing module's
+ * `doc/guides/`). Guides ship exclusively under `modules/home/doc/guides`
+ * today (see the two shipped samples), so in practice this currently
+ * resolves to "home vs. everything else" — but it reuses the stack's single
+ * existing framework-module set rather than declaring a second, narrower one.
+ * @param {{ path: string }} entry - Guide entry (from {@link loadGuideEntries}).
+ * @returns {'framework'|'application'} Precedence tier.
+ */
+const precedenceTier = (entry) => (configHelper.CORE_MODULES.has(moduleFromPath(entry.path)) ? 'framework' : 'application');
+
+/**
+ * Resolve slug collisions across guide entries by precedence, producing the
+ * single deduped list that feeds BOTH `buildDocsTree` and the service's slug
+ * index — so the listing and the fetch endpoint can never disagree, and the
+ * outcome no longer depends on file-scan order.
+ *
+ * Policy:
+ *   1. **Cross-tier collision** — an application-level guide (per
+ *      {@link precedenceTier}) always overrides a framework-provided one,
+ *      regardless of scan order. This is the supported override mechanism
+ *      for a consumer that ships its own `00-welcome`/`01-quickstart`; it is
+ *      silent (debug-logged only), not an error.
+ *   2. **Same-tier collision** (two framework guides, or two application
+ *      guides) — precedence cannot disambiguate, so the kept guide is decided
+ *      by {@link loadGuideEntries}'s existing deterministic sort (numeric
+ *      prefix, then slug): the later entry in that order wins, same as before
+ *      this fix. A warning is logged naming the actual policy, since neither
+ *      guide "wins" by design.
+ *
+ * @param {ReturnType<typeof loadGuideEntries>} entries - Structured guides,
+ *   already sorted by {@link loadGuideEntries}.
+ * @returns {ReturnType<typeof loadGuideEntries>} Entries with slug collisions
+ *   resolved — at most one entry per slug, original relative order preserved.
+ */
+const resolveGuideEntries = (entries) => {
+  const list = Array.isArray(entries) ? entries : [];
+  const winners = new Map(); // slug -> winning entry
+  for (const entry of list) {
+    const incumbent = winners.get(entry.slug);
+    if (!incumbent) {
+      winners.set(entry.slug, entry);
+      continue;
+    }
+    const incumbentTier = precedenceTier(incumbent);
+    const challengerTier = precedenceTier(entry);
+    if (incumbentTier === challengerTier) {
+      logger.warn(
+        `[public/docs] duplicate guide slug "${entry.slug}" between two ${challengerTier} guides `
+        + `("${incumbent.path}" vs "${entry.path}") — same precedence tier, so the kept guide is decided by file order, `
+        + 'not policy; rename one guide, or move it to a module with different precedence (application overrides framework), to resolve deliberately.',
+      );
+      winners.set(entry.slug, entry); // later entry wins — existing deterministic tiebreak
+      continue;
+    }
+    if (challengerTier === 'application') {
+      // incumbentTier must be 'framework' here — the equal-tier case already
+      // returned above, and 'application'/'framework' are the only two tiers.
+      logger.debug(`[public/docs] guide slug "${entry.slug}" — application guide (${entry.path}) overrides framework guide (${incumbent.path})`);
+      winners.set(entry.slug, entry);
+    }
+    // else: challenger is framework, incumbent is application — incumbent already wins.
+  }
+  return list.filter((entry) => winners.get(entry.slug) === entry);
+};
+
+/**
  * Slugify a label into a URL-safe category id.
  * @param {string} label - Human category label.
  * @returns {string} Lower-kebab id.
@@ -282,5 +360,7 @@ export default {
   stripLeadingH1,
   firstParagraph,
   loadGuideEntries,
+  precedenceTier,
+  resolveGuideEntries,
   buildDocsTree,
 };

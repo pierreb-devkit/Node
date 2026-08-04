@@ -2,8 +2,11 @@
  * Unit tests for the public docs service.
  * Verifies tree assembly (driven by config.docs.guideSections), slug lookup,
  * the 404 (null) path, and TTL caching — with config + the docs-tree helper
- * mocked so the test never touches disk. (The tree parsing itself is exercised
- * in public.docs.tree.unit.tests.js.)
+ * mocked so the test never touches disk. (The tree parsing itself, including
+ * the slug-collision precedence policy, is exercised in
+ * public.docs.tree.unit.tests.js — this file only verifies that the service
+ * wires `loadGuideEntries` → `resolveGuideEntries` → both `buildDocsTree` and
+ * `bySlug`, so the two endpoints are built from the SAME deduped list.)
  */
 import {
   jest, describe, test, expect, beforeEach,
@@ -34,9 +37,10 @@ jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
 
 const loadGuideEntries = jest.fn();
 const buildDocsTree = jest.fn();
+const resolveGuideEntries = jest.fn();
 
 jest.unstable_mockModule('../helpers/public.docs.tree.js', () => ({
-  default: { loadGuideEntries, buildDocsTree },
+  default: { loadGuideEntries, buildDocsTree, resolveGuideEntries },
 }));
 
 const PublicDocsService = (await import('../services/public.docs.service.js')).default;
@@ -56,12 +60,16 @@ describe('PublicDocsService', () => {
     jest.clearAllMocks();
     PublicDocsService.clearCache();
     loadGuideEntries.mockReturnValue(sampleEntries);
+    // Pass-through by default — collision resolution itself is unit-tested in
+    // public.docs.tree.unit.tests.js; here we only verify the wiring.
+    resolveGuideEntries.mockImplementation((entries) => entries);
     buildDocsTree.mockReturnValue(sampleTree);
   });
 
-  test('getTree builds the tree from the configured guide files + sections', () => {
+  test('getTree builds the tree from the configured guide files + sections, via resolveGuideEntries', () => {
     const tree = PublicDocsService.getTree();
     expect(loadGuideEntries).toHaveBeenCalledWith(guideFilesPaths);
+    expect(resolveGuideEntries).toHaveBeenCalledWith(sampleEntries);
     expect(buildDocsTree).toHaveBeenCalledWith(sampleEntries, guideSections);
     expect(tree).toBe(sampleTree);
   });
@@ -92,8 +100,8 @@ describe('PublicDocsService', () => {
     expect(loadGuideEntries).toHaveBeenCalledTimes(2);
   });
 
-  test('warns and last-wins when two entries share the same slug', () => {
-    const dupeEntries = [
+  test('bySlug is built from resolveGuideEntries output, not the raw loaded entries — tree and slug index cannot disagree', () => {
+    const rawEntries = [
       {
         slug: 'quickstart', title: 'Quickstart A', order: 0, summary: 'a', body: 'Body A',
       },
@@ -101,14 +109,17 @@ describe('PublicDocsService', () => {
         slug: 'quickstart', title: 'Quickstart B', order: 1, summary: 'b', body: 'Body B',
       },
     ];
-    loadGuideEntries.mockReturnValueOnce(dupeEntries);
+    // Collision already resolved upstream — resolveGuideEntries returns a
+    // single winner, same as the real helper would.
+    const deduped = [rawEntries[1]];
+    loadGuideEntries.mockReturnValueOnce(rawEntries);
+    resolveGuideEntries.mockReturnValueOnce(deduped);
 
     PublicDocsService.getTree();
 
-    expect(mockLogger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('duplicate guide slug "quickstart"'),
-    );
-    // Last entry wins
+    // buildDocsTree (the listing) receives the deduped list, not the raw one.
+    expect(buildDocsTree).toHaveBeenCalledWith(deduped, guideSections);
+    // bySlug (the fetch endpoint) agrees with the winner buildDocsTree saw.
     expect(PublicDocsService.getMarkdown('quickstart')).toBe('Body B');
   });
 });
