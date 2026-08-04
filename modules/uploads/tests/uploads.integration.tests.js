@@ -468,7 +468,7 @@ describe('Uploads integration tests:', () => {
         // blob regardless of which assertions passed, without needing to
         // track individual upload docs here.
         await mongoose.connection.db.collection(referencingCollection).deleteMany({});
-        await UploadRepository.purgeUnreferenced(kind, referencingCollection, ['refA', 'refs.file'], 0).catch((err) => console.log(err));
+        await UploadRepository.purgeUnreferenced(kind, referencingCollection, ['refA', 'refs.file'], 0);
       }
     });
 

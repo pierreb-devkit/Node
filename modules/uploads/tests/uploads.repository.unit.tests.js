@@ -139,6 +139,17 @@ describe('UploadRepository unit tests:', () => {
       );
     });
 
+    test.each([[[null]], [[undefined]], [[42]], [['']]])(
+      'throws when paths contains a non-empty-string element (%p) instead of building a nonsensical field reference',
+      async (badPaths) => {
+        await expect(UploadRepository.purgeUnreferenced(kind, collection, badPaths, 1000)).rejects.toThrow(
+          'purgeUnreferenced requires every reference path to be a non-empty string',
+        );
+        expect(mockDb.collection).not.toHaveBeenCalled();
+        expect(mockBucket.delete).not.toHaveBeenCalled();
+      },
+    );
+
     test('throws when the target collection does not exist (fails loudly, not a silent empty result)', async () => {
       mockDb.listCollections.mockReturnValue({ hasNext: jest.fn().mockResolvedValue(false) });
 

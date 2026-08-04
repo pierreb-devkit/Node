@@ -74,6 +74,11 @@ const remove = async (upload) => {
   // (captured above, before it may get reassigned below) keeps this debug
   // line useful in that case instead of showing `filename: undefined` with
   // no other context.
+  /**
+   * @desc Builds the no-op response for `remove()` when no matching file was
+   *  found, logging the original lookup argument at debug first.
+   * @returns {Object} the no-op marker { deletedCount: 0, notFound: true }
+   */
   const noOp = () => {
     logger.debug('Upload: remove - no matching file, treating as already removed', { filename: filename ?? null, lookup });
     return { deletedCount: 0, notFound: true };
@@ -215,7 +220,7 @@ const purge = async (kind, collection, key) => {
  * @param {String} collection - name of the collection to check references against
  * @param {String[]} paths - dot-paths on `collection` docs that may reference an upload's filename
  * @param {Number} graceMs - minimum age (ms, from GridFS `uploadDate`) before an unreferenced blob is eligible for deletion
- * @return {Object} counters — { scanned, referenced, orphaned, deleted, deleteFailed, skippedTooYoung }.
+ * @returns {Promise<Object>} counters — { scanned, referenced, orphaned, deleted, deleteFailed, skippedTooYoung }.
  *   `deleteFailed` lets a caller detect a partial sweep (some eligible blobs
  *   left undeleted after a transient bucket error) instead of a `deleted`
  *   count that silently looks complete.
@@ -230,6 +235,12 @@ const purgeUnreferenced = async (kind, collection, paths, graceMs) => {
   }
   if (!Array.isArray(paths) || paths.length === 0) {
     throw new AppError('Upload: purgeUnreferenced requires at least one reference path', { code: 'REPOSITORY_ERROR' });
+  }
+  // A non-string or empty path would build a nonsensical field reference
+  // (`toArrayExpr` does `` `$${path}` `` unconditionally) rather than failing
+  // clearly — same "fail loudly" requirement as `kind`/`collection`/`graceMs`.
+  if (!paths.every((path) => typeof path === 'string' && path.length > 0)) {
+    throw new AppError('Upload: purgeUnreferenced requires every reference path to be a non-empty string', { code: 'REPOSITORY_ERROR' });
   }
   if (!Number.isFinite(graceMs) || graceMs < 0) {
     throw new AppError('Upload: purgeUnreferenced requires a non-negative graceMs', { code: 'REPOSITORY_ERROR' });
@@ -251,7 +262,7 @@ const purgeUnreferenced = async (kind, collection, paths, graceMs) => {
    *  [], an array field (e.g. across subdocuments) -> itself, a scalar ->
    *  [value].
    * @param {String} path - dot-path on a `collection` document
-   * @return {Object} an aggregation expression resolving to an array of reference values
+   * @returns {Object} an aggregation expression resolving to an array of reference values
    */
   const toArrayExpr = (path) => {
     const field = `$${path}`;
