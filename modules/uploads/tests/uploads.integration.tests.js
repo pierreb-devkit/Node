@@ -16,6 +16,8 @@ describe('Uploads integration tests:', () => {
   let UploadsService;
   let UploadsDataService;
   let UploadRepository;
+  let mongoose;
+  let gridfs;
   let agent;
   let credentials;
   let user;
@@ -30,6 +32,8 @@ describe('Uploads integration tests:', () => {
       UploadsService = (await import(path.resolve('./modules/uploads/services/uploads.service.js'))).default;
       UploadsDataService = (await import(path.resolve('./modules/uploads/services/uploads.data.service.js'))).default;
       UploadRepository = (await import(path.resolve('./modules/uploads/repositories/uploads.repository.js'))).default;
+      mongoose = (await import('mongoose')).default;
+      gridfs = (await import(path.resolve('./lib/services/gridfs.js'))).default;
       agent = request.agent(init.app);
     } catch (err) {
       console.log(err);
@@ -392,6 +396,82 @@ describe('Uploads integration tests:', () => {
   });
 
   describe('Cron', () => {
+    test('purgeUnreferenced sweeps multi-path-unreferenced blobs past the grace window, against a real aggregation pipeline', async () => {
+      // Declared outside the try block — the `finally` cleanup below needs
+      // them too, and a `const` scoped to `try` is not visible in `finally`.
+      const kind = 'sweepIntegrationTest';
+      const referencingCollection = 'sweep_test_docs';
+      try {
+        const [scalarRefUpload, arrayRefUpload, multiPathUpload, oldOrphanUpload, youngOrphanUpload] = await Promise.all([
+          gridfs.createFromBuffer(Buffer.from('scalar'), 'sweep-scalar-ref.bin', 'application/octet-stream', { kind }),
+          gridfs.createFromBuffer(Buffer.from('array'), 'sweep-array-ref.bin', 'application/octet-stream', { kind }),
+          gridfs.createFromBuffer(Buffer.from('multi'), 'sweep-multi-path-ref.bin', 'application/octet-stream', { kind }),
+          gridfs.createFromBuffer(Buffer.from('old-orphan'), 'sweep-old-orphan.bin', 'application/octet-stream', { kind }),
+          gridfs.createFromBuffer(Buffer.from('young-orphan'), 'sweep-young-orphan.bin', 'application/octet-stream', { kind }),
+        ]);
+
+        // Referenced via the scalar path `refA`.
+        // Referenced via the array-of-subdocuments path `refs.file`.
+        // Referenced ONLY via `refs.file`, not `refA` — the data-loss guard:
+        // a single-path check would have missed this and deleted it.
+        await mongoose.connection.db.collection(referencingCollection).insertMany([
+          { refA: scalarRefUpload.filename },
+          { refs: [{ file: arrayRefUpload.filename }] },
+          { refs: [{ file: multiPathUpload.filename }] },
+        ]);
+
+        // Backdate the old orphan well past the grace window and pin the
+        // young orphan's uploadDate to right now — explicit, not dependent
+        // on how much real wall-clock time elapses between creating the
+        // fixtures above and the sweep call below (a source of flake under
+        // CI load if left to the ambient `createFromBuffer` timestamp
+        // instead). The 10-minute backdate / 5-minute grace-window margin
+        // (rather than a tight few-second gap) absorbs the sweep's own
+        // runtime (listCollections + aggregation + candidate streaming)
+        // without the young orphan risking tipping over the threshold.
+        // One call exercises both the "past grace -> deleted" and "within
+        // grace -> kept" branches deterministically.
+        await Promise.all([
+          mongoose.connection.db
+            .collection('uploads.files')
+            .updateOne({ _id: oldOrphanUpload._id }, { $set: { uploadDate: new Date(Date.now() - 600_000) } }),
+          mongoose.connection.db
+            .collection('uploads.files')
+            .updateOne({ _id: youngOrphanUpload._id }, { $set: { uploadDate: new Date() } }),
+        ]);
+
+        const counters = await UploadRepository.purgeUnreferenced(kind, referencingCollection, ['refA', 'refs.file'], 300_000);
+
+        expect(counters).toMatchObject({ scanned: 5, referenced: 3, orphaned: 2, deleted: 1, deleteFailed: 0, skippedTooYoung: 1 });
+
+        const [scalarStillThere, arrayStillThere, multiPathStillThere, oldOrphanGone, youngOrphanStillThere] = await Promise.all([
+          UploadRepository.get(scalarRefUpload.filename),
+          UploadRepository.get(arrayRefUpload.filename),
+          UploadRepository.get(multiPathUpload.filename),
+          UploadRepository.get(oldOrphanUpload.filename),
+          UploadRepository.get(youngOrphanUpload.filename),
+        ]);
+
+        expect(scalarStillThere).toBeTruthy();
+        expect(arrayStillThere).toBeTruthy();
+        expect(multiPathStillThere).toBeTruthy();
+        expect(oldOrphanGone).toBeFalsy();
+        expect(youngOrphanStillThere).toBeTruthy();
+      } catch (err) {
+        expect(err).toBeFalsy();
+        console.log(err);
+      } finally {
+        // Cleanup must run even when an assertion above fails — leftover
+        // blobs of this `kind` would make the next run's `scanned` count
+        // wrong and fail it permanently. Dropping the referencing docs first
+        // then sweeping with graceMs=0 removes every remaining fixture
+        // blob regardless of which assertions passed, without needing to
+        // track individual upload docs here.
+        await mongoose.connection.db.collection(referencingCollection).deleteMany({});
+        await UploadRepository.purgeUnreferenced(kind, referencingCollection, ['refA', 'refs.file'], 0);
+      }
+    });
+
     test('should be able to purge data not linked to another entity', async () => {
       try {
         const _user2 = { ..._user };
