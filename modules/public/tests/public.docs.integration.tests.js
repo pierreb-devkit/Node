@@ -12,11 +12,12 @@ import fs from 'fs';
 import os from 'os';
 
 import {
-  afterAll, beforeAll, beforeEach, describe, test, expect,
+  jest, afterAll, beforeAll, beforeEach, describe, test, expect,
 } from '@jest/globals';
 import { bootstrap } from '../../../lib/app.js';
 import mongooseService from '../../../lib/services/mongoose.js';
 import config from '../../../config/index.js';
+import logger from '../../../lib/services/logger.js';
 
 describe('Public docs integration tests:', () => {
   let app;
@@ -118,10 +119,12 @@ describe('Public docs integration tests:', () => {
 describe('Public docs integration tests — slug-collision precedence:', () => {
   let app;
   let PublicDocsService;
+  let debugSpy;
   let tmpDir;
   let appGuidePath;
-  let reverseFixtureDir;
-  let reverseGuidePath;
+  let reverseFixtureAbsDir;
+  let reverseFixtureAbsPath;
+  let reverseGuideRelPath;
   const originalOrgEnabled = config.organizations?.enabled;
   const originalGuides = Array.isArray(config.files?.guides) ? [...config.files.guides] : [];
 
@@ -130,6 +133,7 @@ describe('Public docs integration tests — slug-collision precedence:', () => {
     const init = await bootstrap();
     app = init.app;
     PublicDocsService = (await import(path.resolve('./modules/public/services/public.docs.service.js'))).default;
+    debugSpy = jest.spyOn(logger, 'debug');
 
     // A real on-disk fixture guide, under a module path other than "home" —
     // simulates a consumer/application module shipping its own "welcome"
@@ -139,41 +143,52 @@ describe('Public docs integration tests — slug-collision precedence:', () => {
     // sorts ALL guide paths alphabetically before assigning scan order, and an
     // absolute OS-tmpdir path always sorts before the relative "modules/..."
     // path config.files.guides uses for real guides — so this fixture is
-    // scanned BEFORE modules/home/00-welcome.md (app is the earlier entry).
+    // scanned BEFORE modules/home/00-welcome.md (app is the earlier entry,
+    // already-incumbent when the framework guide arrives as challenger — the
+    // SILENT "incumbent already wins" branch in resolveGuideEntries, no
+    // logger.debug call).
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'public-docs-precedence-'));
     const appModuleDir = path.join(tmpDir, 'modules', 'app-fixture', 'doc', 'guides');
     fs.mkdirSync(appModuleDir, { recursive: true });
     appGuidePath = path.join(appModuleDir, '00-welcome.md');
     fs.writeFileSync(appGuidePath, '# App Welcome\n\nApplication-level welcome guide.\n');
 
-    // Second fixture, deliberately scanned in the OPPOSITE direction: a
-    // relative path (resolved against process.cwd(), the repo root under
-    // jest) starting with "zzz-" sorts AFTER "modules/home/...", so this one
-    // is scanned AFTER modules/home/01-quickstart.md (app is the LATER
-    // entry here). Proves the override is scan-order independent in both
-    // directions end-to-end, not just via the unit-level resolveGuideEntries
-    // tests (public.docs.tree.unit.tests.js) which mock the entry order.
-    reverseFixtureDir = path.join(process.cwd(), 'zzz-tmp-pr3979-fixture', 'doc', 'guides');
-    fs.mkdirSync(reverseFixtureDir, { recursive: true });
-    reverseGuidePath = path.join(reverseFixtureDir, '01-quickstart.md');
-    fs.writeFileSync(reverseGuidePath, '# App Quickstart\n\nApplication-level quickstart guide.\n');
+    // Second fixture, deliberately scanned in the OPPOSITE direction. The
+    // file is still written at an absolute path (fs calls need one), but the
+    // string pushed into config.files.guides below is made GENUINELY
+    // relative via path.relative() — path.join(process.cwd(), ...) is
+    // ALWAYS absolute (an earlier version of this test wrongly assumed
+    // otherwise, so both fixtures ended up absolute and this direction was
+    // never actually exercised — caught by review). A relative string
+    // starting with "zzz-" sorts AFTER "modules/home/...", so THIS fixture
+    // is scanned AFTER modules/home/01-quickstart.md: the framework guide is
+    // incumbent, the app guide is the LATER challenger that must explicitly
+    // override it — the logger.debug branch in resolveGuideEntries, asserted
+    // below.
+    reverseFixtureAbsDir = path.join(process.cwd(), 'zzz-tmp-pr3979-fixture', 'doc', 'guides');
+    fs.mkdirSync(reverseFixtureAbsDir, { recursive: true });
+    reverseFixtureAbsPath = path.join(reverseFixtureAbsDir, '01-quickstart.md');
+    fs.writeFileSync(reverseFixtureAbsPath, '# App Quickstart\n\nApplication-level quickstart guide.\n');
+    reverseGuideRelPath = path.relative(process.cwd(), reverseFixtureAbsPath);
 
-    config.files.guides = [...originalGuides, appGuidePath, reverseGuidePath];
+    config.files.guides = [...originalGuides, appGuidePath, reverseGuideRelPath];
   });
 
   afterAll(async () => {
     if (config.organizations) config.organizations.enabled = originalOrgEnabled;
     config.files.guides = originalGuides;
+    if (debugSpy) debugSpy.mockRestore();
     if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
-    if (reverseFixtureDir) fs.rmSync(path.join(process.cwd(), 'zzz-tmp-pr3979-fixture'), { recursive: true, force: true });
+    if (reverseFixtureAbsDir) fs.rmSync(path.join(process.cwd(), 'zzz-tmp-pr3979-fixture'), { recursive: true, force: true });
     await mongooseService.disconnect();
   });
 
   beforeEach(() => {
     if (PublicDocsService) PublicDocsService.clearCache();
+    if (debugSpy) debugSpy.mockClear();
   });
 
-  test('the application guide wins the "welcome" slug in the listing (no duplicate) — app scanned BEFORE the framework guide', async () => {
+  test('the application guide wins the "welcome" slug in the listing (no duplicate) — app scanned BEFORE the framework guide (silent "incumbent already wins" branch)', async () => {
     const result = await request(app).get('/api/public/docs').expect(200);
     const { categories } = result.body.data;
     const guides = categories.flatMap((c) => c.guides);
@@ -182,6 +197,15 @@ describe('Public docs integration tests — slug-collision precedence:', () => {
     // Exactly one "welcome" entry — the listing never shows a duplicate.
     expect(welcomeGuides).toHaveLength(1);
     expect(welcomeGuides[0].title).toBe('App Welcome');
+
+    // This direction wins because the app guide is already incumbent — it
+    // does NOT go through the explicit override branch (that's proven
+    // separately by the "quickstart" case below). Scope the assertion to
+    // "welcome" specifically: the same compute() pass also resolves the
+    // quickstart collision (both fixtures share one config.files.guides),
+    // which DOES log — asserting a blanket "not called" here would be a
+    // false negative.
+    expect(debugSpy).not.toHaveBeenCalledWith(expect.stringContaining('guide slug "welcome"'));
   });
 
   test('the application guide wins the "welcome" slug on fetch — listing and fetch agree', async () => {
@@ -190,7 +214,7 @@ describe('Public docs integration tests — slug-collision precedence:', () => {
     expect(result.text).not.toContain('Welcome to');
   });
 
-  test('the application guide wins the "quickstart" slug — app scanned AFTER the framework guide (opposite scan-order direction)', async () => {
+  test('the application guide overrides the framework guide for "quickstart" — app scanned AFTER it (opposite scan-order direction), proven via the explicit override branch firing', async () => {
     const result = await request(app).get('/api/public/docs').expect(200);
     const { categories } = result.body.data;
     const guides = categories.flatMap((c) => c.guides);
@@ -202,5 +226,17 @@ describe('Public docs integration tests — slug-collision precedence:', () => {
     const fetchResult = await request(app).get('/api/public/docs/quickstart.md').expect(200);
     expect(fetchResult.text).toContain('Application-level quickstart guide.');
     expect(fetchResult.text).not.toContain('<YOUR_API_KEY>');
+
+    // Proof this exercised the explicit "challenger overrides incumbent"
+    // branch in resolveGuideEntries (public.docs.tree.js) — that branch is
+    // the ONLY place this debug line is emitted, so its presence is direct
+    // evidence the framework guide was incumbent and the app guide, scanned
+    // later, actively overrode it (not merely "already winning").
+    expect(debugSpy).toHaveBeenCalledWith(
+      expect.stringContaining('guide slug "quickstart"'),
+    );
+    expect(debugSpy).toHaveBeenCalledWith(
+      expect.stringContaining('overrides framework guide'),
+    );
   });
 });
