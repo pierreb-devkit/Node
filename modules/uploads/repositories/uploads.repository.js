@@ -69,16 +69,29 @@ const update = (id, update) => Uploads.findOneAndUpdate({ _id: id }, update, { r
 const remove = async (upload) => {
   const lookup = upload ?? null;
   const filename = upload?.filename;
-  if (!upload || !upload._id) upload = await Uploads.findOne({ filename }).exec();
-  if (!upload) {
-    // `filename` is undefined (not just falsy-but-present) whenever `upload`
-    // itself was null/undefined/{} — logging the ORIGINAL lookup argument
-    // (captured before the findOne reassignment above overwrites `upload`)
-    // keeps this debug line useful in that case instead of showing
-    // `filename: undefined` with no other context.
+  // `filename` is undefined (not just falsy-but-present) whenever `upload`
+  // itself was null/undefined/{} — logging the ORIGINAL lookup argument
+  // (captured above, before it may get reassigned below) keeps this debug
+  // line useful in that case instead of showing `filename: undefined` with
+  // no other context.
+  const noOp = () => {
     logger.debug('Upload: remove - no matching file, treating as already removed', { filename: filename ?? null, lookup });
     return { deletedCount: 0, notFound: true };
+  };
+  if (!upload || !upload._id) {
+    // A lookup key that carries neither `_id` nor a string `filename` can
+    // never resolve to a real record — short-circuit BEFORE querying rather
+    // than asking Mongoose to filter on `{ filename: undefined }`. This
+    // repo's own Mongoose version was verified end-to-end to handle that
+    // filter safely (returns no match, never an arbitrary document), but
+    // exact handling of an undefined-valued filter key has shifted across
+    // Mongoose/MongoDB-driver versions — skipping the query entirely removes
+    // any dependence on that behavior for a lookup that was never going to
+    // resolve to anything anyway.
+    if (typeof filename !== 'string' || filename.length === 0) return noOp();
+    upload = await Uploads.findOne({ filename }).exec();
   }
+  if (!upload) return noOp();
   try {
     const unlinked = await bucket.delete(upload._id);
     return unlinked;
@@ -233,8 +246,13 @@ const sweepUnreferenced = async (kind, collection, paths, minAgeMs) => {
     throw new AppError(`Upload: sweepUnreferenced target collection "${collection}" does not exist`, { code: 'REPOSITORY_ERROR' });
   }
 
-  // Normalises a reference path's value to an array: missing/null -> [],
-  // an array field (e.g. across subdocuments) -> itself, a scalar -> [value].
+  /**
+   * @desc Normalises a reference path's value to an array: missing/null ->
+   *  [], an array field (e.g. across subdocuments) -> itself, a scalar ->
+   *  [value].
+   * @param {String} path - dot-path on a `collection` document
+   * @return {Object} an aggregation expression resolving to an array of reference values
+   */
   const toArrayExpr = (path) => {
     const field = `$${path}`;
     return {
@@ -248,10 +266,17 @@ const sweepUnreferenced = async (kind, collection, paths, minAgeMs) => {
   };
 
   const referenced = new Set();
-  const referenceCursor = mongoose.connection.db.collection(collection).aggregate([
-    { $project: { _id: 0, refs: { $concatArrays: paths.map(toArrayExpr) } } },
-    { $match: { 'refs.0': { $exists: true } } },
-  ]);
+  // `noCursorTimeout` — this streams the WHOLE collection at cron/batch
+  // scale, not request-path scale; without it, MongoDB closes an idle
+  // cursor after 10 minutes and a slow pass over a large `collection` fails
+  // mid-run with the counters accumulated so far lost.
+  const referenceCursor = mongoose.connection.db.collection(collection).aggregate(
+    [
+      { $project: { _id: 0, refs: { $concatArrays: paths.map(toArrayExpr) } } },
+      { $match: { 'refs.0': { $exists: true } } },
+    ],
+    { noCursorTimeout: true },
+  );
   for await (const doc of referenceCursor) {
     for (const filename of doc.refs) {
       if (typeof filename === 'string') referenced.add(filename);
@@ -265,7 +290,10 @@ const sweepUnreferenced = async (kind, collection, paths, minAgeMs) => {
   let deleteFailed = 0;
   let skippedTooYoung = 0;
 
-  const candidateCursor = Uploads.find({ 'metadata.kind': kind }).select('filename uploadDate').lean().cursor();
+  const candidateCursor = Uploads.find({ 'metadata.kind': kind }, null, { noCursorTimeout: true })
+    .select('filename uploadDate')
+    .lean()
+    .cursor();
   for await (const candidate of candidateCursor) {
     scanned += 1;
     if (referenced.has(candidate.filename)) {

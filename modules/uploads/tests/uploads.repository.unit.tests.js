@@ -93,14 +93,11 @@ describe('UploadRepository unit tests:', () => {
     });
 
     test.each([[null], [undefined], [{}]])(
-      'does not query with an unbound filter when called with %p (findOne receives filename: undefined, not a stripped-key match-all)',
+      'short-circuits to the no-op WITHOUT querying when called with %p (a lookup key with neither _id nor a string filename can never resolve)',
       async (arg) => {
-        const findOneExec = jest.fn().mockResolvedValue(null);
-        mockUploadsModel.findOne.mockReturnValue({ exec: findOneExec });
-
         const result = await UploadRepository.remove(arg);
 
-        expect(mockUploadsModel.findOne).toHaveBeenCalledWith({ filename: undefined });
+        expect(mockUploadsModel.findOne).not.toHaveBeenCalled();
         expect(result).toEqual({ deletedCount: 0, notFound: true });
         expect(mockBucket.delete).not.toHaveBeenCalled();
       },
@@ -224,11 +221,19 @@ describe('UploadRepository unit tests:', () => {
       const now = Date.now();
       // Only the second path (`snapshots.html`) references it — a
       // single-path check would have missed this and deleted a live blob.
-      setReferences([{ refs: ['multi-ref.png'] }]);
+      // Capture the aggregate call directly (instead of setReferences(),
+      // which ignores its pipeline argument) so this test can also assert
+      // BOTH paths actually reached the pipeline — otherwise a regression
+      // that built the pipeline from only the first path would still pass.
+      const aggregate = jest.fn(() => asCursor([{ refs: ['multi-ref.png'] }]));
+      mockDb.collection.mockReturnValue({ aggregate });
       setCandidates([{ _id: 'multi1', filename: 'multi-ref.png', uploadDate: new Date(now - 120_000) }]);
 
       const counters = await UploadRepository.sweepUnreferenced(kind, collection, ['avatar', 'snapshots.html'], 60_000);
 
+      const pipeline = JSON.stringify(aggregate.mock.calls[0][0]);
+      expect(pipeline).toContain('$avatar');
+      expect(pipeline).toContain('$snapshots.html');
       expect(mockBucket.delete).not.toHaveBeenCalled();
       expect(counters).toMatchObject({ scanned: 1, referenced: 1, orphaned: 0, deleted: 0 });
     });
