@@ -18,12 +18,15 @@ import { jest } from '@jest/globals';
 
 import docsTree from '../helpers/public.docs.tree.js';
 import logger from '../../../lib/services/logger.js';
+import configHelper from '../../../lib/helpers/config.js';
 
 const {
   slugFromPath, prefixFromPath, moduleFromPath, titleFromMarkdown,
   firstParagraph, loadGuideEntries, buildDocsTree, resolveGuideEntries,
-  precedenceTier, FRAMEWORK_GUIDE_MODULE, DEFAULT_PERSONA,
+  precedenceTier, DEFAULT_PERSONA,
 } = docsTree;
+
+const { CORE_MODULES } = configHelper;
 
 const sections = [
   { title: 'Get Started', prefixMin: 0, prefixMax: 1 },
@@ -141,13 +144,18 @@ describe('loadGuideEntries:', () => {
 });
 
 describe('precedenceTier:', () => {
-  it(`classifies a guide from modules/${FRAMEWORK_GUIDE_MODULE} as framework`, () => {
-    expect(precedenceTier({ path: `modules/${FRAMEWORK_GUIDE_MODULE}/doc/guides/00-welcome.md` })).toBe('framework');
+  it('classifies a guide from every CORE_MODULES entry as framework (reuses the stack\'s existing framework-module set)', () => {
+    for (const mod of CORE_MODULES) {
+      expect(precedenceTier({ path: `modules/${mod}/doc/guides/00-welcome.md` })).toBe('framework');
+    }
+    // Sanity: "home" — the only module that ships guides today — is one of them.
+    expect(CORE_MODULES.has('home')).toBe(true);
   });
 
-  it('classifies a guide from any other module as application', () => {
+  it('classifies a guide from a non-core module as application', () => {
     expect(precedenceTier({ path: 'modules/scrap/doc/guides/01-welcome.md' })).toBe('application');
-    expect(precedenceTier({ path: 'modules/users/doc/guides/01-welcome.md' })).toBe('application');
+    expect(precedenceTier({ path: 'modules/billing/doc/guides/01-welcome.md' })).toBe('application');
+    expect(CORE_MODULES.has('billing')).toBe(false);
   });
 
   it('classifies a guide with no resolvable module path as application', () => {

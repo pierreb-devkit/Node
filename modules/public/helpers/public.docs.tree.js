@@ -30,6 +30,7 @@ import fs from 'fs';
 import path from 'path';
 
 import logger from '../../../lib/services/logger.js';
+import configHelper from '../../../lib/helpers/config.js';
 
 /**
  * Default persona audience applied when a section declares none.
@@ -189,29 +190,20 @@ const loadGuideEntries = (filePaths) => {
 };
 
 /**
- * Name of the module whose guides ship as framework-provided demo content.
- * Every other module's guides are application-level — added by the downstream
- * consumer project (either a wholly new module, or extra guides dropped into
- * an existing module's `doc/guides/`). Framework guides ship exclusively
- * under `modules/home/doc/guides` today (see the two shipped samples); keying
- * precedence off that module — rather than adding a config flag — grounds the
- * distinction in data {@link loadGuideEntries} already produces (`entry.path`).
- * @type {string}
- */
-const FRAMEWORK_GUIDE_MODULE = 'home';
-
-/**
- * Precedence rank per tier — higher wins a cross-tier collision.
- * @type {{ framework: 0, application: 1 }}
- */
-const PRECEDENCE_RANK = { framework: 0, application: 1 };
-
-/**
- * Precedence tier for a guide entry on a slug collision.
+ * Precedence tier for a guide entry on a slug collision. A module in
+ * `configHelper.CORE_MODULES` (`core`/`auth`/`users`/`home` — the stack's
+ * existing "ships with the framework, never deactivated" classification,
+ * see `lib/helpers/config.js`) is framework-provided; every other module is
+ * application-level — added by the downstream consumer project (either a
+ * wholly new module, or extra guides dropped into an existing module's
+ * `doc/guides/`). Guides ship exclusively under `modules/home/doc/guides`
+ * today (see the two shipped samples), so in practice this currently
+ * resolves to "home vs. everything else" — but it reuses the stack's single
+ * existing framework-module set rather than declaring a second, narrower one.
  * @param {{ path: string }} entry - Guide entry (from {@link loadGuideEntries}).
  * @returns {'framework'|'application'} Precedence tier.
  */
-const precedenceTier = (entry) => (moduleFromPath(entry.path) === FRAMEWORK_GUIDE_MODULE ? 'framework' : 'application');
+const precedenceTier = (entry) => (configHelper.CORE_MODULES.has(moduleFromPath(entry.path)) ? 'framework' : 'application');
 
 /**
  * Resolve slug collisions across guide entries by precedence, producing the
@@ -220,9 +212,9 @@ const precedenceTier = (entry) => (moduleFromPath(entry.path) === FRAMEWORK_GUID
  * outcome no longer depends on file-scan order.
  *
  * Policy:
- *   1. **Cross-tier collision** — an application-level guide (any module other
- *      than {@link FRAMEWORK_GUIDE_MODULE}) always overrides a framework-provided
- *      one, regardless of scan order. This is the supported override mechanism
+ *   1. **Cross-tier collision** — an application-level guide (per
+ *      {@link precedenceTier}) always overrides a framework-provided one,
+ *      regardless of scan order. This is the supported override mechanism
  *      for a consumer that ships its own `00-welcome`/`01-quickstart`; it is
  *      silent (debug-logged only), not an error.
  *   2. **Same-tier collision** (two framework guides, or two application
@@ -257,7 +249,9 @@ const resolveGuideEntries = (entries) => {
       winners.set(entry.slug, entry); // later entry wins — existing deterministic tiebreak
       continue;
     }
-    if (PRECEDENCE_RANK[challengerTier] > PRECEDENCE_RANK[incumbentTier]) {
+    if (challengerTier === 'application') {
+      // incumbentTier must be 'framework' here — the equal-tier case already
+      // returned above, and 'application'/'framework' are the only two tiers.
       logger.debug(`[public/docs] guide slug "${entry.slug}" — application guide (${entry.path}) overrides framework guide (${incumbent.path})`);
       winners.set(entry.slug, entry);
     }
@@ -359,7 +353,6 @@ const buildDocsTree = (entries, sections = []) => {
 
 export default {
   DEFAULT_PERSONA,
-  FRAMEWORK_GUIDE_MODULE,
   slugFromPath,
   prefixFromPath,
   moduleFromPath,
