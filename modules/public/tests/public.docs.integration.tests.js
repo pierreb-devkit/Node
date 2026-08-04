@@ -45,12 +45,6 @@ describe('Public docs integration tests — shape/status only:', () => {
     expect(result.body.type).toBe('success');
     expect(result.body.message).toBe('public docs');
   });
-
-  test('GET /api/public/docs/:slug.md returns 404 for an unknown slug', async () => {
-    const result = await request(app).get('/api/public/docs/does-not-exist.md').expect(404);
-    expect(result.body.type).toBe('error');
-    expect(result.body.status).toBe(404);
-  });
 });
 
 describe('Public docs integration tests — controlled guide fixtures:', () => {
@@ -172,6 +166,17 @@ describe('Public docs integration tests — controlled guide fixtures:', () => {
   test('the docs tree never leaks raw YAML front-matter into a fixture guide body', async () => {
     const result = await request(app).get('/api/public/docs/sample-intro.md').expect(200);
     expect(result.text.trimStart().startsWith('---')).toBe(false);
+  });
+
+  // Scoped to THIS block (config.files.guides fully replaced by the 3 fixture
+  // guides above) rather than the shape/status block above — a slug this
+  // suite never configures is a guarantee only the controlled fixture set can
+  // give; a consumer's own guides could otherwise happen to occupy any fixed
+  // slug picked outside that guarantee.
+  test('GET /api/public/docs/:slug.md returns 404 for a slug absent from the fixture set', async () => {
+    const result = await request(app).get('/api/public/docs/not-a-configured-fixture-slug.md').expect(404);
+    expect(result.body.type).toBe('error');
+    expect(result.body.status).toBe(404);
   });
 });
 
