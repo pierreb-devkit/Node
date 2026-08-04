@@ -5,7 +5,7 @@ import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globa
 
 /**
  * Unit tests for uploads.repository.js — remove() no-op semantics and
- * sweepUnreferenced() multi-path unreferenced-blob sweep.
+ * purgeUnreferenced() multi-path unreferenced-blob sweep.
  */
 describe('UploadRepository unit tests:', () => {
   let UploadRepository;
@@ -55,7 +55,7 @@ describe('UploadRepository unit tests:', () => {
         cursor: jest.fn(() => asCursor([])),
       })),
       // No `aggregate` mock here — this file only exercises remove() and
-      // sweepUnreferenced(); the latter uses the raw driver's
+      // purgeUnreferenced(); the latter uses the raw driver's
       // db.collection().aggregate(), not Uploads.aggregate() (that's
       // purge()'s path, untested in this file).
     };
@@ -122,34 +122,34 @@ describe('UploadRepository unit tests:', () => {
     });
   });
 
-  describe('sweepUnreferenced', () => {
+  describe('purgeUnreferenced', () => {
     const kind = 'htmlSnapshot';
     const collection = 'histories';
 
     test.each([[undefined], [null], ['']])('throws for a missing/empty kind (%p) instead of silently matching every kind', async (badKind) => {
-      await expect(UploadRepository.sweepUnreferenced(badKind, collection, ['snapshot'], 1000)).rejects.toThrow(
-        'sweepUnreferenced requires a non-empty kind',
+      await expect(UploadRepository.purgeUnreferenced(badKind, collection, ['snapshot'], 1000)).rejects.toThrow(
+        'purgeUnreferenced requires a non-empty kind',
       );
       expect(mockBucket.delete).not.toHaveBeenCalled();
     });
 
     test('throws when paths is missing/empty', async () => {
-      await expect(UploadRepository.sweepUnreferenced(kind, collection, [], 1000)).rejects.toThrow(
-        'sweepUnreferenced requires at least one reference path',
+      await expect(UploadRepository.purgeUnreferenced(kind, collection, [], 1000)).rejects.toThrow(
+        'purgeUnreferenced requires at least one reference path',
       );
     });
 
     test('throws when the target collection does not exist (fails loudly, not a silent empty result)', async () => {
       mockDb.listCollections.mockReturnValue({ hasNext: jest.fn().mockResolvedValue(false) });
 
-      await expect(UploadRepository.sweepUnreferenced(kind, 'typo_collection', ['snapshot'], 1000)).rejects.toThrow(
+      await expect(UploadRepository.purgeUnreferenced(kind, 'typo_collection', ['snapshot'], 1000)).rejects.toThrow(
         'target collection "typo_collection" does not exist',
       );
     });
 
-    test.each([[-1], [NaN], [Infinity]])('throws for an invalid minAgeMs (%p)', async (minAgeMs) => {
-      await expect(UploadRepository.sweepUnreferenced(kind, collection, ['snapshot'], minAgeMs)).rejects.toThrow(
-        'sweepUnreferenced requires a non-negative minAgeMs',
+    test.each([[-1], [NaN], [Infinity]])('throws for an invalid graceMs (%p)', async (graceMs) => {
+      await expect(UploadRepository.purgeUnreferenced(kind, collection, ['snapshot'], graceMs)).rejects.toThrow(
+        'purgeUnreferenced requires a non-negative graceMs',
       );
       expect(mockBucket.delete).not.toHaveBeenCalled();
     });
@@ -160,11 +160,11 @@ describe('UploadRepository unit tests:', () => {
       setCandidates([{ _id: 'flaky1', filename: 'flaky.png', uploadDate: new Date(now - 120_000) }]);
       mockBucket.delete.mockRejectedValueOnce(new Error('bucket unreachable'));
 
-      const counters = await UploadRepository.sweepUnreferenced(kind, collection, ['snapshot'], 60_000);
+      const counters = await UploadRepository.purgeUnreferenced(kind, collection, ['snapshot'], 60_000);
 
       expect(counters).toMatchObject({ scanned: 1, orphaned: 1, deleted: 0, deleteFailed: 1 });
       expect(mockLogger.error).toHaveBeenCalledWith(
-        'Upload: sweepUnreferenced - delete failed',
+        'Upload: purgeUnreferenced - delete failed',
         expect.objectContaining({ filename: 'flaky.png', kind }),
       );
     });
@@ -173,7 +173,7 @@ describe('UploadRepository unit tests:', () => {
       const now = Date.now();
       setCandidates([{ _id: 'young1', filename: 'young.png', uploadDate: new Date(now - 1000) }]);
 
-      const counters = await UploadRepository.sweepUnreferenced(kind, collection, ['snapshot'], 60_000);
+      const counters = await UploadRepository.purgeUnreferenced(kind, collection, ['snapshot'], 60_000);
 
       expect(mockBucket.delete).not.toHaveBeenCalled();
       expect(counters).toMatchObject({ scanned: 1, orphaned: 1, deleted: 0, skippedTooYoung: 1 });
@@ -184,7 +184,7 @@ describe('UploadRepository unit tests:', () => {
       setReferences([]); // nothing references it
       setCandidates([{ _id: 'old1', filename: 'orphan.png', uploadDate: new Date(now - 120_000) }]);
 
-      const counters = await UploadRepository.sweepUnreferenced(kind, collection, ['snapshot'], 60_000);
+      const counters = await UploadRepository.purgeUnreferenced(kind, collection, ['snapshot'], 60_000);
 
       expect(mockBucket.delete).toHaveBeenCalledWith('old1');
       expect(counters).toMatchObject({ scanned: 1, orphaned: 1, deleted: 1, skippedTooYoung: 0 });
@@ -195,7 +195,7 @@ describe('UploadRepository unit tests:', () => {
       setReferences([{ refs: ['referenced.png'] }]);
       setCandidates([{ _id: 'ref1', filename: 'referenced.png', uploadDate: new Date(now - 120_000) }]);
 
-      const counters = await UploadRepository.sweepUnreferenced(kind, collection, ['snapshot'], 60_000);
+      const counters = await UploadRepository.purgeUnreferenced(kind, collection, ['snapshot'], 60_000);
 
       expect(mockBucket.delete).not.toHaveBeenCalled();
       expect(counters).toMatchObject({ scanned: 1, referenced: 1, orphaned: 0, deleted: 0 });
@@ -211,7 +211,7 @@ describe('UploadRepository unit tests:', () => {
         { _id: 'sub2', filename: 'sub2.png', uploadDate: new Date(now - 120_000) },
       ]);
 
-      const counters = await UploadRepository.sweepUnreferenced(kind, collection, ['snapshots.html'], 60_000);
+      const counters = await UploadRepository.purgeUnreferenced(kind, collection, ['snapshots.html'], 60_000);
 
       expect(mockBucket.delete).not.toHaveBeenCalled();
       expect(counters).toMatchObject({ scanned: 2, referenced: 2, orphaned: 0, deleted: 0 });
@@ -229,7 +229,7 @@ describe('UploadRepository unit tests:', () => {
       mockDb.collection.mockReturnValue({ aggregate });
       setCandidates([{ _id: 'multi1', filename: 'multi-ref.png', uploadDate: new Date(now - 120_000) }]);
 
-      const counters = await UploadRepository.sweepUnreferenced(kind, collection, ['avatar', 'snapshots.html'], 60_000);
+      const counters = await UploadRepository.purgeUnreferenced(kind, collection, ['avatar', 'snapshots.html'], 60_000);
 
       const pipeline = JSON.stringify(aggregate.mock.calls[0][0]);
       expect(pipeline).toContain('$avatar');

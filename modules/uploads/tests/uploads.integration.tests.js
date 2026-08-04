@@ -396,7 +396,7 @@ describe('Uploads integration tests:', () => {
   });
 
   describe('Cron', () => {
-    test('sweepUnreferenced sweeps multi-path-unreferenced blobs past the grace window, against a real aggregation pipeline', async () => {
+    test('purgeUnreferenced sweeps multi-path-unreferenced blobs past the grace window, against a real aggregation pipeline', async () => {
       // Declared outside the try block — the `finally` cleanup below needs
       // them too, and a `const` scoped to `try` is not visible in `finally`.
       const kind = 'sweepIntegrationTest';
@@ -440,7 +440,7 @@ describe('Uploads integration tests:', () => {
             .updateOne({ _id: youngOrphanUpload._id }, { $set: { uploadDate: new Date() } }),
         ]);
 
-        const counters = await UploadRepository.sweepUnreferenced(kind, referencingCollection, ['refA', 'refs.file'], 300_000);
+        const counters = await UploadRepository.purgeUnreferenced(kind, referencingCollection, ['refA', 'refs.file'], 300_000);
 
         expect(counters).toMatchObject({ scanned: 5, referenced: 3, orphaned: 2, deleted: 1, deleteFailed: 0, skippedTooYoung: 1 });
 
@@ -464,11 +464,11 @@ describe('Uploads integration tests:', () => {
         // Cleanup must run even when an assertion above fails — leftover
         // blobs of this `kind` would make the next run's `scanned` count
         // wrong and fail it permanently. Dropping the referencing docs first
-        // then sweeping with minAgeMs=0 removes every remaining fixture
+        // then sweeping with graceMs=0 removes every remaining fixture
         // blob regardless of which assertions passed, without needing to
         // track individual upload docs here.
         await mongoose.connection.db.collection(referencingCollection).deleteMany({});
-        await UploadRepository.sweepUnreferenced(kind, referencingCollection, ['refA', 'refs.file'], 0).catch((err) => console.log(err));
+        await UploadRepository.purgeUnreferenced(kind, referencingCollection, ['refA', 'refs.file'], 0).catch((err) => console.log(err));
       }
     });
 

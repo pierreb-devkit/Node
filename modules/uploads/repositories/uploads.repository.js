@@ -198,7 +198,7 @@ const purge = async (kind, collection, key) => {
  *
  * Known trade-off (accepted, not fixed here): the reference-Set snapshot is
  * taken at the START of the run, then read against for the whole candidate
- * scan. A blob whose age already exceeds `minAgeMs` — i.e. NOT protected by
+ * scan. A blob whose age already exceeds `graceMs` — i.e. NOT protected by
  * the grace window, which only covers the gap between a blob's own write and
  * its first reference — that gets referenced by a brand-new document for the
  * FIRST TIME after the snapshot but before the scan reaches it will still
@@ -214,25 +214,25 @@ const purge = async (kind, collection, key) => {
  * @param {String} kind - metadata.kind to sweep (e.g. 'htmlSnapshot')
  * @param {String} collection - name of the collection to check references against
  * @param {String[]} paths - dot-paths on `collection` docs that may reference an upload's filename
- * @param {Number} minAgeMs - minimum age (ms, from GridFS `uploadDate`) before an unreferenced blob is eligible for deletion
+ * @param {Number} graceMs - minimum age (ms, from GridFS `uploadDate`) before an unreferenced blob is eligible for deletion
  * @return {Object} counters — { scanned, referenced, orphaned, deleted, deleteFailed, skippedTooYoung }.
  *   `deleteFailed` lets a caller detect a partial sweep (some eligible blobs
  *   left undeleted after a transient bucket error) instead of a `deleted`
  *   count that silently looks complete.
  */
-const sweepUnreferenced = async (kind, collection, paths, minAgeMs) => {
+const purgeUnreferenced = async (kind, collection, paths, graceMs) => {
   // A missing/empty `kind` would make `Uploads.find({ 'metadata.kind': kind })`
   // below match every upload of every kind instead of quietly matching none —
   // the same "must fail loudly, not silently look like a clean/empty result"
   // requirement already applied to `collection` and `paths`.
   if (typeof kind !== 'string' || kind.length === 0) {
-    throw new AppError('Upload: sweepUnreferenced requires a non-empty kind', { code: 'REPOSITORY_ERROR' });
+    throw new AppError('Upload: purgeUnreferenced requires a non-empty kind', { code: 'REPOSITORY_ERROR' });
   }
   if (!Array.isArray(paths) || paths.length === 0) {
-    throw new AppError('Upload: sweepUnreferenced requires at least one reference path', { code: 'REPOSITORY_ERROR' });
+    throw new AppError('Upload: purgeUnreferenced requires at least one reference path', { code: 'REPOSITORY_ERROR' });
   }
-  if (!Number.isFinite(minAgeMs) || minAgeMs < 0) {
-    throw new AppError('Upload: sweepUnreferenced requires a non-negative minAgeMs', { code: 'REPOSITORY_ERROR' });
+  if (!Number.isFinite(graceMs) || graceMs < 0) {
+    throw new AppError('Upload: purgeUnreferenced requires a non-negative graceMs', { code: 'REPOSITORY_ERROR' });
   }
 
   /* A mistyped `collection` name would make the aggregation below return an
@@ -243,7 +243,7 @@ const sweepUnreferenced = async (kind, collection, paths, minAgeMs) => {
     .listCollections({ name: collection }, { nameOnly: true })
     .hasNext();
   if (!collectionExists) {
-    throw new AppError(`Upload: sweepUnreferenced target collection "${collection}" does not exist`, { code: 'REPOSITORY_ERROR' });
+    throw new AppError(`Upload: purgeUnreferenced target collection "${collection}" does not exist`, { code: 'REPOSITORY_ERROR' });
   }
 
   /**
@@ -303,7 +303,7 @@ const sweepUnreferenced = async (kind, collection, paths, minAgeMs) => {
     // Missing uploadDate is treated as "unknown age" -> never eligible for
     // deletion (fail closed, not open) rather than as "very old".
     const ageMs = candidate.uploadDate ? now - new Date(candidate.uploadDate).getTime() : -1;
-    if (ageMs < minAgeMs) {
+    if (ageMs < graceMs) {
       skippedTooYoung += 1;
       continue;
     }
@@ -316,7 +316,7 @@ const sweepUnreferenced = async (kind, collection, paths, minAgeMs) => {
       // record of which file failed. `deleteFailed` lets a caller detect a
       // partial sweep programmatically; the log gives the "which one".
       deleteFailed += 1;
-      logger.error('Upload: sweepUnreferenced - delete failed', {
+      logger.error('Upload: purgeUnreferenced - delete failed', {
         filename: candidate.filename,
         kind,
         error: err?.message,
@@ -344,5 +344,5 @@ export default {
   remove,
   deleteMany,
   purge,
-  sweepUnreferenced,
+  purgeUnreferenced,
 };
