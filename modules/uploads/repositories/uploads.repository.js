@@ -226,7 +226,6 @@ const sweepUnreferenced = async (kind, collection, paths, minAgeMs) => {
   const now = Date.now();
   let scanned = 0;
   let referencedCount = 0;
-  let orphaned = 0;
   let deleted = 0;
   let skippedTooYoung = 0;
 
@@ -237,7 +236,6 @@ const sweepUnreferenced = async (kind, collection, paths, minAgeMs) => {
       referencedCount += 1;
       continue;
     }
-    orphaned += 1;
     // Missing uploadDate is treated as "unknown age" -> never eligible for
     // deletion (fail closed, not open) rather than as "very old".
     const ageMs = candidate.uploadDate ? now - new Date(candidate.uploadDate).getTime() : -1;
@@ -257,9 +255,15 @@ const sweepUnreferenced = async (kind, collection, paths, minAgeMs) => {
     }
   }
 
-  const counters = { scanned, referenced: referencedCount, orphaned, deleted, skippedTooYoung };
-  logger.info('Upload: sweepUnreferenced complete', { kind, collection, minAgeMs, ...counters });
-  return counters;
+  // orphaned is derivable — every scanned candidate is either referenced or
+  // orphaned, no third state — so it's computed once here rather than
+  // tracked as its own mutable counter through the loop.
+  const orphaned = scanned - referencedCount;
+  // Only the counters are returned — summary observability is the caller's
+  // concern (this repository has no other function that logs on success;
+  // the per-item `logger.error` above is the one exception, kept because a
+  // caught delete failure here is otherwise swallowed with no record of it).
+  return { scanned, referenced: referencedCount, orphaned, deleted, skippedTooYoung };
 };
 
 export default {

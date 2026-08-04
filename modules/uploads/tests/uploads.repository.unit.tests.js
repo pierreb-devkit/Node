@@ -21,6 +21,20 @@ describe('UploadRepository unit tests:', () => {
     },
   });
 
+  /** Stubs Uploads.find(...).select().lean().cursor() to yield `docs`. */
+  const setCandidates = (docs) => {
+    mockUploadsModel.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockReturnThis(),
+      cursor: jest.fn(() => asCursor(docs)),
+    });
+  };
+
+  /** Stubs db.collection(...).aggregate(...) to yield `docs` (reference scan). */
+  const setReferences = (docs) => {
+    mockDb.collection.mockReturnValue({ aggregate: jest.fn(() => asCursor(docs)) });
+  };
+
   beforeEach(async () => {
     jest.resetModules();
 
@@ -114,11 +128,7 @@ describe('UploadRepository unit tests:', () => {
 
     test('respects the grace window: an unreferenced-but-young blob is skipped, not deleted', async () => {
       const now = Date.now();
-      mockUploadsModel.find.mockReturnValue({
-        select: jest.fn().mockReturnThis(),
-        lean: jest.fn().mockReturnThis(),
-        cursor: jest.fn(() => asCursor([{ _id: 'young1', filename: 'young.png', uploadDate: new Date(now - 1000) }])),
-      });
+      setCandidates([{ _id: 'young1', filename: 'young.png', uploadDate: new Date(now - 1000) }]);
 
       const counters = await UploadRepository.sweepUnreferenced(kind, collection, ['snapshot'], 60_000);
 
@@ -128,12 +138,8 @@ describe('UploadRepository unit tests:', () => {
 
     test('sweeps an unreferenced blob past the grace window on a scalar reference path', async () => {
       const now = Date.now();
-      mockDb.collection.mockReturnValue({ aggregate: jest.fn(() => asCursor([])) }); // nothing references it
-      mockUploadsModel.find.mockReturnValue({
-        select: jest.fn().mockReturnThis(),
-        lean: jest.fn().mockReturnThis(),
-        cursor: jest.fn(() => asCursor([{ _id: 'old1', filename: 'orphan.png', uploadDate: new Date(now - 120_000) }])),
-      });
+      setReferences([]); // nothing references it
+      setCandidates([{ _id: 'old1', filename: 'orphan.png', uploadDate: new Date(now - 120_000) }]);
 
       const counters = await UploadRepository.sweepUnreferenced(kind, collection, ['snapshot'], 60_000);
 
@@ -143,12 +149,8 @@ describe('UploadRepository unit tests:', () => {
 
     test('keeps a blob referenced via a scalar path', async () => {
       const now = Date.now();
-      mockDb.collection.mockReturnValue({ aggregate: jest.fn(() => asCursor([{ refs: ['referenced.png'] }])) });
-      mockUploadsModel.find.mockReturnValue({
-        select: jest.fn().mockReturnThis(),
-        lean: jest.fn().mockReturnThis(),
-        cursor: jest.fn(() => asCursor([{ _id: 'ref1', filename: 'referenced.png', uploadDate: new Date(now - 120_000) }])),
-      });
+      setReferences([{ refs: ['referenced.png'] }]);
+      setCandidates([{ _id: 'ref1', filename: 'referenced.png', uploadDate: new Date(now - 120_000) }]);
 
       const counters = await UploadRepository.sweepUnreferenced(kind, collection, ['snapshot'], 60_000);
 
@@ -160,19 +162,11 @@ describe('UploadRepository unit tests:', () => {
       const now = Date.now();
       // Simulates the aggregation already flattening an array-of-subdocuments
       // path (e.g. `snapshots.html`) into the referenced-filename set.
-      mockDb.collection.mockReturnValue({
-        aggregate: jest.fn(() => asCursor([{ refs: ['sub1.png', 'sub2.png'] }])),
-      });
-      mockUploadsModel.find.mockReturnValue({
-        select: jest.fn().mockReturnThis(),
-        lean: jest.fn().mockReturnThis(),
-        cursor: jest.fn(() =>
-          asCursor([
-            { _id: 'sub1', filename: 'sub1.png', uploadDate: new Date(now - 120_000) },
-            { _id: 'sub2', filename: 'sub2.png', uploadDate: new Date(now - 120_000) },
-          ]),
-        ),
-      });
+      setReferences([{ refs: ['sub1.png', 'sub2.png'] }]);
+      setCandidates([
+        { _id: 'sub1', filename: 'sub1.png', uploadDate: new Date(now - 120_000) },
+        { _id: 'sub2', filename: 'sub2.png', uploadDate: new Date(now - 120_000) },
+      ]);
 
       const counters = await UploadRepository.sweepUnreferenced(kind, collection, ['snapshots.html'], 60_000);
 
@@ -184,14 +178,8 @@ describe('UploadRepository unit tests:', () => {
       const now = Date.now();
       // Only the second path (`snapshots.html`) references it — a
       // single-path check would have missed this and deleted a live blob.
-      mockDb.collection.mockReturnValue({
-        aggregate: jest.fn(() => asCursor([{ refs: ['multi-ref.png'] }])),
-      });
-      mockUploadsModel.find.mockReturnValue({
-        select: jest.fn().mockReturnThis(),
-        lean: jest.fn().mockReturnThis(),
-        cursor: jest.fn(() => asCursor([{ _id: 'multi1', filename: 'multi-ref.png', uploadDate: new Date(now - 120_000) }])),
-      });
+      setReferences([{ refs: ['multi-ref.png'] }]);
+      setCandidates([{ _id: 'multi1', filename: 'multi-ref.png', uploadDate: new Date(now - 120_000) }]);
 
       const counters = await UploadRepository.sweepUnreferenced(kind, collection, ['avatar', 'snapshots.html'], 60_000);
 
