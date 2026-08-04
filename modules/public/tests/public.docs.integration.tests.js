@@ -8,6 +8,8 @@
  */
 import request from 'supertest';
 import path from 'path';
+import fs from 'fs';
+import os from 'os';
 
 import {
   afterAll, beforeAll, beforeEach, describe, test, expect,
@@ -110,5 +112,62 @@ describe('Public docs integration tests:', () => {
   test('the docs tree never leaks raw YAML front-matter into a guide body', async () => {
     const result = await request(app).get('/api/public/docs/welcome.md').expect(200);
     expect(result.text.trimStart().startsWith('---')).toBe(false);
+  });
+});
+
+describe('Public docs integration tests — slug-collision precedence:', () => {
+  let app;
+  let PublicDocsService;
+  let tmpDir;
+  let appGuidePath;
+  const originalOrgEnabled = config.organizations?.enabled;
+  const originalGuides = Array.isArray(config.files?.guides) ? [...config.files.guides] : [];
+
+  beforeAll(async () => {
+    if (config.organizations) config.organizations.enabled = false;
+    const init = await bootstrap();
+    app = init.app;
+    PublicDocsService = (await import(path.resolve('./modules/public/services/public.docs.service.js'))).default;
+
+    // A real on-disk fixture guide, under a module path other than "home" —
+    // simulates a consumer/application module shipping its own "welcome"
+    // guide, colliding with the framework-shipped modules/home/00-welcome.md.
+    // Path substring only needs to contain "modules/<name>/", it does not
+    // need to live under the app's real modules/ directory.
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'public-docs-precedence-'));
+    const appModuleDir = path.join(tmpDir, 'modules', 'app-fixture', 'doc', 'guides');
+    fs.mkdirSync(appModuleDir, { recursive: true });
+    appGuidePath = path.join(appModuleDir, '00-welcome.md');
+    fs.writeFileSync(appGuidePath, '# App Welcome\n\nApplication-level welcome guide.\n');
+
+    config.files.guides = [...originalGuides, appGuidePath];
+  });
+
+  afterAll(async () => {
+    if (config.organizations) config.organizations.enabled = originalOrgEnabled;
+    config.files.guides = originalGuides;
+    if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+    await mongooseService.disconnect();
+  });
+
+  beforeEach(() => {
+    if (PublicDocsService) PublicDocsService.clearCache();
+  });
+
+  test('the application guide wins the "welcome" slug in the listing (no duplicate)', async () => {
+    const result = await request(app).get('/api/public/docs').expect(200);
+    const { categories } = result.body.data;
+    const guides = categories.flatMap((c) => c.guides);
+    const welcomeGuides = guides.filter((g) => g.slug === 'welcome');
+
+    // Exactly one "welcome" entry — the listing never shows a duplicate.
+    expect(welcomeGuides).toHaveLength(1);
+    expect(welcomeGuides[0].title).toBe('App Welcome');
+  });
+
+  test('the application guide wins the "welcome" slug on fetch — listing and fetch agree', async () => {
+    const result = await request(app).get('/api/public/docs/welcome.md').expect(200);
+    expect(result.text).toContain('Application-level welcome guide.');
+    expect(result.text).not.toContain('Welcome to');
   });
 });

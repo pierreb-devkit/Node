@@ -21,6 +21,7 @@ jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
 jest.unstable_mockModule('../helpers/public.docs.tree.js', () => ({
   default: {
     loadGuideEntries: jest.fn().mockReturnValue([]),
+    resolveGuideEntries: jest.fn((entries) => entries),
     buildDocsTree: jest.fn().mockReturnValue({ categories: [] }),
   },
 }));

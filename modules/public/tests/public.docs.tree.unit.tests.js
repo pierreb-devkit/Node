@@ -14,11 +14,15 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
+import { jest } from '@jest/globals';
+
 import docsTree from '../helpers/public.docs.tree.js';
+import logger from '../../../lib/services/logger.js';
 
 const {
   slugFromPath, prefixFromPath, moduleFromPath, titleFromMarkdown,
-  firstParagraph, loadGuideEntries, buildDocsTree, DEFAULT_PERSONA,
+  firstParagraph, loadGuideEntries, buildDocsTree, resolveGuideEntries,
+  precedenceTier, FRAMEWORK_GUIDE_MODULE, DEFAULT_PERSONA,
 } = docsTree;
 
 const sections = [
@@ -133,6 +137,130 @@ describe('loadGuideEntries:', () => {
       path.join(dir, '01-quickstart.md'),
     ]);
     expect(entries.map((e) => e.slug)).toEqual(['quickstart', 'unmapped']);
+  });
+});
+
+describe('precedenceTier:', () => {
+  it(`classifies a guide from modules/${FRAMEWORK_GUIDE_MODULE} as framework`, () => {
+    expect(precedenceTier({ path: `modules/${FRAMEWORK_GUIDE_MODULE}/doc/guides/00-welcome.md` })).toBe('framework');
+  });
+
+  it('classifies a guide from any other module as application', () => {
+    expect(precedenceTier({ path: 'modules/scrap/doc/guides/01-welcome.md' })).toBe('application');
+    expect(precedenceTier({ path: 'modules/users/doc/guides/01-welcome.md' })).toBe('application');
+  });
+
+  it('classifies a guide with no resolvable module path as application', () => {
+    expect(precedenceTier({ path: '/tmp/loose.md' })).toBe('application');
+  });
+});
+
+describe('resolveGuideEntries:', () => {
+  let warnSpy;
+  let debugSpy;
+
+  beforeEach(() => {
+    warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+    debugSpy = jest.spyOn(logger, 'debug').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+    debugSpy.mockRestore();
+  });
+
+  it('returns entries unchanged (no collision)', () => {
+    const entries = [
+      {
+        slug: 'welcome', title: 'Welcome', order: 0, summary: 's', body: 'b', path: 'modules/home/doc/guides/00-welcome.md',
+      },
+      {
+        slug: 'quickstart', title: 'Quickstart', order: 1, summary: 's', body: 'b', path: 'modules/home/doc/guides/01-quickstart.md',
+      },
+    ];
+    expect(resolveGuideEntries(entries)).toEqual(entries);
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(debugSpy).not.toHaveBeenCalled();
+  });
+
+  it('an application guide overrides a framework guide on the same slug (app wins regardless of scan order)', () => {
+    const frameworkGuide = {
+      slug: 'welcome', title: 'Framework Welcome', order: 0, summary: 's', body: 'framework body', path: 'modules/home/doc/guides/00-welcome.md',
+    };
+    const appGuide = {
+      slug: 'welcome', title: 'App Welcome', order: 0, summary: 's', body: 'app body', path: 'modules/scrap/doc/guides/00-welcome.md',
+    };
+
+    // Framework guide scanned first, app guide second — app should still win.
+    const resolvedA = resolveGuideEntries([frameworkGuide, appGuide]);
+    expect(resolvedA).toHaveLength(1);
+    expect(resolvedA[0]).toBe(appGuide);
+
+    // App guide scanned first, framework guide second — app should still win
+    // (precedence is order-independent).
+    const resolvedB = resolveGuideEntries([appGuide, frameworkGuide]);
+    expect(resolvedB).toHaveLength(1);
+    expect(resolvedB[0]).toBe(appGuide);
+
+    // The override is silent (debug only), never a warning.
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('overrides framework guide'));
+  });
+
+  it('same-tier collision (two framework guides) keeps the later entry and warns with the actual policy', () => {
+    const first = {
+      slug: 'quickstart', title: 'Quickstart A', order: 0, summary: 'a', body: 'Body A', path: 'modules/home/doc/guides/01-quickstart.md',
+    };
+    const second = {
+      slug: 'quickstart', title: 'Quickstart B', order: 1, summary: 'b', body: 'Body B', path: 'modules/home/doc/guides/01b-quickstart.md',
+    };
+
+    const resolved = resolveGuideEntries([first, second]);
+    expect(resolved).toEqual([second]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('duplicate guide slug "quickstart" between two framework guides'),
+    );
+    // The warning states the actual remedy, not just "rename one".
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('different precedence'));
+  });
+
+  it('same-tier collision (two application guides) keeps the later entry and warns', () => {
+    const first = {
+      slug: 'setup', title: 'Setup A', order: 0, summary: 'a', body: 'A', path: 'modules/scrap/doc/guides/01-setup.md',
+    };
+    const second = {
+      slug: 'setup', title: 'Setup B', order: 1, summary: 'b', body: 'B', path: 'modules/wizard/doc/guides/01-setup.md',
+    };
+
+    const resolved = resolveGuideEntries([first, second]);
+    expect(resolved).toEqual([second]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('duplicate guide slug "setup" between two application guides'),
+    );
+  });
+
+  it('preserves relative order and dedupes independent of position', () => {
+    const home = {
+      slug: 'welcome', title: 'Home Welcome', order: 0, summary: 's', body: 'b', path: 'modules/home/doc/guides/00-welcome.md',
+    };
+    const quickstart = {
+      slug: 'quickstart', title: 'Quickstart', order: 1, summary: 's', body: 'b', path: 'modules/home/doc/guides/01-quickstart.md',
+    };
+    const appWelcome = {
+      slug: 'welcome', title: 'App Welcome', order: 0, summary: 's', body: 'b', path: 'modules/scrap/doc/guides/00-welcome.md',
+    };
+
+    const resolved = resolveGuideEntries([home, quickstart, appWelcome]);
+    // appWelcome wins the "welcome" slug, but the surviving entry keeps its
+    // OWN position in the input list (index 2) — home's entry is dropped
+    // from that position, quickstart (index 1) is unaffected.
+    expect(resolved.map((e) => e.slug)).toEqual(['quickstart', 'welcome']);
+    expect(resolved[1]).toBe(appWelcome);
+  });
+
+  it('returns [] for empty/invalid input', () => {
+    expect(resolveGuideEntries([])).toEqual([]);
+    expect(resolveGuideEntries(null)).toEqual([]);
   });
 });
 

@@ -38,19 +38,17 @@ const guideFiles = () => (Array.isArray(config.files?.guides) ? [...config.files
 const guideSections = () => (Array.isArray(config.docs?.guideSections) ? config.docs.guideSections.map((s) => ({ ...s })) : []);
 
 /**
- * @desc Build the docs tree + slug index from disk.
+ * @desc Build the docs tree + slug index from disk. Slug collisions are
+ * resolved once, up front, by {@link docsTree.resolveGuideEntries} (precedence
+ * policy: application-level guide overrides a framework-provided one). Both the
+ * tree and the slug index are built from that SAME deduped entry list, so the
+ * listing (`getTree`) and the fetch endpoint (`getMarkdown`) can never disagree.
  * @returns {{ tree: { categories: Object[] }, bySlug: Map<string, Object> }}
  */
 const compute = () => {
-  const entries = docsTree.loadGuideEntries(guideFiles());
+  const entries = docsTree.resolveGuideEntries(docsTree.loadGuideEntries(guideFiles()));
   const tree = docsTree.buildDocsTree(entries, guideSections());
-  const bySlug = new Map();
-  for (const entry of entries) {
-    if (bySlug.has(entry.slug)) {
-      logger.warn(`[public/docs] duplicate guide slug "${entry.slug}" — later guide wins; rename one to avoid the collision`);
-    }
-    bySlug.set(entry.slug, entry);
-  }
+  const bySlug = new Map(entries.map((entry) => [entry.slug, entry]));
   return { tree, bySlug };
 };
 
