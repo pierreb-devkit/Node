@@ -1,10 +1,14 @@
 /**
  * Integration tests — GET /api/public/docs and GET /api/public/docs/:slug.md.
- * Drives the real Express app against the on-disk markdown guides (the two
- * shipped sample guides: welcome + quickstart) so the whole content contract
- * (tree shape, real grouping, raw markdown, 404) is exercised end-to-end,
- * unauthenticated. The expectations assert the REAL wire shape against the REAL
- * sample guides — not a self-authored mock.
+ * Drives the real Express app end-to-end, unauthenticated, against CONTROLLED
+ * fixture guides — never the repo's real on-disk `modules/home/doc/guides/*.md`
+ * samples. A downstream consumer can ship its own guides at any slug (including
+ * `welcome`/`quickstart`, which a consumer legitimately owns/overrides — see
+ * the slug-collision precedence block below) without ever changing the outcome
+ * of these tests. Content-agnostic tests (status/shape only, no slug or guide
+ * count) are the one exception: they run against whatever `config.files.guides`
+ * already resolves to, real or consumer-provided, because the assertion holds
+ * either way.
  */
 import request from 'supertest';
 import path from 'path';
@@ -19,16 +23,14 @@ import mongooseService from '../../../lib/services/mongoose.js';
 import config from '../../../config/index.js';
 import logger from '../../../lib/services/logger.js';
 
-describe('Public docs integration tests:', () => {
+describe('Public docs integration tests — shape/status only:', () => {
   let app;
-  let PublicDocsService;
   const originalOrgEnabled = config.organizations?.enabled;
 
   beforeAll(async () => {
     if (config.organizations) config.organizations.enabled = false;
     const init = await bootstrap();
     app = init.app;
-    PublicDocsService = (await import(path.resolve('./modules/public/services/public.docs.service.js'))).default;
   });
 
   afterAll(async () => {
@@ -36,25 +38,87 @@ describe('Public docs integration tests:', () => {
     await mongooseService.disconnect();
   });
 
-  beforeEach(() => {
-    if (PublicDocsService) PublicDocsService.clearCache();
-  });
-
+  // No slug, no guide count, no title/persona assertion — passes regardless of
+  // which guides are on disk, so no fixture setup is needed here.
   test('GET /api/public/docs is publicly accessible without authentication', async () => {
     const result = await request(app).get('/api/public/docs').expect(200);
     expect(result.body.type).toBe('success');
     expect(result.body.message).toBe('public docs');
   });
 
-  test('the tree contains the shipped sample guides grouped into categories', async () => {
+  test('GET /api/public/docs/:slug.md returns 404 for an unknown slug', async () => {
+    const result = await request(app).get('/api/public/docs/does-not-exist.md').expect(404);
+    expect(result.body.type).toBe('error');
+    expect(result.body.status).toBe(404);
+  });
+});
+
+describe('Public docs integration tests — controlled guide fixtures:', () => {
+  let app;
+  let PublicDocsService;
+  let tmpDir;
+  const originalOrgEnabled = config.organizations?.enabled;
+  const originalGuides = Array.isArray(config.files?.guides) ? [...config.files.guides] : [];
+
+  // Two guides feed the tree/category assertions below — numeric prefixes
+  // 00/01, inside the default `guideSections` "Get Started" range [0,9]. A
+  // third, unrelated guide at a unique slug and an out-of-range prefix (so it
+  // never lands in "Get Started") feeds the raw-markdown fetch test. All three
+  // live under a synthetic, non-core module directory — replicating a
+  // consumer's own `doc/guides/` folder, never the framework's `modules/home`.
+  const treeGuideOneRel = path.join('modules', 'fixture-docs', 'doc', 'guides', '00-sample-intro.md');
+  const treeGuideTwoRel = path.join('modules', 'fixture-docs', 'doc', 'guides', '01-sample-next.md');
+  const rawMarkdownGuideRel = path.join('modules', 'fixture-docs', 'doc', 'guides', '99-raw-markdown-check.md');
+  const rawMarkdownMarker = 'FIXTURE_RAW_MARKDOWN_MARKER';
+
+  beforeAll(async () => {
+    if (config.organizations) config.organizations.enabled = false;
+    const init = await bootstrap();
+    app = init.app;
+    PublicDocsService = (await import(path.resolve('./modules/public/services/public.docs.service.js'))).default;
+
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'public-docs-fixtures-'));
+    fs.mkdirSync(path.dirname(path.join(tmpDir, treeGuideOneRel)), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, treeGuideOneRel),
+      '# Sample Intro\n\nFirst fixture guide for the docs integration suite.\n',
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, treeGuideTwoRel),
+      '# Sample Next\n\nSecond fixture guide for the docs integration suite.\n',
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, rawMarkdownGuideRel),
+      `# Raw Markdown Check\n\nBody contains a fixture-only marker: ${rawMarkdownMarker}.\n`,
+    );
+
+    // Fully replaced, not appended to the real on-disk guides — the #4014
+    // pattern: this block controls its own input end to end.
+    config.files.guides = [
+      path.join(tmpDir, treeGuideOneRel),
+      path.join(tmpDir, treeGuideTwoRel),
+      path.join(tmpDir, rawMarkdownGuideRel),
+    ];
+  });
+
+  afterAll(async () => {
+    if (config.organizations) config.organizations.enabled = originalOrgEnabled;
+    config.files.guides = originalGuides;
+    if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+    await mongooseService.disconnect();
+  });
+
+  beforeEach(() => {
+    if (PublicDocsService) PublicDocsService.clearCache();
+  });
+
+  test('the tree groups fixture guides into categories via the configured guide sections', async () => {
     const result = await request(app).get('/api/public/docs').expect(200);
     const { categories } = result.body.data;
     expect(Array.isArray(categories)).toBe(true);
     expect(categories.length).toBeGreaterThan(0);
 
     const guides = categories.flatMap((c) => c.guides);
-    // Devkit ships exactly two sample guides out of the box.
-    expect(guides.length).toBeGreaterThanOrEqual(2);
 
     // Every guide carries the structured contract fields.
     for (const guide of guides) {
@@ -73,45 +137,40 @@ describe('Public docs integration tests:', () => {
       expect(typeof cat.order).toBe('number');
     }
 
-    // The two shipped sample guides are present.
+    // The two prefix-00/01 fixture guides are present, no duplicate slugs.
     const slugs = guides.map((g) => g.slug);
-    expect(slugs).toContain('welcome');
-    expect(slugs).toContain('quickstart');
-    // No duplicate slugs.
+    expect(slugs).toContain('sample-intro');
+    expect(slugs).toContain('sample-next');
     expect(new Set(slugs).size).toBe(slugs.length);
 
-    // The default config groups both samples under the "Get Started" section
-    // (neutral persona ['all']) — assert the real grouping, not a mock.
-    const welcome = guides.find((g) => g.slug === 'welcome');
-    expect(welcome.title).toBe('Welcome');
-    expect(welcome.persona).toEqual(['all']);
+    // The default config groups both fixture guides under "Get Started"
+    // (prefix range [0,9], neutral persona ['all']) — asserts the REAL grouping
+    // primitive against controlled content, not a self-authored mock of it.
+    const sampleIntro = guides.find((g) => g.slug === 'sample-intro');
+    expect(sampleIntro.title).toBe('Sample Intro');
+    expect(sampleIntro.persona).toEqual(['all']);
     const getStarted = categories.find((c) => c.id === 'get-started');
     expect(getStarted).toBeDefined();
     expect(getStarted.label).toBe('Get Started');
     expect(getStarted.guides.map((g) => g.slug)).toEqual(
-      expect.arrayContaining(['welcome', 'quickstart']),
+      expect.arrayContaining(['sample-intro', 'sample-next']),
     );
   });
 
-  test('GET /api/public/docs/:slug.md returns raw markdown for a known slug', async () => {
-    const result = await request(app).get('/api/public/docs/quickstart.md').expect(200);
+  test('GET /api/public/docs/:slug.md returns raw markdown for a fixture guide at a unique slug', async () => {
+    const result = await request(app).get('/api/public/docs/raw-markdown-check.md').expect(200);
     expect(result.headers['content-type']).toMatch(/text\/markdown/);
     expect(typeof result.text).toBe('string');
     expect(result.text.length).toBeGreaterThan(0);
     // The H1 was stripped by the loader.
     expect(result.text).not.toMatch(/^#\s/);
-    // The real quickstart body uses a generic placeholder API key.
-    expect(result.text).toContain('<YOUR_API_KEY>');
+    // Asserts the fixture's OWN content, never a real shipped guide's — a
+    // consumer overriding this (or any other) slug can never break this.
+    expect(result.text).toContain(rawMarkdownMarker);
   });
 
-  test('GET /api/public/docs/:slug.md returns 404 for an unknown slug', async () => {
-    const result = await request(app).get('/api/public/docs/does-not-exist.md').expect(404);
-    expect(result.body.type).toBe('error');
-    expect(result.body.status).toBe(404);
-  });
-
-  test('the docs tree never leaks raw YAML front-matter into a guide body', async () => {
-    const result = await request(app).get('/api/public/docs/welcome.md').expect(200);
+  test('the docs tree never leaks raw YAML front-matter into a fixture guide body', async () => {
+    const result = await request(app).get('/api/public/docs/sample-intro.md').expect(200);
     expect(result.text.trimStart().startsWith('---')).toBe(false);
   });
 });
