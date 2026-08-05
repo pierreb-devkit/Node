@@ -11,7 +11,12 @@ import schema from '../models/billing.subscription.schema.js';
 describe('Billing unit tests:', () => {
   // rule 1 (Node#4020): pick a plan from the LOADED config instead of hardcoding
   // a devkit-default plan id ('pro'/'starter') — a consumer with a different plan
-  // catalogue must still pass these SubscriptionUpdate assertions.
+  // catalogue must still pass these SubscriptionUpdate assertions. The `?? plans[0]`
+  // fallback only fires when EVERY plan in the catalogue equals defaultPlan (a
+  // single-distinct-plan catalogue) — there is no other plan to pick in that case,
+  // by construction. The round-trip these tests assert (partial update preserves
+  // the exact plan provided, no default silently injected) still holds either
+  // way; only the variable's "non-default" framing stops applying.
   const nonDefaultPlan = config.billing.plans.find((plan) => plan !== config.billing.defaultPlan) ?? config.billing.plans[0];
 
   // rule 1 (Node#4020): fixture baseline plan for tests that need "some valid
@@ -369,10 +374,6 @@ describe('Billing unit tests:', () => {
         },
       }));
       SyntheticSchema = (await import('../models/billing.subscription.schema.js')).default;
-    });
-
-    afterAll(() => {
-      jest.resetModules();
     });
 
     test('accepts every plan from the synthetic catalogue (none of which exist in the devkit default)', () => {
