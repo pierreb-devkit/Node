@@ -338,6 +338,7 @@ const fetchSubscriptionDetails = async (stripeSubscriptionId) => {
     currentPeriodStart: new Date(rawPeriodStart * 1000),
     currentPeriodEnd: new Date(rawPeriodEnd * 1000),
     cancelAtPeriodEnd: stripeSub.cancel_at_period_end,
+    cancelAt,
     status: stripeSub.status,
     nextRenewalDate: cancelAt ?? new Date(rawPeriodEnd * 1000),
   };

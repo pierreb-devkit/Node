@@ -746,6 +746,44 @@ describe('Billing service unit tests:', () => {
       expect(mockStripeInstance.subscriptions.retrieve).toHaveBeenCalledWith('sub_456');
     });
 
+    test('should override a stale persisted cancelAt with the live value on reactivation', async () => {
+      // A prior webhook persisted a cancellation date. The subscription was since
+      // reactivated in Stripe (cancel_at cleared), but the DB copy still carries
+      // the stale date. getSubscription must surface the live (null) value, not
+      // the stale persisted one — same freshness treatment as cancelAtPeriodEnd.
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_sub_reactivate' } },
+      }));
+
+      const periodEnd = Math.floor(Date.now() / 1000) + 86400;
+      mockStripeInstance.subscriptions = {
+        retrieve: jest.fn().mockResolvedValue({
+          current_period_start: periodEnd - 2592000,
+          current_period_end: periodEnd,
+          cancel_at_period_end: false,
+          status: 'active',
+          cancel_at: null,
+        }),
+      };
+
+      const staleCancelAt = new Date(Date.now() + 3600 * 1000);
+      const mockSub = {
+        organization: orgId,
+        plan: 'pro',
+        stripeSubscriptionId: 'sub_reactivated',
+        cancelAt: staleCancelAt,
+        toJSON: () => ({ organization: orgId, plan: 'pro', stripeSubscriptionId: 'sub_reactivated', cancelAt: staleCancelAt }),
+      };
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue(mockSub);
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      const result = await BillingService.getSubscription(orgId);
+
+      expect(result.cancelAt).toBeNull();
+    });
+
     test('should return cached sub without Stripe fetch when no stripeSubscriptionId (free plan)', async () => {
       jest.unstable_mockModule('../../../config/index.js', () => ({
         default: { stripe: { secretKey: 'sk_test_sub_free' } },
