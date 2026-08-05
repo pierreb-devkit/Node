@@ -17,8 +17,17 @@ describe('requireQuota middleware:', () => {
   let req;
   let res;
   let next;
+  let originalNodeEnv;
 
   beforeEach(async () => {
+    // rule 3 (Node#4020): lib/helpers/responses.js only serializes the raw
+    // `payload.error` blob in a dev-grade NODE_ENV (lib/helpers/config.js
+    // isProd()/DEV_ENVS). The assertions below read that field, so force an
+    // explicit dev-grade value here rather than depend on whichever NODE_ENV
+    // a consumer happens to run its own test suite under.
+    originalNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'test';
+
     jest.resetModules();
 
     mockBillingQuotaService = {
@@ -47,6 +56,8 @@ describe('requireQuota middleware:', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
   });
 
   // ── Organization guard ────────────────────────────────────────────────────

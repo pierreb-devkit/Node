@@ -68,6 +68,15 @@ jest.unstable_mockModule('../helpers/organizations.slug.js', () => ({
   generateOrganizationSlug: jest.fn().mockResolvedValue('test-org'),
 }));
 
+// rule 2 (Node#4020): isolate the org-creation seam GENERICALLY — mock the hook
+// mechanism itself (lib/events.js, a plain EventEmitter registry any consumer
+// module can subscribe to), never a specific consumer's own listener module.
+// This keeps the rollback-logging assertion below independent of whatever a
+// consumer has registered on 'organization.created' / 'organization.provisioned'.
+jest.unstable_mockModule('../lib/events.js', () => ({
+  default: { emit: jest.fn(), on: jest.fn() },
+}));
+
 const { default: OrgService } = await import('../services/organizations.service.js');
 
 describe('organizations.service silent-catch error logging:', () => {

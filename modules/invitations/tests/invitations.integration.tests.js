@@ -536,21 +536,33 @@ describe('Signup invitations:', () => {
       const created = await adminAgent.post('/api/invitations').send({ email });
       const { token } = created.body.data;
 
+      // rules 1+3 (Node#4020): this P2 invariant holds specifically for
+      // userFacing:false (the byte-for-byte-unchanged baseline — the userFacing:true
+      // variant is covered separately by the dedicated "Open-signup userFacing"
+      // block below). Install that value explicitly rather than ride the config's
+      // ambient default, so this assertion never silently flips under a consumer
+      // whose default deployment config sets userFacing:true.
+      const originalUserFacing = config.invitations.userFacing;
+      config.invitations.userFacing = false;
+
       // Public signup OPEN: a token may be presented but is not required.
       config.sign.up = true; config.sign.cap = null;
-      const res = await request(app)
-        .post(`/api/auth/signup?inviteToken=${token}`)
-        .send({ email, password: 'Sup3rStr0ng!' });
-      expect(res.status).toBe(200);
-
-      // The invite must remain VALID (presented, not consumed) — not stuck mid-claim.
-      const verify = await request(app).get(`/api/invitations/verify/${token}`);
-      expect(verify.body.data.valid).toBe(true);
-
       try {
-        const u = await UserService.getBrut({ email });
-        if (u) await UserService.remove(u);
-      } catch (_) { /* cleanup */ }
+        const res = await request(app)
+          .post(`/api/auth/signup?inviteToken=${token}`)
+          .send({ email, password: 'Sup3rStr0ng!' });
+        expect(res.status).toBe(200);
+
+        // The invite must remain VALID (presented, not consumed) — not stuck mid-claim.
+        const verify = await request(app).get(`/api/invitations/verify/${token}`);
+        expect(verify.body.data.valid).toBe(true);
+      } finally {
+        config.invitations.userFacing = originalUserFacing;
+        try {
+          const u = await UserService.getBrut({ email });
+          if (u) await UserService.remove(u);
+        } catch (_) { /* cleanup */ }
+      }
     });
 
     test('crash recovery: a stale claim (older than the window) is swept and the invite becomes reusable', async () => {

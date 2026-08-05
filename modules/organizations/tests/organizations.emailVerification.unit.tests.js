@@ -2,9 +2,19 @@
  * Unit tests for email verification gates on organization operations.
  */
 import mongoose from 'mongoose';
+import { EventEmitter } from 'events';
 import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 
 // --- Mocks ---
+
+// rule 2 (Node#4020): isolate the org-creation seam GENERICALLY — mock the hook
+// mechanism itself (lib/events.js, a plain EventEmitter registry any consumer
+// module can subscribe to), never a specific consumer's own listener module.
+// A real EventEmitter instance (not a bare jest.fn() double) so the "generic
+// extension point" tests below can register/remove listeners on it exactly like
+// a consumer would, without ever importing or naming a real consumer module.
+const organizationEventsFixture = new EventEmitter();
+jest.unstable_mockModule('../lib/events.js', () => ({ default: organizationEventsFixture }));
 
 const mockIsConfigured = jest.fn();
 jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
@@ -278,6 +288,44 @@ describe('Email verification gates:', () => {
 
       expect(mockOrganizationsRepositoryList).toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(200);
+    });
+  });
+
+  // --- organization-creation seam (generic extension point) ---
+
+  describe('organization-creation seam (generic extension point):', () => {
+    test('a generically-registered listener on organizationEvents receives organization.created + organization.provisioned with their documented payload shape', async () => {
+      // Stand-in for "whatever a consumer registers on the seam" (e.g. billing's
+      // signupGrant listener, per lib/events.js's doc comment) — a plain function
+      // attached via the SAME .on() contract any consumer uses. Never references
+      // a real consumer module, so this proves the seam generically (rule 2).
+      const createdListener = jest.fn();
+      const provisionedListener = jest.fn();
+      organizationEventsFixture.on('organization.created', createdListener);
+      organizationEventsFixture.on('organization.provisioned', provisionedListener);
+
+      try {
+        mockIsConfigured.mockReturnValue(false);
+
+        const fakeOrg = { _id: new mongoose.Types.ObjectId(), name: 'Test', toJSON: () => ({ name: 'Test' }) };
+        const fakeMembership = { _id: new mongoose.Types.ObjectId(), role: 'owner' };
+        mockOrganizationsRepositoryCreate.mockResolvedValue(fakeOrg);
+        mockMembershipRepositoryCreate.mockResolvedValue(fakeMembership);
+        mockUpdateById.mockResolvedValue({});
+
+        const user = { id: fakeUserId.toString(), email: 'test@acme.com', firstName: 'Test', lastName: 'User', emailVerified: false };
+        await OrganizationsService.handleSignupOrganization(user);
+
+        expect(createdListener).toHaveBeenCalledWith({ orgId: fakeOrg._id.toString(), planId: 'free' });
+        expect(provisionedListener).toHaveBeenCalledWith({
+          userId: fakeUserId.toString(),
+          organizationId: fakeOrg._id.toString(),
+        });
+      } finally {
+        // Never leak a listener into a sibling test — each test owns its own.
+        organizationEventsFixture.off('organization.created', createdListener);
+        organizationEventsFixture.off('organization.provisioned', provisionedListener);
+      }
     });
   });
 });
