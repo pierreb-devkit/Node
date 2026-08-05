@@ -22,12 +22,23 @@ function membershipFixture(role, organizationId = '507f1f77bcf86cd799439011') {
   return { role, organizationId: { _id: organizationId } };
 }
 
+/**
+ * Call organizationAbilities with fresh can/cannot spies and return them.
+ * @param {Object} user - user fixture
+ * @param {Object|null} membership - membership fixture
+ * @returns {{can: jest.Mock, cannot: jest.Mock}} the spies, populated by the call
+ */
+function callAbilities(user, membership) {
+  const can = jest.fn();
+  const cannot = jest.fn();
+  organizationAbilities(user, membership, { can, cannot });
+  return { can, cannot };
+}
+
 describe('organizationAbilities:', () => {
   describe('admin (roles includes "admin"):', () => {
     test('grants manage all, regardless of membership (no membership)', () => {
-      const can = jest.fn();
-      const cannot = jest.fn();
-      organizationAbilities({ roles: ['admin'] }, null, { can, cannot });
+      const { can, cannot } = callAbilities({ roles: ['admin'] }, null);
 
       expect(can).toHaveBeenCalledWith('manage', 'all');
       expect(can).toHaveBeenCalledTimes(1);
@@ -35,9 +46,7 @@ describe('organizationAbilities:', () => {
     });
 
     test('grants manage all and short-circuits even when a membership is present (owner)', () => {
-      const can = jest.fn();
-      const cannot = jest.fn();
-      organizationAbilities({ roles: ['admin'] }, membershipFixture(MEMBERSHIP_ROLES.OWNER), { can, cannot });
+      const { can, cannot } = callAbilities({ roles: ['admin'] }, membershipFixture(MEMBERSHIP_ROLES.OWNER));
 
       expect(can).toHaveBeenCalledWith('manage', 'all');
       // The admin branch returns immediately — never also grants the non-admin/
@@ -49,9 +58,7 @@ describe('organizationAbilities:', () => {
 
   describe('non-admin user — no membership:', () => {
     test('grants only create Organization', () => {
-      const can = jest.fn();
-      const cannot = jest.fn();
-      organizationAbilities({ roles: ['user'] }, null, { can, cannot });
+      const { can, cannot } = callAbilities({ roles: ['user'] }, null);
 
       expect(can).toHaveBeenCalledWith('create', 'Organization');
       expect(can).toHaveBeenCalledTimes(1);
@@ -59,8 +66,7 @@ describe('organizationAbilities:', () => {
     });
 
     test('grants create Organization even when roles is absent (non-array falls through, not admin)', () => {
-      const can = jest.fn();
-      organizationAbilities({}, null, { can, cannot: jest.fn() });
+      const { can } = callAbilities({}, null);
 
       expect(can).toHaveBeenCalledWith('create', 'Organization');
       expect(can).toHaveBeenCalledTimes(1);
@@ -69,10 +75,8 @@ describe('organizationAbilities:', () => {
 
   describe('non-admin user — membership.role = owner:', () => {
     test('grants create Organization + manage Organization/Membership scoped to the org', () => {
-      const can = jest.fn();
-      const cannot = jest.fn();
       const membership = membershipFixture(MEMBERSHIP_ROLES.OWNER, 'org-owner-1');
-      organizationAbilities({ roles: ['user'] }, membership, { can, cannot });
+      const { can, cannot } = callAbilities({ roles: ['user'] }, membership);
 
       expect(can).toHaveBeenCalledWith('create', 'Organization');
       expect(can).toHaveBeenCalledWith('manage', 'Organization', { _id: 'org-owner-1' });
@@ -84,10 +88,8 @@ describe('organizationAbilities:', () => {
 
   describe('non-admin user — membership.role = admin:', () => {
     test('grants create Organization + read/update Organization (not delete) + read/create/delete Membership', () => {
-      const can = jest.fn();
-      const cannot = jest.fn();
       const membership = membershipFixture(MEMBERSHIP_ROLES.ADMIN, 'org-admin-1');
-      organizationAbilities({ roles: ['user'] }, membership, { can, cannot });
+      const { can, cannot } = callAbilities({ roles: ['user'] }, membership);
 
       expect(can).toHaveBeenCalledWith('create', 'Organization');
       expect(can).toHaveBeenCalledWith('read', 'Organization', { _id: 'org-admin-1' });
@@ -104,10 +106,8 @@ describe('organizationAbilities:', () => {
 
   describe('non-admin user — membership.role = member:', () => {
     test('grants create Organization + read-only Organization/Membership, no write abilities', () => {
-      const can = jest.fn();
-      const cannot = jest.fn();
       const membership = membershipFixture(MEMBERSHIP_ROLES.MEMBER, 'org-member-1');
-      organizationAbilities({ roles: ['user'] }, membership, { can, cannot });
+      const { can, cannot } = callAbilities({ roles: ['user'] }, membership);
 
       expect(can).toHaveBeenCalledWith('create', 'Organization');
       expect(can).toHaveBeenCalledWith('read', 'Organization', { _id: 'org-member-1' });
@@ -123,18 +123,16 @@ describe('organizationAbilities:', () => {
 
   describe('membership.organizationId shape — populated vs. raw id:', () => {
     test('scopes abilities to the raw id when organizationId is NOT populated (no ._id)', () => {
-      const can = jest.fn();
       const membership = { role: MEMBERSHIP_ROLES.OWNER, organizationId: 'org-raw-1' };
-      organizationAbilities({ roles: ['user'] }, membership, { can, cannot: jest.fn() });
+      const { can } = callAbilities({ roles: ['user'] }, membership);
 
       expect(can).toHaveBeenCalledWith('manage', 'Organization', { _id: 'org-raw-1' });
       expect(can).toHaveBeenCalledWith('manage', 'Membership', { organizationId: 'org-raw-1' });
     });
 
     test('scopes abilities to the populated ._id when organizationId IS populated', () => {
-      const can = jest.fn();
       const membership = membershipFixture(MEMBERSHIP_ROLES.OWNER, 'org-populated-1');
-      organizationAbilities({ roles: ['user'] }, membership, { can, cannot: jest.fn() });
+      const { can } = callAbilities({ roles: ['user'] }, membership);
 
       expect(can).toHaveBeenCalledWith('manage', 'Organization', { _id: 'org-populated-1' });
     });
