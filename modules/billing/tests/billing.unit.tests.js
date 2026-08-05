@@ -14,13 +14,22 @@ describe('Billing unit tests:', () => {
   // catalogue must still pass these SubscriptionUpdate assertions.
   const nonDefaultPlan = config.billing.plans.find((plan) => plan !== config.billing.defaultPlan) ?? config.billing.plans[0];
 
+  // rule 1 (Node#4020): fixture baseline plan for tests that need "some valid
+  // plan" (not testing default-resolution itself) — derived from the loaded
+  // config so a consumer whose catalogue lacks the devkit-shipped 'free' id
+  // still gets a value schema.Subscription actually accepts. Prefers
+  // defaultPlan (readable, guaranteed-valid by convention) but falls back to
+  // plans[0] in case a consumer's defaultPlan is ever missing from its own
+  // plans array.
+  const fixturePlan = config.billing.plans.includes(config.billing.defaultPlan) ? config.billing.defaultPlan : config.billing.plans[0];
+
   describe('Subscription schema', () => {
     let subscription;
 
     beforeEach(() => {
       subscription = {
         organization: '507f1f77bcf86cd799439011',
-        plan: 'free',
+        plan: fixturePlan,
         status: 'active',
       };
     });
@@ -194,7 +203,7 @@ describe('Billing unit tests:', () => {
     beforeEach(() => {
       subscription = {
         organization: '507f1f77bcf86cd799439011',
-        plan: 'free',
+        plan: fixturePlan,
         status: 'active',
       };
     });
@@ -384,6 +393,25 @@ describe('Billing unit tests:', () => {
         status: 'active',
       });
       expect(result.error).toBeDefined();
+    });
+
+    // Pre-push panel finding (P1): the shared `fixturePlan` derivation above
+    // (`config.billing.plans.includes(config.billing.defaultPlan) ? ... :
+    // plans[0]`) is what the 'Subscription schema' + 'meter fields' blocks'
+    // fixtures now use in place of a hardcoded 'free'. Proves that SAME
+    // derivation, applied to THIS synthetic catalogue (no 'free', no
+    // devkit-shipped id at all), still resolves to a value the schema accepts
+    // — the mechanism those ~15 fixture-driven tests now rely on genuinely
+    // survives a catalogue that lacks every devkit-default plan id.
+    test('the fixturePlan derivation mechanism resolves to a value the synthetic schema accepts', () => {
+      const syntheticFixturePlan = syntheticPlans.includes(syntheticDefaultPlan) ? syntheticDefaultPlan : syntheticPlans[0];
+      const result = SyntheticSchema.Subscription.safeParse({
+        organization: '507f1f77bcf86cd799439011',
+        plan: syntheticFixturePlan,
+        status: 'active',
+      });
+      expect(result.error).toBeFalsy();
+      expect(result.data.plan).toBe(syntheticFixturePlan);
     });
 
     test('SubscriptionUpdate round-trips a synthetic-catalogue plan id', () => {
