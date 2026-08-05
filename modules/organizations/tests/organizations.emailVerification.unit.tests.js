@@ -6,6 +6,19 @@ import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 
 // --- Mocks ---
 
+// rule 2 (Node#4020): isolate the org-creation seam GENERICALLY — mock the hook
+// mechanism itself (lib/events.js, a plain EventEmitter registry any consumer
+// module can subscribe to), never a specific consumer's own listener module.
+// A bare double (not a real EventEmitter) — same convention already used by
+// organizations.service.silent.catch.unit.tests.js and
+// organizations.service.signup.unit.tests.js, which already covers the
+// organization.created/organization.provisioned payload shape and ordering
+// generically via this exact mock, so this file only needs isolation, not a
+// second copy of that coverage.
+jest.unstable_mockModule('../lib/events.js', () => ({
+  default: { emit: jest.fn(), on: jest.fn() },
+}));
+
 const mockIsConfigured = jest.fn();
 jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
   default: { isConfigured: mockIsConfigured, sendMail: jest.fn() },

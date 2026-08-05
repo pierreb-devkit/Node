@@ -405,18 +405,25 @@ describe('Signup invitations:', () => {
   describe('E2 two-phase claim/finalize hardening', () => {
     let InvitationService;
     let InvitationRepository;
-    let originalUp; let originalCap;
+    let originalUp; let originalCap; let originalUserFacing;
 
     beforeAll(async () => {
       InvitationService = (await import(path.resolve('./modules/invitations/services/invitations.service.js'))).default;
       InvitationRepository = (await import(path.resolve('./modules/invitations/repositories/invitations.repository.js'))).default;
     });
 
-    beforeEach(() => { originalUp = config.sign.up; originalCap = config.sign.cap; });
+    beforeEach(() => {
+      originalUp = config.sign.up;
+      originalCap = config.sign.cap;
+      // rules 1+3 (Node#4020): saved/restored here even though only the
+      // OPEN-signup test below touches it — same block-level pattern as
+      // sign.up/sign.cap, so that test needs no bespoke try/finally of its own.
+      originalUserFacing = config.invitations.userFacing;
+    });
     afterEach(async () => {
-      config.sign.up = originalUp; config.sign.cap = originalCap;
+      config.sign.up = originalUp; config.sign.cap = originalCap; config.invitations.userFacing = originalUserFacing;
       jest.restoreAllMocks();
-      for (const email of ['e2-replay@example.com', 'e2-claimed@example.com', 'e2-stale@example.com', 'e2-createthrow@example.com', 'e2-concurrent@example.com', 'e2-finalize-throw@example.com', 'e2-oauth-finalize-throw@example.com', 'e2-release-throw@example.com']) {
+      for (const email of ['e2-replay@example.com', 'e2-claimed@example.com', 'e2-stale@example.com', 'e2-createthrow@example.com', 'e2-concurrent@example.com', 'e2-finalize-throw@example.com', 'e2-oauth-finalize-throw@example.com', 'e2-release-throw@example.com', 'e2-opensignup@example.com']) {
         try {
           const existing = await UserService.getBrut({ email });
           if (existing) await UserService.remove(existing);
@@ -536,6 +543,15 @@ describe('Signup invitations:', () => {
       const created = await adminAgent.post('/api/invitations').send({ email });
       const { token } = created.body.data;
 
+      // rules 1+3 (Node#4020): this P2 invariant holds specifically for
+      // userFacing:false (the byte-for-byte-unchanged baseline — the userFacing:true
+      // variant is covered separately by the dedicated "Open-signup userFacing"
+      // block below). Install that value explicitly rather than ride the config's
+      // ambient default, so this assertion never silently flips under a consumer
+      // whose default deployment config sets userFacing:true. Restored by this
+      // describe block's own afterEach, same as sign.up/sign.cap below.
+      config.invitations.userFacing = false;
+
       // Public signup OPEN: a token may be presented but is not required.
       config.sign.up = true; config.sign.cap = null;
       const res = await request(app)
@@ -546,11 +562,6 @@ describe('Signup invitations:', () => {
       // The invite must remain VALID (presented, not consumed) — not stuck mid-claim.
       const verify = await request(app).get(`/api/invitations/verify/${token}`);
       expect(verify.body.data.valid).toBe(true);
-
-      try {
-        const u = await UserService.getBrut({ email });
-        if (u) await UserService.remove(u);
-      } catch (_) { /* cleanup */ }
     });
 
     test('crash recovery: a stale claim (older than the window) is swept and the invite becomes reusable', async () => {
