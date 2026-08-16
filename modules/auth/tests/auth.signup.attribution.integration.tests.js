@@ -47,6 +47,10 @@ describe('Auth signup attribution integration tests:', () => {
     bogus: 'attribution-bogus@test.com',
   };
 
+  /**
+   * Remove any leftover test users (by email) from a previous run.
+   * @returns {Promise<void>}
+   */
   const cleanupUsers = async () => {
     for (const email of Object.values(emails)) {
       try {
