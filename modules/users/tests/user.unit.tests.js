@@ -324,3 +324,144 @@ describe('User unit tests:', () => {
     });
   });
 });
+
+/**
+ * Signup attribution unit tests (epic #4002 / #4003)
+ */
+describe('Attribution (signup) unit tests:', () => {
+  describe('Attribution schema', () => {
+    test('should accept an attribution object with all fields set', (done) => {
+      const attribution = {
+        referrer: 'https://google.com',
+        landingPath: '/pricing',
+        utmSource: 'google',
+        utmMedium: 'cpc',
+        utmCampaign: 'launch',
+        utmTerm: 'saas',
+        utmContent: 'ad1',
+      };
+
+      const result = schema.Attribution.safeParse(attribution);
+      expect(typeof result).toBe('object');
+      expect(result.error).toBeFalsy();
+      expect(result.data).toEqual(attribution);
+      done();
+    });
+
+    test('should accept an empty attribution object (all fields optional)', (done) => {
+      const result = schema.Attribution.safeParse({});
+      expect(typeof result).toBe('object');
+      expect(result.error).toBeFalsy();
+      done();
+    });
+
+    test('should trim whitespace on attribution string fields', (done) => {
+      const result = schema.Attribution.safeParse({ referrer: '  https://google.com  ' });
+      expect(result.error).toBeFalsy();
+      expect(result.data.referrer).toBe('https://google.com');
+      done();
+    });
+
+    test('should reject an unknown key via .strict()', (done) => {
+      const result = schema.Attribution.safeParse({ referrer: 'https://google.com', evilKey: 'nope' });
+      expect(result.error).toBeDefined();
+      done();
+    });
+
+    test('should accept referrer at exactly the 2048-character cap', (done) => {
+      const result = schema.Attribution.safeParse({ referrer: 'a'.repeat(2048) });
+      expect(result.error).toBeFalsy();
+      done();
+    });
+
+    test('should reject referrer longer than the 2048-character cap', (done) => {
+      const result = schema.Attribution.safeParse({ referrer: 'a'.repeat(2049) });
+      expect(result.error).toBeDefined();
+      done();
+    });
+
+    test('should reject landingPath longer than the 2048-character cap', (done) => {
+      const result = schema.Attribution.safeParse({ landingPath: 'a'.repeat(2049) });
+      expect(result.error).toBeDefined();
+      done();
+    });
+
+    test('should accept a utm field at exactly the 256-character cap', (done) => {
+      const result = schema.Attribution.safeParse({ utmSource: 'a'.repeat(256) });
+      expect(result.error).toBeFalsy();
+      done();
+    });
+
+    test('should reject a utm field longer than the 256-character cap', (done) => {
+      const result = schema.Attribution.safeParse({ utmSource: 'a'.repeat(257) });
+      expect(result.error).toBeDefined();
+      done();
+    });
+  });
+
+  describe('User schema carries an optional attribution subdocument', () => {
+    test('should accept a full user document with attribution set', (done) => {
+      const result = schema.User.safeParse({
+        firstName: 'Full',
+        lastName: 'Name',
+        email: 'test@test.com',
+        password: 'M3@n.jsI$Aw3$0m3',
+        provider: 'local',
+        attribution: { utmSource: 'google', referrer: 'https://google.com' },
+      });
+      expect(result.error).toBeFalsy();
+      expect(result.data.attribution).toEqual({ utmSource: 'google', referrer: 'https://google.com' });
+      done();
+    });
+
+    test('should accept a full user document with attribution absent (backward compatible)', (done) => {
+      const result = schema.User.safeParse({
+        firstName: 'Full',
+        lastName: 'Name',
+        email: 'test@test.com',
+        password: 'M3@n.jsI$Aw3$0m3',
+        provider: 'local',
+      });
+      expect(result.error).toBeFalsy();
+      expect(result.data.attribution).toBeUndefined();
+      done();
+    });
+  });
+
+  describe('SignupUser + attribution', () => {
+    test('should accept a signup with a valid attribution object', (done) => {
+      const result = schema.SignupUser.safeParse({ email: 'a@b.com', attribution: { utmSource: 'google' } });
+      expect(result.error).toBeFalsy();
+      expect(result.data.attribution).toEqual({ utmSource: 'google' });
+      done();
+    });
+
+    test('should accept a signup with no attribution at all (backward compatible)', (done) => {
+      const result = schema.SignupUser.safeParse({ email: 'a@b.com' });
+      expect(result.error).toBeFalsy();
+      expect(result.data.attribution).toBeUndefined();
+      done();
+    });
+
+    test('should reject a signup whose attribution has an over-length field', (done) => {
+      const result = schema.SignupUser.safeParse({ email: 'a@b.com', attribution: { utmSource: 'a'.repeat(257) } });
+      expect(result.error).toBeDefined();
+      done();
+    });
+
+    test('should reject a signup whose attribution carries an unknown key', (done) => {
+      const result = schema.SignupUser.safeParse({ email: 'a@b.com', attribution: { evilKey: 'nope' } });
+      expect(result.error).toBeDefined();
+      done();
+    });
+  });
+
+  describe('UserUpdate excludes attribution (server-set-once at signup)', () => {
+    test('should silently strip an attribution field sent on a profile update, without erroring', (done) => {
+      const result = schema.UserUpdate.safeParse({ firstName: 'A', attribution: { utmSource: 'hijack' } });
+      expect(result.error).toBeFalsy();
+      expect(result.data).not.toHaveProperty('attribution');
+      done();
+    });
+  });
+});
