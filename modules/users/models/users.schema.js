@@ -9,6 +9,23 @@ import zodHelpers from '../../../lib/helpers/zod.js';
 const names = /^[a-zA-ZàáâäãåąčćęèéêëėįìíîïłńòóôöõøùúûüųūÿýżźñçčšžÀÁÂÄÃÅĄĆČĖĘÈÉÊËÌÍÎÏĮŁŃÒÓÔÖÕØÙÚÛÜŲŪŸÝŻŹÑßÇŒÆČŠŽ∂ð ,.'-]+$/u;
 
 /**
+ * First-touch signup attribution (epic #4002 / #4003). All fields optional,
+ * trimmed, length-capped. `.strict()` so an unknown key is REJECTED (422)
+ * instead of silently accepted — the object's shape is exhaustive by design.
+ * Server-set-once at signup: see `UserUpdate` below for why it is explicitly
+ * excluded from the profile-update write surface.
+ */
+const Attribution = z.object({
+  referrer: z.string().max(2048).trim().optional(),
+  landingPath: z.string().max(2048).trim().optional(),
+  utmSource: z.string().max(256).trim().optional(),
+  utmMedium: z.string().max(256).trim().optional(),
+  utmCampaign: z.string().max(256).trim().optional(),
+  utmTerm: z.string().max(256).trim().optional(),
+  utmContent: z.string().max(256).trim().optional(),
+}).strict();
+
+/**
  * User Data Schema
  */
 const User = z.object({
@@ -68,9 +85,19 @@ const User = z.object({
   // projection / the read whitelist — NEVER by adding it to this schema.
   // others
   complementary: z.record(z.string(), z.unknown()).nullable().optional(),
+  // First-touch signup attribution (#4002/#4003) — server-set-once at signup,
+  // persisted only when analytics is enabled (auth.controller strips it from
+  // the create body otherwise). Deliberately NOT on `UserUpdate` (below): a
+  // client must never be able to overwrite its own first-touch attribution
+  // after the fact via the profile-update surface.
+  attribution: Attribution.optional(),
 });
 
-const UserUpdate = User.partial();
+// `attribution` is EXCLUDED here (not just left off the `update`/`updateAdmin`
+// whitelists in config) — defense-in-depth so the PUT /users route schema
+// itself rejects/strips it before the whitelist layer is ever reached, the
+// same belt-and-braces pattern `referredBy` uses above.
+const UserUpdate = User.partial().omit({ attribution: true });
 
 /**
  * Public signup write surface.
@@ -115,10 +142,15 @@ const SignupUser = z.object({
   terms: User.shape.terms,
   complementary: User.shape.complementary,
   referredBy: z.string().optional(),
+  // First-touch attribution (#4002/#4003) — optional, client-provided at signup
+  // time only. The controller decides whether to persist it (analytics enabled)
+  // or strip it before create (analytics disabled); see auth.controller.js.
+  attribution: User.shape.attribution,
 }).strict();
 
 export default {
   User,
   UserUpdate,
   SignupUser,
+  Attribution,
 };

@@ -126,7 +126,14 @@ function mockCommonDeps({ config, eligibility, create }) {
   }));
 
   jest.unstable_mockModule('../../../lib/services/analytics.js', () => ({
-    default: { identify: jest.fn(), groupIdentify: jest.fn(), capture: jest.fn() },
+    default: {
+      identify: jest.fn(),
+      groupIdentify: jest.fn(),
+      capture: jest.fn(),
+      // #4002/#4003: local signup() gates attribution persistence on this —
+      // false here (feature not under test in this file, no attribution submitted).
+      isConfigured: jest.fn().mockReturnValue(false),
+    },
   }));
 }
 

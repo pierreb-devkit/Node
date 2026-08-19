@@ -127,7 +127,7 @@ describe('auth.controller silent-catch error logging:', () => {
       }));
 
       jest.unstable_mockModule('../../../lib/services/analytics.js', () => ({
-        default: { identify: jest.fn(), groupIdentify: jest.fn() },
+        default: { identify: jest.fn(), groupIdentify: jest.fn(), isConfigured: jest.fn().mockReturnValue(false) },
       }));
 
       const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
@@ -267,7 +267,7 @@ describe('auth.controller signup mass-assignment strip:', () => {
     }));
 
     jest.unstable_mockModule('../../../lib/services/analytics.js', () => ({
-      default: { identify: jest.fn(), groupIdentify: jest.fn(), capture: jest.fn() },
+      default: { identify: jest.fn(), groupIdentify: jest.fn(), capture: jest.fn(), isConfigured: jest.fn().mockReturnValue(false) },
     }));
 
     const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
@@ -446,7 +446,7 @@ describe('auth.controller signup analytics: invite/referral attribution (#3945):
 
     const mockCapture = jest.fn();
     jest.unstable_mockModule('../../../lib/services/analytics.js', () => ({
-      default: { identify: jest.fn(), groupIdentify: jest.fn(), capture: mockCapture },
+      default: { identify: jest.fn(), groupIdentify: jest.fn(), capture: mockCapture, isConfigured: jest.fn().mockReturnValue(false) },
     }));
 
     const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
@@ -573,7 +573,7 @@ describe('auth.controller signup analytics: invite/referral attribution (#3945):
 
     const mockCapture = jest.fn();
     jest.unstable_mockModule('../../../lib/services/analytics.js', () => ({
-      default: { identify: jest.fn(), groupIdentify: jest.fn(), capture: mockCapture },
+      default: { identify: jest.fn(), groupIdentify: jest.fn(), capture: mockCapture, isConfigured: jest.fn().mockReturnValue(false) },
     }));
 
     const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
@@ -796,7 +796,7 @@ describe('auth.controller resendVerification mail-transport failure hardening (#
     }));
 
     jest.unstable_mockModule('../../../lib/services/analytics.js', () => ({
-      default: { identify: jest.fn(), groupIdentify: jest.fn(), capture: jest.fn() },
+      default: { identify: jest.fn(), groupIdentify: jest.fn(), capture: jest.fn(), isConfigured: jest.fn().mockReturnValue(false) },
     }));
 
     const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');

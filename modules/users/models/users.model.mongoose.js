@@ -66,6 +66,18 @@ const UserMongoose = new Schema(
       default: null,
     },
     complementary: {}, // put your specific project private data here
+    // First-touch signup attribution (#4002/#4003) — server-set-once at signup,
+    // persisted only when analytics is enabled (see auth.controller.js). No
+    // index: not queried, only read back for the analytics event / display.
+    attribution: {
+      referrer: String,
+      landingPath: String,
+      utmSource: String,
+      utmMedium: String,
+      utmCampaign: String,
+      utmTerm: String,
+      utmContent: String,
+    },
   },
   {
     timestamps: true,

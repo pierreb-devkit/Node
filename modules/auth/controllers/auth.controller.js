@@ -60,6 +60,32 @@ const sendVerificationEmail = async (user, verificationToken) => {
 };
 
 /**
+ * @desc Flatten a persisted `attribution` subdocument into PostHog-style
+ * snake_case event properties. Only present keys are included (absent
+ * attribution, or an absent individual field, contributes nothing) — mirrors
+ * the "only keys that are present" contract for the `user_signed_up` event.
+ * @param {Object|undefined} attribution - persisted attribution subdocument
+ * @returns {Object} flattened snake_case properties, possibly empty
+ */
+const attributionEventProperties = (attribution) => {
+  if (!attribution || typeof attribution !== 'object') return {};
+  const map = {
+    referrer: 'referrer',
+    landingPath: 'landing_path',
+    utmSource: 'utm_source',
+    utmMedium: 'utm_medium',
+    utmCampaign: 'utm_campaign',
+    utmTerm: 'utm_term',
+    utmContent: 'utm_content',
+  };
+  const properties = {};
+  for (const [camelKey, snakeKey] of Object.entries(map)) {
+    if (attribution[camelKey] !== undefined) properties[snakeKey] = attribution[camelKey];
+  }
+  return properties;
+};
+
+/**
  * @desc Endpoint to ask the service to create a user
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
@@ -156,6 +182,19 @@ const signup = async (req, res) => {
       'currentOrganization',
       'referredBy',
     ]) delete safeBody[serverOwned];
+    // First-touch attribution (#4002/#4003) is a legitimate client-provided field
+    // (unlike the server-owned list above), but the feature is inert unless the
+    // PostHog client actually initialized — nothing would ever read it back, so
+    // strip it before create rather than persist dead data. Gate on
+    // AnalyticsService.isConfigured() (client !== null) rather than
+    // config.analytics.posthog.enabled directly: `enabled:true` with no `key` set
+    // never initializes the client (see lib/services/analytics.js#init), so the
+    // config flag alone would silently persist attribution nobody ever reads.
+    // When configured, attribution flows into UserService.create untouched
+    // (already validated + trimmed + length-capped by SignupUser's `.strict()`
+    // Attribution shape) and is flattened onto the `user_signed_up` capture event
+    // below.
+    if (!AnalyticsService.isConfigured()) delete safeBody.attribution;
     // Invite-gated signup: canonicalize the account email to the invite's pinned
     // (lowercased) email. Enforces the pin exactly AND makes the case-insensitive
     // unique-email index (email_ci_unique, collation strength-2) a reliable single-use backstop — concurrent case-variant
@@ -248,6 +287,14 @@ const signup = async (req, res) => {
           invited: Boolean(invite),
           invitationId: invite ? String(invite.id) : null,
           invitedBy: invite?.invitedBy ? String(invite.invitedBy) : null,
+          // #4002/#4003: first-touch attribution, flattened PostHog-style. Read
+          // from `safeBody` (the object actually handed to UserService.create),
+          // NOT the sanitized `user` response — `attribution` is deliberately
+          // absent from `config.whitelists.users.default`, so `UserService.create`'s
+          // `removeSensitive()` return would always strip it regardless of whether
+          // it was actually persisted. Empty when analytics was disabled at create
+          // time (stripped from safeBody above) or when none was submitted.
+          ...attributionEventProperties(safeBody.attribution),
         },
       });
     } catch (_) { /* analytics must not break auth */ }
@@ -635,6 +682,34 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
     // else return req.body with the data after Zod validation
     if (oauthInvite) result.value.email = oauthInvite.email;
     const createdUser = await UserService.create(result.value);
+
+    // Analytics — fire-and-forget, never break auth. Mirrors the local signup
+    // event (#4002/#4003); OAuth carries no attribution (the redirect has no
+    // body to carry it in), so no attribution properties here. This MUST only
+    // fire on THIS branch (new account) — never on branches 1-3 above, which
+    // resolve to an existing/linked user and are not a signup.
+    try {
+      AnalyticsService.identify(String(createdUser.id), {
+        email: createdUser.email,
+        firstName: createdUser.firstName,
+        lastName: createdUser.lastName,
+        provider: createdUser.provider,
+      });
+      AnalyticsService.capture({
+        distinctId: String(createdUser.id),
+        event: 'user_signed_up',
+        properties: {
+          email: createdUser.email,
+          plan: createdUser.plan,
+          createdAt: createdUser.createdAt,
+          provider: createdUser.provider,
+          invited: Boolean(oauthInvite),
+          invitationId: oauthInvite ? String(oauthInvite.id) : null,
+          invitedBy: oauthInvite?.invitedBy ? String(oauthInvite.invitedBy) : null,
+        },
+      });
+    } catch (_) { /* analytics must not break auth */ }
+
     // E2: FINALIZE through the returned closure (invitations owns it; auth stays
     // import-free). OAuth resolves the invite by the provider-verified email and
     // never CLAIMS it (no token on the redirect), so there is no consumingAt to
