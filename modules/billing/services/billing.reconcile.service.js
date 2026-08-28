@@ -175,6 +175,15 @@ const _checkMeterExtrasMismatch = async (orgId) => {
 };
 
 /**
+ * True when Stripe reports that the resource does not exist — deleted, or belonging to
+ * another mode/account. Stripe raises StripeInvalidRequestError with code 'resource_missing'
+ * (HTTP 404); `raw` is checked too since some SDK paths only populate the raw error body.
+ * @param {*} err - Error thrown by the Stripe client.
+ * @returns {boolean}
+ */
+const _isMissingInStripe = (err) => err?.code === 'resource_missing' || err?.raw?.code === 'resource_missing';
+
+/**
  * Reconcile a single subscription against Stripe.
  * Returns { diverged: boolean }.
  * @param {Object} stripe - Stripe client.
@@ -186,28 +195,11 @@ const _reconcileOne = async (stripe, sub) => {
   const orgId = String(sub.organization?._id || sub.organization);
   const subId = sub.stripeSubscriptionId;
 
-  const stripeSub = await stripe.subscriptions.retrieve(subId);
-  const stripeStatus = stripeSub.status;
-  const stripePlan = resolveStripePlan(stripeSub);
-
-  const statusMismatch = sub.status !== stripeStatus;
-  // stripePlan === null means the price is unresolvable (no priceId mapping, no valid
-  // metadata) — skip the plan comparison rather than risk a false divergence against a
-  // guessed 'free'. Log distinctly so a misconfigured config.stripe.prices stays visible.
-  if (stripePlan === null) {
-    logger.warn('[billing.reconcile] cannot resolve Stripe plan — skipping plan comparison for this subscription', {
-      organizationId: orgId,
-      subscriptionId: String(sub._id),
-      stripeSubscriptionId: subId,
-      stripePriceId: stripeSub.items?.data?.[0]?.price?.id ?? null,
-      dbPlan: sub.plan,
-    });
-  }
-  const planMismatch = stripePlan !== null && sub.plan !== stripePlan;
-
   // Check meter↔extras divergence for this org (Opus C1 detection layer).
   // This runs regardless of status/plan match — a healthy subscription can still
-  // have an accumulating ledger mismatch if debits were silently dropped.
+  // have an accumulating ledger mismatch if debits were silently dropped. It is also
+  // deliberately ahead of the Stripe call: the check only needs the org, so a
+  // subscription Stripe no longer has must not cost us this ledger signal too.
   let meterExtrasMismatch = false;
   try {
     const mismatchResult = await _checkMeterExtrasMismatch(orgId);
@@ -238,6 +230,54 @@ const _reconcileOne = async (stripe, sub) => {
       error: mismatchErr?.message ?? String(mismatchErr),
     });
   }
+
+  let stripeSub;
+  try {
+    stripeSub = await stripe.subscriptions.retrieve(subId);
+  } catch (err) {
+    // A subscription Stripe no longer has is exactly the kind of mismatch this sweep exists
+    // to surface, so report it as a divergence instead of failing the run. Anything else —
+    // timeout, auth, rate limit — must keep counting as an error: this is not a blanket catch.
+    if (!_isMissingInStripe(err)) throw err;
+
+    const missingPayload = {
+      organizationId: orgId,
+      subscriptionId: String(sub._id),
+      stripeSubscriptionId: subId,
+      subType: 'missing_in_stripe',
+      db: { status: sub.status, plan: sub.plan },
+      stripe: null,
+    };
+
+    logger.error('[billing.reconcile] subscription missing in Stripe — LOG ONLY, no auto-fix', missingPayload);
+
+    try {
+      billingEvents.emit('billing.reconciliation.divergence', missingPayload);
+    } catch (evtErr) {
+      logger.error('[billing.reconcile] billing.reconciliation.divergence (missing_in_stripe) listener error (non-fatal)', {
+        error: evtErr?.message ?? String(evtErr),
+      });
+    }
+
+    return { diverged: true };
+  }
+  const stripeStatus = stripeSub.status;
+  const stripePlan = resolveStripePlan(stripeSub);
+
+  const statusMismatch = sub.status !== stripeStatus;
+  // stripePlan === null means the price is unresolvable (no priceId mapping, no valid
+  // metadata) — skip the plan comparison rather than risk a false divergence against a
+  // guessed 'free'. Log distinctly so a misconfigured config.stripe.prices stays visible.
+  if (stripePlan === null) {
+    logger.warn('[billing.reconcile] cannot resolve Stripe plan — skipping plan comparison for this subscription', {
+      organizationId: orgId,
+      subscriptionId: String(sub._id),
+      stripeSubscriptionId: subId,
+      stripePriceId: stripeSub.items?.data?.[0]?.price?.id ?? null,
+      dbPlan: sub.plan,
+    });
+  }
+  const planMismatch = stripePlan !== null && sub.plan !== stripePlan;
 
   if (!statusMismatch && !planMismatch) return { diverged: meterExtrasMismatch };
 

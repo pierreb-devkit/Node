@@ -258,6 +258,134 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
     );
   });
 
+  test('missing in Stripe counts as a divergence, not an error — emits billing.reconciliation.divergence', async () => {
+    const sub = makeDbSub();
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce([sub])
+      .mockResolvedValue([]);
+    // Stripe no longer has this subscription: deleted, or created in another mode/account.
+    const missing = Object.assign(new Error("No such subscription: 'sub_test_001'"), {
+      code: 'resource_missing',
+      statusCode: 404,
+    });
+    mockStripeInstance.subscriptions.retrieve.mockRejectedValue(missing);
+
+    const result = await BillingReconcileService.runReconciliation();
+
+    expect(result).toMatchObject({ checked: 1, divergences: 1, errors: 0 });
+    expect(mockEvents.emit).toHaveBeenCalledWith(
+      'billing.reconciliation.divergence',
+      expect.objectContaining({ organizationId: orgId, subType: 'missing_in_stripe', stripe: null }),
+    );
+    // Must not be reported through the generic error path.
+    expect(mockLogger.error).not.toHaveBeenCalledWith(
+      '[billing.reconcile] error reconciling subscription',
+      expect.any(Object),
+    );
+  });
+
+  test('missing in Stripe still runs the meter↔extras check — both divergences are emitted', async () => {
+    const sub = makeDbSub();
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce([sub])
+      .mockResolvedValue([]);
+    const missing = Object.assign(new Error("No such subscription: 'sub_test_001'"), {
+      code: 'resource_missing',
+    });
+    mockStripeInstance.subscriptions.retrieve.mockRejectedValue(missing);
+    // Ledger mismatch on the same org: a subscription gone from Stripe must not cost us
+    // this signal too — the meter↔extras layer runs regardless.
+    mockUsageRepository.findByWeek.mockResolvedValue({ meterUsed: 10100, meterQuota: 100 });
+    mockExtraBalanceRepository.sumDebitsByWindow.mockResolvedValue(5000);
+
+    const result = await BillingReconcileService.runReconciliation();
+
+    expect(result).toMatchObject({ checked: 1, errors: 0 });
+    expect(mockEvents.emit).toHaveBeenCalledWith(
+      'billing.reconciliation.divergence',
+      expect.objectContaining({ subType: 'missing_in_stripe' }),
+    );
+    expect(mockEvents.emit).toHaveBeenCalledWith(
+      'billing.reconciliation.divergence',
+      expect.objectContaining({ subType: 'meter_extras_mismatch' }),
+    );
+  });
+
+  test('non-fatal: a listener crash on the missing_in_stripe emit is swallowed, divergence still counted', async () => {
+    const sub = makeDbSub();
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce([sub])
+      .mockResolvedValue([]);
+    const missing = Object.assign(new Error("No such subscription: 'sub_test_001'"), {
+      code: 'resource_missing',
+    });
+    mockStripeInstance.subscriptions.retrieve.mockRejectedValue(missing);
+    mockEvents.emit.mockImplementation(() => { throw new Error('listener crash'); });
+
+    const result = await BillingReconcileService.runReconciliation();
+
+    // A crashing listener must not turn the divergence back into an error.
+    expect(result).toMatchObject({ checked: 1, divergences: 1, errors: 0 });
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing.reconcile] billing.reconciliation.divergence (missing_in_stripe) listener error (non-fatal)',
+      expect.objectContaining({ error: 'listener crash' }),
+    );
+  });
+
+  test('non-fatal: a listener crash on the meter_extras_mismatch emit is swallowed', async () => {
+    const sub = makeDbSub();
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce([sub])
+      .mockResolvedValue([]);
+    mockStripeInstance.subscriptions.retrieve.mockResolvedValue(makeStripeSub());
+    mockUsageRepository.findByWeek.mockResolvedValue({ meterUsed: 10100, meterQuota: 100 });
+    mockExtraBalanceRepository.sumDebitsByWindow.mockResolvedValue(5000);
+    mockEvents.emit.mockImplementation(() => { throw new Error('listener crash'); });
+
+    const result = await BillingReconcileService.runReconciliation();
+
+    expect(result).toMatchObject({ checked: 1, errors: 0 });
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing.reconcile] billing.reconciliation.divergence (meter_extras_mismatch) listener error (non-fatal)',
+      expect.objectContaining({ error: 'listener crash' }),
+    );
+  });
+
+  test('missing in Stripe reported via raw.code is still a divergence', async () => {
+    const sub = makeDbSub();
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce([sub])
+      .mockResolvedValue([]);
+    const missing = Object.assign(new Error('No such subscription'), {
+      raw: { code: 'resource_missing' },
+    });
+    mockStripeInstance.subscriptions.retrieve.mockRejectedValue(missing);
+
+    const result = await BillingReconcileService.runReconciliation();
+
+    expect(result).toMatchObject({ checked: 1, divergences: 1, errors: 0 });
+  });
+
+  test('a non-missing Stripe error code is still an error, not a divergence', async () => {
+    const sub = makeDbSub();
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce([sub])
+      .mockResolvedValue([]);
+    const rateLimited = Object.assign(new Error('Too many requests'), {
+      code: 'rate_limit',
+      statusCode: 429,
+    });
+    mockStripeInstance.subscriptions.retrieve.mockRejectedValue(rateLimited);
+
+    const result = await BillingReconcileService.runReconciliation();
+
+    expect(result).toMatchObject({ checked: 0, divergences: 0, errors: 1 });
+    expect(mockEvents.emit).not.toHaveBeenCalledWith(
+      'billing.reconciliation.divergence',
+      expect.objectContaining({ subType: 'missing_in_stripe' }),
+    );
+  });
+
   test('counts errors and continues on individual Stripe retrieve failure', async () => {
     const subs = [makeDbSub(), makeDbSub({ _id: 'sub_doc_002', stripeSubscriptionId: 'sub_test_002' })];
     mockSubscriptionRepository.findPageForReconciliation

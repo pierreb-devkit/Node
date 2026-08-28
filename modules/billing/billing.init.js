@@ -219,17 +219,14 @@ export default async (app) => {
     });
   });
 
-  // billing.reconciliation.divergence — priority 4 (high): DB vs Stripe plan/status mismatch.
+  // billing.reconciliation.divergence — priority 4 (high): DB vs Stripe mismatch.
+  // Spread rather than destructure an allowlist: this event carries several payload
+  // shapes (status/plan mismatch, meter_extras_mismatch, missing_in_stripe) and a fixed
+  // field list silently drops whatever a newer shape adds — `subType` and the meter delta
+  // fields were being lost here, so the alert could not say WHICH divergence fired.
   billingEvents.on('billing.reconciliation.divergence', (payload) => {
-    const { organizationId, subscriptionId, stripeSubscriptionId, db, stripe, statusMismatch, planMismatch } = payload;
     logger.error('[billing.init] ALERT: reconciliation divergence — DB vs Stripe mismatch', {
-      organizationId,
-      subscriptionId,
-      stripeSubscriptionId,
-      db,
-      stripe,
-      statusMismatch,
-      planMismatch,
+      ...payload,
       ntfyPriority: 4,
     });
   });
