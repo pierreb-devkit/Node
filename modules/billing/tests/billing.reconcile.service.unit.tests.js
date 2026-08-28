@@ -284,6 +284,33 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
     );
   });
 
+  test('missing in Stripe still runs the meter↔extras check — both divergences are emitted', async () => {
+    const sub = makeDbSub();
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce([sub])
+      .mockResolvedValue([]);
+    const missing = Object.assign(new Error("No such subscription: 'sub_test_001'"), {
+      code: 'resource_missing',
+    });
+    mockStripeInstance.subscriptions.retrieve.mockRejectedValue(missing);
+    // Ledger mismatch on the same org: a subscription gone from Stripe must not cost us
+    // this signal too — the meter↔extras layer runs regardless.
+    mockUsageRepository.findByWeek.mockResolvedValue({ meterUsed: 10100, meterQuota: 100 });
+    mockExtraBalanceRepository.sumDebitsByWindow.mockResolvedValue(5000);
+
+    const result = await BillingReconcileService.runReconciliation();
+
+    expect(result).toMatchObject({ checked: 1, errors: 0 });
+    expect(mockEvents.emit).toHaveBeenCalledWith(
+      'billing.reconciliation.divergence',
+      expect.objectContaining({ subType: 'missing_in_stripe' }),
+    );
+    expect(mockEvents.emit).toHaveBeenCalledWith(
+      'billing.reconciliation.divergence',
+      expect.objectContaining({ subType: 'meter_extras_mismatch' }),
+    );
+  });
+
   test('missing in Stripe reported via raw.code is still a divergence', async () => {
     const sub = makeDbSub();
     mockSubscriptionRepository.findPageForReconciliation

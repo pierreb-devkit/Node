@@ -195,6 +195,42 @@ const _reconcileOne = async (stripe, sub) => {
   const orgId = String(sub.organization?._id || sub.organization);
   const subId = sub.stripeSubscriptionId;
 
+  // Check meter↔extras divergence for this org (Opus C1 detection layer).
+  // This runs regardless of status/plan match — a healthy subscription can still
+  // have an accumulating ledger mismatch if debits were silently dropped. It is also
+  // deliberately ahead of the Stripe call: the check only needs the org, so a
+  // subscription Stripe no longer has must not cost us this ledger signal too.
+  let meterExtrasMismatch = false;
+  try {
+    const mismatchResult = await _checkMeterExtrasMismatch(orgId);
+    meterExtrasMismatch = mismatchResult.diverged;
+
+    if (meterExtrasMismatch) {
+      const mismatchPayload = {
+        organizationId: orgId,
+        subscriptionId: String(sub._id),
+        subType: 'meter_extras_mismatch',
+        expectedExtrasUsage: mismatchResult.expectedExtrasUsage,
+        actualExtrasDebits: mismatchResult.actualExtrasDebits,
+        delta: Math.abs(mismatchResult.expectedExtrasUsage - mismatchResult.actualExtrasDebits),
+      };
+      logger.error('[billing.reconcile] meter↔extras mismatch detected — LOG ONLY, no auto-fix', mismatchPayload);
+      try {
+        billingEvents.emit('billing.reconciliation.divergence', mismatchPayload);
+      } catch (evtErr) {
+        logger.error('[billing.reconcile] billing.reconciliation.divergence (meter_extras_mismatch) listener error (non-fatal)', {
+          error: evtErr?.message ?? String(evtErr),
+        });
+      }
+    }
+  } catch (mismatchErr) {
+    // Non-fatal: meter↔extras check failure does not block the Stripe status/plan check.
+    logger.error('[billing.reconcile] meter↔extras check failed (non-fatal)', {
+      organizationId: orgId,
+      error: mismatchErr?.message ?? String(mismatchErr),
+    });
+  }
+
   let stripeSub;
   try {
     stripeSub = await stripe.subscriptions.retrieve(subId);
@@ -242,40 +278,6 @@ const _reconcileOne = async (stripe, sub) => {
     });
   }
   const planMismatch = stripePlan !== null && sub.plan !== stripePlan;
-
-  // Check meter↔extras divergence for this org (Opus C1 detection layer).
-  // This runs regardless of status/plan match — a healthy subscription can still
-  // have an accumulating ledger mismatch if debits were silently dropped.
-  let meterExtrasMismatch = false;
-  try {
-    const mismatchResult = await _checkMeterExtrasMismatch(orgId);
-    meterExtrasMismatch = mismatchResult.diverged;
-
-    if (meterExtrasMismatch) {
-      const mismatchPayload = {
-        organizationId: orgId,
-        subscriptionId: String(sub._id),
-        subType: 'meter_extras_mismatch',
-        expectedExtrasUsage: mismatchResult.expectedExtrasUsage,
-        actualExtrasDebits: mismatchResult.actualExtrasDebits,
-        delta: Math.abs(mismatchResult.expectedExtrasUsage - mismatchResult.actualExtrasDebits),
-      };
-      logger.error('[billing.reconcile] meter↔extras mismatch detected — LOG ONLY, no auto-fix', mismatchPayload);
-      try {
-        billingEvents.emit('billing.reconciliation.divergence', mismatchPayload);
-      } catch (evtErr) {
-        logger.error('[billing.reconcile] billing.reconciliation.divergence (meter_extras_mismatch) listener error (non-fatal)', {
-          error: evtErr?.message ?? String(evtErr),
-        });
-      }
-    }
-  } catch (mismatchErr) {
-    // Non-fatal: meter↔extras check failure does not block the Stripe status/plan check.
-    logger.error('[billing.reconcile] meter↔extras check failed (non-fatal)', {
-      organizationId: orgId,
-      error: mismatchErr?.message ?? String(mismatchErr),
-    });
-  }
 
   if (!statusMismatch && !planMismatch) return { diverged: meterExtrasMismatch };
 
