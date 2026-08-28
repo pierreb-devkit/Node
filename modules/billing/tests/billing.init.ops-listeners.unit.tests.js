@@ -242,6 +242,57 @@ describe('billing.init ops-listeners unit tests:', () => {
       );
     });
 
+    test('carries subType through to the alert, so the alert says WHICH divergence fired', async () => {
+      await setup();
+
+      // Asserted at the CONSUMER on purpose: the listener used to destructure a fixed
+      // field list, which silently dropped subType and the meter delta fields. Emitting
+      // them at the producer proves nothing if the alert never names them.
+      const payload = {
+        organizationId: '507f1f77bcf86cd799439033',
+        subscriptionId: '507f1f77bcf86cd799439044',
+        stripeSubscriptionId: 'sub_live_gone',
+        subType: 'missing_in_stripe',
+        db: { status: 'active', plan: 'growth' },
+        stripe: null,
+      };
+
+      realBillingEvents.emit('billing.reconciliation.divergence', payload);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        '[billing.init] ALERT: reconciliation divergence — DB vs Stripe mismatch',
+        expect.objectContaining({ subType: 'missing_in_stripe', ntfyPriority: 4 }),
+      );
+    });
+
+    test('carries the meter↔extras delta fields through to the alert', async () => {
+      await setup();
+
+      const payload = {
+        organizationId: '507f1f77bcf86cd799439033',
+        subscriptionId: '507f1f77bcf86cd799439044',
+        subType: 'meter_extras_mismatch',
+        expectedExtrasUsage: 10000,
+        actualExtrasDebits: 5000,
+        delta: 5000,
+      };
+
+      realBillingEvents.emit('billing.reconciliation.divergence', payload);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        '[billing.init] ALERT: reconciliation divergence — DB vs Stripe mismatch',
+        expect.objectContaining({
+          subType: 'meter_extras_mismatch',
+          expectedExtrasUsage: 10000,
+          actualExtrasDebits: 5000,
+          delta: 5000,
+          ntfyPriority: 4,
+        }),
+      );
+    });
+
     test('reconciliation.divergence: emitting the event does not throw synchronously', async () => {
       await setup();
 
