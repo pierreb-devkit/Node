@@ -258,6 +258,67 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
     );
   });
 
+  test('missing in Stripe counts as a divergence, not an error — emits billing.reconciliation.divergence', async () => {
+    const sub = makeDbSub();
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce([sub])
+      .mockResolvedValue([]);
+    // Stripe no longer has this subscription: deleted, or created in another mode/account.
+    const missing = Object.assign(new Error("No such subscription: 'sub_test_001'"), {
+      code: 'resource_missing',
+      statusCode: 404,
+    });
+    mockStripeInstance.subscriptions.retrieve.mockRejectedValue(missing);
+
+    const result = await BillingReconcileService.runReconciliation();
+
+    expect(result).toMatchObject({ checked: 1, divergences: 1, errors: 0 });
+    expect(mockEvents.emit).toHaveBeenCalledWith(
+      'billing.reconciliation.divergence',
+      expect.objectContaining({ organizationId: orgId, subType: 'missing_in_stripe', stripe: null }),
+    );
+    // Must not be reported through the generic error path.
+    expect(mockLogger.error).not.toHaveBeenCalledWith(
+      '[billing.reconcile] error reconciling subscription',
+      expect.any(Object),
+    );
+  });
+
+  test('missing in Stripe reported via raw.code is still a divergence', async () => {
+    const sub = makeDbSub();
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce([sub])
+      .mockResolvedValue([]);
+    const missing = Object.assign(new Error('No such subscription'), {
+      raw: { code: 'resource_missing' },
+    });
+    mockStripeInstance.subscriptions.retrieve.mockRejectedValue(missing);
+
+    const result = await BillingReconcileService.runReconciliation();
+
+    expect(result).toMatchObject({ checked: 1, divergences: 1, errors: 0 });
+  });
+
+  test('a non-missing Stripe error code is still an error, not a divergence', async () => {
+    const sub = makeDbSub();
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce([sub])
+      .mockResolvedValue([]);
+    const rateLimited = Object.assign(new Error('Too many requests'), {
+      code: 'rate_limit',
+      statusCode: 429,
+    });
+    mockStripeInstance.subscriptions.retrieve.mockRejectedValue(rateLimited);
+
+    const result = await BillingReconcileService.runReconciliation();
+
+    expect(result).toMatchObject({ checked: 0, divergences: 0, errors: 1 });
+    expect(mockEvents.emit).not.toHaveBeenCalledWith(
+      'billing.reconciliation.divergence',
+      expect.objectContaining({ subType: 'missing_in_stripe' }),
+    );
+  });
+
   test('counts errors and continues on individual Stripe retrieve failure', async () => {
     const subs = [makeDbSub(), makeDbSub({ _id: 'sub_doc_002', stripeSubscriptionId: 'sub_test_002' })];
     mockSubscriptionRepository.findPageForReconciliation
