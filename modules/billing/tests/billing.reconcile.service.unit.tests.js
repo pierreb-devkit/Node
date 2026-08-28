@@ -311,6 +311,46 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
     );
   });
 
+  test('non-fatal: a listener crash on the missing_in_stripe emit is swallowed, divergence still counted', async () => {
+    const sub = makeDbSub();
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce([sub])
+      .mockResolvedValue([]);
+    const missing = Object.assign(new Error("No such subscription: 'sub_test_001'"), {
+      code: 'resource_missing',
+    });
+    mockStripeInstance.subscriptions.retrieve.mockRejectedValue(missing);
+    mockEvents.emit.mockImplementation(() => { throw new Error('listener crash'); });
+
+    const result = await BillingReconcileService.runReconciliation();
+
+    // A crashing listener must not turn the divergence back into an error.
+    expect(result).toMatchObject({ checked: 1, divergences: 1, errors: 0 });
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing.reconcile] billing.reconciliation.divergence (missing_in_stripe) listener error (non-fatal)',
+      expect.objectContaining({ error: 'listener crash' }),
+    );
+  });
+
+  test('non-fatal: a listener crash on the meter_extras_mismatch emit is swallowed', async () => {
+    const sub = makeDbSub();
+    mockSubscriptionRepository.findPageForReconciliation
+      .mockResolvedValueOnce([sub])
+      .mockResolvedValue([]);
+    mockStripeInstance.subscriptions.retrieve.mockResolvedValue(makeStripeSub());
+    mockUsageRepository.findByWeek.mockResolvedValue({ meterUsed: 10100, meterQuota: 100 });
+    mockExtraBalanceRepository.sumDebitsByWindow.mockResolvedValue(5000);
+    mockEvents.emit.mockImplementation(() => { throw new Error('listener crash'); });
+
+    const result = await BillingReconcileService.runReconciliation();
+
+    expect(result).toMatchObject({ checked: 1, errors: 0 });
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[billing.reconcile] billing.reconciliation.divergence (meter_extras_mismatch) listener error (non-fatal)',
+      expect.objectContaining({ error: 'listener crash' }),
+    );
+  });
+
   test('missing in Stripe reported via raw.code is still a divergence', async () => {
     const sub = makeDbSub();
     mockSubscriptionRepository.findPageForReconciliation
