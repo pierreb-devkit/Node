@@ -14,11 +14,14 @@ at module-load time — which breaks application boot, not just tests. The stack
 call sites now use a namespace import (`import * as YAML from 'js-yaml'`), which keeps
 `YAML.load(...)` call sites unchanged.
 
-**2. `load()` defaults to `CORE_SCHEMA` (YAML 1.2) instead of `DEFAULT_SCHEMA` (YAML 1.1).**
+**2. `load()` defaults to `CORE_SCHEMA` (YAML 1.2) instead of the old YAML 1.1 default.**
 Dropped from the default schema: merge keys (`<<:`), implicit timestamps, `!!binary`,
 `!!omap`, `!!pairs`, `!!set`. A bare `2024-01-01` now loads as a string rather than a
-`Date`, and a `<<:` merge key raises instead of merging. `load('')` also throws now
-instead of returning `undefined`.
+`Date`, and a `<<:` merge key raises instead of merging. Where `!!set` still is loaded
+explicitly it now produces a native `Set` rather than an object of nulls.
+
+**3. `load('')` throws.** Empty or whitespace-only input raises
+`expected a document, but the input is empty` where v4 returned `undefined`.
 
 **Action required:**
 
@@ -26,10 +29,14 @@ instead of returning `undefined`.
   `import * as yaml from 'js-yaml'` (or named: `import { load } from 'js-yaml'`).
 - Grep your own OpenAPI/config YAML for `<<:`, `!!`, and unquoted `YYYY-MM-DD` values.
   Any hit changes meaning under v5 — quote the dates, and expand merge keys by hand.
-  Alternatively pass `{ schema: DEFAULT_SCHEMA }` to `load()` to keep the old behaviour.
-- If any YAML file you load can legitimately be empty, guard it: `load('')` throws in v5.
+  To keep the old YAML 1.1 behaviour instead, pass `{ schema: YAML11_SCHEMA }` to `load()`.
+  Note `DEFAULT_SCHEMA` no longer exists in v5; `YAML11_SCHEMA` is its replacement.
+- If any YAML file you load can legitimately be empty, guard it before calling `load()`
+  (`raw.trim() ? load(raw) : null`) — otherwise an empty file turns into a thrown error.
 
-The stack's own specs use none of these features, so no stack-side behaviour changed.
+The stack's own specs use none of the dropped YAML 1.1 features, so no stack-side parsing
+behaviour changed. `lib/services/express.js` does guard the empty-file case, so an empty
+OpenAPI spec stays a skipped-with-warning file rather than a boot failure.
 
 ---
 
