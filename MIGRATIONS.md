@@ -6,7 +6,8 @@ Breaking changes and upgrade notes for downstream projects.
 
 ## js-yaml upgraded to v5 — no default export, and `load()` now uses CORE_SCHEMA (2026-08-31)
 
-`js-yaml` moves from `^4.3.2` to `^5`. Two things change for downstream projects.
+`js-yaml` moves from `^4.3.2` to `^5`. Three things change for downstream projects.
+All behaviours below were checked by executing `js-yaml@5.4.1`, not read from its docs.
 
 **1. There is no ESM default export any more.** `import YAML from 'js-yaml'` throws
 `SyntaxError: The requested module 'js-yaml' does not provide an export named 'default'`
@@ -15,28 +16,62 @@ call sites now use a namespace import (`import * as YAML from 'js-yaml'`), which
 `YAML.load(...)` call sites unchanged.
 
 **2. `load()` defaults to `CORE_SCHEMA` (YAML 1.2) instead of the old YAML 1.1 default.**
-Dropped from the default schema: merge keys (`<<:`), implicit timestamps, `!!binary`,
-`!!omap`, `!!pairs`, `!!set`. A bare `2024-01-01` now loads as a string rather than a
-`Date`, and a `<<:` merge key raises instead of merging. Where `!!set` still is loaded
-explicitly it now produces a native `Set` rather than an object of nulls.
+Merge keys, implicit timestamps, `!!binary`, `!!omap`, `!!pairs` and `!!set` are no longer
+in the default schema. Two of these fail quietly, so read carefully:
 
-**3. `load('')` throws.** Empty or whitespace-only input raises
-`expected a document, but the input is empty` where v4 returned `undefined`.
+| Input | v4 default | v5 `CORE_SCHEMA` |
+|---|---|---|
+| `<<: *anchor` | merged into the mapping | **silently kept as a literal `"<<"` key** — no error |
+| `d: 2024-01-01` | `Date` object | string `"2024-01-01"` |
+| `!!set`, `!!binary`, `!!omap`, `!!pairs` | loaded | throws `unknown … tag` |
+
+The merge-key row is the dangerous one: nothing fails, you just get a spec with a `<<`
+key in it. Grep for it; do not expect CI or boot to catch it.
+
+**3. `load()` throws on a document with no content.** Empty, whitespace-only,
+**comment-only** and BOM-only input all raise `expected a document, but the input is
+empty`, where v4 returned `undefined`. A file containing only `---` still returns `null`.
 
 **Action required:**
 
 - Grep your project for `from 'js-yaml'` and switch any default import to
   `import * as yaml from 'js-yaml'` (or named: `import { load } from 'js-yaml'`).
-- Grep your own OpenAPI/config YAML for `<<:`, `!!`, and unquoted `YYYY-MM-DD` values.
-  Any hit changes meaning under v5 — quote the dates, and expand merge keys by hand.
-  To keep the old YAML 1.1 behaviour instead, pass `{ schema: YAML11_SCHEMA }` to `load()`.
-  Note `DEFAULT_SCHEMA` no longer exists in v5; `YAML11_SCHEMA` is its replacement.
-- If any YAML file you load can legitimately be empty, guard it before calling `load()`
-  (`raw.trim() ? load(raw) : null`) — otherwise an empty file turns into a thrown error.
+- Grep your own OpenAPI/config YAML for `<<:`, `!!` tags and unquoted `YYYY-MM-DD`
+  values, and fix each per the table above.
+- Check every globbed spec/config directory for files that are empty or contain only
+  comments. This is the one change that is a hard crash rather than a value change.
+- If any YAML file you load can legitimately be content-free, do not pre-test the string
+  (`raw.trim()` is truthy for a comment-only file, so it does not cover this). Let `load()`
+  run and discriminate on the error, which keeps real parse errors propagating:
+
+  ```js
+  let doc = null;
+  try {
+    doc = load(raw);
+  } catch (err) {
+    if (err?.reason !== 'expected a document, but the input is empty') throw err;
+  }
+  ```
+
+**On `YAML11_SCHEMA` — it is not a drop-in for v4.** `DEFAULT_SCHEMA` was removed; the
+nearest analogue is `YAML11_SCHEMA`, but passing it is a last resort, not an equivalence.
+It restores merge keys and the `!!` tags, and also brings back YAML 1.1 scalar rules that
+v4's default did **not** apply:
+
+| Input | v4 default | v5 `YAML11_SCHEMA` |
+|---|---|---|
+| `v: 12:30` | `"12:30"` | `750` (sexagesimal) |
+| `old: 014` | `14` | `12` (legacy octal) |
+| `o: 0o14` | `12` | `"0o14"` (string) |
+| `y: 2` | key `"y"` | key `true` — and a document with both `y:` and `yes:` now throws `duplicated mapping key` |
+
+`!!set` under `YAML11_SCHEMA` also yields a native `Set`, which serialises to `{}` through
+`res.json` — worth knowing if a loaded document is served as JSON.
 
 The stack's own specs use none of the dropped YAML 1.1 features, so no stack-side parsing
-behaviour changed. `lib/services/express.js` does guard the empty-file case, so an empty
-OpenAPI spec stays a skipped-with-warning file rather than a boot failure.
+behaviour changed. `lib/services/express.js` handles the content-free case with the
+snippet above, so an empty or comment-only OpenAPI spec stays a skipped-with-warning file
+rather than a boot failure.
 
 ---
 
