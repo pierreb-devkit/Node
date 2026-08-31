@@ -4,6 +4,35 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## js-yaml upgraded to v5 — no default export, and `load()` now uses CORE_SCHEMA (2026-08-31)
+
+`js-yaml` moves from `^4.3.2` to `^5`. Two things change for downstream projects.
+
+**1. There is no ESM default export any more.** `import YAML from 'js-yaml'` throws
+`SyntaxError: The requested module 'js-yaml' does not provide an export named 'default'`
+at module-load time — which breaks application boot, not just tests. The stack's own
+call sites now use a namespace import (`import * as YAML from 'js-yaml'`), which keeps
+`YAML.load(...)` call sites unchanged.
+
+**2. `load()` defaults to `CORE_SCHEMA` (YAML 1.2) instead of `DEFAULT_SCHEMA` (YAML 1.1).**
+Dropped from the default schema: merge keys (`<<:`), implicit timestamps, `!!binary`,
+`!!omap`, `!!pairs`, `!!set`. A bare `2024-01-01` now loads as a string rather than a
+`Date`, and a `<<:` merge key raises instead of merging. `load('')` also throws now
+instead of returning `undefined`.
+
+**Action required:**
+
+- Grep your project for `from 'js-yaml'` and switch any default import to
+  `import * as yaml from 'js-yaml'` (or named: `import { load } from 'js-yaml'`).
+- Grep your own OpenAPI/config YAML for `<<:`, `!!`, and unquoted `YYYY-MM-DD` values.
+  Any hit changes meaning under v5 — quote the dates, and expand merge keys by hand.
+  Alternatively pass `{ schema: DEFAULT_SCHEMA }` to `load()` to keep the old behaviour.
+- If any YAML file you load can legitimately be empty, guard it: `load('')` throws in v5.
+
+The stack's own specs use none of these features, so no stack-side behaviour changed.
+
+---
+
 ## Unmatched routes return the same content-negotiated 404 on every HTTP verb (2026-08-03, closes gap from #3975)
 
 An earlier change (#3975) replaced the implicit 200 previously returned for any unmatched **GET** with a content-negotiated 404 (JSON `{ error: 'not_found' }` for API paths/JSON-accepting clients, minimal HTML otherwise) — but the catch-all was registered with `app.get` only. Unmatched POST/PUT/PATCH/DELETE were unaffected by that change and already 404'd via Express's own default finalhandler, just as unstructured HTML (`Cannot POST /...`) rather than the negotiated shape. The catch-all is now registered with `app.all`, so every unmatched verb gets the same negotiated 404 body/content-type as GET. `OPTIONS` is unaffected: the `cors` middleware answers preflight requests before this route is ever reached.
