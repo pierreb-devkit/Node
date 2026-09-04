@@ -59,6 +59,14 @@ const dockerfile = readFileSync(path.join(rootDir, 'Dockerfile'), 'utf8');
  * exactly the kind of miss this guard exists to prevent. So any line that
  * starts with `FROM` opens a stage; if its shape can't then be parsed, the
  * test throws rather than guessing.
+ *
+ * @param {string} text - the full Dockerfile contents
+ * @returns {Array<{image: string, block: string}>} one entry per stage, in file
+ *   order: `image` is the raw image token from the `FROM` line (tag or
+ *   digest-pinned, or a prior stage's alias), `block` is that stage's lines up
+ *   to the next `FROM` or end of file.
+ * @throws {Error} if a `FROM` line's shape cannot be parsed, rather than
+ *   silently folding it into the previous stage.
  */
 function getStages(text) {
   const fromLineRe = /^FROM\b[^\n]*$/gim;
