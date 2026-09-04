@@ -36,6 +36,9 @@ const config = {
     /**
      * URL the front-end should redirect users to when quota is exhausted or past_due.
      * Used by middleware error responses (METER_EXHAUSTED, QUOTA_EXCEEDED).
+     * Capped at 200 chars in production (lib/helpers/responses.js#MAX_DETAIL_VALUE_LENGTH) —
+     * a longer absolute URL is silently dropped from the production response there,
+     * even though dev/test still show it via the raw-error blob.
      */
     upgradeUrl: '/billing/plans',
     /**
