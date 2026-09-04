@@ -9,6 +9,7 @@ import objectPath from 'object-path';
 import { pathToFileURL } from 'url';
 import assets from './assets.js';
 import configHelper from '../lib/helpers/config.js';
+import UNSAFE_KEYS from '../lib/helpers/unsafeKeys.js';
 
 const STANDARD_ENVS = new Set(['development', 'production', 'test']);
 
@@ -26,12 +27,12 @@ const assertSafeEnv = (env) => {
 
 /**
  * Deep merge two objects, replacing arrays instead of merging by index.
+ * Skips `UNSAFE_KEYS` (`../lib/helpers/unsafeKeys.js`) so a config source
+ * object can never repoint `target`'s prototype via a `__proto__` key.
  * @param {Object} target - Base object
  * @param {Object} source - Override object
  * @returns {Object} Merged result (new object, inputs are not mutated)
  */
-const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
-
 const deepMerge = (target, source) => {
   const result = { ...target };
   for (const key of Object.keys(source)) {

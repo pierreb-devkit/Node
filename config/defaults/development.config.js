@@ -126,6 +126,19 @@ const config = {
     p3p: 'ABCDEF',
     xssProtection: true,
   },
+  // errors: {
+  //   Whitelist extension point (optional — intentionally OMITTED here, same
+  //   reasoning as log.sensitiveQueryKeys/log.sensitivePathMarkers above): a
+  //   module or downstream project config may set `errors.detailsWhitelist`
+  //   (array of exact AppError.details key names) to ADD its own
+  //   production-safe keys to the built-in list consumed by
+  //   `lib/helpers/responses.js` (['upgradeUrl', 'type', 'retryAfter']).
+  //   Values are UNIONED with the built-ins, never replacing them — declaring
+  //   a base array here would let `deepMerge` clobber a Layer-1 module
+  //   extension wholesale instead of adding to it. Opt-in only: a key not on
+  //   this list stays dev-only, exactly as before.
+  //   detailsWhitelist: ['aDownstreamSafeKey'],
+  // },
   bodyParser: {
     limit: '500kb',
   },
