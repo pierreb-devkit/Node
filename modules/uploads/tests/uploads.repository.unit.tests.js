@@ -120,6 +120,104 @@ describe('UploadRepository unit tests:', () => {
       await expect(UploadRepository.remove(upload)).rejects.toThrow('Upload: delete error');
       expect(mockBucket.delete).toHaveBeenCalledWith('abc123');
     });
+
+    // Issue #4059: `details` must be curated to `{ message }` only, never the
+    // raw caught exception (which may carry a stack, driver metadata, or other
+    // fields nobody chose to publish) — proven by execution against an error
+    // shaped like the internal text the issue reports leaking.
+    test('curates details to { message } only — the raw bucket error is never forwarded wholesale (issue #4059)', async () => {
+      const upload = { _id: 'abc123', filename: 'present.png' };
+      const rawError = Object.assign(new Error('ECONNREFUSED 10.0.4.12:27017 - mongo replset primary unreachable'), {
+        stack: 'Error: internal\n    at Connection.connect (/app/node_modules/mongodb/lib/connect.js:42:11)',
+        code: 'ECONNREFUSED',
+        host: '10.0.4.12',
+      });
+      mockBucket.delete.mockRejectedValueOnce(rawError);
+
+      let caught;
+      try {
+        await UploadRepository.remove(upload);
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught.details).toEqual({ message: rawError.message });
+      expect(Object.keys(caught.details)).toEqual(['message']);
+      expect(caught.details.stack).toBeUndefined();
+      expect(caught.details.code).toBeUndefined();
+      expect(caught.details.host).toBeUndefined();
+    });
+  });
+
+  describe('getStream', () => {
+    test('curates details to { message } only on a bucket read failure (issue #4059)', () => {
+      const rawError = Object.assign(new Error('ECONNREFUSED 10.0.4.12:27017 - mongo replset primary unreachable'), {
+        stack: 'Error: internal\n    at Connection.connect (/app/node_modules/mongodb/lib/connect.js:42:11)',
+        code: 'ECONNREFUSED',
+      });
+      mockBucket.openDownloadStream.mockImplementationOnce(() => { throw rawError; });
+
+      let caught;
+      try {
+        UploadRepository.getStream({ _id: 'abc123' });
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught.message).toBe('Uppload: read error');
+      expect(caught.details).toEqual({ message: rawError.message });
+      expect(Object.keys(caught.details)).toEqual(['message']);
+    });
+  });
+
+  describe('deleteMany', () => {
+    test('curates details to { message } only on a bucket delete failure (issue #4059)', async () => {
+      // deleteMany() lists candidates via list() -> find().select().sort().exec()
+      // (a different chain shape than setCandidates()'s .select().lean().cursor()).
+      mockUploadsModel.find.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
+        exec: jest.fn().mockResolvedValue([{ _id: 'a1', filename: 'a.png' }]),
+      });
+      const rawError = Object.assign(new Error('ECONNREFUSED 10.0.4.12:27017 - mongo replset primary unreachable'), {
+        stack: 'Error: internal\n    at Connection.connect (/app/node_modules/mongodb/lib/connect.js:42:11)',
+        code: 'ECONNREFUSED',
+      });
+      mockBucket.delete.mockRejectedValueOnce(rawError);
+
+      let caught;
+      try {
+        await UploadRepository.deleteMany({ owner: 'u1' });
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught.message).toBe('Upload: delete error');
+      expect(caught.details).toEqual({ message: rawError.message });
+      expect(Object.keys(caught.details)).toEqual(['message']);
+    });
+  });
+
+  describe('purge', () => {
+    test('curates details to { message } only on a bucket delete failure (issue #4059)', async () => {
+      mockUploadsModel.aggregate = jest.fn().mockResolvedValue([{ _id: 'a1', filename: 'a.png' }]);
+      const rawError = Object.assign(new Error('ECONNREFUSED 10.0.4.12:27017 - mongo replset primary unreachable'), {
+        stack: 'Error: internal\n    at Connection.connect (/app/node_modules/mongodb/lib/connect.js:42:11)',
+        code: 'ECONNREFUSED',
+      });
+      mockBucket.delete.mockRejectedValueOnce(rawError);
+
+      let caught;
+      try {
+        await UploadRepository.purge('avatar', 'users', 'avatarFilename');
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught.message).toBe('Upload: delete error');
+      expect(caught.details).toEqual({ message: rawError.message });
+      expect(Object.keys(caught.details)).toEqual(['message']);
+    });
   });
 
   describe('purgeUnreferenced', () => {

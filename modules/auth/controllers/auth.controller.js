@@ -12,6 +12,7 @@ import SignupService, { isMailerConfigured, sendVerificationEmail } from '../ser
 import config from '../../../config/index.js';
 import model from '../../../lib/middlewares/model.js';
 import responses from '../../../lib/helpers/responses.js';
+import configHelper from '../../../lib/helpers/config.js';
 import errors from '../../../lib/helpers/errors.js';
 import AppError from '../../../lib/helpers/AppError.js';
 import UsersSchema from '../../users/models/users.schema.js';
@@ -312,7 +313,13 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
     const search = await UserService.search(query);
     if (search.length === 1) return search[0];
   } catch (err) {
-    throw new AppError('oAuth, find user failed', { code: 'SERVICE_ERROR', details: err });
+    // Curated, not forwarded wholesale (issue #4059): only `message` — a short,
+    // human-readable reason — crosses into `details`. `err` here is whatever the
+    // DB driver/service threw and may carry stack traces, connection metadata or
+    // other internal fields nobody chose to publish; `message` alone is genuinely
+    // useful for logs/non-prod debugging and stays safe once `getDescription`
+    // gates `details.message` to non-production (same issue).
+    throw new AppError('oAuth, find user failed', { code: 'SERVICE_ERROR', details: { message: err?.message } });
   }
   // 2. Linked identity: match on additionalProvidersData[provider][key] — locals already linked
   try {
@@ -321,7 +328,8 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
     const search = await UserService.search(query);
     if (search.length === 1) return search[0];
   } catch (err) {
-    throw new AppError('oAuth, find linked user failed', { code: 'SERVICE_ERROR', details: err });
+    // Curated (issue #4059) — see the identical comment on branch 1 above.
+    throw new AppError('oAuth, find linked user failed', { code: 'SERVICE_ERROR', details: { message: err?.message } });
   }
   // 3. Link on verified email: if a local user exists with the same email AND is
   //    already emailVerified locally AND the OAuth provider vouches for the email,
@@ -356,7 +364,8 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
       // hit the now-linkable state via branch 3.
     } catch (err) {
       if (err instanceof AppError) throw err;
-      throw new AppError('oAuth, link to existing user failed', { code: 'SERVICE_ERROR', details: err });
+      // Curated (issue #4059) — see the identical comment on branch 1 above.
+      throw new AppError('oAuth, link to existing user failed', { code: 'SERVICE_ERROR', details: { message: err?.message } });
     }
   }
   // 4. No match → create new user
@@ -464,7 +473,11 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
     return createdUser;
   } catch (err) {
     if (err instanceof AppError) throw err;
-    throw new AppError('oAuth', { code: 'CONTROLLER_ERROR', details: err.details || err });
+    // Curated (issue #4059) — see the identical comment on branch 1 above. This
+    // is the catch-all for branch 4 (capacity/eligibility/Zod/create), so `err`
+    // may be almost anything non-AppError; `message` alone, same as every other
+    // branch here, keeps the curation uniform across the whole function.
+    throw new AppError('oAuth', { code: 'CONTROLLER_ERROR', details: { message: err?.message } });
   }
 };
 
@@ -481,7 +494,15 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
  */
 const oauthErrorRedirect = (res, err, fallbackTitle) => {
   const title = err?.message || fallbackTitle;
-  const descriptionFromDetails = typeof err?.details?.message === 'string' ? err.details.message : '';
+  // This redirect never goes through `responses.error`/`getDescription` — it
+  // builds its own envelope by hand — so it needs the SAME production gate
+  // `getDescription` applies to `details.message` (issue #4059), applied here
+  // independently: outside production, the full text a curated `details: {
+  // message }` may carry (see the four `checkOAuthUserProfile` catch sites
+  // above) is shown as before; in production it is never safe to read
+  // sight-unseen, so it resolves to '' — `details.message` below then falls
+  // back to `title` (the deliberately-authored AppError message), never blank.
+  const descriptionFromDetails = !configHelper.isProd() && typeof err?.details?.message === 'string' ? err.details.message : '';
   // OAuth callback failures are surfaced as a 302 redirect (not a JSON 422), so
   // there is no live HTTP status — we embed 422 to match the canonical shape of
   // a Zod / AppError validation failure elsewhere in the API.
