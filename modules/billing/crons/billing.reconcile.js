@@ -16,32 +16,28 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { bootstrapCron } from '../lib/billing.cron-utils.js';
 
-process.env.NODE_ENV = process.env.NODE_ENV || 'development';
-
-const [
-  { default: config },
-  { default: mongooseService },
-  { default: logger },
-  { applyJitter },
-  { getCronJitterMaxMs },
-  { acquireLock, releaseLock },
-] = await Promise.all([
-  import('../../../config/index.js'),
-  import('../../../lib/services/mongoose.js'),
-  import('../../../lib/services/logger.js'),
-  import('../lib/billing.cron-utils.js'),
-  import('../lib/billing.constants.js'),
-  import('../../../lib/services/distributedLock.js'),
-]);
-
-if (!config?.billing?.meterMode) {
-  logger.info('[cron.reconcile] meterMode disabled — skipping.');
-  process.exit(0);
-}
-
-const LOCK_NAME = 'billing.reconcile';
-const LOCK_TTL_MS = 30 * 60 * 1000; // 30 min — reconcile paginates Stripe per subscription
+const {
+  mongooseService,
+  logger,
+  applyJitter,
+  getCronJitterMaxMs,
+  acquireLock,
+  releaseLock,
+  LOCK_NAME,
+  LOCK_TTL_MS,
+} = await bootstrapCron({
+  /**
+   * Gate predicate for this cron — true when metered billing is enabled.
+   * @param {object} config - Loaded app config.
+   * @returns {boolean} True when config.billing.meterMode is truthy.
+   */
+  isEnabled: (config) => Boolean(config?.billing?.meterMode),
+  gateMessage: '[cron.reconcile] meterMode disabled — skipping.',
+  lockName: 'billing.reconcile',
+  lockTtlMs: 30 * 60 * 1000, // 30 min — reconcile paginates Stripe per subscription
+});
 
 const startMs = Date.now();
 logger.info('[cron.reconcile] start');
