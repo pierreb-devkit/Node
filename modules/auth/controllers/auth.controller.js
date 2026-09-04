@@ -36,6 +36,12 @@ const tokenCookieOptions = {
  * response (token + cookie + JSON body) or maps a thrown error to a status.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
+ * @returns {Promise<Object|undefined>} on the success path, the Express
+ *   response object (chained from res.json()); on the SIGNUP_DISABLED gate
+ *   path, the plain result object returned by responses.error() ({type,
+ *   message, code, status, errorCode, description} — not `res` itself);
+ *   undefined on the generic 422 fallback, which has no explicit return
+ *   (the error response is still sent as a side effect either way)
  */
 const signup = async (req, res) => {
   try {

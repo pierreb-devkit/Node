@@ -103,6 +103,17 @@ function mockSignupServiceDeps({
   }));
 }
 
+/**
+ * @desc Build the mocked config default export auth.signup.service.js reads.
+ * Only `sign` is overridable — `overrides.sign` is shallow-merged over the
+ * default `{ up: true }` so a scenario can set `up`/`cap` without restating
+ * both. `app` is always the fixed test default; `overrides.app` is never
+ * read, so passing one is silently ignored.
+ * @param {Object} [overrides] - partial config overrides
+ * @param {Object} [overrides.sign] - shallow-merged onto `{ up: true }`
+ * @returns {Object} config object exposing `sign` and `app`, shaped like the
+ *   real config module's sections that this service consumes
+ */
 const baseConfig = (overrides = {}) => ({
   sign: { up: true, ...overrides.sign },
   app: { title: 'Test', contact: 'test@test.com' },
@@ -379,10 +390,19 @@ describe('auth.signup.service — invite finalize ordering (#3995)', () => {
     const { default: SignupService } = await import('../services/auth.signup.service.js');
     const req = { body: { email: 'invitee@test.com', firstName: 'A', lastName: 'B', password: 'P@ss1234!' }, query: { inviteToken: 'tok' } };
 
-    const { orgResult } = await SignupService.signup(req);
+    const { user, orgResult } = await SignupService.signup(req);
 
     expect(order).toEqual(['organization', 'finalize']);
+    // Which account the invite is recorded against — a fixed-return finalize
+    // mock would otherwise hide a wrong-user link (same class of gap as the
+    // getBrut fix in the mailer-off/auto-verify block above).
+    expect(finalize).toHaveBeenCalledWith('u1');
+    // Same gap, same fix: handleSignupOrganization is also only tracked by
+    // `order` above — a wrong/undefined user reaching org provisioning would
+    // still pass without this.
+    expect(handleSignupOrganization).toHaveBeenCalledWith(expect.objectContaining({ id: 'u1' }));
     // The response block reads the organization result — not just {user, invite}.
     expect(orgResult.organization).toEqual({ id: 'org1' });
+    expect(user.id).toBe('u1');
   });
 });
