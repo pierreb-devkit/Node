@@ -19,7 +19,8 @@
     "url": "https://github.com/pierreb-devkit/Node.git"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=24.15.0",
+    "npm": ">=11.0.0"
   },
   "scripts": {
     "start": "node server.js",

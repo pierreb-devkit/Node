@@ -4,6 +4,32 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## `engines.node` floor raised to `>=24.15.0`, `engines.npm` now required (2026-09-04)
+
+`package.json` declared `"node": ">=22.0.0"`, but the committed `package-lock.json`
+had been written by npm 11 (bundled with Node 24) and stopped being installable by
+npm 10 (bundled with Node 22, the still-declared floor) as soon as
+`@semantic-release/git` picked up a `@commitlint/read` requirement that npm 10
+resolves as two nested duplicates and npm 11 hoists away. `npm ci` on a clean clone
+under any declared-supported Node 22.x now failed with a confusing
+`Missing: conventional-commits-filter@6.0.1 from lock file` error instead of an
+engines mismatch — see [#4053](https://github.com/pierreb-devkit/Node/issues/4053).
+
+Two direct devDependencies (`@semantic-release/git@11`, `@semantic-release/changelog@7`)
+declare `engines.node: "^22.22.2 || >=24.15"`, which is what fixes the new floor at
+`24.15.0` rather than `24.0.0` — every Node 24.x release bundles an npm 11.x, but only
+`>=24.15` satisfies these two packages' own engines check under `engine-strict`.
+
+**Action required:**
+
+- Node 22 and Node 23 are no longer supported. Upgrade the runtime to **Node
+  `>=24.15.0`** before running `npm ci`/`npm install` against this stack.
+- npm must be **`>=11.0.0`** (bundled by any Node 24.15+ install) — npm 10 is
+  rejected by `engine-strict=true` in `.npmrc` before it touches the dependency
+  tree, with an `EBADENGINE` error naming the required vs. actual versions.
+- If you use `nvm`, `.nvmrc` (`24`) picks the right major automatically; CI
+  (`actions/setup-node`) reads the same file via `node-version-file`.
+
 ## js-yaml upgraded to v5 — no default export, and `load()` now uses CORE_SCHEMA (2026-08-31)
 
 `js-yaml` moves from `^4.3.2` to `^5`. Three things change for downstream projects.
