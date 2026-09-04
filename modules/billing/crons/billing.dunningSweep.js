@@ -18,32 +18,24 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { bootstrapCron } from '../lib/billing.cron-utils.js';
 
-process.env.NODE_ENV = process.env.NODE_ENV || 'development';
-
-const [
-  { default: config },
-  { default: mongooseService },
-  { default: logger },
-  { applyJitter },
-  { getCronJitterMaxMs, getDunningThresholdDays },
-  { acquireLock, releaseLock },
-] = await Promise.all([
-  import('../../../config/index.js'),
-  import('../../../lib/services/mongoose.js'),
-  import('../../../lib/services/logger.js'),
-  import('../lib/billing.cron-utils.js'),
-  import('../lib/billing.constants.js'),
-  import('../../../lib/services/distributedLock.js'),
-]);
-
-if (!config?.billing?.meterMode) {
-  logger.info('[cron.dunningSweep] meterMode disabled — skipping.');
-  process.exit(0);
-}
-
-const LOCK_NAME = 'billing.dunningSweep';
-const LOCK_TTL_MS = 15 * 60 * 1000; // 15 min
+const {
+  mongooseService,
+  logger,
+  applyJitter,
+  getCronJitterMaxMs,
+  getDunningThresholdDays,
+  acquireLock,
+  releaseLock,
+  LOCK_NAME,
+  LOCK_TTL_MS,
+} = await bootstrapCron({
+  isEnabled: (config) => Boolean(config?.billing?.meterMode),
+  gateMessage: '[cron.dunningSweep] meterMode disabled — skipping.',
+  lockName: 'billing.dunningSweep',
+  lockTtlMs: 15 * 60 * 1000, // 15 min
+});
 
 const startMs = Date.now();
 logger.info('[cron.dunningSweep] start');

@@ -17,32 +17,24 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { bootstrapCron } from '../lib/billing.cron-utils.js';
 
-process.env.NODE_ENV = process.env.NODE_ENV || 'development';
-
-const [
-  { default: config },
-  { default: mongooseService },
-  { default: logger },
-  { applyJitter },
-  { getCronJitterMaxMs },
-  { acquireLock, releaseLock },
-] = await Promise.all([
-  import('../../../config/index.js'),
-  import('../../../lib/services/mongoose.js'),
-  import('../../../lib/services/logger.js'),
-  import('../lib/billing.cron-utils.js'),
-  import('../lib/billing.constants.js'),
-  import('../../../lib/services/distributedLock.js'),
-]);
-
-if (!config?.billing?.referral?.enabled) {
-  logger.info('[cron.referralReconcile] referral disabled — skipping.');
-  process.exit(0);
-}
-
-const LOCK_NAME = 'billing.referralReconcile';
-const LOCK_TTL_MS = 10 * 60 * 1000; // 10 min
+const {
+  config,
+  mongooseService,
+  logger,
+  applyJitter,
+  getCronJitterMaxMs,
+  acquireLock,
+  releaseLock,
+  LOCK_NAME,
+  LOCK_TTL_MS,
+} = await bootstrapCron({
+  isEnabled: (config) => Boolean(config?.billing?.referral?.enabled),
+  gateMessage: '[cron.referralReconcile] referral disabled — skipping.',
+  lockName: 'billing.referralReconcile',
+  lockTtlMs: 10 * 60 * 1000, // 10 min
+});
 
 const startMs = Date.now();
 logger.info('[cron.referralReconcile] start');
