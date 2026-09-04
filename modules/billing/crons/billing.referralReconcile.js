@@ -30,6 +30,11 @@ const {
   LOCK_NAME,
   LOCK_TTL_MS,
 } = await bootstrapCron({
+  /**
+   * Gate predicate for this cron — true when the referral program is enabled.
+   * @param {object} config - Loaded app config.
+   * @returns {boolean} True when config.billing.referral.enabled is truthy.
+   */
   isEnabled: (config) => Boolean(config?.billing?.referral?.enabled),
   gateMessage: '[cron.referralReconcile] referral disabled — skipping.',
   lockName: 'billing.referralReconcile',

@@ -159,8 +159,11 @@ describe('billing cron utils — bootstrapCron:', () => {
   });
 
   describe('input validation:', () => {
-    // Baseline valid params — each test overrides exactly one field with an invalid
-    // value so a thrown error can only be about the field under test.
+    /**
+     * Baseline valid params — each test overrides exactly one field with an invalid
+     * value so a thrown error can only be about the field under test.
+     * @returns {{isEnabled: Function, gateMessage: string, lockName: string, lockTtlMs: number}} A fresh set of valid bootstrapCron params.
+     */
     const validParams = () => ({
       isEnabled: () => true,
       gateMessage: '[cron.probe] disabled — skipping.',
@@ -168,8 +171,12 @@ describe('billing cron utils — bootstrapCron:', () => {
       lockTtlMs: 1000,
     });
 
-    // Drop one key from a fresh validParams() copy — used to simulate a missing param
-    // without an unused destructured binding.
+    /**
+     * Drop one key from a fresh validParams() copy — used to simulate a missing param
+     * without an unused destructured binding.
+     * @param {string} key - Name of the param to omit.
+     * @returns {object} A validParams() copy with `key` deleted.
+     */
     const withoutKey = (key) => {
       const params = validParams();
       delete params[key];

@@ -28,6 +28,11 @@ const {
   LOCK_NAME,
   LOCK_TTL_MS,
 } = await bootstrapCron({
+  /**
+   * Gate predicate for this cron — true when metered billing is enabled.
+   * @param {object} config - Loaded app config.
+   * @returns {boolean} True when config.billing.meterMode is truthy.
+   */
   isEnabled: (config) => Boolean(config?.billing?.meterMode),
   gateMessage: '[cron.reconcile] meterMode disabled — skipping.',
   lockName: 'billing.reconcile',

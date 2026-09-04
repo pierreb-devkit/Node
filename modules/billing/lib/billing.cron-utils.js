@@ -20,17 +20,7 @@ export const applyJitter = async (maxMs) => {
 
 /**
  * @function bootstrapCron
- * @description Shared bootstrap preamble for billing cron scripts: sets the NODE_ENV
- *              default, loads the standard cron dependencies (config, mongooseService,
- *              logger, distributedLock, and every named export of billing.constants.js)
- *              in parallel, then applies the cron's config gate. The gate predicate and
- *              message are parameters — not uniform across crons (referralReconcile
- *              gates on `billing.referral.enabled`, the rest on `billing.meterMode`).
- *              Constants are spread wholesale (not just `getCronJitterMaxMs`) so a
- *              cron needing a different one (e.g. `getDunningThresholdDays`) still gets
- *              it without this function enumerating every call site. `lockName`/
- *              `lockTtlMs` are echoed back as `LOCK_NAME`/`LOCK_TTL_MS` so the per-cron
- *              lock literals live at the call site next to the values they describe.
+ * @description Shared bootstrap preamble for billing cron scripts: validates params, loads the standard cron dependencies in parallel, then applies the cron's config gate.
  * @param {object} params
  * @param {(config: object) => boolean} params.isEnabled - Gate predicate; receives the
  *   loaded config and returns true when the cron should proceed. Required — must be a
