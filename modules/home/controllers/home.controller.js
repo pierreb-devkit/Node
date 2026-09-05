@@ -3,6 +3,7 @@
  */
 import fs from 'fs';
 
+import AppError from '../../../lib/helpers/AppError.js';
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
 import HomeService from '../services/home.service.js';
@@ -63,7 +64,19 @@ const health = (req, res) => {
   const isAdmin = req.user?.roles?.includes('admin');
   const payload = isAdmin ? data : { status: data.status };
   if (data.status !== 'ok') {
-    return responses.error(res, 503, 'Service Unavailable', 'degraded')(payload);
+    // responses.error(...)(x) reads `x.details`, not `x` itself (issue
+    // #4064 — same call-convention bug fixed for
+    // analytics.requireFeatureFlag.js in this issue and
+    // billing.requireQuota.js in #4062). The raw payload was passed
+    // directly, so any whitelisted key it might one day carry (a health
+    // check is exactly the kind of object that accumulates internal detail
+    // over time) would have been silently swallowed instead of reaching the
+    // whitelist. No leak today — nothing on `payload` matches
+    // DEFAULT_DETAILS_WHITELIST — but wrap it under `.details` on a real
+    // AppError so the shape is correct regardless.
+    return responses.error(res, 503, 'Service Unavailable', 'degraded')(
+      new AppError('degraded', { status: 503, details: payload }),
+    );
   }
   responses.success(res, 'health check')(payload);
 };
