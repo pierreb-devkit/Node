@@ -56,26 +56,42 @@ function requireQuota(resource, action) {
       return next();
     } catch (err) {
       // Map AppError status codes to HTTP responses matching previous behavior.
-      // Extract denial details from the AppError (may be array or object).
+      // `details` here is used ONLY to branch on the AppError sub-type — it
+      // must never be what gets handed to `responses.error(...)` below. That
+      // function reads `error.details` itself off whatever object it is
+      // given, so it needs the AppError `err`, not this already-extracted
+      // sub-object (issue #4062: passing `details` made it read
+      // `details.details`, always `undefined`, which silently dropped the
+      // whitelisted `type`/`upgradeUrl` payload from every response this
+      // middleware sends).
+      // `err.details` may in principle be array-shaped — `AppError` defaults
+      // `details` to `[{ message }]` when a throw site omits it — hence the
+      // unwrap below. Unreachable today (every throw in
+      // billing.quota.service.js passes a plain object), and it wouldn't
+      // help production either way: `responses.error` reads `err.details`
+      // directly, not this local `details`, and `pickWhitelistedDetails`
+      // (lib/helpers/responses.js) returns `undefined` for any array-shaped
+      // `details` — so an array-shaped `err.details` ships with no
+      // `payload.details` at all, regardless of which branch below fires.
       const details = Array.isArray(err.details) ? err.details[0] : err.details;
 
       if (err.status === 402) {
         if (details?.type === 'PAYMENT_PAST_DUE') {
-          return responses.error(res, 402, 'Payment Required', 'Subscription past due, please update payment')(details);
+          return responses.error(res, 402, 'Payment Required', 'Subscription past due, please update payment')(err);
         }
         if (details?.type === 'METER_EXHAUSTED') {
-          return responses.error(res, 402, 'Payment Required', 'Meter exhausted')(details);
+          return responses.error(res, 402, 'Payment Required', 'Meter exhausted')(err);
         }
         // Defensive: an unknown 402 sub-type would leak err.message verbatim.
         // The service only throws known types today, so send the generic phrase
         // instead — any future 402 type must be mapped explicitly above.
-        return responses.error(res, 402, 'Payment Required', 'Payment required')(details);
+        return responses.error(res, 402, 'Payment Required', 'Payment required')(err);
       }
       if (err.status === 429) {
-        return responses.error(res, 429, 'Quota exceeded', 'You have reached the usage limit for this resource')(details);
+        return responses.error(res, 429, 'Quota exceeded', 'You have reached the usage limit for this resource')(err);
       }
       if (err.status === 503) {
-        return responses.error(res, 503, 'Service Unavailable', 'Billing plan configuration is temporarily unavailable')(details);
+        return responses.error(res, 503, 'Service Unavailable', 'Billing plan configuration is temporarily unavailable')(err);
       }
       return next(err);
     }
