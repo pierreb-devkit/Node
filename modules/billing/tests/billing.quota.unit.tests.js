@@ -251,7 +251,15 @@ describe('requireQuota middleware:', () => {
     expect(next).toHaveBeenCalled();
   });
 
-  test('should return correct error payload with upgradeUrl', async () => {
+  // Was named "...with upgradeUrl" but never read `upgradeUrl` anywhere in
+  // the body — only `type`/`message`/`code`/`status`/`description` via
+  // `objectContaining`, which passes even if `upgradeUrl` is missing
+  // entirely. Rewritten to actually assert the whitelisted `payload.details`
+  // subset (issue #4062 review item 2), which doubles as the 429
+  // QUOTA_EXCEEDED production-mode assertion (item 1's 429 row) — same
+  // `NODE_ENV = 'production'` toggle convention as the METER_EXHAUSTED test
+  // below.
+  test('production mode: 429 QUOTA_EXCEEDED response carries type + upgradeUrl in payload.details, not just the dev-only error blob', async () => {
     mockBillingQuotaService.assertCanExecute.mockRejectedValue(
       new AppError('You have reached the usage limit for this resource', {
         status: 429,
@@ -259,7 +267,13 @@ describe('requireQuota middleware:', () => {
       }),
     );
 
-    await requireQuota('scraps', 'execute')(req, res, next);
+    const previousNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      await requireQuota('scraps', 'execute')(req, res, next);
+    } finally {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
 
     expect(res.status).toHaveBeenCalledWith(429);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
@@ -269,6 +283,11 @@ describe('requireQuota middleware:', () => {
       status: 429,
       description: 'You have reached the usage limit for this resource',
     }));
+    const payload = res.json.mock.calls[0][0];
+    // `resource`/`action`/`limit`/`current` are NOT whitelisted — only
+    // `type`/`upgradeUrl` survive.
+    expect(payload.details).toEqual({ type: 'QUOTA_EXCEEDED', upgradeUrl: '/billing/plans' });
+    expect(payload.error).toBeUndefined();
   });
 
   test('should allow through when no quota is configured for resource (service resolves)', async () => {
@@ -417,6 +436,38 @@ describe('requireQuota middleware:', () => {
       expect(payload.error).toBeUndefined();
     });
 
+    // Issue #4062 review item 1: no test previously covered the defensive
+    // `err.status === 402` fallthrough (an unmapped sub-type — the service
+    // only throws known types today, but any future 402 type must be mapped
+    // explicitly or it lands here). Asserts the generic `message`/`description`
+    // pair (never `err.message` verbatim), that `type` still survives the
+    // whitelist, and that a non-whitelisted key on `details` (e.g. an
+    // internal-only hint) is dropped, not leaked.
+    test('production mode: 402 with an unmapped sub-type falls through to the defensive branch, keeps type in payload.details, drops non-whitelisted keys', async () => {
+      mockBillingQuotaService.assertCanExecute.mockRejectedValue(
+        new AppError('Some future 402 reason not yet mapped', {
+          status: 402,
+          details: { type: 'SOME_FUTURE_TYPE', internalHint: 'do not leak this' },
+        }),
+      );
+
+      const previousNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      try {
+        await requireQuota('scraps', 'create')(req, res, next);
+      } finally {
+        process.env.NODE_ENV = previousNodeEnv;
+      }
+
+      expect(res.status).toHaveBeenCalledWith(402);
+      const payload = res.json.mock.calls[0][0];
+      expect(payload.message).toBe('Payment Required');
+      expect(payload.description).toBe('Payment required');
+      expect(payload.details).toEqual({ type: 'SOME_FUTURE_TYPE' });
+      expect(payload.details.internalHint).toBeUndefined();
+      expect(payload.error).toBeUndefined();
+    });
+
     test('should return 402 when meter doc is null and plan quota is 0 (no extras)', async () => {
       mockBillingQuotaService.assertCanExecute.mockRejectedValue(
         new AppError('Meter exhausted', {
@@ -448,6 +499,32 @@ describe('requireQuota middleware:', () => {
       const payload = res.json.mock.calls[0][0];
       const errData = JSON.parse(payload.error);
       expect(errData.details.type).toBe('PLAN_NOT_CONFIGURED');
+    });
+
+    // Issue #4062 review item 1: the dev-blob test above only ever inspects
+    // `payload.error` (dev-gated). Same production-mode-toggle convention as
+    // the METER_EXHAUSTED test above.
+    test('production mode: 503 PLAN_NOT_CONFIGURED response carries type in payload.details, not just the dev-only error blob', async () => {
+      mockBillingQuotaService.assertCanExecute.mockRejectedValue(
+        new AppError('Billing plan configuration is temporarily unavailable', {
+          status: 503,
+          details: { type: 'PLAN_NOT_CONFIGURED', planId: 'free' },
+        }),
+      );
+
+      const previousNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      try {
+        await requireQuota('scraps', 'create')(req, res, next);
+      } finally {
+        process.env.NODE_ENV = previousNodeEnv;
+      }
+
+      expect(res.status).toHaveBeenCalledWith(503);
+      const payload = res.json.mock.calls[0][0];
+      // `planId` is NOT whitelisted — only `type` survives.
+      expect(payload.details).toEqual({ type: 'PLAN_NOT_CONFIGURED' });
+      expect(payload.error).toBeUndefined();
     });
 
     test('fix #3569: new Free user — 1st scrap passes when plan meterQuota > 0', async () => {
@@ -537,6 +614,33 @@ describe('requireQuota middleware:', () => {
       const errData = JSON.parse(payload.error);
       expect(errData.details.type).toBe('PAYMENT_PAST_DUE');
       expect(errData.details.subscriptionStatus).toBe('past_due');
+    });
+
+    // Issue #4062 review item 1: the dev-blob test above only ever inspects
+    // `payload.error` (dev-gated). The field a real production client reads
+    // is `payload.details` — same production-mode-toggle convention as the
+    // METER_EXHAUSTED test above.
+    test('production mode: 402 PAYMENT_PAST_DUE response carries type in payload.details, not just the dev-only error blob', async () => {
+      mockBillingQuotaService.assertCanExecute.mockRejectedValue(
+        new AppError('Subscription past due, please update payment', {
+          status: 402,
+          details: { type: 'PAYMENT_PAST_DUE', message: 'Subscription past due, please update payment', subscriptionStatus: 'past_due' },
+        }),
+      );
+
+      const previousNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      try {
+        await requireQuota('scraps', 'create')(req, res, next);
+      } finally {
+        process.env.NODE_ENV = previousNodeEnv;
+      }
+
+      expect(res.status).toHaveBeenCalledWith(402);
+      const payload = res.json.mock.calls[0][0];
+      // `message`/`subscriptionStatus` are NOT whitelisted — only `type` survives.
+      expect(payload.details).toEqual({ type: 'PAYMENT_PAST_DUE' });
+      expect(payload.error).toBeUndefined();
     });
 
     test('should NOT block past_due with no pastDueSince set (service resolves)', async () => {

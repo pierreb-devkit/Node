@@ -56,14 +56,23 @@ function requireQuota(resource, action) {
       return next();
     } catch (err) {
       // Map AppError status codes to HTTP responses matching previous behavior.
-      // `details` here is used ONLY to branch on the AppError sub-type (may be
-      // array or object) — it must never be what gets handed to
-      // `responses.error(...)` below. That function reads `error.details`
-      // itself off whatever object it is given, so it needs the AppError
-      // `err`, not this already-extracted sub-object (issue #4062: passing
-      // `details` made it read `details.details`, always `undefined`, which
-      // silently dropped the whitelisted `type`/`upgradeUrl` payload from
-      // every response this middleware sends).
+      // `details` here is used ONLY to branch on the AppError sub-type — it
+      // must never be what gets handed to `responses.error(...)` below. That
+      // function reads `error.details` itself off whatever object it is
+      // given, so it needs the AppError `err`, not this already-extracted
+      // sub-object (issue #4062: passing `details` made it read
+      // `details.details`, always `undefined`, which silently dropped the
+      // whitelisted `type`/`upgradeUrl` payload from every response this
+      // middleware sends).
+      // `err.details` may in principle be array-shaped — `AppError` defaults
+      // `details` to `[{ message }]` when a throw site omits it — hence the
+      // unwrap below. Unreachable today (every throw in
+      // billing.quota.service.js passes a plain object), and it wouldn't
+      // help production either way: `responses.error` reads `err.details`
+      // directly, not this local `details`, and `pickWhitelistedDetails`
+      // (lib/helpers/responses.js) returns `undefined` for any array-shaped
+      // `details` — so an array-shaped `err.details` ships with no
+      // `payload.details` at all, regardless of which branch below fires.
       const details = Array.isArray(err.details) ? err.details[0] : err.details;
 
       if (err.status === 402) {
