@@ -325,7 +325,9 @@ describe('Signup invitations:', () => {
         AuthController.checkOAuthUserProfile(profil, 'sub', 'google'),
       ).rejects.toMatchObject({
         code: 'VALIDATION_ERROR',
-        details: { message: 'Registration is currently deactivated' },
+        // Deliberately-authored copy (issue #4059 review item 1) — carried via
+        // `description`, not smuggled through `details.message`.
+        description: 'Registration is currently deactivated',
       });
 
       // Ensure no user was persisted
@@ -357,7 +359,9 @@ describe('Signup invitations:', () => {
         AuthController.checkOAuthUserProfile(profil, 'sub', 'google'),
       ).rejects.toMatchObject({
         code: 'VALIDATION_ERROR',
-        details: { message: 'Registration is currently deactivated' },
+        // Deliberately-authored copy (issue #4059 review item 1) — carried via
+        // `description`, not smuggled through `details.message`.
+        description: 'Registration is currently deactivated',
       });
 
       // Ensure no user was persisted

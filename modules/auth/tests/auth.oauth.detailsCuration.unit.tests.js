@@ -3,20 +3,42 @@
  */
 import { jest, describe, test, expect, beforeEach, afterEach } from '@jest/globals';
 import { setupAuthControllerMocks } from './fixtures/auth-controller.mock-setup.js';
+// Captured via a plain static import — evaluated once, before any test runs and
+// before any `jest.unstable_mockModule` call — so this is genuinely the REAL
+// `AppError` class (with `.description` support), never a stub. `loadController`
+// below explicitly re-registers this reference as its own "mock" for
+// `AppError.js` on every call: `setupAuthControllerMocks` (used by the
+// `oauthCallback / oauthErrorRedirect` describe block further down THIS SAME
+// file) mocks that same module path with a simplified stub that does NOT set
+// `.description`, and jest's ESM module mocking is last-registration-wins per
+// resolved specifier, NOT reset just because a later `jest.resetModules()` ran
+// without re-mocking it — so `loadController` must win that race explicitly on
+// every call, not rely on "just don't mock it".
+import RealAppError from '../../../lib/helpers/AppError.js';
 
 /**
- * Unit tests — issue #4059. Two things proven here by EXECUTION, not by
- * reading the source:
+ * Unit tests — issue #4059 and its review follow-up. Proven here by
+ * EXECUTION, not by reading the source:
  *  1. Each of the four `checkOAuthUserProfile` catch sites curates `details`
  *     to `{ message: err.message }` ONLY — never the raw caught exception,
  *     which may carry a stack, driver metadata, or other fields nobody chose
  *     to publish (`auth.controller.js` lines ~315/328/364/473).
  *  2. `oauthErrorRedirect` (which never goes through `responses.error`/
- *     `getDescription` — it builds its own envelope by hand) gates that
- *     curated `details.message` to non-production, mirroring
+ *     `getDescription` — it builds its own envelope by hand) gates its
+ *     curated `details.message` read to non-production, mirroring
  *     `getDescription`'s own gate added by the same issue — confirmed by
  *     constructing an error carrying obviously-internal text and inspecting
  *     the actual redirect payload under `NODE_ENV=production`.
+ *  3. (review item 1) Two deliberately-authored, user-facing OAuth messages
+ *     (branch 3's unverified-account notice, branch 4's registration-closed
+ *     notice) are passed via `AppError`'s `description` option instead of
+ *     `details.message` — an explicit, NEVER-gated channel `oauthErrorRedirect`
+ *     now also reads — so they reach the client in every environment,
+ *     production included, driven through the REAL throw sites end to end.
+ *  4. (review item 2) `oauthErrorRedirect`'s `title` is now ALSO
+ *     production-gated for a non-AppError `err` (the earlier claim that this
+ *     function was gated "the same way" as `getDescription` was true only for
+ *     `details.message`, not `title` — see ERRORS.md 2026-09-05).
  */
 
 /**
@@ -25,11 +47,31 @@ import { setupAuthControllerMocks } from './fixtures/auth-controller.mock-setup.
  * auth.oauth.signup.analytics.unit.tests.js's `loadController` — that file's
  * per-branch RESOLVE wiring and this suite's per-method REJECT wiring differ
  * enough that sharing would need as many options as duplicating).
+ * `passport` is mocked (not left to resolve the real package) so a test can
+ * drive a real `checkOAuthUserProfile` throw all the way through the real
+ * `oauthCallback` → `oauthErrorRedirect` in this SAME module registry — the
+ * real (unmocked) `AppError` and `configHelper` this file's `checkOAuthUserProfile`
+ * tests already rely on, which the `description`/title-gate tests below need too
+ * (a synthetic error built in a DIFFERENT jest module registry, e.g. via
+ * `setupAuthControllerMocks` below, would not be `instanceof` this registry's
+ * `AppError`).
  * @param {Object} [userServiceOverrides] - per-method jest.fn() overrides merged over safe defaults
- * @returns {Promise<{AuthController: Object}>}
+ * @param {Object} [signOverrides] - merged over the default `config.sign` ({ up: true, in: true }) —
+ *   e.g. `{ up: false }` to exercise branch 4's registration-closed gate
+ * @returns {Promise<{AuthController: Object, mockPassport: {authenticate: import('@jest/globals').Mock, _strategy: import('@jest/globals').Mock}}>}
  */
-const loadController = async (userServiceOverrides = {}) => {
+const loadController = async (userServiceOverrides = {}, signOverrides = {}) => {
   jest.resetModules();
+
+  const mockPassport = {
+    authenticate: jest.fn().mockReturnValue(jest.fn()),
+    _strategy: jest.fn().mockReturnValue(undefined),
+  };
+  jest.unstable_mockModule('passport', () => ({ default: mockPassport }));
+
+  // Explicitly re-win the real class every call — see the top-of-file comment
+  // on `RealAppError` for why this can't just be "leave it unmocked".
+  jest.unstable_mockModule('../../../lib/helpers/AppError.js', () => ({ default: RealAppError }));
 
   jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
     default: { warn: jest.fn(), error: jest.fn(), info: jest.fn() },
@@ -66,7 +108,7 @@ const loadController = async (userServiceOverrides = {}) => {
 
   jest.unstable_mockModule('../../../config/index.js', () => ({
     default: {
-      sign: { up: true, in: true }, // open signup — branch 3/4's invite hook is skipped entirely
+      sign: { up: true, in: true, ...signOverrides }, // open signup by default — branch 3/4's invite hook is skipped entirely
       jwt: { secret: 'test-secret', expiresIn: 3600 },
       cookie: { secure: false, sameSite: 'lax' },
       organizations: { enabled: false },
@@ -116,7 +158,7 @@ const loadController = async (userServiceOverrides = {}) => {
   }));
 
   const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
-  return { AuthController };
+  return { AuthController, mockPassport };
 };
 
 // An error message shaped like the internal text #4059 reports leaking:
@@ -277,5 +319,157 @@ describe('oauthCallback / oauthErrorRedirect — production gate on curated deta
 
     expect(payload.description).toBe(INTERNAL_TEXT);
     expect(payload.details).toEqual({ message: INTERNAL_TEXT });
+  });
+
+  /**
+   * Review item 2 — `oauthErrorRedirect`'s `title` was NEVER gated (only
+   * `details.message` was), so a non-AppError `err` reaching `oauthCallback`
+   * put its raw `.message` into `payload.message`, `payload.details.message`
+   * (both via the `title` fallback), AND the redirect URL's `message` query
+   * param, unaffected by either gate. A plain `Error` — not an `AppError` — is
+   * exactly that shape; deliberately using this suite's `setupAuthControllerMocks`
+   * fixture (not `loadController`) since a non-AppError needs no real `AppError`
+   * class at all.
+   */
+  test('a non-AppError (dynamic message, no `.details`) falls back to fallbackTitle everywhere in production — the ungated-title gap review item 2 closes', async () => {
+    const dynamicErr = new Error('internal: mongo replset primary at 10.0.4.12 unreachable');
+
+    process.env.NODE_ENV = 'production';
+    mockPassport._strategy.mockReturnValue({});
+    mockPassport.authenticate.mockImplementationOnce((strategy, callback) => () => callback(dynamicErr, null));
+    const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
+
+    const redirectCalls = [];
+    const req = { params: { strategy: 'google' }, body: {} };
+    const res = { cookie() { return this; }, redirect(code, url) { redirectCalls.push({ code, url }); } };
+    await AuthController.oauthCallback(req, res, () => {});
+
+    const parsed = new URL(redirectCalls[0].url);
+    const payload = JSON.parse(parsed.searchParams.get('error'));
+
+    expect(parsed.searchParams.get('message')).toBe('oAuth error');
+    expect(payload.message).toBe('oAuth error');
+    expect(payload.details).toEqual({ message: 'oAuth error' });
+    expect(JSON.stringify(payload)).not.toContain('10.0.4.12');
+    expect(parsed.toString()).not.toContain('10.0.4.12');
+  });
+
+  test('the SAME non-AppError, outside production — its raw `.message` still surfaces as the title (unchanged)', async () => {
+    const dynamicErr = new Error('internal: mongo replset primary at 10.0.4.12 unreachable');
+
+    process.env.NODE_ENV = 'test';
+    mockPassport._strategy.mockReturnValue({});
+    mockPassport.authenticate.mockImplementationOnce((strategy, callback) => () => callback(dynamicErr, null));
+    const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
+
+    const redirectCalls = [];
+    const req = { params: { strategy: 'google' }, body: {} };
+    const res = { cookie() { return this; }, redirect(code, url) { redirectCalls.push({ code, url }); } };
+    await AuthController.oauthCallback(req, res, () => {});
+
+    const parsed = new URL(redirectCalls[0].url);
+    const payload = JSON.parse(parsed.searchParams.get('error'));
+
+    expect(payload.message).toBe(dynamicErr.message);
+  });
+});
+
+/**
+ * Review item 1 — two deliberately-authored, user-facing OAuth messages
+ * (previously smuggled through `details.message`, and therefore blanked by
+ * the production gate above) must reach the client in EVERY environment,
+ * production included. Driven end to end through the REAL throw sites (real
+ * `checkOAuthUserProfile` branches) and the REAL `oauthCallback` →
+ * `oauthErrorRedirect`, all in the SAME `loadController` module registry, so
+ * `err instanceof AppError` inside `oauthErrorRedirect` sees the genuine class.
+ */
+describe('checkOAuthUserProfile → oauthCallback → oauthErrorRedirect — the two authored OAuth messages survive the production gate (issue #4059 review item 1):', () => {
+  let originalNodeEnv;
+
+  beforeEach(() => {
+    originalNodeEnv = process.env.NODE_ENV;
+  });
+
+  afterEach(() => {
+    process.env.NODE_ENV = originalNodeEnv;
+  });
+
+  /**
+   * Drives `checkOAuthUserProfile(...checkArgs)` to a genuine throw, then feeds
+   * that REAL AppError through the REAL `oauthCallback` → `oauthErrorRedirect`.
+   * @param {Object} AuthController
+   * @param {Object} mockPassport
+   * @param {Array} checkArgs - arguments forwarded to `checkOAuthUserProfile`
+   * @returns {Promise<{messageParam: string, payload: Object}>}
+   */
+  const runRealOAuthError = async (AuthController, mockPassport, checkArgs) => {
+    let caught;
+    try {
+      await AuthController.checkOAuthUserProfile(...checkArgs);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeDefined(); // fail loudly here, not on a confusing downstream assertion, if the branch didn't throw
+
+    mockPassport._strategy.mockReturnValue({});
+    mockPassport.authenticate.mockImplementationOnce((strategy, callback) => () => callback(caught, null));
+    const redirectCalls = [];
+    const req = { params: { strategy: 'google' }, body: {} };
+    const res = { cookie() { return this; }, redirect(code, url) { redirectCalls.push({ code, url }); } };
+    await AuthController.oauthCallback(req, res, () => {});
+
+    const parsed = new URL(redirectCalls[0].url);
+    return { messageParam: parsed.searchParams.get('message'), payload: JSON.parse(parsed.searchParams.get('error')) };
+  };
+
+  test('branch 3 (unverified local account) — the authored notice reaches the client in production', async () => {
+    const { AuthController, mockPassport } = await loadController({
+      linkProviderByEmail: jest.fn().mockResolvedValue(null),
+      findByEmail: jest.fn().mockResolvedValue({ emailVerified: false }),
+    });
+
+    process.env.NODE_ENV = 'production';
+    const { payload } = await runRealOAuthError(AuthController, mockPassport, [
+      { providerData: { sub: 'p1' }, email: 'user@example.com', emailVerifiedByProvider: true },
+      'sub',
+      'google',
+    ]);
+
+    const AUTHORED_MESSAGE = 'A pending account with this email is not verified. Verify the original signup first or contact support.';
+    expect(payload.description).toBe(AUTHORED_MESSAGE);
+    expect(payload.details).toEqual({ message: AUTHORED_MESSAGE });
+  });
+
+  test('branch 4 (registration closed) — the authored notice reaches the client in production', async () => {
+    const { AuthController, mockPassport } = await loadController({}, { up: false });
+
+    process.env.NODE_ENV = 'production';
+    const { messageParam, payload } = await runRealOAuthError(AuthController, mockPassport, [
+      { providerData: { sub: 'p2' }, firstName: 'A', lastName: 'B' },
+      'sub',
+      'google',
+    ]);
+
+    expect(messageParam).toBe('Signup error');
+    expect(payload.description).toBe('Registration is currently deactivated');
+    expect(payload.details).toEqual({ message: 'Registration is currently deactivated' });
+  });
+
+  test('control — branch 1\'s raw internal DB text still does NOT reach the client in production, proving the description bypass is scoped to these two messages only', async () => {
+    const rawInternal = Object.assign(new Error(INTERNAL_TEXT), { code: 'ECONNREFUSED', host: '10.0.4.12' });
+    const { AuthController, mockPassport } = await loadController({
+      search: jest.fn().mockRejectedValue(rawInternal),
+    });
+
+    process.env.NODE_ENV = 'production';
+    const { payload } = await runRealOAuthError(AuthController, mockPassport, [
+      { providerData: { id: 'p1' } },
+      'id',
+      'google',
+    ]);
+
+    expect(payload.description).toBe('');
+    expect(JSON.stringify(payload)).not.toContain('10.0.4.12');
+    expect(JSON.stringify(payload)).not.toContain('ECONNREFUSED');
   });
 });

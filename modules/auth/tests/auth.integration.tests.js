@@ -1148,7 +1148,10 @@ describe('Auth integration tests:', () => {
           AuthController.checkOAuthUserProfile(profil, 'sub', 'google'),
         ).rejects.toMatchObject({
           code: 'VALIDATION_ERROR',
-          details: { message: 'Registration is currently deactivated' },
+          // Deliberately-authored copy (issue #4059 review item 1) — carried via
+          // `description`, not smuggled through `details.message`, so it reaches
+          // the client in every environment (see `oauthErrorRedirect`).
+          description: 'Registration is currently deactivated',
         });
         // Ensure no user was persisted
         const users = await UserService.search({ email });

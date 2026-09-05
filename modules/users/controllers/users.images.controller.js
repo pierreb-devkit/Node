@@ -14,8 +14,12 @@ import UserService from '../services/users.service.js';
  */
 const updateAvatar = async (req, res) => {
   try {
-    // catch multerErr
-    if (req.multerErr) throw new AppError(req.multerErr.message, { code: 'SERVICE_ERROR', details: req.multerErr });
+    // catch multerErr — curated to `{ message }` only (issue #4059, ninth site:
+    // a raw Multer error was forwarded wholesale, the identical anti-pattern the
+    // other eight call sites were fixed for). Multer attaches its own `code`
+    // (e.g. `LIMIT_FILE_SIZE`) and `field` on top of `message`; only `message`
+    // is a deliberate, human-readable reason worth publishing.
+    if (req.multerErr) throw new AppError(req.multerErr.message, { code: 'SERVICE_ERROR', details: { message: req.multerErr.message } });
     // delete old image
     if (req.user.avatar) await UploadsService.remove({ filename: req.user.avatar });
     // update user

@@ -100,7 +100,14 @@ const signup = async (req, res) => {
 const signinAuthenticate = (req, res, next) => {
   passport.authenticate('local', { session: false }, (err, user, info) => {
     if (err && err.code === 'ACCOUNT_LOCKED') {
-      return responses.error(res, 423, 'Account locked', err.details?.message || 'Account is locked. Try again later.')(err);
+      // Deliberate bypass of `getDescription`'s production gate (issue #4059
+      // review item 4), NOT an oversight: `auth.service.js#checkLockout` — the
+      // ONLY producer of this code — always sets `description` to a
+      // code-authored, user-facing string (never a caught exception's text),
+      // same class of value as item 1's two OAuth messages. A real locked-out
+      // user needs this message in production, so it is read explicitly here
+      // rather than left to flow through the gated `details.message` path.
+      return responses.error(res, 423, 'Account locked', err.description || 'Account is locked. Try again later.')(err);
     }
     if (err) {
       return responses.error(res, 500, 'Internal Server Error', errors.getMessage(err))(err);
@@ -350,11 +357,15 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
       // would later fail on the unique-email index with a less actionable error).
       const existing = await UserService.findByEmail(profil.email);
       if (existing && !existing.emailVerified) {
+        // Deliberately-authored, user-facing text (issue #4059 review item 1) —
+        // passed via `description`, NOT smuggled through `details.message`, so it
+        // is never subject to `getDescription`'s production gate (mirrors how
+        // local signup passes its own authored copy as an explicit argument to
+        // `responses.error`, see `signup` above). `oauthErrorRedirect` reads
+        // `err.description` with the same precedence.
         throw new AppError('oAuth, cannot link to unverified local account', {
           code: 'VALIDATION_ERROR',
-          details: {
-            message: 'A pending account with this email is not verified. Verify the original signup first or contact support.',
-          },
+          description: 'A pending account with this email is not verified. Verify the original signup first or contact support.',
         });
       }
       // If `existing` is emailVerified here, a rare race between the atomic
@@ -399,9 +410,12 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
     if (capReached || (!config.sign.up && !oauthInvite)) {
       // Mirror the local signup endpoint's error shape so clients see the same
       // `message`/`description` regardless of signup method (see `signup` above).
+      // Deliberately-authored text via `description` (issue #4059 review item 1)
+      // — NOT `details.message` — so it reaches the client in every environment,
+      // same as local signup's explicit `responses.error(...)` argument.
       throw new AppError('Signup error', {
         code: 'VALIDATION_ERROR',
-        details: { message: 'Registration is currently deactivated' },
+        description: 'Registration is currently deactivated',
       });
     }
     const user = {
@@ -493,16 +507,33 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
  * @returns {void} triggers a 302 redirect to `${baseUrl}/token?...`
  */
 const oauthErrorRedirect = (res, err, fallbackTitle) => {
-  const title = err?.message || fallbackTitle;
+  // Production-gate the title too (issue #4059 review item 2): an AppError's
+  // `.message` is a developer-authored label set by a throw site IN THIS
+  // codebase (e.g. "oAuth, find user failed") — never raw/dynamic text — so it
+  // stays ungated in every environment, same as before. A non-AppError (a bare
+  // Error / passport-oauth2's InternalOAuthError / any future producer) carries
+  // a message this codebase never authored; in production that falls back to
+  // `fallbackTitle` instead. Today's real producers (passport-oauth2,
+  // passport-google-oauth20, passport-apple) all wrap the underlying failure
+  // and keep `.message` a static label, so this was not a live leak — but
+  // nothing enforced it, and the claim that this function is gated "the same
+  // way" as `getDescription` was true only for `details.message`, not `title`;
+  // this closes that gap for a future non-AppError with a dynamic message.
+  const title = configHelper.isProd() && !(err instanceof AppError) ? fallbackTitle : (err?.message || fallbackTitle);
   // This redirect never goes through `responses.error`/`getDescription` — it
-  // builds its own envelope by hand — so it needs the SAME production gate
-  // `getDescription` applies to `details.message` (issue #4059), applied here
-  // independently: outside production, the full text a curated `details: {
+  // builds its own envelope by hand — so `details.message` needs the SAME
+  // production gate `getDescription` applies to its own `details`-derived text
+  // (issue #4059): outside production, the full text a curated `details: {
   // message }` may carry (see the four `checkOAuthUserProfile` catch sites
   // above) is shown as before; in production it is never safe to read
-  // sight-unseen, so it resolves to '' — `details.message` below then falls
-  // back to `title` (the deliberately-authored AppError message), never blank.
+  // sight-unseen, so it resolves to ''. An explicit `err.description`
+  // (deliberately-authored copy a throw site chooses on purpose — issue #4059
+  // review item 1, e.g. the two OAuth messages below) is NEVER gated, same
+  // precedence as `getDescription`'s own `err?.description` check, and wins
+  // over the gated details-derived text; `details.message` below then falls
+  // back to `title`, never blank.
   const descriptionFromDetails = !configHelper.isProd() && typeof err?.details?.message === 'string' ? err.details.message : '';
+  const description = typeof err?.description === 'string' && err.description ? err.description : descriptionFromDetails;
   // OAuth callback failures are surfaced as a 302 redirect (not a JSON 422), so
   // there is no live HTTP status — we embed 422 to match the canonical shape of
   // a Zod / AppError validation failure elsewhere in the API.
@@ -512,11 +543,11 @@ const oauthErrorRedirect = (res, err, fallbackTitle) => {
     code: 422,
     status: 422,
     errorCode: err?.code || 'OAUTH_ERROR',
-    description: descriptionFromDetails,
+    description,
     // Legacy shape — the current Vue `token.view.vue` parser reads `details.message`.
     // Remove this field once all downstream Vue deploys have adopted the canonical
     // `responses.error` parser (tracked in Vue issue #4021).
-    details: { message: descriptionFromDetails || title },
+    details: { message: description || title },
   };
   // Build the redirect URL via the `URL` constructor so the origin + path stay
   // server-controlled (`getBaseUrl()` resolves from `config.cors.origin`). User

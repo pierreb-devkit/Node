@@ -38,10 +38,18 @@ const checkLockout = async (user) => {
   if (user.lockUntil && user.lockUntil > new Date()) {
     const remainingMs = user.lockUntil.getTime() - Date.now();
     const remainingMin = Math.ceil(remainingMs / 60000);
+    // Deliberately-authored, user-facing text (issue #4059 review item 4,
+    // decided the same way as item 1's two OAuth messages) — carried via
+    // `description`, NOT `details.message`, so `signinAuthenticate` reading it
+    // is an explicit, intentional bypass of `getDescription`'s production gate,
+    // not an oversight: this value is ALWAYS code-authored here (never a caught
+    // exception), and a real locked-out user needs to see it in production too.
+    // `remainingMs` stays in `details` — structured data, not for direct display.
     throw new AppError('Account is locked. Try again later.', {
       code: 'ACCOUNT_LOCKED',
       status: 423,
-      details: { message: `Account is locked. Try again in ${remainingMin} minute(s).`, remainingMs },
+      description: `Account is locked. Try again in ${remainingMin} minute(s).`,
+      details: { remainingMs },
     });
   }
   // If lock has expired, atomically reset attempts so the user can try again

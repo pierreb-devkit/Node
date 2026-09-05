@@ -2,6 +2,10 @@
  * Module dependencies.
  */
 import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globals';
+// REAL (unmocked) — uploads.repository.js never imports responses.js itself,
+// so nothing in this file's beforeEach mocks it; used only by the item-5
+// describe block below to prove curation's actual purpose end to end.
+import responses from '../../../lib/helpers/responses.js';
 
 /**
  * Unit tests for uploads.repository.js — remove() no-op semantics and
@@ -345,6 +349,68 @@ describe('UploadRepository unit tests:', () => {
       expect(pipeline).toContain('$snapshots.html');
       expect(mockBucket.delete).not.toHaveBeenCalled();
       expect(counters).toMatchObject({ scanned: 1, referenced: 1, orphaned: 0, deleted: 0 });
+    });
+  });
+
+  /**
+   * Unit tests — issue #4059 review item 5. The tests above (e.g. `remove`'s
+   * "curates details to { message } only" test) assert on the SHAPE of the
+   * thrown `AppError.details` in isolation — reverting a call site to
+   * `details: err` is already caught there (an extra key fails `toEqual`).
+   * What none of them prove is curation's actual PURPOSE: bounding what the
+   * dev-grade envelope (`result.error = safeStringify(error)` in
+   * `lib/helpers/responses.js`) exposes when `details` still carried
+   * `code`/`host`-shaped custom properties (a real Node/driver error attaches
+   * these as plain enumerable own properties — unlike `.stack`/`.message`,
+   * which V8 defines non-enumerable and so never serialize via
+   * `JSON.stringify` regardless of curation; verified empirically, not just
+   * asserted). This drives the REAL `UploadRepository.remove()` call site
+   * through the REAL (unmocked) `responses.error()` sink and inspects the
+   * actual dev-grade JSON string a client in a non-production env would
+   * receive.
+   */
+  describe('details curation actually bounds the dev-grade envelope (issue #4059 review item 5):', () => {
+    /** Minimal Express response double — same shape as responses.js's own test suite. */
+    const buildRes = () => {
+      const res = { _status: undefined, _body: undefined };
+      res.status = (code) => { res._status = code; return res; };
+      res.json = (body) => { res._body = body; return res; };
+      return res;
+    };
+
+    test('a curated call site (remove()) never lets the raw error\'s code/host reach the dev-grade envelope — only the intentionally-preserved message text does', async () => {
+      const upload = { _id: 'abc123', filename: 'present.png' };
+      // Message text carries NO marker strings, so a substring check on the
+      // whole envelope cleanly distinguishes "message text leaked (intended)"
+      // from "some OTHER raw field leaked (curation's actual job)".
+      const rawError = Object.assign(new Error('mongo replset primary unreachable'), {
+        stack: 'STACK_MARKER_should_never_serialize_via_JSON_stringify_anyway',
+        code: 'CODE_MARKER_ECONNREFUSED',
+        host: 'HOST_MARKER_10_0_4_12',
+      });
+      mockBucket.delete.mockRejectedValueOnce(rawError);
+
+      let caught;
+      try {
+        await UploadRepository.remove(upload);
+      } catch (err) {
+        caught = err;
+      }
+
+      const res = buildRes();
+      responses.error(res, 500)(caught); // NODE_ENV is 'test' here (dev-grade) — result.error is populated
+
+      expect(typeof res._body.error).toBe('string');
+      const devBlob = JSON.parse(res._body.error);
+      // Curation's actual effect: the OTHER raw fields never reached `.details`
+      // in the first place, so they cannot appear in the dev blob either.
+      expect(devBlob.details).toEqual({ message: rawError.message });
+      expect(JSON.stringify(devBlob)).not.toContain('CODE_MARKER');
+      expect(JSON.stringify(devBlob)).not.toContain('HOST_MARKER');
+      // Not over-scrubbing either — the curated message text is intentionally
+      // preserved dev-side (see the call site's own comment on `details: {
+      // message: err?.message }`).
+      expect(JSON.stringify(devBlob)).toContain('mongo replset primary unreachable');
     });
   });
 });
