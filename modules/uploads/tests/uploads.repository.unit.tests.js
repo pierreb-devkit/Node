@@ -370,7 +370,12 @@ describe('UploadRepository unit tests:', () => {
    * receive.
    */
   describe('details curation actually bounds the dev-grade envelope (issue #4059 review item 5):', () => {
-    /** Minimal Express response double — same shape as responses.js's own test suite. */
+    /**
+     * Minimal Express response double — same shape as responses.js's own test suite.
+     * @returns {{_status: (number|undefined), _body: (Object|undefined), status: Function, json: Function}}
+     *   the double; `status`/`json` are chainable recorders that capture what the
+     *   sink sent into `_status`/`_body` for assertion.
+     */
     const buildRes = () => {
       const res = { _status: undefined, _body: undefined };
       res.status = (code) => { res._status = code; return res; };

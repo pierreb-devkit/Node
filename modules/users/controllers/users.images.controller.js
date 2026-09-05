@@ -11,6 +11,9 @@ import UserService from '../services/users.service.js';
  * @desc Endpoint to ask the service to update a user profile avatar
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
+ * @returns {Promise<void>} resolves once the response has been sent; the
+ *   success path replies from inside `req.login`'s callback, so nothing is
+ *   returned to the caller.
  */
 const updateAvatar = async (req, res) => {
   try {
@@ -38,6 +41,9 @@ const updateAvatar = async (req, res) => {
  * @desc Endpoint to ask the service to remove a user profile avatar
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
+ * @returns {Promise<void>} resolves once the response has been sent; the
+ *   success path replies from inside `req.login`'s callback, so nothing is
+ *   returned to the caller.
  */
 const removeAvatar = async (req, res) => {
   try {
