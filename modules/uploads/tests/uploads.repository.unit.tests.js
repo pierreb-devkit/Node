@@ -2,6 +2,10 @@
  * Module dependencies.
  */
 import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globals';
+// REAL (unmocked) — uploads.repository.js never imports responses.js itself,
+// so nothing in this file's beforeEach mocks it; used only by the item-5
+// describe block below to prove curation's actual purpose end to end.
+import responses from '../../../lib/helpers/responses.js';
 
 /**
  * Unit tests for uploads.repository.js — remove() no-op semantics and
@@ -119,6 +123,104 @@ describe('UploadRepository unit tests:', () => {
 
       await expect(UploadRepository.remove(upload)).rejects.toThrow('Upload: delete error');
       expect(mockBucket.delete).toHaveBeenCalledWith('abc123');
+    });
+
+    // Issue #4059: `details` must be curated to `{ message }` only, never the
+    // raw caught exception (which may carry a stack, driver metadata, or other
+    // fields nobody chose to publish) — proven by execution against an error
+    // shaped like the internal text the issue reports leaking.
+    test('curates details to { message } only — the raw bucket error is never forwarded wholesale (issue #4059)', async () => {
+      const upload = { _id: 'abc123', filename: 'present.png' };
+      const rawError = Object.assign(new Error('ECONNREFUSED 10.0.4.12:27017 - mongo replset primary unreachable'), {
+        stack: 'Error: internal\n    at Connection.connect (/app/node_modules/mongodb/lib/connect.js:42:11)',
+        code: 'ECONNREFUSED',
+        host: '10.0.4.12',
+      });
+      mockBucket.delete.mockRejectedValueOnce(rawError);
+
+      let caught;
+      try {
+        await UploadRepository.remove(upload);
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught.details).toEqual({ message: rawError.message });
+      expect(Object.keys(caught.details)).toEqual(['message']);
+      expect(caught.details.stack).toBeUndefined();
+      expect(caught.details.code).toBeUndefined();
+      expect(caught.details.host).toBeUndefined();
+    });
+  });
+
+  describe('getStream', () => {
+    test('curates details to { message } only on a bucket read failure (issue #4059)', () => {
+      const rawError = Object.assign(new Error('ECONNREFUSED 10.0.4.12:27017 - mongo replset primary unreachable'), {
+        stack: 'Error: internal\n    at Connection.connect (/app/node_modules/mongodb/lib/connect.js:42:11)',
+        code: 'ECONNREFUSED',
+      });
+      mockBucket.openDownloadStream.mockImplementationOnce(() => { throw rawError; });
+
+      let caught;
+      try {
+        UploadRepository.getStream({ _id: 'abc123' });
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught.message).toBe('Uppload: read error');
+      expect(caught.details).toEqual({ message: rawError.message });
+      expect(Object.keys(caught.details)).toEqual(['message']);
+    });
+  });
+
+  describe('deleteMany', () => {
+    test('curates details to { message } only on a bucket delete failure (issue #4059)', async () => {
+      // deleteMany() lists candidates via list() -> find().select().sort().exec()
+      // (a different chain shape than setCandidates()'s .select().lean().cursor()).
+      mockUploadsModel.find.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
+        exec: jest.fn().mockResolvedValue([{ _id: 'a1', filename: 'a.png' }]),
+      });
+      const rawError = Object.assign(new Error('ECONNREFUSED 10.0.4.12:27017 - mongo replset primary unreachable'), {
+        stack: 'Error: internal\n    at Connection.connect (/app/node_modules/mongodb/lib/connect.js:42:11)',
+        code: 'ECONNREFUSED',
+      });
+      mockBucket.delete.mockRejectedValueOnce(rawError);
+
+      let caught;
+      try {
+        await UploadRepository.deleteMany({ owner: 'u1' });
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught.message).toBe('Upload: delete error');
+      expect(caught.details).toEqual({ message: rawError.message });
+      expect(Object.keys(caught.details)).toEqual(['message']);
+    });
+  });
+
+  describe('purge', () => {
+    test('curates details to { message } only on a bucket delete failure (issue #4059)', async () => {
+      mockUploadsModel.aggregate = jest.fn().mockResolvedValue([{ _id: 'a1', filename: 'a.png' }]);
+      const rawError = Object.assign(new Error('ECONNREFUSED 10.0.4.12:27017 - mongo replset primary unreachable'), {
+        stack: 'Error: internal\n    at Connection.connect (/app/node_modules/mongodb/lib/connect.js:42:11)',
+        code: 'ECONNREFUSED',
+      });
+      mockBucket.delete.mockRejectedValueOnce(rawError);
+
+      let caught;
+      try {
+        await UploadRepository.purge('avatar', 'users', 'avatarFilename');
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught.message).toBe('Upload: delete error');
+      expect(caught.details).toEqual({ message: rawError.message });
+      expect(Object.keys(caught.details)).toEqual(['message']);
     });
   });
 
@@ -247,6 +349,73 @@ describe('UploadRepository unit tests:', () => {
       expect(pipeline).toContain('$snapshots.html');
       expect(mockBucket.delete).not.toHaveBeenCalled();
       expect(counters).toMatchObject({ scanned: 1, referenced: 1, orphaned: 0, deleted: 0 });
+    });
+  });
+
+  /**
+   * Unit tests — issue #4059 review item 5. The tests above (e.g. `remove`'s
+   * "curates details to { message } only" test) assert on the SHAPE of the
+   * thrown `AppError.details` in isolation — reverting a call site to
+   * `details: err` is already caught there (an extra key fails `toEqual`).
+   * What none of them prove is curation's actual PURPOSE: bounding what the
+   * dev-grade envelope (`result.error = safeStringify(error)` in
+   * `lib/helpers/responses.js`) exposes when `details` still carried
+   * `code`/`host`-shaped custom properties (a real Node/driver error attaches
+   * these as plain enumerable own properties — unlike `.stack`/`.message`,
+   * which V8 defines non-enumerable and so never serialize via
+   * `JSON.stringify` regardless of curation; verified empirically, not just
+   * asserted). This drives the REAL `UploadRepository.remove()` call site
+   * through the REAL (unmocked) `responses.error()` sink and inspects the
+   * actual dev-grade JSON string a client in a non-production env would
+   * receive.
+   */
+  describe('details curation actually bounds the dev-grade envelope (issue #4059 review item 5):', () => {
+    /**
+     * Minimal Express response double — same shape as responses.js's own test suite.
+     * @returns {{_status: (number|undefined), _body: (Object|undefined), status: Function, json: Function}}
+     *   the double; `status`/`json` are chainable recorders that capture what the
+     *   sink sent into `_status`/`_body` for assertion.
+     */
+    const buildRes = () => {
+      const res = { _status: undefined, _body: undefined };
+      res.status = (code) => { res._status = code; return res; };
+      res.json = (body) => { res._body = body; return res; };
+      return res;
+    };
+
+    test('a curated call site (remove()) never lets the raw error\'s code/host reach the dev-grade envelope — only the intentionally-preserved message text does', async () => {
+      const upload = { _id: 'abc123', filename: 'present.png' };
+      // Message text carries NO marker strings, so a substring check on the
+      // whole envelope cleanly distinguishes "message text leaked (intended)"
+      // from "some OTHER raw field leaked (curation's actual job)".
+      const rawError = Object.assign(new Error('mongo replset primary unreachable'), {
+        stack: 'STACK_MARKER_should_never_serialize_via_JSON_stringify_anyway',
+        code: 'CODE_MARKER_ECONNREFUSED',
+        host: 'HOST_MARKER_10_0_4_12',
+      });
+      mockBucket.delete.mockRejectedValueOnce(rawError);
+
+      let caught;
+      try {
+        await UploadRepository.remove(upload);
+      } catch (err) {
+        caught = err;
+      }
+
+      const res = buildRes();
+      responses.error(res, 500)(caught); // NODE_ENV is 'test' here (dev-grade) — result.error is populated
+
+      expect(typeof res._body.error).toBe('string');
+      const devBlob = JSON.parse(res._body.error);
+      // Curation's actual effect: the OTHER raw fields never reached `.details`
+      // in the first place, so they cannot appear in the dev blob either.
+      expect(devBlob.details).toEqual({ message: rawError.message });
+      expect(JSON.stringify(devBlob)).not.toContain('CODE_MARKER');
+      expect(JSON.stringify(devBlob)).not.toContain('HOST_MARKER');
+      // Not over-scrubbing either — the curated message text is intentionally
+      // preserved dev-side (see the call site's own comment on `details: {
+      // message: err?.message }`).
+      expect(JSON.stringify(devBlob)).toContain('mongo replset primary unreachable');
     });
   });
 });

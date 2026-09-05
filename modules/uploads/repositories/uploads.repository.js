@@ -35,7 +35,13 @@ const getStream = (upload) => {
   try {
     return bucket.openDownloadStream(upload._id);
   } catch (err) {
-    throw new AppError('Uppload: read error', { code: 'REPOSITORY_ERROR', details: err });
+    // Curated, not forwarded wholesale (issue #4059): only `message` — a short,
+    // human-readable reason — crosses into `details`. The raw GridFS/driver
+    // error may carry stack traces or connection metadata nobody chose to
+    // publish; `message` alone stays useful for logs/non-prod debugging and
+    // safe once `getDescription` gates `details.message` to non-production
+    // (same issue).
+    throw new AppError('Uppload: read error', { code: 'REPOSITORY_ERROR', details: { message: err?.message } });
   }
 };
 
@@ -101,7 +107,8 @@ const remove = async (upload) => {
     const unlinked = await bucket.delete(upload._id);
     return unlinked;
   } catch (err) {
-    throw new AppError('Upload: delete error', { code: 'REPOSITORY_ERROR', details: err });
+    // Curated (issue #4059) — see the identical comment on getStream above.
+    throw new AppError('Upload: delete error', { code: 'REPOSITORY_ERROR', details: { message: err?.message } });
   }
 };
 
@@ -120,7 +127,8 @@ const deleteMany = async (filter) => {
       await bucket.delete(upload._id);
       deletedCount += 1;
     } catch (err) {
-      throw new AppError('Upload: delete error', { code: 'REPOSITORY_ERROR', details: err });
+      // Curated (issue #4059) — see the identical comment on getStream above.
+      throw new AppError('Upload: delete error', { code: 'REPOSITORY_ERROR', details: { message: err?.message } });
     }
   }
   return { deletedCount };
@@ -154,7 +162,8 @@ const purge = async (kind, collection, key) => {
       await bucket.delete(upload._id);
       deletedCount += 1;
     } catch (err) {
-      throw new AppError('Upload: delete error', { code: 'REPOSITORY_ERROR', details: err });
+      // Curated (issue #4059) — see the identical comment on getStream above.
+      throw new AppError('Upload: delete error', { code: 'REPOSITORY_ERROR', details: { message: err?.message } });
     }
   }
   return { deletedCount };
