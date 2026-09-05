@@ -594,8 +594,12 @@ describe('requireQuota — fail-closed statuses in meter mode:', () => {
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(402);
       const payload = res.json.mock.calls[0][0];
+      // The dev-only blob now serializes the AppError itself (issue #4062 fix
+      // — `responses.error` is handed `err`, not the pre-extracted `details`
+      // sub-object), so the curated fields live under `.details`, not at the
+      // blob's top level.
       const errData = JSON.parse(payload.error);
-      expect(errData.type).toBe('METER_EXHAUSTED');
+      expect(errData.details.type).toBe('METER_EXHAUSTED');
     },
   );
 

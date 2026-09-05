@@ -361,12 +361,60 @@ describe('requireQuota middleware:', () => {
       expect(res.status).toHaveBeenCalledWith(402);
       const payload = res.json.mock.calls[0][0];
       expect(payload.description).toBe('Meter exhausted');
+      // The dev-only blob now serializes the AppError itself (issue #4062 fix
+      // — `responses.error` is handed `err`, not the pre-extracted `details`
+      // sub-object), so the curated fields live under `.details`, not at the
+      // blob's top level.
       const errData = JSON.parse(payload.error);
-      expect(errData.type).toBe('METER_EXHAUSTED');
-      expect(errData.meterUsed).toBe(6000);
-      expect(errData.meterQuota).toBe(5000);
-      expect(errData.extrasRemaining).toBe(0);
-      expect(Array.isArray(errData.packsAvailable)).toBe(true);
+      expect(errData.details.type).toBe('METER_EXHAUSTED');
+      expect(errData.details.meterUsed).toBe(6000);
+      expect(errData.details.meterQuota).toBe(5000);
+      expect(errData.details.extrasRemaining).toBe(0);
+      expect(Array.isArray(errData.details.packsAvailable)).toBe(true);
+    });
+
+    // Issue #4062: the test above only ever inspects `payload.error` — the
+    // raw serialized-error blob that `lib/helpers/responses.js` gates to
+    // dev-grade environments only (`configHelper.isProd()`). It passed even
+    // while the middleware handed `responses.error(...)` the already-extracted
+    // `details` sub-object instead of the AppError itself, because that blob
+    // is built from whatever object reaches `responses.error`, not from a
+    // specific `.details` traversal. The field a REAL production client reads
+    // is `payload.details` (the whitelisted `type`/`upgradeUrl` subset) —
+    // this test forces `NODE_ENV = 'production'` so `payload.error` cannot
+    // exist at all, the same production-mode-toggle convention used in
+    // `lib/helpers/tests/responses.detailsWhitelist.unit.tests.js`.
+    test('production mode: 402 METER_EXHAUSTED response carries type + upgradeUrl in payload.details, not just the dev-only error blob', async () => {
+      mockBillingQuotaService.assertCanExecute.mockRejectedValue(
+        new AppError('Meter exhausted', {
+          status: 402,
+          details: {
+            type: 'METER_EXHAUSTED',
+            meterUsed: 6000,
+            meterQuota: 5000,
+            extrasRemaining: 0,
+            packsAvailable: [{ packId: 'pack_500k', meterUnits: 500000 }],
+            upgradeUrl: '/billing/plans',
+          },
+        }),
+      );
+
+      const previousNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      try {
+        await requireQuota('scraps', 'create')(req, res, next);
+      } finally {
+        process.env.NODE_ENV = previousNodeEnv;
+      }
+
+      expect(res.status).toHaveBeenCalledWith(402);
+      const payload = res.json.mock.calls[0][0];
+      // The whitelisted subset a production client actually renders an
+      // upgrade CTA from — only `type`/`upgradeUrl` survive the whitelist,
+      // `meterUsed`/`meterQuota`/etc. are intentionally not whitelisted.
+      expect(payload.details).toEqual({ type: 'METER_EXHAUSTED', upgradeUrl: '/billing/plans' });
+      // Production never leaks the raw serialized-error blob.
+      expect(payload.error).toBeUndefined();
     });
 
     test('should return 402 when meter doc is null and plan quota is 0 (no extras)', async () => {
@@ -399,7 +447,7 @@ describe('requireQuota middleware:', () => {
       expect(res.status).toHaveBeenCalledWith(503);
       const payload = res.json.mock.calls[0][0];
       const errData = JSON.parse(payload.error);
-      expect(errData.type).toBe('PLAN_NOT_CONFIGURED');
+      expect(errData.details.type).toBe('PLAN_NOT_CONFIGURED');
     });
 
     test('fix #3569: new Free user — 1st scrap passes when plan meterQuota > 0', async () => {
@@ -470,7 +518,7 @@ describe('requireQuota middleware:', () => {
       expect(res.status).toHaveBeenCalledWith(402);
       const payload = res.json.mock.calls[0][0];
       const errData = JSON.parse(payload.error);
-      expect(errData.type).toBe('PAYMENT_PAST_DUE');
+      expect(errData.details.type).toBe('PAYMENT_PAST_DUE');
     });
 
     test('should return 402 PAYMENT_PAST_DUE when past_due and grace period elapsed (J+10)', async () => {
@@ -487,8 +535,8 @@ describe('requireQuota middleware:', () => {
       expect(res.status).toHaveBeenCalledWith(402);
       const payload = res.json.mock.calls[0][0];
       const errData = JSON.parse(payload.error);
-      expect(errData.type).toBe('PAYMENT_PAST_DUE');
-      expect(errData.subscriptionStatus).toBe('past_due');
+      expect(errData.details.type).toBe('PAYMENT_PAST_DUE');
+      expect(errData.details.subscriptionStatus).toBe('past_due');
     });
 
     test('should NOT block past_due with no pastDueSince set (service resolves)', async () => {
@@ -548,7 +596,7 @@ describe('requireQuota middleware:', () => {
       expect(res.status).toHaveBeenCalledWith(402);
       const payload = res.json.mock.calls[0][0];
       const errData = JSON.parse(payload.error);
-      expect(errData.type).toBe('METER_EXHAUSTED');
+      expect(errData.details.type).toBe('METER_EXHAUSTED');
     });
 
     // ── V8 audit C2: incomplete subscription must be fail-closed ─────────────
@@ -574,8 +622,8 @@ describe('requireQuota middleware:', () => {
       expect(res.status).toHaveBeenCalledWith(402);
       const payload = res.json.mock.calls[0][0];
       const errData = JSON.parse(payload.error);
-      expect(errData.type).toBe('METER_EXHAUSTED');
-      expect(errData.meterQuota).toBe(0);
+      expect(errData.details.type).toBe('METER_EXHAUSTED');
+      expect(errData.details.meterQuota).toBe(0);
     });
 
     test('V8-C2b: canceled subscription in meter mode → 402 METER_EXHAUSTED with free quota (not paid)', async () => {
@@ -599,8 +647,8 @@ describe('requireQuota middleware:', () => {
       expect(res.status).toHaveBeenCalledWith(402);
       const payload = res.json.mock.calls[0][0];
       const errData = JSON.parse(payload.error);
-      expect(errData.type).toBe('METER_EXHAUSTED');
-      expect(errData.meterQuota).toBe(0);
+      expect(errData.details.type).toBe('METER_EXHAUSTED');
+      expect(errData.details.meterQuota).toBe(0);
     });
   });
 });
