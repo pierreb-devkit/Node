@@ -588,10 +588,11 @@ const handleSubscriptionDeleted = async (subscription, event) => {
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(subscription.id);
   if (!existing) return;
 
-  // Mirror the vendor's terminal cancel fields — the stored doc must not contradict
-  // Stripe (e.g. a scheduled period-end cancel that already carries cancel_at_period_end:
-  // true would otherwise be overwritten with a hardcoded false). Guard shapes copied
-  // verbatim from handleSubscriptionUpdated above.
+  // Re-sync the stored cancel fields from the vendor object instead of leaving them
+  // untouched. A value written by an earlier event (e.g. a scheduled period-end cancel)
+  // can otherwise out-live an out-of-band change (e.g. an immediate cancel that
+  // supersedes it) and go stale forever. Guard shapes copied verbatim from
+  // handleSubscriptionUpdated above.
   const fields = { plan: 'free', status: 'canceled' };
   if (typeof subscription.cancel_at_period_end === 'boolean') {
     fields.cancelAtPeriodEnd = subscription.cancel_at_period_end;
