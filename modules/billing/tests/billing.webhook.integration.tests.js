@@ -423,6 +423,22 @@ describe('Billing webhook integration tests:', () => {
       );
     });
 
+    /**
+     * Verifies neither cancel field is written when the Stripe payload carries neither —
+     * mirror of the admin retrieve-failed guard: no source value means no fabricated write.
+     * @returns {Promise<void>}
+     */
+    test('writes NEITHER cancelAtPeriodEnd NOR cancelAt when the payload carries neither field', async () => {
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+
+      await WebhookService.handleSubscriptionDeleted({ id: 'sub_456' }, makeEvent());
+
+      const fields = mockSubscriptionRepository.updateIfEventNewer.mock.calls[0][3];
+      expect(fields).not.toHaveProperty('cancelAtPeriodEnd');
+      expect(fields).not.toHaveProperty('cancelAt');
+    });
+
     test('should return early when subscription not found', async () => {
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(null);
 

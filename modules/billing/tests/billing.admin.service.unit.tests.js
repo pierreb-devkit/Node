@@ -478,6 +478,31 @@ describe('BillingAdminService unit tests:', () => {
       expect(result.previous.plan).toBe('pro');
     });
 
+    /**
+     * Verifies a truthy retrieved cancel_at_period_end is mirrored, not overwritten —
+     * proves this is a mirror, not a hardcoded value, and exercises the seconds→Date
+     * conversion on cancel_at.
+     * @returns {Promise<void>}
+     */
+    test('mirrors a truthy cancel_at_period_end from the post-cancel retrieve (not hardcoded false)', async () => {
+      mockStripeInstance.subscriptions.retrieve.mockResolvedValue({
+        id: stripeSubId,
+        status: 'canceled',
+        cancel_at_period_end: true,
+        cancel_at: 1750000000,
+        items: { data: [{ price: { metadata: { planId: 'free' } } }] },
+      });
+
+      await BillingAdminService.cancelSubscription(orgId);
+
+      expect(mockSubscriptionRepository.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cancelAtPeriodEnd: true,
+          cancelAt: new Date(1750000000 * 1000),
+        }),
+      );
+    });
+
     test('throws 404 when subscription not found in DB', async () => {
       mockSubscriptionRepository.findByOrganization.mockResolvedValue(null);
 

@@ -803,41 +803,6 @@ describe('Billing service unit tests:', () => {
       expect(mockStripeInstance.subscriptions.retrieve).not.toHaveBeenCalled();
     });
 
-    /**
-     * Verifies a detached subscription doc surfaces its reset cancel fields as-is.
-     * @returns {Promise<void>}
-     */
-    test('should surface the reset cancel fields unmasked when no stripeSubscriptionId (issue #4100 guard)', async () => {
-      // No stripeSubscriptionId means fetchSubscriptionDetails short-circuits (no Stripe
-      // fetch), so this path returns the raw stored document as-is — this is a read-path
-      // test, not a write guard. Backed by the fix at handleCustomerDeleted: the doc's
-      // cancelAtPeriodEnd is explicitly reset to false there, so no stale truthy value
-      // can survive through this consumer.
-      jest.unstable_mockModule('../../../config/index.js', () => ({
-        default: { stripe: { secretKey: 'sk_test_sub_reset' } },
-      }));
-
-      mockStripeInstance.subscriptions = { retrieve: jest.fn() };
-
-      const mockSub = {
-        organization: orgId,
-        plan: 'free',
-        stripeSubscriptionId: null,
-        cancelAtPeriodEnd: false,
-        cancelAt: null,
-      };
-      mockSubscriptionRepository.findByOrganization.mockResolvedValue(mockSub);
-
-      const mod = await import('../services/billing.service.js');
-      BillingService = mod.default;
-
-      const result = await BillingService.getSubscription(orgId);
-
-      expect(result.cancelAtPeriodEnd).not.toBe(true);
-      expect(result).toEqual(mockSub);
-      expect(mockStripeInstance.subscriptions.retrieve).not.toHaveBeenCalled();
-    });
-
     test('should return null when no subscription exists', async () => {
       jest.unstable_mockModule('../../../config/index.js', () => ({
         default: { stripe: { secretKey: 'sk_test_sub2' } },
