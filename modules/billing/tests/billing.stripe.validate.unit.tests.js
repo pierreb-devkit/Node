@@ -86,12 +86,15 @@ describe('validateStripeKey', () => {
     await expect(validateStripeKey(client)).resolves.toEqual({ status: 'error', message: 'Stripe key REJECTED: api_key_revoked' });
   });
 
-  test('reports error on an unknown key, falling back to the wire type when no code is supplied', async () => {
-    // The shape stripe-node produces for a key Stripe does not recognise: 401, no `code`.
+  test('reports error on an unknown key, falling back to the SDK class name when no code is supplied', async () => {
+    // The shape stripe-node produces for a key Stripe does not recognise: 401, no `code`. Stripe's API
+    // puts `invalid_request_error` on the wire type here regardless of cause, so the fallback must
+    // prefer the SDK's own classification (`type`) over `rawType` or the message would mislabel an
+    // authentication failure as a bad request.
     retrieve.mockRejectedValue(stripeError('StripeAuthenticationError', { rawType: 'invalid_request_error', statusCode: 401 }));
     await expect(validateStripeKey(client)).resolves.toEqual({
       status: 'error',
-      message: 'Stripe key REJECTED: invalid_request_error',
+      message: 'Stripe key REJECTED: StripeAuthenticationError',
     });
   });
 
@@ -106,9 +109,25 @@ describe('validateStripeKey', () => {
     });
   });
 
-  test('reports ok on a bare 403 without an SDK class name', async () => {
+  test('does not accept a bare 403 without an SDK class name — unclassified, not proven', async () => {
+    // stripe-node's generateV1Error is the only place that ever sets `.statusCode`, and it always
+    // pairs statusCode 403 with `type: 'StripePermissionError'` — so a real Stripe 403 always has
+    // the class name too. An error with statusCode alone was never produced by the SDK for this
+    // request and must not be trusted as an accepted key.
     retrieve.mockRejectedValue(Object.assign(new Error('forbidden'), { statusCode: 403 }));
-    await expect(validateStripeKey(client)).resolves.toMatchObject({ status: 'ok' });
+    await expect(validateStripeKey(client)).resolves.toEqual({
+      status: 'warning',
+      message: 'Stripe key not validated (transient: unknown)',
+    });
+  });
+
+  test('warns when a successful reply is not a Stripe Account (no id)', async () => {
+    // A response with no `error` field passes through the SDK unchanged, whatever its shape.
+    retrieve.mockResolvedValue({ object: 'unexpected' });
+    await expect(validateStripeKey(client)).resolves.toEqual({
+      status: 'warning',
+      message: 'Stripe key not validated (unexpected account response)',
+    });
   });
 
   test.each([
