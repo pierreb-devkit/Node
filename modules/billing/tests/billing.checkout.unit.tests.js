@@ -803,6 +803,10 @@ describe('Billing service unit tests:', () => {
       expect(mockStripeInstance.subscriptions.retrieve).not.toHaveBeenCalled();
     });
 
+    /**
+     * Verifies a detached subscription doc surfaces its reset cancel fields as-is.
+     * @returns {Promise<void>}
+     */
     test('should surface the reset cancel fields unmasked when no stripeSubscriptionId (issue #4100 guard)', async () => {
       // No stripeSubscriptionId means fetchSubscriptionDetails short-circuits (no Stripe
       // fetch), so this path returns the raw stored document as-is — this is a read-path

@@ -393,6 +393,10 @@ describe('Billing webhook integration tests:', () => {
       expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'free');
     });
 
+    /**
+     * Verifies a scheduled period-end cancel is mirrored, not overwritten with false.
+     * @returns {Promise<void>}
+     */
     test('should mirror the vendor cancel fields, not hardcode false — scheduled period-end cancel elapsing', async () => {
       // A subscription whose cancel_at_period_end was already true (scheduled cancel)
       // reaches its cancel_at date and Stripe fires customer.subscription.deleted.

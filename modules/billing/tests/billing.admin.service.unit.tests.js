@@ -523,6 +523,10 @@ describe('BillingAdminService unit tests:', () => {
       );
     });
 
+    /**
+     * Verifies a failed post-cancel retrieve omits both cancel fields entirely.
+     * @returns {Promise<void>}
+     */
     test('retrieve failure: DB write carries NEITHER cancelAtPeriodEnd NOR cancelAt (no fabricated value)', async () => {
       // No Stripe object was ever retrieved, so there is nothing to mirror. Writing a
       // fabricated false/null here would contradict the vendor by construction — the
