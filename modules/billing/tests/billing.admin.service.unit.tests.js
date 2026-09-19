@@ -459,6 +459,8 @@ describe('BillingAdminService unit tests:', () => {
       mockStripeInstance.subscriptions.retrieve.mockResolvedValue({
         id: stripeSubId,
         status: 'canceled',
+        cancel_at_period_end: false,
+        cancel_at: null,
         items: { data: [{ price: { metadata: { planId: 'free' } } }] },
       });
     });
@@ -469,7 +471,7 @@ describe('BillingAdminService unit tests:', () => {
       expect(mockStripeInstance.subscriptions.cancel).toHaveBeenCalledWith(stripeSubId);
       expect(mockStripeInstance.subscriptions.retrieve).toHaveBeenCalledWith(stripeSubId);
       expect(mockSubscriptionRepository.update).toHaveBeenCalledWith(
-        expect.objectContaining({ plan: 'free', status: 'canceled' }),
+        expect.objectContaining({ plan: 'free', status: 'canceled', cancelAtPeriodEnd: false, cancelAt: null }),
       );
       expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'free');
       expect(result.stripeStatus).toBe('canceled');
@@ -519,6 +521,19 @@ describe('BillingAdminService unit tests:', () => {
         '[billing.admin] cancelSubscription — post-cancel retrieve failed, assuming canceled',
         expect.any(Object),
       );
+    });
+
+    test('retrieve failure: DB write carries NEITHER cancelAtPeriodEnd NOR cancelAt (no fabricated value)', async () => {
+      // No Stripe object was ever retrieved, so there is nothing to mirror. Writing a
+      // fabricated false/null here would contradict the vendor by construction — the
+      // guard must omit both keys entirely, not merely leave them falsy.
+      mockStripeInstance.subscriptions.retrieve.mockRejectedValue(new Error('Stripe unavailable'));
+
+      await BillingAdminService.cancelSubscription(orgId);
+
+      const payload = mockSubscriptionRepository.update.mock.calls[0][0];
+      expect(payload).not.toHaveProperty('cancelAtPeriodEnd');
+      expect(payload).not.toHaveProperty('cancelAt');
     });
 
     // V8 audit C3 — cancelSubscription must bump markers so a stale
