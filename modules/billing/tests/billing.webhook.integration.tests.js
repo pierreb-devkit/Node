@@ -378,16 +378,65 @@ describe('Billing webhook integration tests:', () => {
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
 
-      await WebhookService.handleSubscriptionDeleted({ id: 'sub_456' }, makeEvent());
+      await WebhookService.handleSubscriptionDeleted(
+        { id: 'sub_456', cancel_at_period_end: false, cancel_at: null },
+        makeEvent(),
+      );
 
       expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
         subId,
         1700000200,
         'evt_deleted',
-        { plan: 'free', status: 'canceled' },
+        expect.objectContaining({ plan: 'free', status: 'canceled', cancelAtPeriodEnd: false, cancelAt: null }),
         'subscription',
       );
       expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'free');
+    });
+
+    /**
+     * Verifies a scheduled period-end cancel is mirrored, not overwritten with false.
+     * @returns {Promise<void>}
+     */
+    test('should mirror the vendor cancel fields, not hardcode false — scheduled period-end cancel elapsing', async () => {
+      // A subscription whose cancel_at_period_end was already true (scheduled cancel)
+      // reaches its cancel_at date and Stripe fires customer.subscription.deleted.
+      // The vendor's own fields must be mirrored, never overwritten with a fixed false.
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+
+      await WebhookService.handleSubscriptionDeleted(
+        { id: 'sub_456', cancel_at_period_end: true, cancel_at: 1750000000 },
+        makeEvent(),
+      );
+
+      expect(mockSubscriptionRepository.updateIfEventNewer).toHaveBeenCalledWith(
+        subId,
+        1700000200,
+        'evt_deleted',
+        expect.objectContaining({
+          plan: 'free',
+          status: 'canceled',
+          cancelAtPeriodEnd: true,
+          cancelAt: new Date(1750000000 * 1000),
+        }),
+        'subscription',
+      );
+    });
+
+    /**
+     * Verifies neither cancel field is written when the Stripe payload carries neither —
+     * mirror of the admin retrieve-failed guard: no source value means no fabricated write.
+     * @returns {Promise<void>}
+     */
+    test('writes NEITHER cancelAtPeriodEnd NOR cancelAt when the payload carries neither field', async () => {
+      const existing = { _id: subId, organization: orgId };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+
+      await WebhookService.handleSubscriptionDeleted({ id: 'sub_456' }, makeEvent());
+
+      const fields = mockSubscriptionRepository.updateIfEventNewer.mock.calls[0][3];
+      expect(fields).not.toHaveProperty('cancelAtPeriodEnd');
+      expect(fields).not.toHaveProperty('cancelAt');
     });
 
     test('should return early when subscription not found', async () => {

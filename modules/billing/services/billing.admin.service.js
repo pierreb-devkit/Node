@@ -264,9 +264,13 @@ const cancelSubscription = async (orgId) => {
 
   // (b) Retrieve to verify (Decision #5 — avoid drift on network timeout)
   let confirmedStatus;
+  let confirmedCancelAtPeriodEnd;
+  let confirmedCancelAt;
   try {
     const retrieved = await stripe.subscriptions.retrieve(existing.stripeSubscriptionId);
     confirmedStatus = retrieved.status;
+    confirmedCancelAtPeriodEnd = retrieved.cancel_at_period_end;
+    confirmedCancelAt = retrieved.cancel_at ? new Date(retrieved.cancel_at * 1000) : null;
   } catch (err) {
     // Retrieve failed after cancel — treat as canceled (cancel was already requested).
     // Log the anomaly so ops can verify via Stripe Dashboard.
@@ -290,11 +294,18 @@ const cancelSubscription = async (orgId) => {
     );
   }
 
-  // (c) DB write with confirmed status
+  // (c) DB write with confirmed status. Mirror the retrieved cancel fields so the
+  // admin-cancel path matches the webhook path (One rule, two mechanisms — mirror
+  // wherever a Stripe object is in hand). Guarded: when the retrieve above failed,
+  // confirmedCancelAtPeriodEnd stays undefined and neither key is written — a
+  // fabricated false here would contradict the vendor by construction.
   const updated = await SubscriptionRepository.update({
     _id: existing._id,
     plan: 'free',
     status: 'canceled',
+    ...(typeof confirmedCancelAtPeriodEnd === 'boolean'
+      ? { cancelAtPeriodEnd: confirmedCancelAtPeriodEnd, cancelAt: confirmedCancelAt ?? null }
+      : {}),
     ...bumpEventMarkers('subscription', 'admin-cancel'),
   });
 

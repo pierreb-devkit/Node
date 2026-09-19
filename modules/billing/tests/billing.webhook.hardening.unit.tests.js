@@ -1159,6 +1159,8 @@ describe('handleCustomerDeleted — null out stripeCustomerId / subscription:', 
         stripeSubscriptionId: null,
         plan: 'free',
         status: 'canceled',
+        cancelAtPeriodEnd: false,
+        cancelAt: null,
       }),
       'subscription',
     );

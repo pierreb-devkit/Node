@@ -588,10 +588,22 @@ const handleSubscriptionDeleted = async (subscription, event) => {
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(subscription.id);
   if (!existing) return;
 
-  const updated = await SubscriptionRepository.updateIfEventNewer(String(existing._id), event.created, event.id, {
-    plan: 'free',
-    status: 'canceled',
-  }, 'subscription');
+  // Re-sync the stored cancel fields from the vendor object instead of leaving them
+  // untouched. A value written by an earlier event (e.g. a scheduled period-end cancel)
+  // can otherwise out-live an out-of-band change (e.g. an immediate cancel that
+  // supersedes it) and go stale forever. Guard shapes copied verbatim from
+  // handleSubscriptionUpdated above.
+  const fields = { plan: 'free', status: 'canceled' };
+  if (typeof subscription.cancel_at_period_end === 'boolean') {
+    fields.cancelAtPeriodEnd = subscription.cancel_at_period_end;
+  }
+  if (typeof subscription.cancel_at === 'number') {
+    fields.cancelAt = new Date(subscription.cancel_at * 1000);
+  } else if (subscription.cancel_at === null) {
+    fields.cancelAt = null;
+  }
+
+  const updated = await SubscriptionRepository.updateIfEventNewer(String(existing._id), event.created, event.id, fields, 'subscription');
   if (!updated) {
     logger.info('[billing.webhook] skipped stale event', { eventId: event.id, type: event.type });
     return;
@@ -869,6 +881,11 @@ const handleCustomerDeleted = async (customer, event) => {
       stripeSubscriptionId: null,
       plan: 'free',
       status: 'canceled',
+      // Explicit reset, not a mirror: the payload is a customer object — no
+      // subscription fields to copy — and this write detaches the doc from the
+      // vendor entirely, so the terminal cancel state must be pinned here.
+      cancelAtPeriodEnd: false,
+      cancelAt: null,
     },
     'subscription',
   );
