@@ -52,7 +52,7 @@
   "dependencies": {
     "@casl/ability": "^7.0.1",
     "bcrypt": "^6.0.0",
-    "bson": "^7.3.2",
+    "bson": "^7.3.3",
     "chalk": "^6.0.0",
     "compression": "^1.8.2",
     "cookie-parser": "^1.4.7",
