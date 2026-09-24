@@ -494,6 +494,86 @@ describe('BillingExtraBalance unit tests:', () => {
       });
     });
 
+    describe('getSettlementBasis', () => {
+      /**
+       * @param {Object[]} ledger - Ledger entries (at = index order when absent).
+       * @returns {Promise<{cachedBalance: number, refundDebt: number}>}
+       */
+      const basisOf = (ledger) => {
+        const cachedBalance = ledger.reduce((sum, e) => sum + e.amount, 0);
+        mockModel.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue({ cachedBalance, ledger }) });
+        return BillingExtraBalanceRepository.getSettlementBasis(orgId);
+      };
+      const at = (n) => new Date(Date.UTC(2026, 0, 1, 0, n));
+
+      test('zeros when no document exists', async () => {
+        mockModel.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+        await expect(BillingExtraBalanceRepository.getSettlementBasis(orgId)).resolves.toEqual({ cachedBalance: 0, refundDebt: 0 });
+      });
+
+      test('a refund absorbed by a positive balance is no debt', async () => {
+        const basis = await basisOf([
+          { kind: 'topup', amount: 50, stripeSessionId: 'cs_a', at: at(1) },
+          { kind: 'refund', amount: -50, stripeSessionId: 'cs_a', at: at(2) },
+          { kind: 'debit', amount: -30, at: at(3) },
+        ]);
+        expect(basis).toEqual({ cachedBalance: -30, refundDebt: 0 });
+      });
+
+      test('only the part of a refund below zero is debt', async () => {
+        const basis = await basisOf([
+          { kind: 'topup', amount: 20, stripeSessionId: 'cs_b', at: at(1) },
+          { kind: 'refund', amount: -50, stripeSessionId: 'cs_b', at: at(2) },
+        ]);
+        expect(basis).toEqual({ cachedBalance: -30, refundDebt: 30 });
+      });
+
+      test('a pack repays refund debt; grants and adjustments do not', async () => {
+        const basis = await basisOf([
+          { kind: 'refund', amount: -40, stripeSessionId: 'cs_c', at: at(1) },
+          { kind: 'topup', amount: 10, source: 'referral', refId: 'referral:x:referrer', at: at(2) },
+          { kind: 'adjustment', amount: 10, refId: 'settle:2026-W01', at: at(3) },
+          { kind: 'topup', amount: 25, stripeSessionId: 'cs_d', at: at(4) },
+          { kind: 'debit', amount: -60, at: at(5) },
+        ]);
+        // refund debt 40 → pack repays 25 → 15; balance -55 → overflow part 40.
+        expect(basis).toEqual({ cachedBalance: -55, refundDebt: 15 });
+      });
+
+      test('replays in `at` order, not array order', async () => {
+        const basis = await basisOf([
+          { kind: 'refund', amount: -40, stripeSessionId: 'cs_e', at: at(2) },
+          { kind: 'topup', amount: 40, stripeSessionId: 'cs_e', at: at(1) },
+        ]);
+        expect(basis).toEqual({ cachedBalance: 0, refundDebt: 0 });
+      });
+
+      test('refund debt capped at the negative cached balance', async () => {
+        mockModel.findOne.mockReturnValue({
+          lean: jest.fn().mockResolvedValue({ cachedBalance: -10, ledger: [{ kind: 'refund', amount: -40, at: at(1) }] }),
+        });
+        await expect(BillingExtraBalanceRepository.getSettlementBasis(orgId)).resolves.toEqual({ cachedBalance: -10, refundDebt: 10 });
+      });
+    });
+
+    describe('findLedgerEntryByRefId', () => {
+      test('positional projection returns the matching entry', async () => {
+        const entry = { kind: 'adjustment', amount: 30, refId: 'settle:2026-W18' };
+        mockModel.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue({ ledger: [entry] }) });
+
+        const result = await BillingExtraBalanceRepository.findLedgerEntryByRefId(orgId, 'settle:2026-W18');
+
+        expect(mockModel.findOne).toHaveBeenCalledWith({ organization: orgId, 'ledger.refId': 'settle:2026-W18' }, { 'ledger.$': 1 });
+        expect(result).toBe(entry);
+      });
+
+      test('null when absent or refId empty', async () => {
+        mockModel.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+        await expect(BillingExtraBalanceRepository.findLedgerEntryByRefId(orgId, 'settle:2026-W18')).resolves.toBeNull();
+        await expect(BillingExtraBalanceRepository.findLedgerEntryByRefId(orgId, '')).resolves.toBeNull();
+      });
+    });
+
     describe('refundPartial', () => {
       test('should apply refund atomically when refId is new', async () => {
         const updatedDoc = makeDoc({ cachedBalance: 0 });

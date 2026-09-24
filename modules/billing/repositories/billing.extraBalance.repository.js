@@ -403,9 +403,15 @@ const getBalance = async (orgId) => {
 /**
  * @function getSettlementBasis
  * @description Read, in ONE query, the inputs of the weekly overflow-debt settlement:
- *              the cached balance and the refund debt (sum of the 'refund' clawbacks,
- *              returned as a positive number). A single read keeps both values
- *              consistent with each other against a concurrent debit.
+ *              the cached balance and the UNPAID refund debt (returned as a positive number).
+ *              A single read keeps both values consistent with each other against a
+ *              concurrent debit.
+ *              Refund debt is rebuilt by replaying the ledger in `at` order with a running
+ *              balance: a 'refund' entry adds only the part that pushes the running balance
+ *              below zero (a clawback absorbed by a positive balance is no debt), and a
+ *              Stripe pack 'topup' (stripeSessionId set — creditPack) repays it, floored at 0.
+ *              Grants, 'adjustment' entries (including `settle:<weekKey>` settlements) and
+ *              debits never repay it. The result is capped at max(0, -cachedBalance).
  * @param {string} orgId - The organization ObjectId (string).
  * @returns {Promise<{cachedBalance: number, refundDebt: number}>} Zeros when no document exists.
  */
@@ -414,13 +420,51 @@ const getSettlementBasis = async (orgId) => {
   if (!isValidOrgId(orgId)) return { cachedBalance: 0, refundDebt: 0 };
   const doc = await BillingExtraBalance().findOne(
     { organization: orgId },
-    { cachedBalance: 1, 'ledger.kind': 1, 'ledger.amount': 1 },
+    {
+      cachedBalance: 1,
+      'ledger.kind': 1,
+      'ledger.amount': 1,
+      'ledger.at': 1,
+      'ledger.stripeSessionId': 1,
+    },
   ).lean();
   if (!doc) return { cachedBalance: 0, refundDebt: 0 };
-  const refundDebt = (doc.ledger ?? [])
-    .filter((e) => e.kind === 'refund')
-    .reduce((sum, e) => sum - (e.amount ?? 0), 0);
-  return { cachedBalance: doc.cachedBalance ?? 0, refundDebt };
+  // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+  const atMs = (e) => (e.at ? new Date(e.at).getTime() || 0 : 0);
+  // Array.prototype.sort is stable: entries sharing a timestamp keep their push order.
+  const entries = [...(doc.ledger ?? [])].sort((a, b) => atMs(a) - atMs(b));
+  let running = 0;
+  let refundDebt = 0;
+  for (const e of entries) {
+    const amount = e.amount ?? 0;
+    running += amount;
+    if (e.kind === 'refund' && amount < 0) {
+      refundDebt += Math.min(-amount, Math.max(0, -running));
+    } else if (e.kind === 'topup' && amount > 0 && typeof e.stripeSessionId === 'string' && e.stripeSessionId.length > 0) {
+      refundDebt = Math.max(0, refundDebt - amount);
+    }
+  }
+  const cachedBalance = doc.cachedBalance ?? 0;
+  return { cachedBalance, refundDebt: Math.min(refundDebt, Math.max(0, -cachedBalance)) };
+};
+
+/**
+ * @function findLedgerEntryByRefId
+ * @description Return the single ledger entry carrying `refId` for an organization, or null.
+ *              Positional projection — only the matching entry crosses the wire.
+ *              Used by the weekly reset to read the `settle:<weekKey>` adjustment actually stored.
+ * @param {string} orgId - The organization ObjectId (string).
+ * @param {string} refId - The ledger entry idempotency key.
+ * @returns {Promise<Object|null>} The ledger entry, or null when absent.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const findLedgerEntryByRefId = async (orgId, refId) => {
+  if (!isValidOrgId(orgId) || typeof refId !== 'string' || refId === '') return null;
+  const doc = await BillingExtraBalance().findOne(
+    { organization: orgId, 'ledger.refId': refId },
+    { 'ledger.$': 1 },
+  ).lean();
+  return doc?.ledger?.[0] ?? null;
 };
 
 /**
@@ -632,6 +676,7 @@ export default {
   refundPartial,
   getBalance,
   getSettlementBasis,
+  findLedgerEntryByRefId,
   listLedgerPage,
   findOrgsWithExpiringTopups,
   findExistingRefIds,
