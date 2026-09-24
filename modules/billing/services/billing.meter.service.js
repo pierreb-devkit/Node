@@ -21,6 +21,12 @@ import {
  *              Total: sum(per-key units). Empty or zero-only cost maps return 0.
  *              METER_RUN_BASE applies only when costs is null/undefined.
  *
+ *              Per-key ratio lookup order: `ratios[key]` -> `ratios.default` -> `1`.
+ *              `default` is a reserved key name in the ratio map: use it to set
+ *              the fallback ratio for keys not listed, not as a feature key
+ *              (a cost map keyed literally `default` is still billed via that
+ *              same entry, since the lookup does not special-case the key).
+ *
  *              When meterMode is enabled and getPlanByVersion returns null
  *              (version mismatch), throws so attribution cannot silently bill with
  *              ratio=1. When meterMode is disabled, keeps the legacy ratio=1 fallback.
@@ -70,6 +76,7 @@ const unitsFromCosts = (costs, planId, ratioVersion) => {
     }
   }
   const ratios = (plan && typeof plan.ratios === 'object' && !Array.isArray(plan.ratios)) ? plan.ratios : {};
+  const fallbackRatio = typeof ratios.default === 'number' && ratios.default >= 0 ? ratios.default : 1;
 
   const breakdown = {};
   let rawTotal = 0;
@@ -77,7 +84,7 @@ const unitsFromCosts = (costs, planId, ratioVersion) => {
   for (const [key, cost] of Object.entries(costs)) {
     if (typeof cost !== 'number' || !Number.isFinite(cost) || cost <= 0) continue;
 
-    const ratio = typeof ratios[key] === 'number' && ratios[key] >= 0 ? ratios[key] : 1;
+    const ratio = typeof ratios[key] === 'number' && ratios[key] >= 0 ? ratios[key] : fallbackRatio;
     const units = Math.floor(cost * ratio * dollarsToUnitRatio);
 
     if (units > 0) {

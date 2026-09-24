@@ -36,6 +36,17 @@ credits, exclude refIds starting with `settle:`.
 `{ doc, inserted }` instead of the document. Any project code calling it directly must
 read `.doc`.
 
+## Billing meter now honours `ratios.default` as the per-key fallback (2026-09-24)
+
+`unitsFromCosts` used a hardcoded `1` for any cost key absent from a plan's `ratios`
+map, ignoring the documented `default` key. It now checks `ratios.default` first.
+Behaviour changes only for a plan whose `ratios.default` is a number other than `1` —
+see [#4025](https://github.com/pierreb-devkit/Node/issues/4025).
+
+**Action:** if a plan sets `ratios.default` to a value other than `1`, bump its
+`planDefinitions[].version` (or `meter.ratioVersion` when the plan relies on that fallback) when taking this change — ratios are treated as immutable
+per `(planId, version)`, so the new billing must not reuse the old version string.
+
 ## `engines.node` floor raised to `>=24.15.0`, `engines.npm` now required (2026-09-04)
 
 `package.json` declared `"node": ">=22.0.0"`, but the committed `package-lock.json`
