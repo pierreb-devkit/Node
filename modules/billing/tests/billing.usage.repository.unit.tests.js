@@ -351,25 +351,16 @@ describe('BillingUsageRepository — meter extensions unit tests:', () => {
         consumedAttributionKeys: [],
       };
       const newDoc = makeUsageDoc();
-      mockModel.findOneAndUpdate.mockResolvedValue({ value: newDoc, lastErrorObject: { updatedExisting: false } });
+      mockModel.findOneAndUpdate.mockResolvedValue(newDoc);
 
       const result = await BillingUsageRepository.upsertWeekSnapshot(orgId, weekKey, snapshotFields);
 
       expect(mockModel.findOneAndUpdate).toHaveBeenCalledWith(
         { organizationId: orgId, weekKey },
         { $setOnInsert: snapshotFields },
-        expect.objectContaining({ upsert: true, returnDocument: 'after', includeResultMetadata: true }),
+        expect.objectContaining({ upsert: true, returnDocument: 'after' }),
       );
-      expect(result).toEqual({ doc: newDoc, inserted: true });
-    });
-
-    test('reports inserted=false when the week doc already existed', async () => {
-      const existing = makeUsageDoc();
-      mockModel.findOneAndUpdate.mockResolvedValue({ value: existing, lastErrorObject: { updatedExisting: true } });
-
-      const result = await BillingUsageRepository.upsertWeekSnapshot(orgId, weekKey, {});
-
-      expect(result).toEqual({ doc: existing, inserted: false });
+      expect(result).toBe(newDoc);
     });
   });
 

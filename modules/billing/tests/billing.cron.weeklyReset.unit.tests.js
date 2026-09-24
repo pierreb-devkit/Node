@@ -126,7 +126,7 @@ describe('billing.weeklyReset cron — BillingResetService.resetAllDue:', () => 
       { organization: '507f1f77bcf86cd799439022', currentPeriodStart: new Date() },
     ];
     mockSubscriptionRepository.findAllDueForResetByLastReset.mockResolvedValue(subs);
-    mockUsageRepository.upsertWeekSnapshot.mockResolvedValue({ doc: { weekKey: '2026-W18' }, inserted: true });
+    mockUsageRepository.upsertWeekSnapshot.mockResolvedValue({ weekKey: '2026-W18' });
 
     const result = await BillingResetService.resetAllDue();
 
@@ -143,7 +143,7 @@ describe('billing.weeklyReset cron — BillingResetService.resetAllDue:', () => 
     // First call throws, second succeeds
     mockUsageRepository.upsertWeekSnapshot
       .mockRejectedValueOnce(new Error('DB error'))
-      .mockResolvedValueOnce({ doc: { weekKey: '2026-W18' }, inserted: true });
+      .mockResolvedValueOnce({ weekKey: '2026-W18' });
 
     const result = await BillingResetService.resetAllDue();
 

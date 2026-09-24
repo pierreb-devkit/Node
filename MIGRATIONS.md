@@ -11,13 +11,14 @@ may go negative. That debt was never cleared by the weekly reset, so on a plan w
 weekly quota it cut **every** later week by the same amount — and locked the org out
 for good once the debt reached the quota.
 
-`resetWeek` now settles it once per week, for plans with `meterQuota > 0`:
-`settle = min(meterQuota, overflowDebt)`. Extras are credited `settle` FIRST, through an
-`adjustment` ledger entry with refId `settle:<weekKey>` (idempotent — applies at most
-once, across pods and retries). The week doc is then inserted (or reused, when another
-reset or `incrementMeter` created it) with `meterUsed = 0`, and the credit actually stored
-in the ledger is charged to it with one guarded update (`$inc meterUsed`, key
-`settle:<weekKey>` added to `consumedAttributionKeys`). A retry or a concurrent reset
+`resetWeek` now settles it once per week, for weeks with a quota > 0, from the target
+week's **remaining** quota: `settle = min(meterQuota − meterUsed, overflowDebt)`. The week
+doc is read first (or inserted at `meterUsed = 0`) — the cron anchors on the current time,
+so the week is often already partly used. What does not fit stays as debt for the next
+reset. Extras are credited `settle` through an `adjustment` ledger entry with refId
+`settle:<weekKey>` (idempotent — applies at most once, across pods and retries), and the
+credit actually stored is charged to the week with one guarded update (`$inc meterUsed`,
+key `settle:<weekKey>` added to `consumedAttributionKeys`). A retry or a concurrent reset
 completes a half-done settlement and never charges it twice. If the credit call fails,
 the failure is logged and nothing is charged — the debt survives for the next reset.
 Refund debt and pack-expiry shortfall (the part of a refund or a pack expiry that took
@@ -31,10 +32,6 @@ non-zero `meterUsed` and a `settle:<weekKey>` adjustment in their ledger; their
 negative balance shrinks week over week instead of staying flat. No schema change,
 no migration to run. If a downstream report sums `adjustment` entries as goodwill
 credits, exclude refIds starting with `settle:`.
-
-**Repository contract change:** `BillingUsageRepository.upsertWeekSnapshot` now returns
-`{ doc, inserted }` instead of the document. Any project code calling it directly must
-read `.doc`.
 
 ## Billing meter now honours `ratios.default` as the per-key fallback (2026-09-24)
 
