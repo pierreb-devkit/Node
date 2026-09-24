@@ -23,6 +23,10 @@ negative balance shrinks week over week instead of staying flat. No schema chang
 no migration to run. If a downstream report sums `adjustment` entries as goodwill
 credits, exclude refIds starting with `settle:`.
 
+**Repository contract change:** `BillingUsageRepository.upsertWeekSnapshot` now returns
+`{ doc, inserted }` instead of the document. Any project code calling it directly must
+read `.doc`.
+
 ## `engines.node` floor raised to `>=24.15.0`, `engines.npm` now required (2026-09-04)
 
 `package.json` declared `"node": ">=22.0.0"`, but the committed `package-lock.json`
