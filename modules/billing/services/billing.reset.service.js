@@ -86,10 +86,9 @@ const resetWeek = async (orgId, periodStart) => {
 
   const settle = await computeOverflowSettlement(orgId, meterQuota);
 
-  let inserted;
-  let doc;
+  let upserted;
   try {
-    ({ doc, inserted } = await BillingUsageRepository.upsertWeekSnapshot(orgId, newWeekKey, {
+    upserted = await BillingUsageRepository.upsertWeekSnapshot(orgId, newWeekKey, {
       organizationId: orgId,
       weekKey: newWeekKey,
       month: monthKey,
@@ -101,7 +100,7 @@ const resetWeek = async (orgId, periodStart) => {
       alertedAt80: null,
       alertedAt100: null,
       consumedAttributionKeys: [],
-    }));
+    });
   } catch (err) {
     if (isDuplicateKeyError(err)) {
       // Race: another pod already created this week's doc
@@ -109,6 +108,7 @@ const resetWeek = async (orgId, periodStart) => {
     }
     throw err;
   }
+  const { doc, inserted } = upserted;
 
   // Step 4 — Credit the settled units back to extras, only when this call wrote meterUsed = settle.
   if (inserted && settle > 0) {
