@@ -416,7 +416,7 @@ describe('User integration tests:', () => {
       try {
         const result = await agent.post('/api/users/avatar').attach('fieldThatDoesntWork', './modules/users/tests/img/default.jpeg').expect(422);
         expect(result.body.message).toEqual('Unprocessable Entity');
-        expect(result.body.description).toEqual('Unexpected field.');
+        expect(result.body.description).toEqual('Unexpected file field.');
       } catch (err) {
         expect(err).toBeFalsy();
       }
