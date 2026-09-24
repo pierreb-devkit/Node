@@ -20,8 +20,10 @@ in the ledger is charged to it with one guarded update (`$inc meterUsed`, key
 `settle:<weekKey>` added to `consumedAttributionKeys`). A retry or a concurrent reset
 completes a half-done settlement and never charges it twice. If the credit call fails,
 the failure is logged and nothing is charged — the debt survives for the next reset.
-Refund debt is excluded: only the unpaid part of refunds (the part that took the balance
-below zero, net of later pack purchases) is never settled. Plans with `meterQuota = 0`
+Refund and expiration debt is excluded: the unpaid part of refunds and pack expirations
+(the part that took the balance below zero, net of later pack purchases) is never settled.
+A pack expiry removes the full pack amount, even when part of it was already consumed —
+that shortfall is non-settleable debt, never repaid from quota. Plans with `meterQuota = 0`
 are unchanged.
 
 **What you will see:** after the first reset, indebted orgs start the week with a

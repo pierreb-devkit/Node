@@ -15,7 +15,7 @@ import { isDuplicateKeyError } from '../lib/billing.errors.js';
 /**
  * @function computeOverflowSettlement
  * @description Units of overflow debt to repay from the new week's quota.
- *              Refund debt is excluded: it is intentional and never settled.
+ *              Refund and expiration debt is excluded: it is never settled from quota.
  * @param {string} orgId - The organization ObjectId (string).
  * @param {number} meterQuota - The new week's plan quota.
  * @returns {Promise<number>} Units to settle, in [0, meterQuota].
@@ -23,8 +23,8 @@ import { isDuplicateKeyError } from '../lib/billing.errors.js';
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const computeOverflowSettlement = async (orgId, meterQuota) => {
   if (!(meterQuota > 0)) return 0;
-  const { cachedBalance, refundDebt } = await BillingExtraBalanceRepository.getSettlementBasis(orgId);
-  return Math.max(0, Math.min(meterQuota, -cachedBalance - refundDebt));
+  const { cachedBalance, nonSettleableDebt } = await BillingExtraBalanceRepository.getSettlementBasis(orgId);
+  return Math.max(0, Math.min(meterQuota, -cachedBalance - nonSettleableDebt));
 };
 
 /**
@@ -46,7 +46,7 @@ const computeOverflowSettlement = async (orgId, meterQuota) => {
  *              past the quota are debited from extras, which may go negative. Without a
  *              settlement that debt would shrink every later week by the same amount.
  *              Up to one week of quota repays it:
- *                settle = max(0, min(meterQuota, -cachedBalance - refundDebt))
+ *                settle = max(0, min(meterQuota, -cachedBalance - nonSettleableDebt))
  *              Order, each step idempotent so any race or retry converges:
  *                a. Credit extras `settle` through an 'adjustment' entry with refId
  *                   `settle:<weekKey>` (shared across pods/retries — lands at most once).
@@ -60,8 +60,9 @@ const computeOverflowSettlement = async (orgId, meterQuota) => {
  *              Step c runs on every call, so a reset that credited then failed before
  *              charging the week is completed by the next call for that week; the key guard
  *              makes the charge land exactly once, whichever call wins.
- *              Refund debt counts only the unpaid part of refunds (see getSettlementBasis) —
- *              it is never settled; only a new pack repays it.
+ *              Refund and expiration debt counts only the unpaid part of refunds and pack
+ *              expirations (see getSettlementBasis) — it is never settled; only a new pack
+ *              repays it.
  *              Plans with meterQuota 0 are untouched: a pack repays the debt.
  *
  * @param {string} orgId - The organization ObjectId (string).

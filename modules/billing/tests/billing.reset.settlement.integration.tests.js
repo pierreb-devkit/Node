@@ -17,7 +17,7 @@ const QUOTA = 100;
  * Overflow debt (negative extras from usage past the quota) is repaid once per
  * week from the new week's quota: extras are credited `settle` via an idempotent
  * 'adjustment' entry, then the week is charged that stored credit exactly once.
- * Unpaid refund debt is never settled; quota-0 plans are untouched.
+ * Unpaid refund and expiration debt is never settled; quota-0 plans are untouched.
  */
 describe('BillingResetService overflow debt settlement integration tests:', () => {
   let BillingUsage;
@@ -245,6 +245,24 @@ describe('BillingResetService overflow debt settlement integration tests:', () =
     const w1 = await stateAt(1);
     expect(w1.meterUsed).toBe(30);
     expect(w1.balance).toBe(0);
+  });
+
+  test('pack expiry after overflow use → expiration debt is never settled', async () => {
+    await Subscription.create({ organization: orgId, plan: 'pro', status: 'active' });
+    const t = (n) => new Date(now.getTime() - (10 - n) * 60 * 1000);
+    await seedExtras([
+      { kind: 'topup', amount: 100, stripeSessionId: 'cs_exp', expiresAt: t(3), at: t(1) },
+      { kind: 'debit', amount: -80, refId: 'run-overflow-exp', at: t(2) },
+    ]);
+    // The real sweep: expiry removes the FULL pack amount although 80 was consumed.
+    await expect(BillingExtraBalanceRepository.addExpirationEntries(orgId, now)).resolves.toBe(1);
+    expect((await stateAt(0)).balance).toBe(-80);
+
+    await BillingResetService.resetWeek(orgId, week(1));
+    const w1 = await stateAt(1);
+    expect(w1.meterUsed).toBe(0);
+    expect(w1.balance).toBe(-80);
+    expect(w1.adjustments).toHaveLength(0);
   });
 
   test('concurrent resets → one credit and meterUsed == the stored credit', async () => {

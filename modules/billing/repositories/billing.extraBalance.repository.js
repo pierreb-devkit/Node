@@ -403,49 +403,48 @@ const getBalance = async (orgId) => {
 /**
  * @function getSettlementBasis
  * @description Read, in ONE query, the inputs of the weekly overflow-debt settlement:
- *              the cached balance and the UNPAID refund debt (returned as a positive number).
- *              A single read keeps both values consistent with each other against a
- *              concurrent debit.
- *              Refund debt is rebuilt by replaying the ledger in `at` order with a running
- *              balance: a 'refund' entry adds only the part that pushes the running balance
- *              below zero (a clawback absorbed by a positive balance is no debt), and a
- *              Stripe pack 'topup' (stripeSessionId set — creditPack) repays it, floored at 0.
- *              Grants, 'adjustment' entries (including `settle:<weekKey>` settlements) and
- *              debits never repay it. The result is capped at max(0, -cachedBalance).
+ *              the cached balance and the UNPAID non-settleable debt — refund and
+ *              expiration debt — returned as a positive number. A single read keeps both
+ *              values consistent with each other against a concurrent debit.
+ *              Non-settleable debt is rebuilt by replaying the ledger in ARRAY order (the
+ *              true commit order: every writer appends with an atomic `$push`) with a
+ *              running balance: a 'refund' or 'expiration' entry adds only the part that
+ *              pushes the running balance below zero (an amount absorbed by a positive
+ *              balance is no debt). An expiration removes the full pack amount even when
+ *              part of the pack was already consumed, so that shortfall is debt the quota
+ *              never repays. A Stripe pack 'topup' (stripeSessionId set — creditPack) repays
+ *              it, floored at 0. Grants, 'adjustment' entries (including `settle:<weekKey>`
+ *              settlements) and debits never repay it. The result is capped at
+ *              max(0, -cachedBalance).
  * @param {string} orgId - The organization ObjectId (string).
- * @returns {Promise<{cachedBalance: number, refundDebt: number}>} Zeros when no document exists.
+ * @returns {Promise<{cachedBalance: number, nonSettleableDebt: number}>} Zeros when no document exists.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const getSettlementBasis = async (orgId) => {
-  if (!isValidOrgId(orgId)) return { cachedBalance: 0, refundDebt: 0 };
+  if (!isValidOrgId(orgId)) return { cachedBalance: 0, nonSettleableDebt: 0 };
   const doc = await BillingExtraBalance().findOne(
     { organization: orgId },
     {
       cachedBalance: 1,
       'ledger.kind': 1,
       'ledger.amount': 1,
-      'ledger.at': 1,
       'ledger.stripeSessionId': 1,
     },
   ).lean();
-  if (!doc) return { cachedBalance: 0, refundDebt: 0 };
-  // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
-  const atMs = (e) => (e.at ? new Date(e.at).getTime() || 0 : 0);
-  // Array.prototype.sort is stable: entries sharing a timestamp keep their push order.
-  const entries = [...(doc.ledger ?? [])].sort((a, b) => atMs(a) - atMs(b));
+  if (!doc) return { cachedBalance: 0, nonSettleableDebt: 0 };
   let running = 0;
-  let refundDebt = 0;
-  for (const e of entries) {
+  let nonSettleableDebt = 0;
+  for (const e of doc.ledger ?? []) {
     const amount = e.amount ?? 0;
     running += amount;
-    if (e.kind === 'refund' && amount < 0) {
-      refundDebt += Math.min(-amount, Math.max(0, -running));
+    if ((e.kind === 'refund' || e.kind === 'expiration') && amount < 0) {
+      nonSettleableDebt += Math.min(-amount, Math.max(0, -running));
     } else if (e.kind === 'topup' && amount > 0 && typeof e.stripeSessionId === 'string' && e.stripeSessionId.length > 0) {
-      refundDebt = Math.max(0, refundDebt - amount);
+      nonSettleableDebt = Math.max(0, nonSettleableDebt - amount);
     }
   }
   const cachedBalance = doc.cachedBalance ?? 0;
-  return { cachedBalance, refundDebt: Math.min(refundDebt, Math.max(0, -cachedBalance)) };
+  return { cachedBalance, nonSettleableDebt: Math.min(nonSettleableDebt, Math.max(0, -cachedBalance)) };
 };
 
 /**

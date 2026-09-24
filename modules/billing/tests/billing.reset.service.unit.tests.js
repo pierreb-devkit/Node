@@ -88,7 +88,7 @@ describe('BillingResetService unit tests:', () => {
     };
 
     mockExtraBalanceRepository = {
-      getSettlementBasis: jest.fn().mockResolvedValue({ cachedBalance: 0, refundDebt: 0 }),
+      getSettlementBasis: jest.fn().mockResolvedValue({ cachedBalance: 0, nonSettleableDebt: 0 }),
       creditCompensation: jest.fn().mockResolvedValue({ doc: {}, applied: true }),
       findLedgerEntryByRefId: jest.fn().mockResolvedValue(null),
     };
@@ -281,11 +281,11 @@ describe('BillingResetService unit tests:', () => {
      * @param {Object} opts - Quota, extras basis and whether the week doc already exists.
      * @returns {{ snapshot: () => Object }} Accessor for the snapshot passed to upsertWeekSnapshot.
      */
-    const arrange = ({ meterQuota = 1000, cachedBalance = 0, refundDebt = 0, existingDoc = null } = {}) => {
+    const arrange = ({ meterQuota = 1000, cachedBalance = 0, nonSettleableDebt = 0, existingDoc = null } = {}) => {
       mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockReturnValue(makePlan({ meterQuota }));
       mockUsageRepository.findByWeek.mockResolvedValue(existingDoc);
-      mockExtraBalanceRepository.getSettlementBasis.mockResolvedValue({ cachedBalance, refundDebt });
+      mockExtraBalanceRepository.getSettlementBasis.mockResolvedValue({ cachedBalance, nonSettleableDebt });
       let stored = null;
       mockExtraBalanceRepository.creditCompensation.mockImplementation((o, amount, refId) => {
         stored = { kind: 'adjustment', amount, refId };
@@ -322,8 +322,8 @@ describe('BillingResetService unit tests:', () => {
       expect(mockUsageRepository.applySettlementUsage).toHaveBeenCalledWith(orgId, '2026-W18', 1000, KEY);
     });
 
-    test('refund debt is excluded from the settlement', async () => {
-      arrange({ meterQuota: 1000, cachedBalance: -500, refundDebt: 200 });
+    test('refund and expiration debt is excluded from the settlement', async () => {
+      arrange({ meterQuota: 1000, cachedBalance: -500, nonSettleableDebt: 200 });
 
       await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
 
@@ -331,8 +331,8 @@ describe('BillingResetService unit tests:', () => {
       expect(mockUsageRepository.applySettlementUsage).toHaveBeenCalledWith(orgId, '2026-W18', 300, KEY);
     });
 
-    test('only refund debt → nothing settled', async () => {
-      const { snapshot } = arrange({ meterQuota: 1000, cachedBalance: -200, refundDebt: 200 });
+    test('only non-settleable debt → nothing settled', async () => {
+      const { snapshot } = arrange({ meterQuota: 1000, cachedBalance: -200, nonSettleableDebt: 200 });
 
       await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
 

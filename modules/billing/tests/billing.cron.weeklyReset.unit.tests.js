@@ -86,7 +86,7 @@ describe('billing.weeklyReset cron — BillingResetService.resetAllDue:', () => 
     }));
     jest.unstable_mockModule('../repositories/billing.extraBalance.repository.js', () => ({
       default: {
-        getSettlementBasis: jest.fn().mockResolvedValue({ cachedBalance: 0, refundDebt: 0 }),
+        getSettlementBasis: jest.fn().mockResolvedValue({ cachedBalance: 0, nonSettleableDebt: 0 }),
         creditCompensation: jest.fn(),
         findLedgerEntryByRefId: jest.fn().mockResolvedValue(null),
       },

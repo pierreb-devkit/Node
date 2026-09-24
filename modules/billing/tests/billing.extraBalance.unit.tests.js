@@ -497,7 +497,7 @@ describe('BillingExtraBalance unit tests:', () => {
     describe('getSettlementBasis', () => {
       /**
        * @param {Object[]} ledger - Ledger entries (at = index order when absent).
-       * @returns {Promise<{cachedBalance: number, refundDebt: number}>}
+       * @returns {Promise<{cachedBalance: number, nonSettleableDebt: number}>}
        */
       const basisOf = (ledger) => {
         const cachedBalance = ledger.reduce((sum, e) => sum + e.amount, 0);
@@ -508,7 +508,7 @@ describe('BillingExtraBalance unit tests:', () => {
 
       test('zeros when no document exists', async () => {
         mockModel.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
-        await expect(BillingExtraBalanceRepository.getSettlementBasis(orgId)).resolves.toEqual({ cachedBalance: 0, refundDebt: 0 });
+        await expect(BillingExtraBalanceRepository.getSettlementBasis(orgId)).resolves.toEqual({ cachedBalance: 0, nonSettleableDebt: 0 });
       });
 
       test('a refund absorbed by a positive balance is no debt', async () => {
@@ -517,7 +517,7 @@ describe('BillingExtraBalance unit tests:', () => {
           { kind: 'refund', amount: -50, stripeSessionId: 'cs_a', at: at(2) },
           { kind: 'debit', amount: -30, at: at(3) },
         ]);
-        expect(basis).toEqual({ cachedBalance: -30, refundDebt: 0 });
+        expect(basis).toEqual({ cachedBalance: -30, nonSettleableDebt: 0 });
       });
 
       test('only the part of a refund below zero is debt', async () => {
@@ -525,7 +525,7 @@ describe('BillingExtraBalance unit tests:', () => {
           { kind: 'topup', amount: 20, stripeSessionId: 'cs_b', at: at(1) },
           { kind: 'refund', amount: -50, stripeSessionId: 'cs_b', at: at(2) },
         ]);
-        expect(basis).toEqual({ cachedBalance: -30, refundDebt: 30 });
+        expect(basis).toEqual({ cachedBalance: -30, nonSettleableDebt: 30 });
       });
 
       test('a pack repays refund debt; grants and adjustments do not', async () => {
@@ -537,22 +537,65 @@ describe('BillingExtraBalance unit tests:', () => {
           { kind: 'debit', amount: -60, at: at(5) },
         ]);
         // refund debt 40 → pack repays 25 → 15; balance -55 → overflow part 40.
-        expect(basis).toEqual({ cachedBalance: -55, refundDebt: 15 });
+        expect(basis).toEqual({ cachedBalance: -55, nonSettleableDebt: 15 });
       });
 
-      test('replays in `at` order, not array order', async () => {
+      test('replays in array (commit) order, not `at` order', async () => {
         const basis = await basisOf([
-          { kind: 'refund', amount: -40, stripeSessionId: 'cs_e', at: at(2) },
-          { kind: 'topup', amount: 40, stripeSessionId: 'cs_e', at: at(1) },
+          { kind: 'topup', amount: 40, stripeSessionId: 'cs_e', at: at(2) },
+          { kind: 'refund', amount: -40, stripeSessionId: 'cs_e', at: at(1) },
         ]);
-        expect(basis).toEqual({ cachedBalance: 0, refundDebt: 0 });
+        // Array order: topup then refund → absorbed, no debt. `at` order would give 40.
+        expect(basis).toEqual({ cachedBalance: 0, nonSettleableDebt: 0 });
       });
 
-      test('refund debt capped at the negative cached balance', async () => {
+      test('array order wins over an out-of-order `at`: refund pushed first is debt', async () => {
+        const basis = await basisOf([
+          { kind: 'refund', amount: -40, stripeSessionId: 'cs_f', at: at(2) },
+          { kind: 'debit', amount: -20, at: at(1) },
+          { kind: 'topup', amount: 30, source: 'referral', at: at(0) },
+        ]);
+        // Array order: refund at running 0 → 40 debt; grant does not repay; capped at 30.
+        expect(basis).toEqual({ cachedBalance: -30, nonSettleableDebt: 30 });
+      });
+
+      test('the below-zero part of a pack expiration is non-settleable debt', async () => {
+        const basis = await basisOf([
+          { kind: 'topup', amount: 100, stripeSessionId: 'cs_g', expiresAt: at(5), at: at(1) },
+          { kind: 'debit', amount: -80, at: at(2) },
+          { kind: 'expiration', amount: -100, refId: 'expire-x', at: at(6) },
+        ]);
+        // Running 20 before expiry → expiry takes it to -80: all 80 is expiration debt, settleable 0.
+        expect(basis).toEqual({ cachedBalance: -80, nonSettleableDebt: 80 });
+      });
+
+      test('an expiration absorbed by a positive balance is no debt; later overflow stays settleable', async () => {
+        const basis = await basisOf([
+          { kind: 'topup', amount: 100, stripeSessionId: 'cs_h', at: at(1) },
+          { kind: 'topup', amount: 50, stripeSessionId: 'cs_i', at: at(2) },
+          { kind: 'expiration', amount: -50, refId: 'expire-y', at: at(3) },
+          { kind: 'debit', amount: -130, at: at(4) },
+        ]);
+        expect(basis).toEqual({ cachedBalance: -30, nonSettleableDebt: 0 });
+      });
+
+      test('a pack repays expiration debt', async () => {
+        const basis = await basisOf([
+          { kind: 'topup', amount: 100, stripeSessionId: 'cs_j', at: at(1) },
+          { kind: 'debit', amount: -80, at: at(2) },
+          { kind: 'expiration', amount: -100, refId: 'expire-z', at: at(3) },
+          { kind: 'topup', amount: 50, stripeSessionId: 'cs_k', at: at(4) },
+          { kind: 'debit', amount: -40, at: at(5) },
+        ]);
+        // Expiration debt 80 → pack repays 50 → 30; balance -70 → overflow part 40.
+        expect(basis).toEqual({ cachedBalance: -70, nonSettleableDebt: 30 });
+      });
+
+      test('non-settleable debt capped at the negative cached balance', async () => {
         mockModel.findOne.mockReturnValue({
           lean: jest.fn().mockResolvedValue({ cachedBalance: -10, ledger: [{ kind: 'refund', amount: -40, at: at(1) }] }),
         });
-        await expect(BillingExtraBalanceRepository.getSettlementBasis(orgId)).resolves.toEqual({ cachedBalance: -10, refundDebt: 10 });
+        await expect(BillingExtraBalanceRepository.getSettlementBasis(orgId)).resolves.toEqual({ cachedBalance: -10, nonSettleableDebt: 10 });
       });
     });
 
