@@ -2,7 +2,7 @@
  * Module dependencies.
  */
 import mongoose from 'mongoose';
-import { describe, beforeAll, beforeEach, afterAll, test, expect } from '@jest/globals';
+import { jest, describe, beforeAll, beforeEach, afterEach, afterAll, test, expect } from '@jest/globals';
 
 import config from '../../../config/index.js';
 import mongooseService from '../../../lib/services/mongoose.js';
@@ -15,9 +15,9 @@ const QUOTA = 100;
  * Integration tests for the weekly overflow-debt settlement in resetWeek.
  *
  * Overflow debt (negative extras from usage past the quota) is repaid once per
- * week from the new week's quota: the week starts with meterUsed = settle and
- * extras are credited `settle` via an idempotent 'adjustment' entry.
- * Refund debt is never settled; quota-0 plans are untouched.
+ * week from the new week's quota: extras are credited `settle` via an idempotent
+ * 'adjustment' entry, then the week is charged that stored credit exactly once.
+ * Unpaid refund debt is never settled; quota-0 plans are untouched.
  */
 describe('BillingResetService overflow debt settlement integration tests:', () => {
   let BillingUsage;
@@ -25,6 +25,8 @@ describe('BillingResetService overflow debt settlement integration tests:', () =
   let Subscription;
   let BillingResetService;
   let BillingUsageService;
+  let BillingUsageRepository;
+  let BillingExtraBalanceRepository;
   let assertCanExecute;
   let originalMeterMode;
   let originalPlanDefinitions;
@@ -79,6 +81,8 @@ describe('BillingResetService overflow debt settlement integration tests:', () =
 
     BillingResetService = (await import('../services/billing.reset.service.js')).default;
     BillingUsageService = (await import('../services/billing.usage.service.js')).default;
+    BillingUsageRepository = (await import('../repositories/billing.usage.repository.js')).default;
+    BillingExtraBalanceRepository = (await import('../repositories/billing.extraBalance.repository.js')).default;
     ({ assertCanExecute } = await import('../services/billing.quota.service.js'));
   });
 
@@ -94,6 +98,10 @@ describe('BillingResetService overflow debt settlement integration tests:', () =
     ];
     orgId = new mongoose.Types.ObjectId().toString();
     now = new Date();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   afterAll(async () => {
@@ -206,6 +214,95 @@ describe('BillingResetService overflow debt settlement integration tests:', () =
     expect(w1.meterUsed).toBe(30);
     expect(w1.balance).toBe(0);
     expect(w1.adjustments).toHaveLength(1);
+  });
+
+  test('refund absorbed by a positive balance → later overflow debt IS settled', async () => {
+    await Subscription.create({ organization: orgId, plan: 'pro', status: 'active' });
+    const t = (n) => new Date(now.getTime() - (10 - n) * 60 * 1000);
+    await seedExtras([
+      { kind: 'topup', amount: 50, stripeSessionId: 'cs_pos', at: t(1) },
+      { kind: 'refund', amount: -50, refId: 'refund-rf_pos-x', stripeSessionId: 'cs_pos', at: t(2) },
+      { kind: 'debit', amount: -30, refId: 'run-overflow-pos', at: t(3) },
+    ]);
+
+    await BillingResetService.resetWeek(orgId, week(1));
+    const w1 = await stateAt(1);
+    expect(w1.meterUsed).toBe(30);
+    expect(w1.balance).toBe(0);
+    expect(w1.adjustments).toHaveLength(1);
+  });
+
+  test('refund debt repaid by a pack → later overflow debt IS settled', async () => {
+    await Subscription.create({ organization: orgId, plan: 'pro', status: 'active' });
+    const t = (n) => new Date(now.getTime() - (10 - n) * 60 * 1000);
+    await seedExtras([
+      { kind: 'refund', amount: -40, refId: 'refund-rf_neg-x', stripeSessionId: 'cs_neg', at: t(1) },
+      { kind: 'topup', amount: 40, stripeSessionId: 'cs_repay', at: t(2) },
+      { kind: 'debit', amount: -30, refId: 'run-overflow-neg', at: t(3) },
+    ]);
+
+    await BillingResetService.resetWeek(orgId, week(1));
+    const w1 = await stateAt(1);
+    expect(w1.meterUsed).toBe(30);
+    expect(w1.balance).toBe(0);
+  });
+
+  test('concurrent resets → one credit and meterUsed == the stored credit', async () => {
+    await Subscription.create({ organization: orgId, plan: 'pro', status: 'active' });
+    await seedExtras([{ kind: 'debit', amount: -45, refId: 'run-overflow-5' }]);
+
+    await Promise.all(Array.from({ length: 8 }, () => BillingResetService.resetWeek(orgId, week(1))));
+
+    const w1 = await stateAt(1);
+    expect(w1.adjustments).toHaveLength(1);
+    expect(w1.meterUsed).toBe(w1.adjustments[0].amount);
+    expect(w1.meterUsed).toBe(45);
+    expect(w1.balance).toBe(0);
+  });
+
+  test('week doc pre-created by incrementMeter → settlement still applied once', async () => {
+    await Subscription.create({ organization: orgId, plan: 'pro', status: 'active' });
+    await seedExtras([{ kind: 'debit', amount: -30, refId: 'run-overflow-6' }]);
+    await BillingUsageRepository.incrementMeter(orgId, isoWeekKey(week(1)), 5, { default: 5 }, `${new mongoose.Types.ObjectId()}:initial`, {
+      meterQuota: QUOTA,
+      planVersion: 'pro-v1',
+    });
+
+    await BillingResetService.resetWeek(orgId, week(1));
+    await BillingResetService.resetWeek(orgId, week(1));
+
+    const w1 = await stateAt(1);
+    expect(w1.meterUsed).toBe(35);
+    expect(w1.balance).toBe(0);
+    expect(w1.adjustments).toHaveLength(1);
+  });
+
+  test('insert error after the credit, then retry → meterUsed == credited', async () => {
+    await Subscription.create({ organization: orgId, plan: 'pro', status: 'active' });
+    await seedExtras([{ kind: 'debit', amount: -30, refId: 'run-overflow-7' }]);
+    jest.spyOn(BillingUsageRepository, 'upsertWeekSnapshot').mockRejectedValueOnce(new Error('write failed'));
+
+    await expect(BillingResetService.resetWeek(orgId, week(1))).rejects.toThrow('write failed');
+    const mid = await stateAt(1);
+    expect(mid.balance).toBe(0); // credit landed, week doc missing
+
+    await BillingResetService.resetWeek(orgId, week(1));
+    const w1 = await stateAt(1);
+    expect(w1.meterUsed).toBe(30);
+    expect(w1.balance).toBe(0);
+    expect(w1.adjustments).toHaveLength(1);
+  });
+
+  test('credit failure → meterUsed 0 and debt unchanged', async () => {
+    await Subscription.create({ organization: orgId, plan: 'pro', status: 'active' });
+    await seedExtras([{ kind: 'debit', amount: -30, refId: 'run-overflow-8' }]);
+    jest.spyOn(BillingExtraBalanceRepository, 'creditCompensation').mockRejectedValueOnce(new Error('db down'));
+
+    await BillingResetService.resetWeek(orgId, week(1));
+    const w1 = await stateAt(1);
+    expect(w1.meterUsed).toBe(0);
+    expect(w1.balance).toBe(-30);
+    expect(w1.adjustments).toHaveLength(0);
   });
 
   test('quota-0 plan → debt untouched', async () => {

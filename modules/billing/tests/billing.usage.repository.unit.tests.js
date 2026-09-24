@@ -373,6 +373,23 @@ describe('BillingUsageRepository — meter extensions unit tests:', () => {
     });
   });
 
+  describe('applySettlementUsage', () => {
+    test('guarded $inc + key push, filtered on the key being absent', async () => {
+      const lean = jest.fn().mockResolvedValue(makeUsageDoc({ meterUsed: 30 }));
+      mockModel.findOneAndUpdate.mockReturnValue({ lean });
+
+      const result = await BillingUsageRepository.applySettlementUsage(orgId, weekKey, 30, `settle:${weekKey}`);
+
+      expect(mockModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { organizationId: orgId, weekKey, consumedAttributionKeys: { $ne: `settle:${weekKey}` } },
+        { $inc: { meterUsed: 30 }, $push: { consumedAttributionKeys: `settle:${weekKey}` } },
+        expect.objectContaining({ returnDocument: 'after' }),
+      );
+      expect(mockModel.findOneAndUpdate.mock.calls[0][2]).not.toHaveProperty('upsert');
+      expect(result).toEqual(expect.objectContaining({ meterUsed: 30 }));
+    });
+  });
+
   describe('rotateWeekSnapshotForPlanChange', () => {
     test('updates snapshot fields while preserving usage', async () => {
       const lean = jest.fn().mockResolvedValue(makeUsageDoc({ meterQuota: 1000000, planVersion: 'v2' }));

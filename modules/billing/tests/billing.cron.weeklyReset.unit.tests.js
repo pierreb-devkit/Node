@@ -60,6 +60,7 @@ describe('billing.weeklyReset cron — BillingResetService.resetAllDue:', () => 
       findByWeek: jest.fn().mockResolvedValue(null),
       archiveOtherWeeks: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
       upsertWeekSnapshot: jest.fn(),
+      applySettlementUsage: jest.fn().mockResolvedValue(null),
     };
 
     mockPlanService = {
@@ -87,6 +88,7 @@ describe('billing.weeklyReset cron — BillingResetService.resetAllDue:', () => 
       default: {
         getSettlementBasis: jest.fn().mockResolvedValue({ cachedBalance: 0, refundDebt: 0 }),
         creditCompensation: jest.fn(),
+        findLedgerEntryByRefId: jest.fn().mockResolvedValue(null),
       },
     }));
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({

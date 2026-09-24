@@ -13,10 +13,11 @@ import { z } from 'zod';
 const objectIdRegex = /^[a-f\d]{24}$/i;
 
 /**
- * Attribution key regex: accepts raw ObjectId (legacy) or `${id}:${stepKey}` format.
+ * Attribution key regex: accepts raw ObjectId (legacy), `${id}:${stepKey}`, or the weekly
+ * settlement marker `settle:<weekKey>`.
  * stepKey may contain alphanumeric chars, colons, hyphens, underscores (1-64 chars).
  */
-const attributionKeyRegex = /^[a-fA-F0-9]{24}(:[a-zA-Z0-9:_-]{1,64})?$/;
+const attributionKeyRegex = /^(?:[a-fA-F0-9]{24}(:[a-zA-Z0-9:_-]{1,64})?|settle:\d{4}-W\d{2})$/;
 
 const BillingUsage = z.object({
   organizationId: z.string().trim().regex(objectIdRegex, 'organizationId must be a valid ObjectId'),
@@ -54,6 +55,7 @@ const BillingUsage = z.object({
    * Per-step attribution keys consumed this period.
    * Format: `${historyId}:${stepKey}` (e.g. "507f1f77bcf86cd799439011:initial").
    * Legacy raw ObjectId strings are also accepted for backward compatibility.
+   * `settle:<weekKey>` marks the weekly overflow-debt settlement charged to the week.
    */
   consumedAttributionKeys: z
     .array(
@@ -62,7 +64,7 @@ const BillingUsage = z.object({
         .trim()
         .regex(
           attributionKeyRegex,
-          'consumedAttributionKeys entries must be <objectId> or <objectId>:<stepKey>',
+          'consumedAttributionKeys entries must be <objectId>, <objectId>:<stepKey> or settle:<weekKey>',
         ),
     )
     .default(() => []),
