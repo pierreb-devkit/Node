@@ -207,20 +207,24 @@ const archiveOtherWeeks = (orgId, currentWeekKey, archivedAt) =>
  * @description Upsert a new weekly usage document with snapshot fields ($setOnInsert only).
  *              If the document already exists, the operation is a no-op (idempotent).
  *              Throws with code 11000 on a race — callers should catch and re-fetch.
+ *              `inserted` tells the caller whether THIS call created the document —
+ *              `snapshotFields` were only written when it is true.
  * @param {string} orgId - The organization ObjectId (string).
  * @param {string} weekKey - The ISO week key for the new period.
  * @param {Object} snapshotFields - Fields written only on document creation
  *   (organizationId, weekKey, month, meterUsed, meterQuota, planVersion,
  *    meterBreakdown, resetAt, alertedAt80, alertedAt100, consumedAttributionKeys).
- * @returns {Promise<Object>} The upserted document.
+ * @returns {Promise<{doc: Object, inserted: boolean}>} The week document and whether this call inserted it.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
-const upsertWeekSnapshot = (orgId, weekKey, snapshotFields) =>
-  BillingUsage.findOneAndUpdate(
+const upsertWeekSnapshot = async (orgId, weekKey, snapshotFields) => {
+  const res = await BillingUsage.findOneAndUpdate(
     { organizationId: orgId, weekKey },
     { $setOnInsert: snapshotFields },
-    { upsert: true, returnDocument: 'after', runValidators: false },
+    { upsert: true, returnDocument: 'after', runValidators: false, includeResultMetadata: true },
   );
+  return { doc: res?.value ?? null, inserted: res?.lastErrorObject?.updatedExisting === false };
+};
 
 /**
  * @function rotateWeekSnapshotForPlanChange

@@ -103,6 +103,13 @@ When Stripe `plan.changed` webhook fires, devkit calls `forceRotateForPlanChange
 
 Consumers wanting clean-break behavior on downgrade should pass `{ preserveUsage: false }`.
 
+## Quota admission and overflow debt
+
+- **Admission is a pre-check, not a reservation.** `assertCanExecute` (used by `requireQuota` and any other caller) reads the meter and extras balance, then allows or denies. It never holds units; usage is recorded after the run. Concurrent requests can all pass on the same state, so overshoot is bounded by concurrency × one run's cost. This is an accepted trade-off.
+- **Single-run bound:** `billing.meter.maxUnitsPerOperation` is the only cap on what one run can cost.
+- **Runaway detector:** the negative-balance alert (`billing.extras.runaway_debit`) only fires on plans with a weekly quota (`meterQuota > 0`).
+- **Overflow debt is repaid once per week.** Units consumed past the quota are debited from extras, which may go negative. When `resetWeek` inserts the new week doc (plans with `meterQuota > 0` only), it settles `min(meterQuota, overflowDebt)` units: the new week starts with `meterUsed = settle` and extras are credited `settle` via an `adjustment` entry with refId `settle:<weekKey>` (idempotent — a re-run never credits twice). Debt smaller than the quota costs one week `quota − debt`; larger debt takes whole weeks at 0 until repaid. Refund debt (pack clawbacks) is never settled — only a new pack repays it. Plans with `meterQuota = 0` are unchanged.
+
 ## Extras debit reliability
 
 `attribute()` returns optimistically after usage increment + outbox row insert. Extras debit happens out of band; if it fails, cron `retry-pending-extras-debit` reconciles on the configured retry interval. After the configured failed-attempt limit, the outbox row is marked `failed` and the configured exhausted event is emitted for alerting.

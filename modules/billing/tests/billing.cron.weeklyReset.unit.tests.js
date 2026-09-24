@@ -83,6 +83,15 @@ describe('billing.weeklyReset cron — BillingResetService.resetAllDue:', () => 
     jest.unstable_mockModule('../services/billing.plan.service.js', () => ({
       default: mockPlanService,
     }));
+    jest.unstable_mockModule('../repositories/billing.extraBalance.repository.js', () => ({
+      default: {
+        getSettlementBasis: jest.fn().mockResolvedValue({ cachedBalance: 0, refundDebt: 0 }),
+        creditCompensation: jest.fn(),
+      },
+    }));
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: { error: jest.fn(), warn: jest.fn(), info: jest.fn() },
+    }));
 
     const mod = await import('../services/billing.reset.service.js');
     BillingResetService = mod.default;
@@ -115,7 +124,7 @@ describe('billing.weeklyReset cron — BillingResetService.resetAllDue:', () => 
       { organization: '507f1f77bcf86cd799439022', currentPeriodStart: new Date() },
     ];
     mockSubscriptionRepository.findAllDueForResetByLastReset.mockResolvedValue(subs);
-    mockUsageRepository.upsertWeekSnapshot.mockResolvedValue({ weekKey: '2026-W18' });
+    mockUsageRepository.upsertWeekSnapshot.mockResolvedValue({ doc: { weekKey: '2026-W18' }, inserted: true });
 
     const result = await BillingResetService.resetAllDue();
 
@@ -132,7 +141,7 @@ describe('billing.weeklyReset cron — BillingResetService.resetAllDue:', () => 
     // First call throws, second succeeds
     mockUsageRepository.upsertWeekSnapshot
       .mockRejectedValueOnce(new Error('DB error'))
-      .mockResolvedValueOnce({ weekKey: '2026-W18' });
+      .mockResolvedValueOnce({ doc: { weekKey: '2026-W18' }, inserted: true });
 
     const result = await BillingResetService.resetAllDue();
 

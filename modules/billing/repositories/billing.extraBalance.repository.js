@@ -401,6 +401,29 @@ const getBalance = async (orgId) => {
 };
 
 /**
+ * @function getSettlementBasis
+ * @description Read, in ONE query, the inputs of the weekly overflow-debt settlement:
+ *              the cached balance and the refund debt (sum of the 'refund' clawbacks,
+ *              returned as a positive number). A single read keeps both values
+ *              consistent with each other against a concurrent debit.
+ * @param {string} orgId - The organization ObjectId (string).
+ * @returns {Promise<{cachedBalance: number, refundDebt: number}>} Zeros when no document exists.
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const getSettlementBasis = async (orgId) => {
+  if (!isValidOrgId(orgId)) return { cachedBalance: 0, refundDebt: 0 };
+  const doc = await BillingExtraBalance().findOne(
+    { organization: orgId },
+    { cachedBalance: 1, 'ledger.kind': 1, 'ledger.amount': 1 },
+  ).lean();
+  if (!doc) return { cachedBalance: 0, refundDebt: 0 };
+  const refundDebt = (doc.ledger ?? [])
+    .filter((e) => e.kind === 'refund')
+    .reduce((sum, e) => sum - (e.amount ?? 0), 0);
+  return { cachedBalance: doc.cachedBalance ?? 0, refundDebt };
+};
+
+/**
  * @function listLedgerPage
  * @description Return a paginated slice of the ledger array for an organization using
  *              MongoDB aggregation — only the requested page is transferred over the
@@ -608,6 +631,7 @@ export default {
   addExpirationEntries,
   refundPartial,
   getBalance,
+  getSettlementBasis,
   listLedgerPage,
   findOrgsWithExpiringTopups,
   findExistingRefIds,

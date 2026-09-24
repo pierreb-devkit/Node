@@ -2,13 +2,30 @@
  * Module dependencies
  */
 import config from '../../../config/index.js';
+import logger from '../../../lib/services/logger.js';
 import BillingUsageRepository from '../repositories/billing.usage.repository.js';
 import BillingSubscriptionRepository from '../repositories/billing.subscription.repository.js';
+import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
 import BillingPlanService from './billing.plan.service.js';
 import billingEvents from '../lib/events.js';
 import { isoWeekKey } from '../lib/billing.isoWeek.js';
 import { getPlanChangePreserveUsageDefault, getDefaultPlanId } from '../lib/billing.constants.js';
 import { isDuplicateKeyError } from '../lib/billing.errors.js';
+
+/**
+ * @function computeOverflowSettlement
+ * @description Units of overflow debt to repay from the new week's quota.
+ *              Refund debt is excluded: it is intentional and never settled.
+ * @param {string} orgId - The organization ObjectId (string).
+ * @param {number} meterQuota - The new week's plan quota.
+ * @returns {Promise<number>} Units to settle, in [0, meterQuota].
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const computeOverflowSettlement = async (orgId, meterQuota) => {
+  if (!(meterQuota > 0)) return 0;
+  const { cachedBalance, refundDebt } = await BillingExtraBalanceRepository.getSettlementBasis(orgId);
+  return Math.max(0, Math.min(meterQuota, -cachedBalance - refundDebt));
+};
 
 /**
  * @function resetWeek
@@ -25,9 +42,19 @@ import { isDuplicateKeyError } from '../lib/billing.errors.js';
  *              (The $ne on consumedAttributionKeys is replay protection within the same doc,
  *              not the race guard.)
  *
+ *              Overflow-debt settlement (plans with meterQuota > 0 only): units consumed
+ *              past the quota are debited from extras, which may go negative. Without a
+ *              settlement that debt would shrink every later week by the same amount.
+ *              On the insert path only, up to one week of quota repays it:
+ *                settle = max(0, min(meterQuota, -cachedBalance - refundDebt))
+ *              The new week starts with meterUsed = settle, and extras are credited
+ *              `settle` through an idempotent 'adjustment' entry (refId `settle:<weekKey>`).
+ *              Refund debt (pack clawbacks) is never settled — only a new pack repays it.
+ *              Plans with meterQuota 0 are untouched: a pack repays the debt.
+ *
  * @param {string} orgId - The organization ObjectId (string).
  * @param {Date} periodStart - The start of the new billing period (used to derive newWeekKey).
- * @returns {Promise<Object|null>} The upserted usage document for the new week, or null when meter mode is off.
+ * @returns {Promise<Object|null>} The usage document for the new week, or null when meter mode is off.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const resetWeek = async (orgId, periodStart) => {
@@ -57,12 +84,16 @@ const resetWeek = async (orgId, periodStart) => {
   const newDoc = await BillingUsageRepository.findByWeek(orgId, newWeekKey);
   if (newDoc) return newDoc; // Already exists — idempotent
 
+  const settle = await computeOverflowSettlement(orgId, meterQuota);
+
+  let inserted;
+  let doc;
   try {
-    return await BillingUsageRepository.upsertWeekSnapshot(orgId, newWeekKey, {
+    ({ doc, inserted } = await BillingUsageRepository.upsertWeekSnapshot(orgId, newWeekKey, {
       organizationId: orgId,
       weekKey: newWeekKey,
       month: monthKey,
-      meterUsed: 0,
+      meterUsed: settle,
       meterQuota,
       planVersion,
       meterBreakdown: {},
@@ -70,7 +101,7 @@ const resetWeek = async (orgId, periodStart) => {
       alertedAt80: null,
       alertedAt100: null,
       consumedAttributionKeys: [],
-    });
+    }));
   } catch (err) {
     if (isDuplicateKeyError(err)) {
       // Race: another pod already created this week's doc
@@ -78,6 +109,22 @@ const resetWeek = async (orgId, periodStart) => {
     }
     throw err;
   }
+
+  // Step 4 — Credit the settled units back to extras, only when this call wrote meterUsed = settle.
+  if (inserted && settle > 0) {
+    try {
+      await BillingExtraBalanceRepository.creditCompensation(orgId, settle, `settle:${newWeekKey}`, 'weekly overflow debt settlement');
+    } catch (err) {
+      logger.error('[billing.reset] overflow debt settlement credit failed after week insert', {
+        orgId,
+        weekKey: newWeekKey,
+        settle,
+        err: err?.message ?? String(err),
+      });
+    }
+  }
+
+  return doc;
 };
 
 /**

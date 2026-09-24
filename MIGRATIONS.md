@@ -4,6 +4,25 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Billing: weekly reset now repays overflow debt (2026-09-24)
+
+In `meterMode`, units consumed past the weekly quota are debited from extras, which
+may go negative. That debt was never cleared by the weekly reset, so on a plan with a
+weekly quota it cut **every** later week by the same amount — and locked the org out
+for good once the debt reached the quota.
+
+`resetWeek` now settles it once per week, on the insert of the new week doc, for plans
+with `meterQuota > 0`: `settle = min(meterQuota, overflowDebt)`. The new week starts
+with `meterUsed = settle`, and extras are credited `settle` through an `adjustment`
+ledger entry with refId `settle:<weekKey>` (idempotent). Refund debt (pack clawbacks)
+is excluded and never settled. Plans with `meterQuota = 0` are unchanged.
+
+**What you will see:** after the first reset, indebted orgs start the week with a
+non-zero `meterUsed` and a `settle:<weekKey>` adjustment in their ledger; their
+negative balance shrinks week over week instead of staying flat. No schema change,
+no migration to run. If a downstream report sums `adjustment` entries as goodwill
+credits, exclude refIds starting with `settle:`.
+
 ## `engines.node` floor raised to `>=24.15.0`, `engines.npm` now required (2026-09-04)
 
 `package.json` declared `"node": ">=22.0.0"`, but the committed `package-lock.json`
