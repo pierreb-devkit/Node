@@ -41,6 +41,12 @@ describe('BillingResetService overflow debt settlement integration tests:', () =
   const week = (n) => new Date(now.getTime() + n * WEEK_MS);
 
   /**
+   * @param {number} n - Ledger entry ordinal (1 = oldest).
+   * @returns {Date} A timestamp n minutes into a 10-minute window ending at now.
+   */
+  const t = (n) => new Date(now.getTime() - (10 - n) * 60 * 1000);
+
+  /**
    * Units the org can still consume in a week — assertCanExecute's `remaining`, floored at 0.
    * @param {number} n - Week offset from now.
    * @returns {Promise<{usable: number, meterUsed: number, balance: number, adjustments: Object[]}>}
@@ -219,7 +225,6 @@ describe('BillingResetService overflow debt settlement integration tests:', () =
 
   test('refund absorbed by a positive balance → later overflow debt IS settled', async () => {
     await Subscription.create({ organization: orgId, plan: 'pro', status: 'active' });
-    const t = (n) => new Date(now.getTime() - (10 - n) * 60 * 1000);
     await seedExtras([
       { kind: 'topup', amount: 50, stripeSessionId: 'cs_pos', at: t(1) },
       { kind: 'refund', amount: -50, refId: 'refund-rf_pos-x', stripeSessionId: 'cs_pos', at: t(2) },
@@ -235,7 +240,6 @@ describe('BillingResetService overflow debt settlement integration tests:', () =
 
   test('refund debt repaid by a pack → later overflow debt IS settled', async () => {
     await Subscription.create({ organization: orgId, plan: 'pro', status: 'active' });
-    const t = (n) => new Date(now.getTime() - (10 - n) * 60 * 1000);
     await seedExtras([
       { kind: 'refund', amount: -40, refId: 'refund-rf_neg-x', stripeSessionId: 'cs_neg', at: t(1) },
       { kind: 'topup', amount: 40, stripeSessionId: 'cs_repay', at: t(2) },
@@ -250,7 +254,6 @@ describe('BillingResetService overflow debt settlement integration tests:', () =
 
   test('pack expiry after overflow use → expiration debt is never settled', async () => {
     await Subscription.create({ organization: orgId, plan: 'pro', status: 'active' });
-    const t = (n) => new Date(now.getTime() - (10 - n) * 60 * 1000);
     await seedExtras([
       { kind: 'topup', amount: 100, stripeSessionId: 'cs_exp', expiresAt: t(3), at: t(1) },
       { kind: 'debit', amount: -80, refId: 'run-overflow-exp', at: t(2) },
