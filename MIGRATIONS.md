@@ -11,11 +11,15 @@ may go negative. That debt was never cleared by the weekly reset, so on a plan w
 weekly quota it cut **every** later week by the same amount — and locked the org out
 for good once the debt reached the quota.
 
-`resetWeek` now settles it once per week, on the insert of the new week doc, for plans
-with `meterQuota > 0`: `settle = min(meterQuota, overflowDebt)`. The new week starts
-with `meterUsed = settle`, and extras are credited `settle` through an `adjustment`
-ledger entry with refId `settle:<weekKey>` (idempotent). Refund debt (pack clawbacks)
-is excluded and never settled. Plans with `meterQuota = 0` are unchanged.
+`resetWeek` now settles it once per week, only when inserting the new week doc, for
+plans with `meterQuota > 0`: `settle = min(meterQuota, overflowDebt)`. Extras are
+credited `settle` FIRST, through an `adjustment` ledger entry with refId
+`settle:<weekKey>` (idempotent — applies at most once, across pods and retries), and
+only once that credit is confirmed applied does the new week start with
+`meterUsed = settle`. If the credit call fails, the week instead inserts with
+`meterUsed = 0` and the failure is logged — the debt is never marked repaid without
+the matching credit, and the next reset retries it. Refund debt (pack clawbacks) is
+excluded and never settled. Plans with `meterQuota = 0` are unchanged.
 
 **What you will see:** after the first reset, indebted orgs start the week with a
 non-zero `meterUsed` and a `settle:<weekKey>` adjustment in their ledger; their

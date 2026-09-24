@@ -181,8 +181,10 @@ describe('BillingResetService unit tests:', () => {
 
       const result = await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
 
-      // Should not call upsertWeekSnapshot since doc already exists
+      // Should not call upsertWeekSnapshot since doc already exists, and — the "only when
+      // this call is the inserter" intent — no credit either.
       expect(mockUsageRepository.upsertWeekSnapshot).not.toHaveBeenCalled();
+      expect(mockExtraBalanceRepository.creditCompensation).not.toHaveBeenCalled();
       expect(result).toBe(existingDoc);
     });
 
@@ -270,11 +272,12 @@ describe('BillingResetService unit tests:', () => {
 
   describe('resetWeek — overflow debt settlement', () => {
     /**
-     * Arrange a fresh-week insert on a plan with the given quota and extras state.
-     * @param {Object} opts - Quota, extras basis and whether the upsert inserted.
+     * Arrange a fresh-week insert (findByWeek finds nothing) on a plan with the given
+     * quota and extras state.
+     * @param {Object} opts - Quota and extras basis.
      * @returns {{ snapshot: () => Object }} Accessor for the snapshot passed to upsertWeekSnapshot.
      */
-    const arrange = ({ meterQuota = 1000, cachedBalance = 0, refundDebt = 0, inserted = true } = {}) => {
+    const arrange = ({ meterQuota = 1000, cachedBalance = 0, refundDebt = 0 } = {}) => {
       mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockReturnValue(makePlan({ meterQuota }));
       mockUsageRepository.findByWeek.mockResolvedValue(null);
@@ -282,7 +285,7 @@ describe('BillingResetService unit tests:', () => {
       let captured;
       mockUsageRepository.upsertWeekSnapshot.mockImplementation((o, w, snapshot) => {
         captured = snapshot;
-        return Promise.resolve({ doc: makeUsageDoc({ meterUsed: snapshot.meterUsed }), inserted });
+        return Promise.resolve({ doc: makeUsageDoc({ meterUsed: snapshot.meterUsed }), inserted: true });
       });
       return { snapshot: () => captured };
     };
@@ -333,21 +336,30 @@ describe('BillingResetService unit tests:', () => {
       expect(mockExtraBalanceRepository.creditCompensation).not.toHaveBeenCalled();
     });
 
-    test('upsert hit an existing doc (not inserted) → no credit', async () => {
-      arrange({ meterQuota: 1000, cachedBalance: -300, inserted: false });
+    test('credit already applied (refId exists) → meterUsed = settle, no second ledger entry', async () => {
+      const { snapshot } = arrange({ meterQuota: 1000, cachedBalance: -300 });
+      // Another pod/retry already pushed the 'settle:<weekKey>' ledger entry — creditCompensation
+      // resolves applied=false with reason 'duplicate_refId' instead of throwing.
+      mockExtraBalanceRepository.creditCompensation.mockResolvedValue({ doc: null, applied: false, reason: 'duplicate_refId' });
 
-      await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
+      const result = await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
 
-      expect(mockExtraBalanceRepository.creditCompensation).not.toHaveBeenCalled();
+      expect(mockExtraBalanceRepository.creditCompensation).toHaveBeenCalledTimes(1);
+      expect(snapshot().meterUsed).toBe(300);
+      expect(result).toEqual(expect.objectContaining({ meterUsed: 300 }));
+      expect(mockLogger.error).not.toHaveBeenCalled();
     });
 
-    test('credit failure after insert is logged, not thrown', async () => {
-      arrange({ meterQuota: 1000, cachedBalance: -300 });
+    test('credit failure before insert is logged, week inserts with meterUsed = 0', async () => {
+      const { snapshot } = arrange({ meterQuota: 1000, cachedBalance: -300 });
       mockExtraBalanceRepository.creditCompensation.mockRejectedValue(new Error('db down'));
 
       const result = await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
 
-      expect(result).toEqual(expect.objectContaining({ meterUsed: 300 }));
+      // Credit failed → the debt is not marked repaid; the week carries meterUsed = 0 so
+      // the next reset retries the settlement instead of writing off the debt.
+      expect(snapshot().meterUsed).toBe(0);
+      expect(result).toEqual(expect.objectContaining({ meterUsed: 0 }));
       expect(mockLogger.error).toHaveBeenCalledWith(
         expect.stringContaining('settlement credit failed'),
         expect.objectContaining({ orgId, weekKey: '2026-W18', settle: 300 }),

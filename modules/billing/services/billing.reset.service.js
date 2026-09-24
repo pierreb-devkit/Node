@@ -45,10 +45,17 @@ const computeOverflowSettlement = async (orgId, meterQuota) => {
  *              Overflow-debt settlement (plans with meterQuota > 0 only): units consumed
  *              past the quota are debited from extras, which may go negative. Without a
  *              settlement that debt would shrink every later week by the same amount.
- *              On the insert path only, up to one week of quota repays it:
+ *              Only when this call is the inserter (findByWeek found no doc above), up to
+ *              one week of quota repays it:
  *                settle = max(0, min(meterQuota, -cachedBalance - refundDebt))
- *              The new week starts with meterUsed = settle, and extras are credited
- *              `settle` through an idempotent 'adjustment' entry (refId `settle:<weekKey>`).
+ *              The credit is applied FIRST, before the week doc is written: extras are
+ *              credited `settle` through an idempotent 'adjustment' entry (refId
+ *              `settle:<weekKey>`, shared across pods/retries so the credit lands at most
+ *              once). Only once that credit is confirmed applied — either by this call or
+ *              by an earlier one that already used the same refId — does the new week
+ *              start with meterUsed = settle. If the credit call throws, the failure is
+ *              logged and the week inserts with meterUsed = 0 instead: the debt is never
+ *              silently written off, and the next reset retries the settlement.
  *              Refund debt (pack clawbacks) is never settled — only a new pack repays it.
  *              Plans with meterQuota 0 are untouched: a pack repays the debt.
  *
@@ -80,19 +87,41 @@ const resetWeek = async (orgId, periodStart) => {
   // Month key for the new week (YYYY-MM of periodStart)
   const monthKey = `${periodStart.getUTCFullYear()}-${String(periodStart.getUTCMonth() + 1).padStart(2, '0')}`;
 
-  // Step 3 — Upsert the new week document with snapshot fields.
+  // Step 3 — Only when this call is the inserter (no doc yet for this weekKey).
   const newDoc = await BillingUsageRepository.findByWeek(orgId, newWeekKey);
-  if (newDoc) return newDoc; // Already exists — idempotent
+  if (newDoc) return newDoc; // Already exists — idempotent, nothing to settle or credit
 
   const settle = await computeOverflowSettlement(orgId, meterQuota);
 
+  // Step 4 — Credit the settled units back to extras BEFORE writing the week doc, so the
+  // debt is never marked repaid (meterUsed = settle) without the matching credit landing.
+  // refId `settle:<weekKey>` is idempotent: applied=true (this call credited it) and
+  // applied=false with reason 'duplicate_refId' (an earlier call/pod already did) both mean
+  // the credit is in place. Only a thrown error means it is not — fall back to meterUsed = 0
+  // so the debt survives for the next reset to retry, and never let this failure abort resetWeek.
+  let meterUsed = 0;
+  if (settle > 0) {
+    try {
+      await BillingExtraBalanceRepository.creditCompensation(orgId, settle, `settle:${newWeekKey}`, 'weekly overflow debt settlement');
+      meterUsed = settle;
+    } catch (err) {
+      logger.error('[billing.reset] overflow debt settlement credit failed before week insert', {
+        orgId,
+        weekKey: newWeekKey,
+        settle,
+        err: err?.message ?? String(err),
+      });
+    }
+  }
+
+  // Step 5 — Insert the new week document with the resolved meterUsed.
   let upserted;
   try {
     upserted = await BillingUsageRepository.upsertWeekSnapshot(orgId, newWeekKey, {
       organizationId: orgId,
       weekKey: newWeekKey,
       month: monthKey,
-      meterUsed: settle,
+      meterUsed,
       meterQuota,
       planVersion,
       meterBreakdown: {},
@@ -103,28 +132,14 @@ const resetWeek = async (orgId, periodStart) => {
     });
   } catch (err) {
     if (isDuplicateKeyError(err)) {
-      // Race: another pod already created this week's doc
+      // Race: another pod already created this week's doc. The refId above is shared, so
+      // the credit (if any) happened at most once regardless of which pod wins the insert.
       return BillingUsageRepository.findByWeek(orgId, newWeekKey);
     }
     throw err;
   }
-  const { doc, inserted } = upserted;
 
-  // Step 4 — Credit the settled units back to extras, only when this call wrote meterUsed = settle.
-  if (inserted && settle > 0) {
-    try {
-      await BillingExtraBalanceRepository.creditCompensation(orgId, settle, `settle:${newWeekKey}`, 'weekly overflow debt settlement');
-    } catch (err) {
-      logger.error('[billing.reset] overflow debt settlement credit failed after week insert', {
-        orgId,
-        weekKey: newWeekKey,
-        settle,
-        err: err?.message ?? String(err),
-      });
-    }
-  }
-
-  return doc;
+  return upserted.doc;
 };
 
 /**
