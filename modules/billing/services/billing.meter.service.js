@@ -22,9 +22,10 @@ import {
  *              METER_RUN_BASE applies only when costs is null/undefined.
  *
  *              Per-key ratio lookup order: `ratios[key]` -> `ratios.default` -> `1`.
- *              `default` is a reserved key in the ratio map: it is never treated
- *              as a billable feature itself, only consulted as the fallback for
- *              any key absent from the map.
+ *              `default` is a reserved key name in the ratio map: use it to set
+ *              the fallback ratio for keys not listed, not as a feature key
+ *              (a cost map keyed literally `default` is still billed via that
+ *              same entry, since the lookup does not special-case the key).
  *
  *              When meterMode is enabled and getPlanByVersion returns null
  *              (version mismatch), throws so attribution cannot silently bill with
