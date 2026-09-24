@@ -9,7 +9,8 @@ import { z } from 'zod';
  * Required fields:
  *   planId     — logical plan identifier (e.g. "free", "growth", "pro")
  *   meterQuota — compute units per reset period (0 = no periodic quota)
- *   ratios     — feature multiplier map (e.g. { default: 1, autofix: 2 })
+ *   ratios     — feature multiplier map (e.g. { default: 1, featureA: 2 });
+ *                `default` is the fallback ratio for any cost key not listed here
  *
  * Optional fields (N2 signup-grant):
  *   signupGrant — one-time credit granted to fresh orgs at signup (positive integer).

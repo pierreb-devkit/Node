@@ -217,6 +217,54 @@ describe('BillingMeterService unit tests:', () => {
     });
   });
 
+  describe('unitsFromCosts — ratios.default fallback (issue #4025)', () => {
+    test('unlisted key falls back to ratios.default when default is not 1', () => {
+      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { default: 2 } }));
+
+      const costs = { featureA: 0.001 };
+      const result = BillingMeterService.unitsFromCosts(costs, 'pro', '2026.05');
+
+      // featureA not in ratios -> falls back to ratios.default=2: floor(0.001 * 2 * 1000) = 2
+      expect(result.totalUnits).toBe(2);
+      expect(result.breakdown.featureA).toBe(2);
+    });
+
+    test('mixes an explicit ratio with the default fallback across keys', () => {
+      mockBillingPlanService.getPlanByVersion.mockReturnValue(
+        makePlan({ ratios: { default: 2, featureA: 3 } }),
+      );
+
+      const costs = { featureA: 0.001, featureB: 0.001 };
+      const result = BillingMeterService.unitsFromCosts(costs, 'pro', '2026.05');
+
+      // featureA: floor(0.001 * 3 * 1000) = 3 (explicit ratio wins)
+      // featureB: floor(0.001 * 2 * 1000) = 2 (falls back to ratios.default)
+      expect(result.breakdown.featureA).toBe(3);
+      expect(result.breakdown.featureB).toBe(2);
+      expect(result.totalUnits).toBe(5);
+    });
+
+    test('ratios.default=0 bills unlisted keys at zero units', () => {
+      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { default: 0 } }));
+
+      const costs = { featureA: 0.001 };
+      const result = BillingMeterService.unitsFromCosts(costs, 'pro', '2026.05');
+
+      expect(result.totalUnits).toBe(0);
+      expect(result.breakdown).toEqual({});
+    });
+
+    test('no ratios.default set keeps the legacy ratio=1 fallback (unchanged)', () => {
+      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: {} }));
+
+      const costs = { featureA: 0.001 };
+      const result = BillingMeterService.unitsFromCosts(costs, 'pro', '2026.05');
+
+      expect(result.totalUnits).toBe(1);
+      expect(result.breakdown.featureA).toBe(1);
+    });
+  });
+
   describe('attribute — no-op when meterMode=false', () => {
     test('should return applied=false when meterMode is disabled', async () => {
       mockConfig.billing.meterMode = false;
