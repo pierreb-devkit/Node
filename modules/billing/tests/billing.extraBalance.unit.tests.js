@@ -496,7 +496,8 @@ describe('BillingExtraBalance unit tests:', () => {
 
     describe('getSettlementBasis', () => {
       /**
-       * @param {Object[]} ledger - Ledger entries (at = index order when absent).
+       * Mock the balance document for a ledger and read its settlement basis.
+       * @param {Object[]} ledger - Ledger entries, replayed in array order.
        * @returns {Promise<{cachedBalance: number, nonSettleableDebt: number}>}
        */
       const basisOf = (ledger) => {
@@ -504,6 +505,11 @@ describe('BillingExtraBalance unit tests:', () => {
         mockModel.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue({ cachedBalance, ledger }) });
         return BillingExtraBalanceRepository.getSettlementBasis(orgId);
       };
+      /**
+       * Fixed timestamp helper for ledger entries.
+       * @param {number} n - Minutes after 2026-01-01T00:00Z.
+       * @returns {Date} The timestamp.
+       */
       const at = (n) => new Date(Date.UTC(2026, 0, 1, 0, n));
 
       test('zeros when no document exists', async () => {

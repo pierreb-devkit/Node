@@ -32,7 +32,7 @@ a pack's full amount even when part of it was already consumed. Plans with `mete
 are unchanged.
 
 **What you will see:** after a reset, an indebted org's current week shows `meterUsed`
-raised by the settled units (never past the quota) and a `settle:<weekKey>` adjustment in
+raised by the settled units (up to the quota; concurrent usage recorded between the headroom read and the charge can still push it past) and a `settle:<weekKey>` adjustment in
 its ledger; the negative balance shrinks by the week's remaining headroom at each reset
 instead of staying flat. No schema change,
 no migration to run. If a downstream report sums `adjustment` entries as goodwill
