@@ -410,12 +410,13 @@ const getBalance = async (orgId) => {
  *              true commit order: every writer appends with an atomic `$push`) with a
  *              running balance: a 'refund' or 'expiration' entry adds only the part that
  *              pushes the running balance below zero (an amount absorbed by a positive
- *              balance is no debt). An expiration removes the full pack amount even when
- *              part of the pack was already consumed, so that shortfall is debt the quota
- *              never repays. A Stripe pack 'topup' (stripeSessionId set — creditPack) repays
- *              it, floored at 0. Grants, 'adjustment' entries (including `settle:<weekKey>`
- *              settlements) and debits never repay it. The result is capped at
- *              max(0, -cachedBalance).
+ *              balance is no debt). Refund debt and pack-expiry shortfall are never
+ *              settled from quota; only a new Stripe pack 'topup' (stripeSessionId set —
+ *              creditPack) repays them, floored at 0. Grants, 'adjustment' entries
+ *              (including `settle:<weekKey>` settlements) and debits never repay them.
+ *              Known limitation, unchanged here: the expiry sweep removes a pack's full
+ *              amount even when part of the pack was already consumed. The result is
+ *              capped at max(0, -cachedBalance).
  * @param {string} orgId - The organization ObjectId (string).
  * @returns {Promise<{cachedBalance: number, nonSettleableDebt: number}>} Zeros when no document exists.
  */

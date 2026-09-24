@@ -540,22 +540,25 @@ describe('BillingExtraBalance unit tests:', () => {
         expect(basis).toEqual({ cachedBalance: -55, nonSettleableDebt: 15 });
       });
 
-      test('replays in array (commit) order, not `at` order', async () => {
+      test('replays in array (commit) order, not `at` order: grant before refund', async () => {
         const basis = await basisOf([
-          { kind: 'topup', amount: 40, stripeSessionId: 'cs_e', at: at(2) },
+          { kind: 'topup', amount: 40, source: 'referral', at: at(2) },
           { kind: 'refund', amount: -40, stripeSessionId: 'cs_e', at: at(1) },
+          { kind: 'debit', amount: -30, at: at(3) },
         ]);
-        // Array order: topup then refund → absorbed, no debt. `at` order would give 40.
-        expect(basis).toEqual({ cachedBalance: 0, nonSettleableDebt: 0 });
+        // Array order: grant then refund → absorbed, no debt (all 30 settleable).
+        // `at` order would count the refund as 40 debt, capped at 30.
+        expect(basis).toEqual({ cachedBalance: -30, nonSettleableDebt: 0 });
       });
 
-      test('array order wins over an out-of-order `at`: refund pushed first is debt', async () => {
+      test('replays in array (commit) order, not `at` order: refund before grant', async () => {
         const basis = await basisOf([
           { kind: 'refund', amount: -40, stripeSessionId: 'cs_f', at: at(2) },
-          { kind: 'debit', amount: -20, at: at(1) },
-          { kind: 'topup', amount: 30, source: 'referral', at: at(0) },
+          { kind: 'topup', amount: 40, source: 'referral', at: at(1) },
+          { kind: 'debit', amount: -30, at: at(3) },
         ]);
         // Array order: refund at running 0 → 40 debt; grant does not repay; capped at 30.
+        // `at` order would absorb the refund in the grant and give 0.
         expect(basis).toEqual({ cachedBalance: -30, nonSettleableDebt: 30 });
       });
 
