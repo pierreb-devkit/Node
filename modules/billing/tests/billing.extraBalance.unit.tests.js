@@ -74,6 +74,14 @@ describe('BillingExtraBalance unit tests:', () => {
         }
       });
 
+      test('zero amount is accepted only on an expiration (fully consumed pack marker)', () => {
+        expect(schema.LedgerEntry.safeParse({ kind: 'expiration', amount: 0 }).error).toBeFalsy();
+        for (const kind of ['topup', 'adjustment', 'debit', 'refund']) {
+          expect(schema.LedgerEntry.safeParse({ kind, amount: 0 }).error).toBeDefined();
+        }
+        expect(schema.LedgerEntry.safeParse({ kind: 'expiration', amount: 10 }).error).toBeDefined();
+      });
+
       test('should accept negative amount for debit kind', () => {
         const result = schema.LedgerEntry.safeParse({ kind: 'debit', amount: -500 });
         expect(result.error).toBeFalsy();
@@ -168,9 +176,13 @@ describe('BillingExtraBalance unit tests:', () => {
         default: {
           model: jest.fn(() => mockModel),
           Types: {
-            ObjectId: {
-              isValid: jest.fn(() => true),
-            },
+            // Constructible (the expiry pipeline mints the entry _id) with a static isValid.
+            ObjectId: Object.assign(
+              function ObjectId() {
+                this.id = 'mock-object-id';
+              },
+              { isValid: jest.fn(() => true) },
+            ),
           },
         },
       }));
@@ -450,11 +462,27 @@ describe('BillingExtraBalance unit tests:', () => {
         const result = await BillingExtraBalanceRepository.addExpirationEntries(orgId, new Date());
         expect(result).toBe(1);
 
-        // Verify expiration entry references the topup id
-        const call = mockModel.findOneAndUpdate.mock.calls[0];
-        expect(call[1].$push.ledger.refId).toBe(`expire-${entryId}`);
-        expect(call[1].$push.ledger.kind).toBe('expiration');
-        expect(call[1].$push.ledger.amount).toBe(-1000);
+        // Pipeline update: the removed amount is clamped against the STORED balance.
+        const [filter, pipeline, options] = mockModel.findOneAndUpdate.mock.calls[0];
+        expect(filter['ledger.refId']).toEqual({ $ne: `expire-${entryId}` });
+        expect(options).toEqual({ updatePipeline: true });
+        const removed = { $min: [1000, { $max: [0, '$cachedBalance'] }] };
+        const { $set } = pipeline[0];
+        const entry = $set.ledger.$concatArrays[1][0];
+        expect(entry.refId).toEqual({ $literal: `expire-${entryId}` });
+        expect(entry.kind).toEqual({ $literal: 'expiration' });
+        expect(entry.amount).toEqual({ $subtract: [0, removed] });
+        expect(entry._id).toBeDefined();
+        expect($set.cachedBalance).toEqual({ $subtract: ['$cachedBalance', removed] });
+      });
+
+      test('should return 0 when the refId guard rejects a concurrent duplicate', async () => {
+        const past = new Date(Date.now() - 1000);
+        const doc = makeDoc({ ledger: [{ _id: '507f1f77bcf86cd799439abc', kind: 'topup', amount: 1000, expiresAt: past }] });
+        mockModel.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(doc) });
+        mockModel.findOneAndUpdate.mockResolvedValue(null);
+
+        await expect(BillingExtraBalanceRepository.addExpirationEntries(orgId, new Date())).resolves.toBe(0);
       });
 
       test('should NOT add a second expiration entry when already expired (idempotent)', async () => {
@@ -540,55 +568,36 @@ describe('BillingExtraBalance unit tests:', () => {
         expect(basis).toEqual({ cachedBalance: -55, nonSettleableDebt: 15 });
       });
 
-      test('replays in array (commit) order, not `at` order', async () => {
+      test('replays in array (commit) order, not `at` order: grant before refund', async () => {
         const basis = await basisOf([
-          { kind: 'topup', amount: 40, stripeSessionId: 'cs_e', at: at(2) },
+          { kind: 'topup', amount: 40, source: 'referral', at: at(2) },
           { kind: 'refund', amount: -40, stripeSessionId: 'cs_e', at: at(1) },
+          { kind: 'debit', amount: -30, at: at(3) },
         ]);
-        // Array order: topup then refund → absorbed, no debt. `at` order would give 40.
-        expect(basis).toEqual({ cachedBalance: 0, nonSettleableDebt: 0 });
-      });
-
-      test('array order wins over an out-of-order `at`: refund pushed first is debt', async () => {
-        const basis = await basisOf([
-          { kind: 'refund', amount: -40, stripeSessionId: 'cs_f', at: at(2) },
-          { kind: 'debit', amount: -20, at: at(1) },
-          { kind: 'topup', amount: 30, source: 'referral', at: at(0) },
-        ]);
-        // Array order: refund at running 0 → 40 debt; grant does not repay; capped at 30.
-        expect(basis).toEqual({ cachedBalance: -30, nonSettleableDebt: 30 });
-      });
-
-      test('the below-zero part of a pack expiration is non-settleable debt', async () => {
-        const basis = await basisOf([
-          { kind: 'topup', amount: 100, stripeSessionId: 'cs_g', expiresAt: at(5), at: at(1) },
-          { kind: 'debit', amount: -80, at: at(2) },
-          { kind: 'expiration', amount: -100, refId: 'expire-x', at: at(6) },
-        ]);
-        // Running 20 before expiry → expiry takes it to -80: all 80 is expiration debt, settleable 0.
-        expect(basis).toEqual({ cachedBalance: -80, nonSettleableDebt: 80 });
-      });
-
-      test('an expiration absorbed by a positive balance is no debt; later overflow stays settleable', async () => {
-        const basis = await basisOf([
-          { kind: 'topup', amount: 100, stripeSessionId: 'cs_h', at: at(1) },
-          { kind: 'topup', amount: 50, stripeSessionId: 'cs_i', at: at(2) },
-          { kind: 'expiration', amount: -50, refId: 'expire-y', at: at(3) },
-          { kind: 'debit', amount: -130, at: at(4) },
-        ]);
+        // Array order: grant then refund → absorbed, no debt (all 30 settleable).
+        // `at` order would count the refund as 40 debt, capped at 30.
         expect(basis).toEqual({ cachedBalance: -30, nonSettleableDebt: 0 });
       });
 
-      test('a pack repays expiration debt', async () => {
+      test('replays in array (commit) order, not `at` order: refund before grant', async () => {
         const basis = await basisOf([
-          { kind: 'topup', amount: 100, stripeSessionId: 'cs_j', at: at(1) },
-          { kind: 'debit', amount: -80, at: at(2) },
-          { kind: 'expiration', amount: -100, refId: 'expire-z', at: at(3) },
-          { kind: 'topup', amount: 50, stripeSessionId: 'cs_k', at: at(4) },
-          { kind: 'debit', amount: -40, at: at(5) },
+          { kind: 'refund', amount: -40, stripeSessionId: 'cs_f', at: at(2) },
+          { kind: 'topup', amount: 40, source: 'referral', at: at(1) },
+          { kind: 'debit', amount: -30, at: at(3) },
         ]);
-        // Expiration debt 80 → pack repays 50 → 30; balance -70 → overflow part 40.
-        expect(basis).toEqual({ cachedBalance: -70, nonSettleableDebt: 30 });
+        // Array order: refund at running 0 → 40 debt; grant does not repay; capped at 30.
+        // `at` order would absorb the refund in the grant and give 0.
+        expect(basis).toEqual({ cachedBalance: -30, nonSettleableDebt: 30 });
+      });
+
+      test('an expiration is never non-settleable debt', async () => {
+        const basis = await basisOf([
+          { kind: 'topup', amount: 100, stripeSessionId: 'cs_g', expiresAt: at(5), at: at(1) },
+          { kind: 'debit', amount: -80, at: at(2) },
+          { kind: 'expiration', amount: -20, refId: 'expire-x', at: at(6) },
+          { kind: 'debit', amount: -30, at: at(7) },
+        ]);
+        expect(basis).toEqual({ cachedBalance: -30, nonSettleableDebt: 0 });
       });
 
       test('non-settleable debt capped at the negative cached balance', async () => {

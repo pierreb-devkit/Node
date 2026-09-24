@@ -322,7 +322,7 @@ describe('BillingResetService unit tests:', () => {
       expect(mockUsageRepository.applySettlementUsage).toHaveBeenCalledWith(orgId, '2026-W18', 1000, KEY);
     });
 
-    test('refund and expiration debt is excluded from the settlement', async () => {
+    test('refund debt is excluded from the settlement', async () => {
       arrange({ meterQuota: 1000, cachedBalance: -500, nonSettleableDebt: 200 });
 
       await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));

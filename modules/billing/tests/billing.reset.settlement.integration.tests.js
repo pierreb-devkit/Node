@@ -17,7 +17,8 @@ const QUOTA = 100;
  * Overflow debt (negative extras from usage past the quota) is repaid once per
  * week from the new week's quota: extras are credited `settle` via an idempotent
  * 'adjustment' entry, then the week is charged that stored credit exactly once.
- * Unpaid refund and expiration debt is never settled; quota-0 plans are untouched.
+ * Unpaid refund debt is never settled; a pack expiry removes only the unconsumed
+ * balance, so it never creates debt; quota-0 plans are untouched.
  */
 describe('BillingResetService overflow debt settlement integration tests:', () => {
   let BillingUsage;
@@ -247,22 +248,104 @@ describe('BillingResetService overflow debt settlement integration tests:', () =
     expect(w1.balance).toBe(0);
   });
 
-  test('pack expiry after overflow use → expiration debt is never settled', async () => {
-    await Subscription.create({ organization: orgId, plan: 'pro', status: 'active' });
+  describe('pack expiry removes only the unconsumed balance', () => {
+    /**
+     * @param {number} n - Minutes offset (0..10) before `now`.
+     * @returns {Date} A timestamp before `now`.
+     */
     const t = (n) => new Date(now.getTime() - (10 - n) * 60 * 1000);
-    await seedExtras([
-      { kind: 'topup', amount: 100, stripeSessionId: 'cs_exp', expiresAt: t(3), at: t(1) },
-      { kind: 'debit', amount: -80, refId: 'run-overflow-exp', at: t(2) },
-    ]);
-    // The real sweep: expiry removes the FULL pack amount although 80 was consumed.
-    await expect(BillingExtraBalanceRepository.addExpirationEntries(orgId, now)).resolves.toBe(1);
-    expect((await stateAt(0)).balance).toBe(-80);
 
-    await BillingResetService.resetWeek(orgId, week(1));
-    const w1 = await stateAt(1);
-    expect(w1.meterUsed).toBe(0);
-    expect(w1.balance).toBe(-80);
-    expect(w1.adjustments).toHaveLength(0);
+    /**
+     * @returns {Promise<Object[]>} The org's expiration ledger entries.
+     */
+    const expirations = async () =>
+      ((await BillingExtraBalance.findOne({ organization: orgId }).lean())?.ledger ?? []).filter((e) => e.kind === 'expiration');
+
+    test('pack 100, use 80 → expiry removes 20, balance 0, nothing settled', async () => {
+      await Subscription.create({ organization: orgId, plan: 'pro', status: 'active' });
+      await seedExtras([
+        { kind: 'topup', amount: 100, stripeSessionId: 'cs_exp_a', expiresAt: t(3), at: t(1) },
+        { kind: 'debit', amount: -80, refId: 'run-exp-a', at: t(2) },
+      ]);
+
+      await expect(BillingExtraBalanceRepository.addExpirationEntries(orgId, now)).resolves.toBe(1);
+      expect((await expirations()).map((e) => e.amount)).toEqual([-20]);
+      expect((await stateAt(0)).balance).toBe(0);
+
+      await BillingResetService.resetWeek(orgId, week(1));
+      const w1 = await stateAt(1);
+      expect(w1.meterUsed).toBe(0);
+      expect(w1.balance).toBe(0);
+      expect(w1.adjustments).toHaveLength(0);
+    });
+
+    test('pack fully consumed (use 130) → expiry removes nothing; the overflow stays settleable', async () => {
+      await Subscription.create({ organization: orgId, plan: 'pro', status: 'active' });
+      await seedExtras([
+        { kind: 'topup', amount: 100, stripeSessionId: 'cs_exp_b', expiresAt: t(3), at: t(1) },
+        { kind: 'debit', amount: -130, refId: 'run-exp-b', at: t(2) },
+      ]);
+
+      await BillingExtraBalanceRepository.addExpirationEntries(orgId, now);
+      expect((await expirations()).map((e) => e.amount)).toEqual([0]);
+      expect((await stateAt(0)).balance).toBe(-30);
+
+      await BillingResetService.resetWeek(orgId, week(1));
+      const w1 = await stateAt(1);
+      expect(w1.meterUsed).toBe(30);
+      expect(w1.balance).toBe(0);
+    });
+
+    test('fully consumed pack → a later sweep never expires it against a new pack', async () => {
+      await seedExtras([
+        { kind: 'topup', amount: 100, stripeSessionId: 'cs_exp_c', expiresAt: t(3), at: t(1) },
+        { kind: 'debit', amount: -130, refId: 'run-exp-c', at: t(2) },
+      ]);
+      await BillingExtraBalanceRepository.addExpirationEntries(orgId, now);
+
+      await BillingExtraBalanceRepository.creditPack(orgId, 50, 'cs_exp_c2');
+      expect((await stateAt(0)).balance).toBe(20);
+
+      await expect(BillingExtraBalanceRepository.addExpirationEntries(orgId, now)).resolves.toBe(0);
+      expect((await stateAt(0)).balance).toBe(20);
+      expect(await expirations()).toHaveLength(1);
+    });
+
+    test('refunded then expired pack → no double removal below zero', async () => {
+      await Subscription.create({ organization: orgId, plan: 'pro', status: 'active' });
+      await seedExtras([
+        { kind: 'topup', amount: 100, stripeSessionId: 'cs_exp_d', expiresAt: t(4), at: t(1) },
+        { kind: 'debit', amount: -30, refId: 'run-exp-d', at: t(2) },
+        { kind: 'refund', amount: -100, stripeSessionId: 'cs_exp_d', refId: 'refund-exp-d', at: t(3) },
+      ]);
+
+      await BillingExtraBalanceRepository.addExpirationEntries(orgId, now);
+      expect((await expirations()).map((e) => e.amount)).toEqual([0]);
+      expect((await stateAt(0)).balance).toBe(-30);
+
+      // The 30 below zero is refund debt: never settled from quota.
+      await BillingResetService.resetWeek(orgId, week(1));
+      const w1 = await stateAt(1);
+      expect(w1.meterUsed).toBe(0);
+      expect(w1.balance).toBe(-30);
+      expect(w1.adjustments).toHaveLength(0);
+    });
+
+    test('sweep re-run and concurrent sweeps → one expiration, removed once', async () => {
+      await seedExtras([
+        { kind: 'topup', amount: 100, stripeSessionId: 'cs_exp_e', expiresAt: t(3), at: t(1) },
+        { kind: 'topup', amount: 50, stripeSessionId: 'cs_exp_f', at: t(1) },
+        { kind: 'debit', amount: -40, refId: 'run-exp-e', at: t(2) },
+      ]);
+
+      const results = await Promise.all(Array.from({ length: 4 }, () => BillingExtraBalanceRepository.addExpirationEntries(orgId, now)));
+      expect(results.reduce((sum, n) => sum + n, 0)).toBe(1);
+      await expect(BillingExtraBalanceRepository.addExpirationEntries(orgId, now)).resolves.toBe(0);
+
+      // Packs are one pool: the expiry takes its full 100 from the 110 unconsumed.
+      expect((await expirations()).map((e) => e.amount)).toEqual([-100]);
+      expect((await stateAt(0)).balance).toBe(10);
+    });
   });
 
   test('concurrent resets → one credit and meterUsed == the stored credit', async () => {

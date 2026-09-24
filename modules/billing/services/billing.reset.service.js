@@ -15,7 +15,7 @@ import { isDuplicateKeyError } from '../lib/billing.errors.js';
 /**
  * @function computeOverflowSettlement
  * @description Units of overflow debt to repay from the new week's quota.
- *              Refund and expiration debt is excluded: it is never settled from quota.
+ *              Refund debt is excluded: it is never settled from quota.
  * @param {string} orgId - The organization ObjectId (string).
  * @param {number} meterQuota - The new week's plan quota.
  * @returns {Promise<number>} Units to settle, in [0, meterQuota].
@@ -60,9 +60,8 @@ const computeOverflowSettlement = async (orgId, meterQuota) => {
  *              Step c runs on every call, so a reset that credited then failed before
  *              charging the week is completed by the next call for that week; the key guard
  *              makes the charge land exactly once, whichever call wins.
- *              Refund and expiration debt counts only the unpaid part of refunds and pack
- *              expirations (see getSettlementBasis) — it is never settled; only a new pack
- *              repays it.
+ *              Refund debt counts only the unpaid part of refunds (see getSettlementBasis) —
+ *              it is never settled; only a new pack repays it.
  *              Plans with meterQuota 0 are untouched: a pack repays the debt.
  *
  * @param {string} orgId - The organization ObjectId (string).

@@ -287,12 +287,24 @@ const creditCompensation = async (orgId, amount, refId, memo = '') => {
  * @function addExpirationEntries
  * @description Sweep topup entries that have expired and push matching expiration
  *              ledger entries to reduce cachedBalance.
+ *              An expiry removes at most the UNCONSUMED balance, never more:
+ *                amount = min(topup.amount, max(0, cachedBalance))
+ *              computed by the database in the same atomic update that writes the entry
+ *              (aggregation-pipeline update reading `$cachedBalance`), so a concurrent debit
+ *              can never make it take the balance below zero. Units already consumed —
+ *              including overflow debt past zero — are never removed a second time.
+ *              Packs and grants are consumed as ONE pool: the clamp is against the whole
+ *              current balance, not a per-pack remainder, so an expiring pack may take units
+ *              that arrived through another live pack when the pool holds both.
+ *              A fully consumed pack (balance <= 0) still gets its expiration entry, with
+ *              amount 0: it is the idempotency marker that stops a later sweep from expiring
+ *              the same pack against units bought afterwards.
  *              Idempotent: each topup entry can only produce one expiration entry
  *              (keyed by 'expire-<entryId>'). Re-running this method on already-expired
  *              entries is a no-op because the refId filter excludes already-handled entries.
  * @param {string} orgId - The organization ObjectId (string).
  * @param {Date} now - The current timestamp used as the expiry cutoff.
- * @returns {Promise<number>} Number of expiration entries added.
+ * @returns {Promise<number>} Number of expiration entries added (zero-amount markers included).
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const addExpirationEntries = async (orgId, now) => {
@@ -318,24 +330,40 @@ const addExpirationEntries = async (orgId, now) => {
   let applied = 0;
   for (const topup of expiredTopups) {
     const expireRefId = `expire-${topup._id}`;
-    const entry = {
-      kind: 'expiration',
-      amount: -topup.amount,
-      refId: expireRefId,
-      at: now,
-    };
+    // Units removed: what is still unconsumed, read from the stored balance at write time.
+    const removed = { $min: [topup.amount, { $max: [0, '$cachedBalance'] }] };
 
-    // Atomic: only push if this expiration refId is not already present.
+    // Atomic: only push if this expiration refId is not already present. Pipeline update so
+    // the clamp and the write see the same balance. Mongoose does not cast pipeline updates:
+    // the entry carries its own _id, like the `$push` paths get from the subdocument schema.
     const result = await BillingExtraBalance().findOneAndUpdate(
       {
         organization: orgId,
         'ledger.refId': { $ne: expireRefId },
       },
-      {
-        $push: { ledger: entry },
-        $inc: { cachedBalance: -topup.amount },
-        $set: { cachedBalanceAt: now },
-      },
+      [
+        {
+          $set: {
+            ledger: {
+              $concatArrays: [
+                { $ifNull: ['$ledger', []] },
+                [
+                  {
+                    _id: new mongoose.Types.ObjectId(),
+                    kind: { $literal: 'expiration' },
+                    amount: { $subtract: [0, removed] },
+                    refId: { $literal: expireRefId },
+                    at: now,
+                  },
+                ],
+              ],
+            },
+            cachedBalance: { $subtract: ['$cachedBalance', removed] },
+            cachedBalanceAt: now,
+          },
+        },
+      ],
+      { updatePipeline: true },
     );
     if (result) applied += 1;
   }
@@ -403,19 +431,18 @@ const getBalance = async (orgId) => {
 /**
  * @function getSettlementBasis
  * @description Read, in ONE query, the inputs of the weekly overflow-debt settlement:
- *              the cached balance and the UNPAID non-settleable debt — refund and
- *              expiration debt — returned as a positive number. A single read keeps both
- *              values consistent with each other against a concurrent debit.
- *              Non-settleable debt is rebuilt by replaying the ledger in ARRAY order (the
- *              true commit order: every writer appends with an atomic `$push`) with a
- *              running balance: a 'refund' or 'expiration' entry adds only the part that
- *              pushes the running balance below zero (an amount absorbed by a positive
- *              balance is no debt). An expiration removes the full pack amount even when
- *              part of the pack was already consumed, so that shortfall is debt the quota
- *              never repays. A Stripe pack 'topup' (stripeSessionId set — creditPack) repays
- *              it, floored at 0. Grants, 'adjustment' entries (including `settle:<weekKey>`
- *              settlements) and debits never repay it. The result is capped at
- *              max(0, -cachedBalance).
+ *              the cached balance and the UNPAID non-settleable debt — refund debt —
+ *              returned as a positive number. A single read keeps both values consistent
+ *              with each other against a concurrent debit.
+ *              Refund debt is rebuilt by replaying the ledger in ARRAY order (the true
+ *              commit order: every writer appends atomically) with a running balance:
+ *              a 'refund' entry adds only the part that pushes the running balance below
+ *              zero (a clawback absorbed by a positive balance is no debt), and a Stripe
+ *              pack 'topup' (stripeSessionId set — creditPack) repays it, floored at 0.
+ *              Grants, 'adjustment' entries (including `settle:<weekKey>` settlements),
+ *              debits and expirations never count: an expiration only removes the
+ *              unconsumed balance (see addExpirationEntries) and never crosses zero.
+ *              The result is capped at max(0, -cachedBalance).
  * @param {string} orgId - The organization ObjectId (string).
  * @returns {Promise<{cachedBalance: number, nonSettleableDebt: number}>} Zeros when no document exists.
  */
@@ -437,7 +464,7 @@ const getSettlementBasis = async (orgId) => {
   for (const e of doc.ledger ?? []) {
     const amount = e.amount ?? 0;
     running += amount;
-    if ((e.kind === 'refund' || e.kind === 'expiration') && amount < 0) {
+    if (e.kind === 'refund' && amount < 0) {
       nonSettleableDebt += Math.min(-amount, Math.max(0, -running));
     } else if (e.kind === 'topup' && amount > 0 && typeof e.stripeSessionId === 'string' && e.stripeSessionId.length > 0) {
       nonSettleableDebt = Math.max(0, nonSettleableDebt - amount);
