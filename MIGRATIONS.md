@@ -27,9 +27,10 @@ new pack repays them. Known limitation, unchanged by this change: the expiry swe
 a pack's full amount even when part of it was already consumed. Plans with `meterQuota = 0`
 are unchanged.
 
-**What you will see:** after the first reset, indebted orgs start the week with a
-non-zero `meterUsed` and a `settle:<weekKey>` adjustment in their ledger; their
-negative balance shrinks week over week instead of staying flat. No schema change,
+**What you will see:** after a reset, an indebted org's current week shows `meterUsed`
+raised by the settled units (never past the quota) and a `settle:<weekKey>` adjustment in
+its ledger; the negative balance shrinks by the week's remaining headroom at each reset
+instead of staying flat. No schema change,
 no migration to run. If a downstream report sums `adjustment` entries as goodwill
 credits, exclude refIds starting with `settle:`.
 
