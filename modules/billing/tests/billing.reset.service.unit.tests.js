@@ -270,6 +270,42 @@ describe('BillingResetService unit tests:', () => {
       expect(mockUsageRepository.findByWeek).toHaveBeenCalledTimes(2);
       expect(mockExtraBalanceRepository.creditCompensation).not.toHaveBeenCalled();
     });
+
+    test('past periodStart is clamped to now → targets the current week, never a past one', async () => {
+      // System time 2026-05-01 (W18); the webhook forwards a period start two weeks back (W16).
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan());
+      mockUsageRepository.findByWeek.mockResolvedValue(null);
+      let captured;
+      mockUsageRepository.upsertWeekSnapshot.mockImplementation((id, weekKey, snapshot) => {
+        captured = { weekKey, snapshot };
+        return Promise.resolve(makeUsageDoc());
+      });
+
+      await BillingResetService.resetWeek(orgId, new Date('2026-04-13T00:00:00.000Z'));
+
+      expect(mockUsageRepository.archiveOtherWeeks).toHaveBeenCalledWith(orgId, '2026-W18', expect.any(Date));
+      expect(mockUsageRepository.findByWeek).toHaveBeenCalledWith(orgId, '2026-W18');
+      expect(captured.weekKey).toBe('2026-W18');
+      expect(captured.snapshot.month).toBe('2026-05');
+      expect(captured.snapshot.resetAt).toEqual(new Date('2026-05-08T12:00:00.000Z'));
+    });
+
+    test('future periodStart is kept as is', async () => {
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan());
+      mockUsageRepository.findByWeek.mockResolvedValue(null);
+      let captured;
+      mockUsageRepository.upsertWeekSnapshot.mockImplementation((id, weekKey, snapshot) => {
+        captured = { weekKey, snapshot };
+        return Promise.resolve(makeUsageDoc({ weekKey }));
+      });
+
+      await BillingResetService.resetWeek(orgId, new Date('2026-05-08T00:00:00.000Z'));
+
+      expect(captured.weekKey).toBe('2026-W19');
+      expect(captured.snapshot.resetAt).toEqual(new Date('2026-05-15T00:00:00.000Z'));
+    });
   });
 
   describe('resetWeek — overflow debt settlement', () => {

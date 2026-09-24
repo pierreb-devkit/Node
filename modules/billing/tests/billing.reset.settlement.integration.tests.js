@@ -368,6 +368,26 @@ describe('BillingResetService overflow debt settlement integration tests:', () =
     expect(w0.adjustments).toHaveLength(0);
   });
 
+  test('past periodStart (renewal webhook) → clamped to the current week, live week kept, debt settled into it', async () => {
+    await Subscription.create({ organization: orgId, plan: 'pro', status: 'active' });
+    await seedExtras([{ kind: 'debit', amount: -50, refId: 'run-overflow-past' }]);
+    // 10 units already used in the live week.
+    await BillingUsageService.incrementMeter(orgId, 10, { default: 10 }, `${new mongoose.Types.ObjectId()}:initial`);
+
+    await BillingResetService.resetWeek(orgId, week(-1));
+
+    // Nothing written to last week.
+    expect(await BillingUsage.findOne({ organizationId: orgId, weekKey: isoWeekKey(week(-1)) }).lean()).toBeNull();
+    // The live week is the target: not archived, settle = min(headroom 90, debt 50) = 50.
+    const live = await BillingUsage.findOne({ organizationId: orgId, weekKey: isoWeekKey(now) }).lean();
+    expect(live.archivedAt ?? null).toBeNull();
+    const w0 = await stateAt(0);
+    expect(w0.meterUsed).toBe(60);
+    expect(w0.balance).toBe(0);
+    expect(w0.adjustments).toHaveLength(1);
+    expect(w0.adjustments[0]).toEqual(expect.objectContaining({ amount: 50, refId: `settle:${isoWeekKey(now)}` }));
+  });
+
   test('credit failure → meterUsed 0 and debt unchanged', async () => {
     await Subscription.create({ organization: orgId, plan: 'pro', status: 'active' });
     await seedExtras([{ kind: 'debit', amount: -30, refId: 'run-overflow-8' }]);

@@ -20,7 +20,11 @@ reset. Extras are credited `settle` through an `adjustment` ledger entry with re
 credit actually stored is charged to the week with one guarded update (`$inc meterUsed`,
 key `settle:<weekKey>` added to `consumedAttributionKeys`). A retry or a concurrent reset
 completes a half-done settlement and never charges it twice. If the credit call fails,
-the failure is logged and nothing is charged — the debt survives for the next reset.
+the failure is logged and the week is charged only if the credit was actually stored (a
+credit that committed before the call threw is charged from the stored amount) — otherwise
+the debt survives for the next reset. `resetWeek` also clamps its `periodStart` to
+`max(periodStart, now)`, like the cron anchor: a renewal webhook carrying a past period
+start now targets the current week instead of archiving it.
 Refund debt and pack-expiry shortfall (the part of a refund or a pack expiry that took
 the balance below zero, net of later pack purchases) are never settled from quota — only a
 new pack repays them. Known limitation, unchanged by this change: the expiry sweep removes

@@ -58,8 +58,10 @@ const computeOverflowSettlement = async (orgId, weekQuota, meterUsed) => {
  *                b. If no `settle:<weekKey>` ledger entry exists yet, compute `settle` from
  *                   that doc and credit extras through an 'adjustment' entry with refId
  *                   `settle:<weekKey>` (shared across pods/retries — lands at most once).
- *                   A thrown credit is logged; nothing is charged to the week. When the
- *                   entry already exists (retry path), nothing is recomputed.
+ *                   A thrown credit is logged; the week is charged only if the credit was
+ *                   actually stored (a credit that committed before the call threw is charged
+ *                   from the stored amount). When the entry already exists (retry path),
+ *                   nothing is recomputed.
  *                c. Charge the STORED credit amount to the week with ONE guarded update
  *                   ($inc meterUsed, key `settle:<weekKey>` pushed into
  *                   consumedAttributionKeys, filtered on the key being absent).
@@ -75,7 +77,8 @@ const computeOverflowSettlement = async (orgId, weekQuota, meterUsed) => {
  *              Weeks with a snapshot quota of 0 are untouched: a pack repays the debt.
  *
  * @param {string} orgId - The organization ObjectId (string).
- * @param {Date} periodStart - The start of the new billing period (used to derive newWeekKey).
+ * @param {Date} periodStart - The start of the new billing period; clamped to max(periodStart, now)
+ *              before deriving newWeekKey, resetAt and month, so a past value never targets a past week.
  * @returns {Promise<Object|null>} The usage document for the new week, or null when meter mode is off.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
@@ -83,7 +86,11 @@ const resetWeek = async (orgId, periodStart) => {
   if (!config?.billing?.meterMode) return null;
 
   const now = new Date();
-  const newWeekKey = isoWeekKey(periodStart);
+  // Clamp to now, like resetAllDue's anchor: a caller passing a past periodStart (the
+  // renewal webhook forwards Stripe's current_period_start as is) must never target a past
+  // ISO week — that would archive the live week and settle debt into a week nothing reads.
+  const anchor = new Date(Math.max(periodStart.getTime(), now.getTime()));
+  const newWeekKey = isoWeekKey(anchor);
 
   // Step 1 — Archive any existing docs for this org that are NOT the new week key.
   // Delegates to repository — no mongoose import in service layer.
@@ -96,11 +103,11 @@ const resetWeek = async (orgId, periodStart) => {
   const meterQuota = activePlan?.meterQuota ?? 0;
   const planVersion = activePlan?.version ?? null;
 
-  // Compute resetAt = start of next week (7 days after periodStart)
-  const resetAt = new Date(periodStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+  // Compute resetAt = start of next week (7 days after the clamped anchor)
+  const resetAt = new Date(anchor.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-  // Month key for the new week (YYYY-MM of periodStart)
-  const monthKey = `${periodStart.getUTCFullYear()}-${String(periodStart.getUTCMonth() + 1).padStart(2, '0')}`;
+  // Month key for the new week (YYYY-MM of the clamped anchor)
+  const monthKey = `${anchor.getUTCFullYear()}-${String(anchor.getUTCMonth() + 1).padStart(2, '0')}`;
 
   const settlementKey = `settle:${newWeekKey}`;
 
@@ -130,8 +137,9 @@ const resetWeek = async (orgId, periodStart) => {
   }
 
   // Step 4 — Credit the settlement once. Retry path: a stored credit is reused, never recomputed.
-  // A thrown credit is logged and never aborts resetWeek — the week is then charged nothing
-  // and the debt survives for the next reset.
+  // A thrown credit is logged and never aborts resetWeek — the week is charged only if the
+  // credit was actually stored (a credit that committed before the call threw is charged from
+  // the stored amount); otherwise the debt survives for the next reset.
   let credit = await BillingExtraBalanceRepository.findLedgerEntryByRefId(orgId, settlementKey);
   if (!credit && weekDoc) {
     const weekQuota = weekDoc.meterQuota ?? meterQuota;
