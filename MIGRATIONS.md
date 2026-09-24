@@ -20,19 +20,11 @@ in the ledger is charged to it with one guarded update (`$inc meterUsed`, key
 `settle:<weekKey>` added to `consumedAttributionKeys`). A retry or a concurrent reset
 completes a half-done settlement and never charges it twice. If the credit call fails,
 the failure is logged and nothing is charged — the debt survives for the next reset.
-Refund debt is excluded: the unpaid part of refunds (the part that took the balance
-below zero, net of later pack purchases) is never settled. Plans with `meterQuota = 0`
+Refund and expiration debt is excluded: the unpaid part of refunds and pack expirations
+(the part that took the balance below zero, net of later pack purchases) is never settled.
+A pack expiry removes the full pack amount, even when part of it was already consumed —
+that shortfall is non-settleable debt, never repaid from quota. Plans with `meterQuota = 0`
 are unchanged.
-
-**Behaviour change — pack expiry removes only the unconsumed part.** The expiry sweep
-(`addExpirationEntries`, `billing.extrasExpiration` cron) used to remove the full pack
-amount even when part of it was already consumed, pushing the balance below zero into
-debt nobody owed. It now removes `min(pack amount, max(0, balance))`, computed atomically
-with the write: an expiry never takes the balance below zero. Packs are consumed as one
-pool, so the clamp is against the whole balance. A pack already fully consumed gets a
-zero-amount `expiration` entry — the sweep marker that stops it expiring later against
-newly bought units (the ledger schemas now accept `amount: 0` on `expiration` only).
-Existing expiration entries are not rewritten.
 
 **What you will see:** after the first reset, indebted orgs start the week with a
 non-zero `meterUsed` and a `settle:<weekKey>` adjustment in their ledger; their

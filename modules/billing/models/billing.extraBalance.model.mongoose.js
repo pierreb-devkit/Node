@@ -34,20 +34,12 @@ const LedgerEntrySchema = new Schema(
      * Negative for debit/expiration/refund (subtract from balance).
      * Note: 'refund' entries are clawbacks and carry a negative amount,
      * reflecting the economic debt when credits already consumed must be reclaimed.
-     * Zero is rejected, except on 'expiration': an expired pack that was already fully
-     * consumed gets a zero-amount expiration entry, its sweep idempotency marker.
      */
     amount: {
       type: Number,
       required: true,
       validate: {
-        /**
-         * @param {number} v - The ledger amount.
-         * @returns {boolean} True unless zero on a non-expiration entry.
-         */
-        validator(v) {
-          return v !== 0 || this?.kind === 'expiration';
-        },
+        validator: (v) => v !== 0,
         message: 'Ledger entry amount cannot be zero',
       },
     },
