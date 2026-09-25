@@ -6,6 +6,7 @@ import mailer from '../../../lib/helpers/mailer/index.js';
 import logger from '../../../lib/services/logger.js';
 import policy from '../../../lib/middlewares/policy.js';
 import serializeAbilities from '../../../lib/helpers/abilities.js';
+import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
 import OrganizationsRepository from '../repositories/organizations.repository.js';
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
 import UserService from '../../users/services/users.service.js';
@@ -116,6 +117,57 @@ const createOrganizationForUser = async ({ name, slug, domain, user, slugGenerat
     return createOrganizationForUser({ name, slug: freshSlug, domain, user });
   }
   throw new Error('Failed to create organization: slug conflict after maximum retries');
+};
+
+/**
+ * Fire-and-forget welcome email sent once a fresh signup provisions a real
+ * workspace. Called from BOTH create branches of `handleSignupOrganization`
+ * (organizations enabled or disabled) — never from the A4 convergence path
+ * (existing membership, an early return above those branches) and never from
+ * the manual "create another org" flow (`organizations.crud.service.js`), so
+ * it fires exactly once per real new workspace with no dedup field needed.
+ * With strict email verification the send happens naturally after
+ * verification, since provisioning itself is deferred until then.
+ *
+ * Gated on `config.organizations.welcomeEmail.enabled` (default `true`,
+ * fail-open — read with `?? true` so an absent key on a downstream project
+ * never silently disables the email) and `mailer.isConfigured()`. Never
+ * awaited by the caller: a disabled toggle, a disabled mailer, a synchronous
+ * throw, or a rejected send must never break or delay the signup / OAuth
+ * redirect response.
+ * @param {Object} user - The newly signed-up user (id/_id, email, firstName, lastName).
+ * @param {string} [orgName] - Organization display name. Omitted in B2C mode
+ *   (organizations disabled) — the template must not require it.
+ * @param {string} [orgId] - Organization id, for failure logging only (never
+ *   passed to the template) — always in scope, including B2C mode.
+ * @returns {void}
+ */
+const sendWelcomeEmail = (user, orgName, orgId) => {
+  if (!(config.organizations?.welcomeEmail?.enabled ?? true)) return;
+  if (!mailer.isConfigured()) return;
+  const userId = user.id || user._id;
+  const onError = (err) => logger.warn('organizations: welcome email failed', {
+    userId: userId ? String(userId) : undefined,
+    ...(orgId ? { orgId: String(orgId) } : {}),
+    message: err?.message,
+    stack: err?.stack,
+  });
+  try {
+    mailer.sendMail({
+      template: 'welcome',
+      to: user.email,
+      subject: `Welcome to ${config.app.title}`,
+      params: {
+        displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
+        url: getBaseUrl(),
+        appName: config.app.title,
+        appContact: config.app.contact,
+        ...(orgName ? { orgName } : {}),
+      },
+    }).catch(onError);
+  } catch (err) {
+    onError(err);
+  }
 };
 
 /**
@@ -230,7 +282,10 @@ const handleSignupOrganization = async (user) => {
     });
 
     emitProvisioned(organization);
-    return buildResult(organization, membership);
+    const result = await buildResult(organization, membership);
+    // B2C mode — the workspace is a hidden default, never named to the user.
+    sendWelcomeEmail(user, undefined, organization._id);
+    return result;
   }
 
   // Case 2: Organizations enabled — always provision a workspace for the user.
@@ -285,8 +340,10 @@ const handleSignupOrganization = async (user) => {
   });
 
   emitProvisioned(organization);
+  const result = await buildResult(organization, membership);
+  sendWelcomeEmail(user, organization.name, organization._id);
   return {
-    ...(await buildResult(organization, membership)),
+    ...result,
     ...(suggestedJoin ? { suggestedJoin } : {}),
   };
 };

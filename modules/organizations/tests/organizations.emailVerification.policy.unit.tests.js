@@ -38,7 +38,7 @@ jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
 
 const mockIsConfigured = jest.fn();
 jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
-  default: { isConfigured: mockIsConfigured, sendMail: jest.fn() },
+  default: { isConfigured: mockIsConfigured, sendMail: jest.fn().mockResolvedValue(null) },
 }));
 
 const mockOrganizationsRepositoryCreate = jest.fn();

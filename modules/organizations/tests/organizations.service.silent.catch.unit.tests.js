@@ -56,7 +56,7 @@ jest.unstable_mockModule('../../../lib/helpers/abilities.js', () => ({
 }));
 
 jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
-  default: { isConfigured: jest.fn().mockReturnValue(false) },
+  default: { isConfigured: jest.fn().mockReturnValue(false), sendMail: jest.fn().mockResolvedValue(null) },
 }));
 
 jest.unstable_mockModule('../../../config/index.js', () => ({
