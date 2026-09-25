@@ -692,8 +692,10 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
     test('quota=0 plan without a signupGrant — would otherwise cross 80%, but the missing-grant guard suppresses it', async () => {
       mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'free' });
       // No signupGrant on the plan. pre=110, post=90 WOULD cross the 80% level (=100 on a
-      // 500-credit grant, per the 'two adjacent debits' test above) if a signupGrant existed —
-      // only the missing-signupGrant guard keeps this silent.
+      // 500-credit grant, per the 'two adjacent debits' test above) if a signupGrant existed.
+      // Here `undefined` is caught by the `Number.isFinite` half of the guard (which also
+      // short-circuits before `level` is computed from NaN) — the signupGrant=0 case below
+      // is the one that isolates the `> 0` half specifically.
       mockPlanService.getActivePlan.mockReturnValue(makePlan({ planId: 'free', meterQuota: 0 }));
       mockUsageRepository.incrementMeter.mockResolvedValue(makeUsageDoc({ meterUsed: 20, meterQuota: 0 }));
       mockExtraService.debit.mockResolvedValue({ applied: true, doc: { cachedBalance: 90 } });
