@@ -422,9 +422,9 @@ const getBalance = async (orgId) => {
  *              creditPack) repays them, floored at 0. Grants, 'adjustment' entries
  *              (including `settle:<weekKey>` settlements) and debits never repay them.
  *              The expiry sweep removes only a pack's own unspent units, so a new expiration
- *              entry goes below zero only for usage recorded between the pack.s expiresAt
- *              and the sweep; that part, like legacy full-amount entries, stays non-settleable. Zero-amount expiration markers are
- *              neutral. The result is capped at max(0, -cachedBalance).
+ *              entry goes below zero only for usage recorded between the pack's expiresAt
+ *              and the sweep; that part, like legacy full-amount entries, stays
+ *              non-settleable. Zero-amount expiration markers are neutral. The result is capped at max(0, -cachedBalance).
  * @param {string} orgId - The organization ObjectId (string).
  * @returns {Promise<{cachedBalance: number, nonSettleableDebt: number}>} Zeros when no document exists.
  */
