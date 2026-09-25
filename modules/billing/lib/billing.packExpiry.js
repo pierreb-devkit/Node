@@ -125,5 +125,3 @@ export const computeExpiryRemovals = (ledger, now) => {
     .credits.filter((c) => c.kind === 'topup' && !c.handled && c.expiresAtMs !== null && c.expiresAtMs < nowMs)
     .map((c) => ({ topupId: c.id, amount: c.remaining }));
 };
-
-export default { replayCredits, computeExpiryRemovals };
