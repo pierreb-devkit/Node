@@ -18,15 +18,31 @@ import { jest, describe, test, expect, beforeEach } from '@jest/globals';
  *     failure paths.
  *  4. A provisioning rejection is best-effort: the TOKEN cookie is still set
  *     and the response still redirects to /token.
+ *  5. A throw past the org-provisioning branch (anything else in the
+ *     callback) is caught by the outer handler, not left as an unhandled
+ *     rejection (passport.authenticate() never awaits this callback).
  */
 describe('auth.controller oauthCallback — handleSignupOrganization wiring:', () => {
-  let handleSignupOrganizationMock;
   let mockPassport;
 
-  beforeEach(() => {
+  /**
+   * Register every mock auth.controller's dependency graph needs for this
+   * suite, mirroring `auth-controller.mock-setup.js`'s shared fixture (kept
+   * local here since it also needs the organizations.service + jwt secret
+   * knobs the shared fixture doesn't expose). Call from `beforeEach` (default
+   * jwt secret) or a single test that needs a broken secret to force
+   * `jwt.sign` to throw synchronously.
+   * @param {Object} [opts]
+   * @param {string|undefined} [opts.jwtSecret] - `config.jwt.secret`; omit for the default `'s'`,
+   *   pass `undefined` explicitly (via `{ jwtSecret: undefined }`) to make `jsonwebtoken` throw —
+   *   NOT a default-parameter value, since `{ jwtSecret = 's' }` would silently mask that case.
+   * @returns {{handleSignupOrganizationMock: import('@jest/globals').Mock}}
+   */
+  const registerMocks = (opts = {}) => {
+    const jwtSecret = Object.hasOwn(opts, 'jwtSecret') ? opts.jwtSecret : 's';
     jest.resetModules();
 
-    handleSignupOrganizationMock = jest.fn().mockResolvedValue({ _id: 'org_001' });
+    const handleSignupOrganizationMock = jest.fn().mockResolvedValue({ _id: 'org_001' });
 
     mockPassport = {
       authenticate: jest.fn(),
@@ -42,7 +58,7 @@ describe('auth.controller oauthCallback — handleSignupOrganization wiring:', (
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: {
         sign: { up: true, in: true },
-        jwt: { secret: 's', expiresIn: 3600 },
+        jwt: { secret: jwtSecret, expiresIn: 3600 },
         cookie: { secure: true, sameSite: 'lax' },
         organizations: { enabled: true },
         app: { title: 'Test', contact: 'a@b.com' },
@@ -113,6 +129,14 @@ describe('auth.controller oauthCallback — handleSignupOrganization wiring:', (
     jest.unstable_mockModule('../../../lib/services/analytics.js', () => ({
       default: { identify: jest.fn(), capture: jest.fn(), groupIdentify: jest.fn() },
     }));
+
+    return { handleSignupOrganizationMock };
+  };
+
+  let handleSignupOrganizationMock;
+
+  beforeEach(() => {
+    ({ handleSignupOrganizationMock } = registerMocks());
   });
 
   /**
@@ -210,78 +234,7 @@ describe('auth.controller oauthCallback — handleSignupOrganization wiring:', (
     // Real `jsonwebtoken` (not mocked in this suite) throws synchronously when
     // handed no secret — exercises the outer try/catch this fix adds around
     // the whole passport callback, past the org-provisioning best-effort branch.
-    jest.resetModules();
-    jest.unstable_mockModule('passport', () => ({ default: mockPassport }));
-    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
-      default: { warn: jest.fn(), error: jest.fn(), info: jest.fn() },
-    }));
-    jest.unstable_mockModule('../../../config/index.js', () => ({
-      default: {
-        sign: { up: true, in: true },
-        jwt: { secret: undefined, expiresIn: 3600 },
-        cookie: { secure: true, sameSite: 'lax' },
-        organizations: { enabled: true },
-        app: { title: 'Test', contact: 'a@b.com' },
-      },
-    }));
-    jest.unstable_mockModule('../../../modules/users/services/users.service.js', () => ({
-      default: { create: jest.fn(), getBrut: jest.fn(), update: jest.fn(), remove: jest.fn(), search: jest.fn(), count: jest.fn().mockResolvedValue(0) },
-    }));
-    jest.unstable_mockModule('../../../modules/auth/services/auth.eligibility.js', () => ({
-      default: { registerSignupEligibility: jest.fn(), assertSignupEligible: jest.fn().mockResolvedValue(undefined), _reset: jest.fn() },
-    }));
-    jest.unstable_mockModule('../../../modules/auth/services/auth.signupCapacity.js', () => ({
-      computeSignupCapacity: jest.fn().mockResolvedValue({ cap: null, remaining: null }),
-    }));
-    jest.unstable_mockModule('../../../modules/users/repositories/users.repository.js', () => ({
-      default: { update: jest.fn() },
-    }));
-    jest.unstable_mockModule('../../../modules/organizations/services/organizations.service.js', () => ({
-      default: { handleSignupOrganization: jest.fn().mockResolvedValue({ _id: 'org_001' }) },
-    }));
-    jest.unstable_mockModule('../../../modules/organizations/services/organizations.crud.service.js', () => ({
-      default: { autoSetCurrentOrganization: jest.fn() },
-    }));
-    jest.unstable_mockModule('../../../modules/organizations/services/organizations.membership.service.js', () => ({
-      default: { findByUserAndOrganization: jest.fn(), listPendingByUser: jest.fn().mockResolvedValue([]) },
-    }));
-    jest.unstable_mockModule('../../../modules/users/models/users.schema.js', () => ({
-      default: { User: {} },
-    }));
-    jest.unstable_mockModule('../../../lib/middlewares/model.js', () => ({
-      default: { getResultFromZod: jest.fn(), checkError: jest.fn() },
-    }));
-    jest.unstable_mockModule('../../../lib/middlewares/policy.js', () => ({
-      default: { defineAbilityFor: jest.fn().mockResolvedValue({}) },
-    }));
-    jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
-      default: { isConfigured: jest.fn().mockReturnValue(false), sendMail: jest.fn() },
-    }));
-    jest.unstable_mockModule('../../../lib/helpers/responses.js', () => ({
-      default: { success: jest.fn().mockReturnValue(jest.fn()), error: jest.fn().mockReturnValue(jest.fn()) },
-    }));
-    jest.unstable_mockModule('../../../lib/helpers/errors.js', () => ({
-      default: { getMessage: jest.fn().mockReturnValue('error') },
-    }));
-    jest.unstable_mockModule('../../../lib/helpers/AppError.js', () => ({
-      default: class AppError extends Error {
-        constructor(msg, opts) {
-          super(msg);
-          this.status = opts?.status;
-          this.code = opts?.code;
-          this.details = opts?.details;
-        }
-      },
-    }));
-    jest.unstable_mockModule('../../../lib/helpers/abilities.js', () => ({
-      default: jest.fn().mockReturnValue([]),
-    }));
-    jest.unstable_mockModule('../../../lib/helpers/getBaseUrl.js', () => ({
-      default: jest.fn().mockReturnValue('http://localhost:3000'),
-    }));
-    jest.unstable_mockModule('../../../lib/services/analytics.js', () => ({
-      default: { identify: jest.fn(), capture: jest.fn(), groupIdentify: jest.fn() },
-    }));
+    registerMocks({ jwtSecret: undefined });
 
     const user = { id: 'user_004', currentOrganization: 'org_existing' };
     mockPassport.authenticate.mockImplementation((strategy, callback) => () => callback(null, user));

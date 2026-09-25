@@ -560,6 +560,21 @@ const oauthErrorRedirect = (res, err, fallbackTitle) => {
 };
 
 /**
+ * @desc Log an OAuth callback failure with a consistent shape. Shared by every
+ * failure branch in `oauthCallback` (passport error, no user, and the outer
+ * catch-all) so the three sites can't drift on what gets logged.
+ * @param {string} strategy - OAuth strategy name (req.params.strategy)
+ * @param {Object|null} errArg - the error to log (may be null for the !user case)
+ * @returns {void}
+ */
+const logOAuthCallbackFailure = (strategy, errArg) => {
+  logger.error(
+    { err: { message: errArg?.message, code: errArg?.code, stack: errArg?.stack }, strategy },
+    'OAuth callback failed',
+  );
+};
+
+/**
  * @desc Endpoint for oautCallCallBack
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
@@ -588,17 +603,11 @@ const oauthCallback = async (req, res, next) => {
   return passport.authenticate(strategy, async (err, user) => {
     try {
       if (err) {
-        logger.error(
-          { err: { message: err?.message, code: err?.code, stack: err?.stack }, strategy },
-          'OAuth callback failed',
-        );
+        logOAuthCallbackFailure(strategy, err);
         return oauthErrorRedirect(res, err, 'oAuth error');
       }
       if (!user) {
-        logger.error(
-          { err: { message: err?.message, code: err?.code, stack: err?.stack }, strategy },
-          'OAuth callback failed',
-        );
+        logOAuthCallbackFailure(strategy, null);
         return oauthErrorRedirect(res, null, 'Could not define user in oAuth');
       }
       // Org provisioning parity with local signup/verifyEmail (issue #4115): an
@@ -626,10 +635,7 @@ const oauthCallback = async (req, res, next) => {
       res.cookie('TOKEN', token, tokenCookieOptions);
       return res.redirect(302, `${getBaseUrl()}/token`);
     } catch (callbackErr) {
-      logger.error(
-        { err: { message: callbackErr?.message, code: callbackErr?.code, stack: callbackErr?.stack }, strategy },
-        'OAuth callback failed',
-      );
+      logOAuthCallbackFailure(strategy, callbackErr);
       return oauthErrorRedirect(res, callbackErr, 'oAuth error');
     }
   })(req, res, next);
