@@ -134,6 +134,12 @@ credit-warning (80%) or credit-exhausted (100%) email off of it.
 - **Accepted limitation — expiry and refunds don't alert.** A balance drop from a pack
   expiring (`crons/billing.extrasExpiration.js`) or a refund (`billing.refund.service.js`)
   does not go through `incrementMeter`'s debit path, so it never triggers this crossing check.
+- **Accepted limitation — a debit that fails outright never alerts either.** The crossing
+  check only runs on `debitResult.applied && debitResult.doc` (see below); if
+  `BillingExtraService.debit()` itself throws, the catch block logs a warning and the
+  usage stays counted but unreconciled — there is no retry cron anymore (the outbox
+  pattern was dropped, see "Extras debit reliability" below), so that debit never reaches
+  the crossing check and never alerts.
 
 ## Extras debit reliability
 

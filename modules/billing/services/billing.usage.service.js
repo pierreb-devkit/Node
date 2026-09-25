@@ -27,11 +27,6 @@ const thresholdFields = {
   100: 'alertedAt100',
 };
 
-// Credit-balance alerts (#4117) support only 80%/100% — same supported set as the
-// weekly-quota alertedAtN schema fields above (billing.init.js warns at boot on any
-// other configured value already; this mirrors that filter for the stateless path).
-const SUPPORTED_CREDIT_ALERT_THRESHOLDS = new Set([80, 100]);
-
 /**
  * @desc Increment a usage counter for the given organization (current month).
  *              Hardens the repository's silent-null anomaly (#3991 follow-up):
@@ -247,7 +242,10 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
           // DESC order (100 before 80, from getAlertThresholdPercents()) — emit only the
           // deepest crossing per debit (one debit crossing both levels → one email).
           for (const threshold of getAlertThresholdPercents()) {
-            if (!SUPPORTED_CREDIT_ALERT_THRESHOLDS.has(threshold)) continue;
+            // Credit-balance alerts support only 80%/100% — reuse the weekly-quota
+            // alertedAtN schema fields (thresholdFields, above) as the single source
+            // of truth for the supported set, instead of a second duplicated list.
+            if (!thresholdFields[threshold]) continue;
             // `signupGrant * (100 - threshold) / 100`, not `(1 - threshold/100) * signupGrant` —
             // the latter hits float imprecision at common values (e.g. 500 * (1 - 80/100) =
             // 99.99999999999997, not 100), which would silently miss an exact boundary crossing.

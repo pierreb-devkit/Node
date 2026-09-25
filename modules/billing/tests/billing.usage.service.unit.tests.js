@@ -689,14 +689,44 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       expect(balanceCrossedEmits()).toHaveLength(0);
     });
 
-    test('quota=0 plan without a signupGrant — no credit-balance event', async () => {
+    test('quota=0 plan without a signupGrant — would otherwise cross 80%, but the missing-grant guard suppresses it', async () => {
       mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'free' });
-      // No signupGrant on the plan — the guard must not fire.
+      // No signupGrant on the plan. pre=110, post=90 WOULD cross the 80% level (=100 on a
+      // 500-credit grant, per the 'two adjacent debits' test above) if a signupGrant existed —
+      // only the missing-signupGrant guard keeps this silent.
       mockPlanService.getActivePlan.mockReturnValue(makePlan({ planId: 'free', meterQuota: 0 }));
-      mockUsageRepository.incrementMeter.mockResolvedValue(makeUsageDoc({ meterUsed: 5, meterQuota: 0 }));
+      mockUsageRepository.incrementMeter.mockResolvedValue(makeUsageDoc({ meterUsed: 20, meterQuota: 0 }));
+      mockExtraService.debit.mockResolvedValue({ applied: true, doc: { cachedBalance: 90 } });
+
+      await BillingUsageService.incrementMeter(orgId, 20, {}, 'hist_no_grant_no_alert');
+
+      expect(balanceCrossedEmits()).toHaveLength(0);
+    });
+
+    test('quota=0 plan with signupGrant=0 — no credit-balance event (a zero grant is not a valid grant)', async () => {
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'free' });
+      // signupGrant=0 is finite (unlike undefined) but not a valid grant. Without the
+      // `> 0` half of the guard, level collapses to 0 for every threshold and this debit
+      // (pre=15, post=-5) WOULD look like a crossing (15 > 0 && -5 <= 0) — only the
+      // `> 0` check keeps it silent.
+      mockPlanService.getActivePlan.mockReturnValue(makePlan({ planId: 'free', meterQuota: 0, signupGrant: 0 }));
+      mockUsageRepository.incrementMeter.mockResolvedValue(makeUsageDoc({ meterUsed: 20, meterQuota: 0 }));
       mockExtraService.debit.mockResolvedValue({ applied: true, doc: { cachedBalance: -5 } });
 
-      await BillingUsageService.incrementMeter(orgId, 5, {}, 'hist_no_grant_no_alert');
+      await BillingUsageService.incrementMeter(orgId, 20, {}, 'hist_zero_grant_no_alert');
+
+      expect(balanceCrossedEmits()).toHaveLength(0);
+    });
+
+    test('debit returns applied=false (duplicate_step replay) — no credit-balance event', async () => {
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'free' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan({ planId: 'free', meterQuota: 0, signupGrant: 500 }));
+      mockUsageRepository.incrementMeter.mockResolvedValue(makeUsageDoc({ meterUsed: 20, meterQuota: 0 }));
+      // Idempotent replay — the debit already applied on the original call; this pass must
+      // not re-derive a crossing (the crossing check only runs on debitResult.applied && doc).
+      mockExtraService.debit.mockResolvedValue({ applied: false, reason: 'duplicate_step' });
+
+      await BillingUsageService.incrementMeter(orgId, 20, {}, 'hist_credit_alert_replay');
 
       expect(balanceCrossedEmits()).toHaveLength(0);
     });
