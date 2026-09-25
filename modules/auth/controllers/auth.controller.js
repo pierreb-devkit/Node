@@ -579,26 +579,59 @@ const oauthCallback = async (req, res, next) => {
   // function as the 2nd/3rd arg) never calls req.logIn() itself — session
   // establishment is entirely the caller's responsibility below (JWT + cookie,
   // no express-session) — so the `session` option has nothing to act on.
-  return passport.authenticate(strategy, (err, user) => {
-    if (err) {
+  // The callback below is async (org provisioning needs to `await`), but
+  // passport.authenticate() invokes it fire-and-forget — it never awaits or
+  // otherwise observes the promise this callback returns. Without the outer
+  // try/catch, any throw past the org-provisioning branch (which owns its own
+  // best-effort catch) would become an unhandled rejection instead of the
+  // client-facing error redirect every other failure in this callback gets.
+  return passport.authenticate(strategy, async (err, user) => {
+    try {
+      if (err) {
+        logger.error(
+          { err: { message: err?.message, code: err?.code, stack: err?.stack }, strategy },
+          'OAuth callback failed',
+        );
+        return oauthErrorRedirect(res, err, 'oAuth error');
+      }
+      if (!user) {
+        logger.error(
+          { err: { message: err?.message, code: err?.code, stack: err?.stack }, strategy },
+          'OAuth callback failed',
+        );
+        return oauthErrorRedirect(res, null, 'Could not define user in oAuth');
+      }
+      // Org provisioning parity with local signup/verifyEmail (issue #4115): an
+      // OAuth signup never went through either path, so it never provisioned a
+      // workspace and the user landed on the org-required page. Only when the
+      // resolved user has no active org — covers new OAuth signups and any
+      // account left orphaned by this bug (self-heals, no backfill migration
+      // needed) — on every other resolution (existing/linked user already
+      // carrying a currentOrganization) this is a no-op, zero extra queries or
+      // events on a normal login. Best-effort, same pattern as `verifyEmail`
+      // above (#3762/#3765): a provisioning failure must never break the redirect.
+      if (!user.currentOrganization) {
+        try {
+          await AuthOrganizationService.handleSignupOrganization(user);
+        } catch (orgErr) {
+          logger.warn('[auth.oauthCallback] org provisioning failed (non-fatal)', {
+            userId: user.id,
+            error: orgErr?.message,
+          });
+        }
+      }
+      const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
+        expiresIn: config.jwt.expiresIn,
+      });
+      res.cookie('TOKEN', token, tokenCookieOptions);
+      return res.redirect(302, `${getBaseUrl()}/token`);
+    } catch (callbackErr) {
       logger.error(
-        { err: { message: err?.message, code: err?.code, stack: err?.stack }, strategy },
+        { err: { message: callbackErr?.message, code: callbackErr?.code, stack: callbackErr?.stack }, strategy },
         'OAuth callback failed',
       );
-      return oauthErrorRedirect(res, err, 'oAuth error');
+      return oauthErrorRedirect(res, callbackErr, 'oAuth error');
     }
-    if (!user) {
-      logger.error(
-        { err: { message: err?.message, code: err?.code, stack: err?.stack }, strategy },
-        'OAuth callback failed',
-      );
-      return oauthErrorRedirect(res, null, 'Could not define user in oAuth');
-    }
-    const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
-      expiresIn: config.jwt.expiresIn,
-    });
-    res.cookie('TOKEN', token, tokenCookieOptions);
-    return res.redirect(302, `${getBaseUrl()}/token`);
   })(req, res, next);
 };
 
