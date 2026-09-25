@@ -121,6 +121,14 @@ const fetchPlansFromStripe = async (stripe) => {
     }
   }
 
+  // Active products but no tagged plan: most likely a catalogue that was never tagged
+  // with metadata.planId. Surface it instead of silently serving an empty listing.
+  if (products.length > 0 && plans.length === 0) {
+    logger.warn('[billing.plans] no active Stripe product carries metadata.planId — plans listing is empty', {
+      activeProducts: products.length,
+    });
+  }
+
   return plans.sort((a, b) => a.monthlyPrice - b.monthlyPrice);
 };
 

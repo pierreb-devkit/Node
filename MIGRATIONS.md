@@ -15,7 +15,10 @@ resolution is unchanged: such a product still works as a normal purchase, it jus
 longer appears in `GET /api/billing/plans`.
 
 **What you will see:** any Stripe product you want listed as a plan needs
-`metadata.planId` set. No schema change, no migration to run.
+`metadata.planId` set. `createCheckout` validates the requested `priceId` against the
+same listing, so self-serve checkout also accepts only prices of tagged plans. An
+untagged catalogue logs a `[billing.plans]` warning and lists no plans. No schema
+change, no migration to run.
 
 ## Billing: weekly reset now repays overflow debt (2026-09-24)
 

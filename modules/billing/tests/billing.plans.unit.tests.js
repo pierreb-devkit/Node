@@ -505,4 +505,41 @@ describe('Billing plans service unit tests:', () => {
     );
     expect(warnCalls).toHaveLength(0);
   });
+
+  // ── Untagged catalogue warn ────────────────────────────────────────────
+  test('warns when active products exist but none carries metadata.planId', async () => {
+    mockStripeInstance.products.list.mockReturnValue(
+      mockListResult([{ id: 'prod_untagged', name: 'Untagged', metadata: {} }]),
+    );
+    mockStripeInstance.prices.list.mockReturnValue(
+      mockListResult([{ product: 'prod_untagged', recurring: { interval: 'month' }, unit_amount: 900, id: 'price_u_m' }]),
+    );
+
+    const mod = await import('../services/billing.plans.service.js');
+    BillingPlansService = mod.default;
+    const loggerMod = await import('../../../lib/services/logger.js');
+    const mockLogger = loggerMod.default;
+
+    const plans = await BillingPlansService.getPlans();
+
+    expect(plans).toEqual([]);
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      '[billing.plans] no active Stripe product carries metadata.planId — plans listing is empty',
+      expect.objectContaining({ activeProducts: 1 }),
+    );
+  });
+
+  test('does not warn about an untagged catalogue when at least one plan is tagged', async () => {
+    const mod = await import('../services/billing.plans.service.js');
+    BillingPlansService = mod.default;
+    const loggerMod = await import('../../../lib/services/logger.js');
+    const mockLogger = loggerMod.default;
+
+    await BillingPlansService.getPlans();
+
+    const warnCalls = mockLogger.warn.mock.calls.filter((args) =>
+      String(args[0]).includes('no active Stripe product carries metadata.planId'),
+    );
+    expect(warnCalls).toHaveLength(0);
+  });
 });
