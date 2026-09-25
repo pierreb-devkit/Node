@@ -24,7 +24,7 @@
 
 /**
  * Convert a date-like value to epoch milliseconds.
- * @param {Date|string|number|null|undefined} value - A date-like value.|string|number|null|undefined} value - A date-like value.
+ * @param {Date|string|number|null|undefined} value - A date-like value.
  * @returns {number|null} Epoch milliseconds, or null when absent or invalid.
  */
 const toMs = (value) => {
