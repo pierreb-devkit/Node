@@ -103,6 +103,13 @@ When Stripe `plan.changed` webhook fires, devkit calls `forceRotateForPlanChange
 
 Consumers wanting clean-break behavior on downgrade should pass `{ preserveUsage: false }`.
 
+## Quota admission and overflow debt
+
+- **Admission is a pre-check, not a reservation.** `assertCanExecute` (used by `requireQuota` and any other caller) reads the meter and extras balance, then allows or denies. It never holds units; usage is recorded after the run. Concurrent requests can all pass on the same state, so overshoot is bounded by concurrency × one run's cost. This is an accepted trade-off.
+- **Single-run bound:** `billing.meter.maxUnitsPerOperation` is the only cap on what one run can cost.
+- **Runaway detector:** the negative-balance alert (`billing.extras.runaway_debit`) only fires on plans with a weekly quota (`meterQuota > 0`).
+- **Overflow debt is repaid once per week.** Units consumed past the quota are debited from extras, which may go negative. On each `resetWeek` (weeks with a quota > 0 only) it repays debt from the target week's REMAINING quota: `settle = min(meterQuota − meterUsed, overflowDebt)` — the week is often already partly used, since the cron anchors on the current time. Extras are credited `settle` via an `adjustment` entry with refId `settle:<weekKey>`, then the week doc is charged that stored credit once (`meterUsed += settle`, guarded by the `settle:<weekKey>` key in `consumedAttributionKeys`) — a re-run, retry or concurrent reset never credits or charges twice. What does not fit stays as debt for the next reset. Refund debt and pack-expiry shortfall (the part of a pack clawback or a pack expiry that took the balance below zero) are never settled from quota — only a new pack repays them. Known limitation, unchanged by the settlement: the expiry sweep removes a pack's full amount even when part of it was consumed. Plans with `meterQuota = 0` are unchanged.
+
 ## Extras debit reliability
 
 `attribute()` returns optimistically after usage increment + outbox row insert. Extras debit happens out of band; if it fails, cron `retry-pending-extras-debit` reconciles on the configured retry interval. After the configured failed-attempt limit, the outbox row is marked `failed` and the configured exhausted event is emitted for alerting.

@@ -4,6 +4,40 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Billing: weekly reset now repays overflow debt (2026-09-24)
+
+In `meterMode`, units consumed past the weekly quota are debited from extras, which
+may go negative. That debt was never cleared by the weekly reset, so on a plan with a
+weekly quota it cut **every** later week by the same amount — and locked the org out
+for good once the debt reached the quota.
+
+`resetWeek` now settles it once per week, for weeks with a quota > 0, from the target
+week's **remaining** quota: `settle = min(meterQuota − meterUsed, overflowDebt)`. The week
+doc is read first (or inserted at `meterUsed = 0`) — the cron anchors on the current time,
+so the week is often already partly used. What does not fit stays as debt for the next
+reset. Extras are credited `settle` through an `adjustment` ledger entry with refId
+`settle:<weekKey>` (idempotent — applies at most once, across pods and retries), and the
+credit actually stored is charged to the week with one guarded update (`$inc meterUsed`,
+key `settle:<weekKey>` added to `consumedAttributionKeys`). A retry or a concurrent reset
+completes a half-done settlement and never charges it twice. If the credit call fails,
+the failure is logged and the week is charged only if the credit was actually stored (a
+credit that committed before the call threw is charged from the stored amount) — otherwise
+the debt survives for the next reset. `resetWeek` also clamps its `periodStart` to
+`max(periodStart, now)`, like the cron anchor: a renewal webhook carrying a past period
+start now targets the current week instead of archiving it.
+Refund debt and pack-expiry shortfall (the part of a refund or a pack expiry that took
+the balance below zero, net of later pack purchases) are never settled from quota — only a
+new pack repays them. Known limitation, unchanged by this change: the expiry sweep removes
+a pack's full amount even when part of it was already consumed. Plans with `meterQuota = 0`
+are unchanged.
+
+**What you will see:** after a reset, an indebted org's current week shows `meterUsed`
+raised by the settled units (up to the quota; concurrent usage recorded between the headroom read and the charge can still push it past) and a `settle:<weekKey>` adjustment in
+its ledger; the settleable overflow debt shrinks by up to the week's remaining headroom at each reset
+(possibly zero when the week is used up) instead of staying flat. No schema change,
+no migration to run. If a downstream report sums `adjustment` entries as goodwill
+credits, exclude refIds starting with `settle:`.
+
 ## Billing meter now honours `ratios.default` as the per-key fallback (2026-09-24)
 
 `unitsFromCosts` used a hardcoded `1` for any cost key absent from a plan's `ratios`

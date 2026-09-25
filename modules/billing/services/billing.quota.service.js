@@ -44,12 +44,20 @@ import AppError from '../../../lib/helpers/AppError.js';
  *   3. meterMode === true  → meter gate (fail-closed + past_due grace + exhaustion)
  *   4. meterMode === false → legacy quota gate (plan counter)
  *
+ * Admission is a pre-check, not a reservation: it only reads current state and
+ * never holds or pre-debits units — usage is recorded after the work runs. N
+ * concurrent callers can all pass on the same starting state, so overshoot is
+ * bounded by concurrency × one run's cost (accepted trade-off). The only bound
+ * on a single run's cost is `billing.meter.maxUnitsPerOperation`, and the
+ * runaway negative-balance detector only fires on plans with a weekly quota
+ * (meterQuota > 0). Overflow debt is repaid by the weekly reset.
+ *
  * @param {Object} opts
  * @param {string|Object} opts.orgId - Organization _id (string or ObjectId)
  * @param {Object} [opts.organization] - Organization document (for meterExempt check)
  * @param {Object} [opts.user] - Authenticated user (for admin bypass)
- * @param {string} opts.resource - Quota resource name (e.g. 'scraps')
- * @param {string} opts.action  - Quota action name (e.g. 'execute')
+ * @param {string} opts.resource - Quota resource name (e.g. 'documents')
+ * @param {string} opts.action  - Quota action name (e.g. 'create')
  * @returns {Promise<{degraded: boolean}>} Resolves with `{ degraded }` when access is allowed.
  *   `degraded` is true when past_due within grace period (informational).
  * @throws {AppError} with `.status` set to 402 / 429 / 503 on denial.

@@ -223,6 +223,29 @@ const upsertWeekSnapshot = (orgId, weekKey, snapshotFields) =>
   );
 
 /**
+ * @function applySettlementUsage
+ * @description Charge the weekly overflow-debt settlement to an existing week document,
+ *              exactly once. One guarded atomic update: `$inc` meterUsed by `units` and
+ *              record `settlementKey` in consumedAttributionKeys, filtered on the key being
+ *              absent — a replay (retry, concurrent reset) matches nothing and is a no-op.
+ *              No upsert: the caller creates the week doc first.
+ * @param {string} orgId - The organization ObjectId (string).
+ * @param {string} weekKey - The ISO week key of the settled week.
+ * @param {number} units - Settled units (the stored `settle:<weekKey>` credit amount).
+ * @param {string} settlementKey - Idempotency key, `settle:<weekKey>`.
+ * @returns {Promise<Object|null>} The updated week document, or null when already applied (or no doc).
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
+const applySettlementUsage = (orgId, weekKey, units, settlementKey) => {
+  if (!mongoose.Types.ObjectId.isValid(orgId)) return null;
+  return BillingUsage.findOneAndUpdate(
+    { organizationId: orgId, weekKey, consumedAttributionKeys: { $ne: settlementKey } },
+    { $inc: { meterUsed: units }, $push: { consumedAttributionKeys: settlementKey } },
+    { returnDocument: 'after', runValidators: false },
+  ).lean();
+};
+
+/**
  * @function rotateWeekSnapshotForPlanChange
  * @description Update an existing current-week usage document with the active
  *              plan snapshot. Preserves usage by default; optionally resets
@@ -293,6 +316,7 @@ export default {
   incrementMeter,
   archiveOtherWeeks,
   upsertWeekSnapshot,
+  applySettlementUsage,
   rotateWeekSnapshotForPlanChange,
   markThreshold,
   countLegacyConsumedHistoryIds,

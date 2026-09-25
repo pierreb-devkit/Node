@@ -2,13 +2,33 @@
  * Module dependencies
  */
 import config from '../../../config/index.js';
+import logger from '../../../lib/services/logger.js';
 import BillingUsageRepository from '../repositories/billing.usage.repository.js';
 import BillingSubscriptionRepository from '../repositories/billing.subscription.repository.js';
+import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
 import BillingPlanService from './billing.plan.service.js';
 import billingEvents from '../lib/events.js';
 import { isoWeekKey } from '../lib/billing.isoWeek.js';
 import { getPlanChangePreserveUsageDefault, getDefaultPlanId } from '../lib/billing.constants.js';
 import { isDuplicateKeyError } from '../lib/billing.errors.js';
+
+/**
+ * @function computeOverflowSettlement
+ * @description Units of overflow debt to repay from the target week's REMAINING quota.
+ *              Refund and expiration debt is excluded: it is never settled from quota.
+ *              What does not fit in the headroom stays as debt for the next reset.
+ * @param {string} orgId - The organization ObjectId (string).
+ * @param {number} weekQuota - The week's snapshot quota.
+ * @param {number} meterUsed - Units already charged to that week.
+ * @returns {Promise<number>} Units to settle, in [0, weekQuota - meterUsed].
+ */
+// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
+const computeOverflowSettlement = async (orgId, weekQuota, meterUsed) => {
+  const headroom = weekQuota - meterUsed;
+  if (!(weekQuota > 0) || !(headroom > 0)) return 0;
+  const { cachedBalance, nonSettleableDebt } = await BillingExtraBalanceRepository.getSettlementBasis(orgId);
+  return Math.max(0, Math.min(headroom, -cachedBalance - nonSettleableDebt));
+};
 
 /**
  * @function resetWeek
@@ -25,16 +45,52 @@ import { isDuplicateKeyError } from '../lib/billing.errors.js';
  *              (The $ne on consumedAttributionKeys is replay protection within the same doc,
  *              not the race guard.)
  *
+ *              Overflow-debt settlement (weeks with a snapshot quota > 0 only): units
+ *              consumed past the quota are debited from extras, which may go negative.
+ *              Without a settlement that debt would shrink every later week by the same
+ *              amount. The target week is often NOT fresh: the cron anchors on `now`, so
+ *              incrementMeter has usually filled part of it already. Settlement therefore
+ *              repays debt from the week's REMAINING quota only; what does not fit stays as
+ *              debt for the next reset:
+ *                settle = max(0, min(weekQuota - weekDoc.meterUsed, -cachedBalance - nonSettleableDebt))
+ *              Order, each step idempotent so any race or retry converges:
+ *                a. Get or create the week doc (meterUsed as it is; inserted at 0 when new).
+ *                b. If no `settle:<weekKey>` ledger entry exists yet, compute `settle` from
+ *                   that doc and credit extras through an 'adjustment' entry with refId
+ *                   `settle:<weekKey>` (shared across pods/retries — lands at most once).
+ *                   A thrown credit is logged; the week is charged only if the credit was
+ *                   actually stored (a credit that committed before the call threw is charged
+ *                   from the stored amount). When the entry already exists (retry path),
+ *                   nothing is recomputed.
+ *                c. Charge the STORED credit amount to the week with ONE guarded update
+ *                   ($inc meterUsed, key `settle:<weekKey>` pushed into
+ *                   consumedAttributionKeys, filtered on the key being absent).
+ *              Step c runs on every call, so a reset that credited then failed before
+ *              charging the week is completed by the next call for that week; the key guard
+ *              makes the charge land exactly once, whichever call wins.
+ *              Accepted: an incrementMeter landing between the read in (a) and the charge in
+ *              (c) can push meterUsed past the quota by that concurrent usage only.
+ *              Known, not fixed: a plan change with preserveUsage=false zeroes meterUsed but keeps the `settle:<weekKey>` key, so that week's settled units are no longer charged to it.
+ *              Refund and expiration debt counts only the unpaid part of refunds and pack
+ *              expirations (see getSettlementBasis) — it is never settled; only a new pack
+ *              repays it.
+ *              Weeks with a snapshot quota of 0 are untouched: a pack repays the debt.
+ *
  * @param {string} orgId - The organization ObjectId (string).
- * @param {Date} periodStart - The start of the new billing period (used to derive newWeekKey).
- * @returns {Promise<Object|null>} The upserted usage document for the new week, or null when meter mode is off.
+ * @param {Date} periodStart - The start of the new billing period; clamped to max(periodStart, now)
+ *              before deriving newWeekKey, resetAt and month, so a past value never targets a past week.
+ * @returns {Promise<Object|null>} The usage document for the new week, or null when meter mode is off.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const resetWeek = async (orgId, periodStart) => {
   if (!config?.billing?.meterMode) return null;
 
   const now = new Date();
-  const newWeekKey = isoWeekKey(periodStart);
+  // Clamp to now, like resetAllDue's anchor: a caller passing a past periodStart (the
+  // renewal webhook forwards Stripe's current_period_start as is) must never target a past
+  // ISO week — that would archive the live week and settle debt into a week nothing reads.
+  const anchor = new Date(Math.max(periodStart.getTime(), now.getTime()));
+  const newWeekKey = isoWeekKey(anchor);
 
   // Step 1 — Archive any existing docs for this org that are NOT the new week key.
   // Delegates to repository — no mongoose import in service layer.
@@ -47,37 +103,70 @@ const resetWeek = async (orgId, periodStart) => {
   const meterQuota = activePlan?.meterQuota ?? 0;
   const planVersion = activePlan?.version ?? null;
 
-  // Compute resetAt = start of next week (7 days after periodStart)
-  const resetAt = new Date(periodStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+  // Compute resetAt = start of next week (7 days after the clamped anchor)
+  const resetAt = new Date(anchor.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-  // Month key for the new week (YYYY-MM of periodStart)
-  const monthKey = `${periodStart.getUTCFullYear()}-${String(periodStart.getUTCMonth() + 1).padStart(2, '0')}`;
+  // Month key for the new week (YYYY-MM of the clamped anchor)
+  const monthKey = `${anchor.getUTCFullYear()}-${String(anchor.getUTCMonth() + 1).padStart(2, '0')}`;
 
-  // Step 3 — Upsert the new week document with snapshot fields.
-  const newDoc = await BillingUsageRepository.findByWeek(orgId, newWeekKey);
-  if (newDoc) return newDoc; // Already exists — idempotent
+  const settlementKey = `settle:${newWeekKey}`;
 
-  try {
-    return await BillingUsageRepository.upsertWeekSnapshot(orgId, newWeekKey, {
-      organizationId: orgId,
-      weekKey: newWeekKey,
-      month: monthKey,
-      meterUsed: 0,
-      meterQuota,
-      planVersion,
-      meterBreakdown: {},
-      resetAt,
-      alertedAt80: null,
-      alertedAt100: null,
-      consumedAttributionKeys: [],
-    });
-  } catch (err) {
-    if (isDuplicateKeyError(err)) {
-      // Race: another pod already created this week's doc
-      return BillingUsageRepository.findByWeek(orgId, newWeekKey);
+  // Step 3 — Get or create the week document. An existing doc (incrementMeter or another
+  // reset got there first) is kept as is: its meterUsed bounds the settlement below.
+  let weekDoc = await BillingUsageRepository.findByWeek(orgId, newWeekKey);
+  if (!weekDoc) {
+    try {
+      weekDoc = await BillingUsageRepository.upsertWeekSnapshot(orgId, newWeekKey, {
+        organizationId: orgId,
+        weekKey: newWeekKey,
+        month: monthKey,
+        meterUsed: 0,
+        meterQuota,
+        planVersion,
+        meterBreakdown: {},
+        resetAt,
+        alertedAt80: null,
+        alertedAt100: null,
+        consumedAttributionKeys: [],
+      });
+    } catch (err) {
+      // Race: another reset or incrementMeter created the doc first — settle on it all the same.
+      if (!isDuplicateKeyError(err)) throw err;
+      weekDoc = await BillingUsageRepository.findByWeek(orgId, newWeekKey);
     }
-    throw err;
   }
+
+  // Step 4 — Credit the settlement once. Retry path: a stored credit is reused, never recomputed.
+  // A thrown credit is logged and never aborts resetWeek — the week is charged only if the
+  // credit was actually stored (a credit that committed before the call threw is charged from
+  // the stored amount); otherwise the debt survives for the next reset.
+  let credit = await BillingExtraBalanceRepository.findLedgerEntryByRefId(orgId, settlementKey);
+  if (!credit && weekDoc) {
+    const weekQuota = weekDoc.meterQuota ?? meterQuota;
+    const settle = await computeOverflowSettlement(orgId, weekQuota, weekDoc.meterUsed ?? 0);
+    if (settle > 0) {
+      try {
+        await BillingExtraBalanceRepository.creditCompensation(orgId, settle, settlementKey, 'weekly overflow debt settlement');
+      } catch (err) {
+        logger.error('[billing.reset] overflow debt settlement credit failed', {
+          orgId,
+          weekKey: newWeekKey,
+          settle,
+          err: err?.message ?? String(err),
+        });
+      }
+      // Re-read: a concurrent reset may have stored its own amount first — charge that one.
+      credit = await BillingExtraBalanceRepository.findLedgerEntryByRefId(orgId, settlementKey);
+    }
+  }
+
+  // Step 5 — Charge the week with the credit actually stored, exactly once thanks to the key guard.
+  if (credit?.kind === 'adjustment' && credit.amount > 0) {
+    const charged = await BillingUsageRepository.applySettlementUsage(orgId, newWeekKey, credit.amount, settlementKey);
+    if (charged) return charged;
+  }
+
+  return weekDoc;
 };
 
 /**

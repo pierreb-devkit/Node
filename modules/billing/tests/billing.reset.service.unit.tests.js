@@ -14,6 +14,8 @@ describe('BillingResetService unit tests:', () => {
   let mockConfig;
   let mockSubscriptionRepository;
   let mockEvents;
+  let mockExtraBalanceRepository;
+  let mockLogger;
 
   const orgId = '507f1f77bcf86cd799439011';
 
@@ -66,6 +68,7 @@ describe('BillingResetService unit tests:', () => {
       incrementMeter: jest.fn(),
       archiveOtherWeeks: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
       upsertWeekSnapshot: jest.fn(),
+      applySettlementUsage: jest.fn().mockResolvedValue(null),
       rotateWeekSnapshotForPlanChange: jest.fn(),
     };
 
@@ -82,6 +85,12 @@ describe('BillingResetService unit tests:', () => {
 
     mockEvents = {
       emit: jest.fn(),
+    };
+
+    mockExtraBalanceRepository = {
+      getSettlementBasis: jest.fn().mockResolvedValue({ cachedBalance: 0, nonSettleableDebt: 0 }),
+      creditCompensation: jest.fn().mockResolvedValue({ doc: {}, applied: true }),
+      findLedgerEntryByRefId: jest.fn().mockResolvedValue(null),
     };
 
     jest.unstable_mockModule('../../../config/index.js', () => ({
@@ -102,6 +111,15 @@ describe('BillingResetService unit tests:', () => {
 
     jest.unstable_mockModule('../lib/events.js', () => ({
       default: mockEvents,
+    }));
+
+    jest.unstable_mockModule('../repositories/billing.extraBalance.repository.js', () => ({
+      default: mockExtraBalanceRepository,
+    }));
+
+    mockLogger = { error: jest.fn(), warn: jest.fn(), info: jest.fn() };
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: mockLogger,
     }));
 
     const mod = await import('../services/billing.reset.service.js');
@@ -165,8 +183,10 @@ describe('BillingResetService unit tests:', () => {
 
       const result = await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
 
-      // Should not call upsertWeekSnapshot since doc already exists
+      // Doc already exists → no upsert; no debt and no stored settlement → nothing charged.
       expect(mockUsageRepository.upsertWeekSnapshot).not.toHaveBeenCalled();
+      expect(mockExtraBalanceRepository.creditCompensation).not.toHaveBeenCalled();
+      expect(mockUsageRepository.applySettlementUsage).not.toHaveBeenCalled();
       expect(result).toBe(existingDoc);
     });
 
@@ -248,6 +268,242 @@ describe('BillingResetService unit tests:', () => {
 
       expect(result).toBeDefined();
       expect(mockUsageRepository.findByWeek).toHaveBeenCalledTimes(2);
+      expect(mockExtraBalanceRepository.creditCompensation).not.toHaveBeenCalled();
+    });
+
+    test('past periodStart is clamped to now → targets the current week, never a past one', async () => {
+      // System time 2026-05-01 (W18); the webhook forwards a period start two weeks back (W16).
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan());
+      mockUsageRepository.findByWeek.mockResolvedValue(null);
+      let captured;
+      mockUsageRepository.upsertWeekSnapshot.mockImplementation((id, weekKey, snapshot) => {
+        captured = { weekKey, snapshot };
+        return Promise.resolve(makeUsageDoc());
+      });
+
+      await BillingResetService.resetWeek(orgId, new Date('2026-04-13T00:00:00.000Z'));
+
+      expect(mockUsageRepository.archiveOtherWeeks).toHaveBeenCalledWith(orgId, '2026-W18', expect.any(Date));
+      expect(mockUsageRepository.findByWeek).toHaveBeenCalledWith(orgId, '2026-W18');
+      expect(captured.weekKey).toBe('2026-W18');
+      expect(captured.snapshot.month).toBe('2026-05');
+      expect(captured.snapshot.resetAt).toEqual(new Date('2026-05-08T12:00:00.000Z'));
+    });
+
+    test('future periodStart is kept as is', async () => {
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan());
+      mockUsageRepository.findByWeek.mockResolvedValue(null);
+      let captured;
+      mockUsageRepository.upsertWeekSnapshot.mockImplementation((id, weekKey, snapshot) => {
+        captured = { weekKey, snapshot };
+        return Promise.resolve(makeUsageDoc({ weekKey }));
+      });
+
+      await BillingResetService.resetWeek(orgId, new Date('2026-05-08T00:00:00.000Z'));
+
+      expect(captured.weekKey).toBe('2026-W19');
+      expect(captured.snapshot.resetAt).toEqual(new Date('2026-05-15T00:00:00.000Z'));
+    });
+  });
+
+  describe('resetWeek — overflow debt settlement', () => {
+    const KEY = 'settle:2026-W18';
+
+    /**
+     * Arrange a reset on a plan with the given quota and extras state. The ledger mock
+     * stores what creditCompensation writes, and applySettlementUsage charges it to the week.
+     * @param {Object} opts - Quota, extras basis and whether the week doc already exists.
+     * @returns {{ snapshot: () => Object }} Accessor for the snapshot passed to upsertWeekSnapshot.
+     */
+    const arrange = ({ meterQuota = 1000, cachedBalance = 0, nonSettleableDebt = 0, existingDoc = null } = {}) => {
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan({ meterQuota }));
+      mockUsageRepository.findByWeek.mockResolvedValue(existingDoc);
+      mockExtraBalanceRepository.getSettlementBasis.mockResolvedValue({ cachedBalance, nonSettleableDebt });
+      let stored = null;
+      mockExtraBalanceRepository.creditCompensation.mockImplementation((o, amount, refId) => {
+        stored = { kind: 'adjustment', amount, refId };
+        return Promise.resolve({ doc: {}, applied: true });
+      });
+      mockExtraBalanceRepository.findLedgerEntryByRefId.mockImplementation(() => Promise.resolve(stored));
+      mockUsageRepository.applySettlementUsage.mockImplementation((o, w, units) => Promise.resolve(makeUsageDoc({ meterUsed: units })));
+      let captured;
+      mockUsageRepository.upsertWeekSnapshot.mockImplementation((o, w, snapshot) => {
+        captured = snapshot;
+        return Promise.resolve(makeUsageDoc({ meterUsed: snapshot.meterUsed, meterQuota: snapshot.meterQuota }));
+      });
+      return { snapshot: () => captured };
+    };
+
+    test('debt below quota → week inserted at 0, then charged the stored credit', async () => {
+      const { snapshot } = arrange({ meterQuota: 1000, cachedBalance: -300 });
+
+      const result = await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
+
+      expect(snapshot().meterUsed).toBe(0);
+      expect(mockExtraBalanceRepository.creditCompensation).toHaveBeenCalledWith(orgId, 300, KEY, expect.any(String));
+      expect(mockExtraBalanceRepository.findLedgerEntryByRefId).toHaveBeenCalledWith(orgId, KEY);
+      expect(mockUsageRepository.applySettlementUsage).toHaveBeenCalledWith(orgId, '2026-W18', 300, KEY);
+      expect(result).toEqual(expect.objectContaining({ meterUsed: 300 }));
+    });
+
+    test('debt above quota → settles one full quota', async () => {
+      arrange({ meterQuota: 1000, cachedBalance: -2500 });
+
+      await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
+
+      expect(mockExtraBalanceRepository.creditCompensation).toHaveBeenCalledWith(orgId, 1000, KEY, expect.any(String));
+      expect(mockUsageRepository.applySettlementUsage).toHaveBeenCalledWith(orgId, '2026-W18', 1000, KEY);
+    });
+
+    test('refund and expiration debt is excluded from the settlement', async () => {
+      arrange({ meterQuota: 1000, cachedBalance: -500, nonSettleableDebt: 200 });
+
+      await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
+
+      expect(mockExtraBalanceRepository.creditCompensation).toHaveBeenCalledWith(orgId, 300, KEY, expect.any(String));
+      expect(mockUsageRepository.applySettlementUsage).toHaveBeenCalledWith(orgId, '2026-W18', 300, KEY);
+    });
+
+    test('only non-settleable debt → nothing settled', async () => {
+      const { snapshot } = arrange({ meterQuota: 1000, cachedBalance: -200, nonSettleableDebt: 200 });
+
+      await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
+
+      expect(snapshot().meterUsed).toBe(0);
+      expect(mockExtraBalanceRepository.creditCompensation).not.toHaveBeenCalled();
+      expect(mockUsageRepository.applySettlementUsage).not.toHaveBeenCalled();
+    });
+
+    test('quota-0 plan → balance never read, nothing settled', async () => {
+      const { snapshot } = arrange({ meterQuota: 0, cachedBalance: -500 });
+
+      await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
+
+      expect(snapshot().meterUsed).toBe(0);
+      expect(mockExtraBalanceRepository.getSettlementBasis).not.toHaveBeenCalled();
+      expect(mockExtraBalanceRepository.creditCompensation).not.toHaveBeenCalled();
+      expect(mockUsageRepository.applySettlementUsage).not.toHaveBeenCalled();
+    });
+
+    test('week doc already exists (created by incrementMeter) → still settled on it', async () => {
+      arrange({ meterQuota: 1000, cachedBalance: -300, existingDoc: makeUsageDoc({ meterUsed: 5, meterQuota: 1000 }) });
+
+      await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
+
+      expect(mockUsageRepository.upsertWeekSnapshot).not.toHaveBeenCalled();
+      expect(mockUsageRepository.applySettlementUsage).toHaveBeenCalledWith(orgId, '2026-W18', 300, KEY);
+    });
+
+    test('charges the STORED credit amount, not the recomputed settle', async () => {
+      arrange({ meterQuota: 1000, cachedBalance: -300 });
+      // A concurrent reset credited 450 under the same refId between our lookup and our credit;
+      // this call's settle (300) is refused.
+      mockExtraBalanceRepository.creditCompensation.mockResolvedValue({ doc: null, applied: false, reason: 'duplicate_refId' });
+      mockExtraBalanceRepository.findLedgerEntryByRefId
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue({ kind: 'adjustment', amount: 450, refId: KEY });
+
+      await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
+
+      expect(mockUsageRepository.applySettlementUsage).toHaveBeenCalledWith(orgId, '2026-W18', 450, KEY);
+      expect(mockLogger.error).not.toHaveBeenCalled();
+    });
+
+    test('week already partly used → settles only the remaining headroom', async () => {
+      arrange({ meterQuota: 1000, cachedBalance: -300, existingDoc: makeUsageDoc({ meterUsed: 800, meterQuota: 1000 }) });
+
+      await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
+
+      expect(mockExtraBalanceRepository.creditCompensation).toHaveBeenCalledWith(orgId, 200, KEY, expect.any(String));
+      expect(mockUsageRepository.applySettlementUsage).toHaveBeenCalledWith(orgId, '2026-W18', 200, KEY);
+    });
+
+    test('headroom bound uses the week snapshot quota, not the live plan quota', async () => {
+      arrange({ meterQuota: 1000, cachedBalance: -300, existingDoc: makeUsageDoc({ meterUsed: 0, meterQuota: 100 }) });
+
+      await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
+
+      expect(mockExtraBalanceRepository.creditCompensation).toHaveBeenCalledWith(orgId, 100, KEY, expect.any(String));
+    });
+
+    test('week quota already used up → balance never read, nothing settled', async () => {
+      arrange({ meterQuota: 1000, cachedBalance: -300, existingDoc: makeUsageDoc({ meterUsed: 1200, meterQuota: 1000 }) });
+
+      await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
+
+      expect(mockExtraBalanceRepository.getSettlementBasis).not.toHaveBeenCalled();
+      expect(mockExtraBalanceRepository.creditCompensation).not.toHaveBeenCalled();
+      expect(mockUsageRepository.applySettlementUsage).not.toHaveBeenCalled();
+    });
+
+    test('credit landed on an earlier call, debt now 0 → week still charged once', async () => {
+      arrange({ meterQuota: 1000, cachedBalance: 0 });
+      mockExtraBalanceRepository.findLedgerEntryByRefId.mockResolvedValue({ kind: 'adjustment', amount: 300, refId: KEY });
+
+      await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
+
+      expect(mockExtraBalanceRepository.creditCompensation).not.toHaveBeenCalled();
+      expect(mockUsageRepository.applySettlementUsage).toHaveBeenCalledWith(orgId, '2026-W18', 300, KEY);
+    });
+
+    test('settlement already charged (guard refuses) → returns the week doc', async () => {
+      const existing = makeUsageDoc({ meterUsed: 300 });
+      arrange({ meterQuota: 1000, cachedBalance: 0, existingDoc: existing });
+      mockExtraBalanceRepository.findLedgerEntryByRefId.mockResolvedValue({ kind: 'adjustment', amount: 300, refId: KEY });
+      mockUsageRepository.applySettlementUsage.mockResolvedValue(null);
+
+      const result = await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
+
+      expect(result).toBe(existing);
+    });
+
+    test('E11000 on insert → reuses the winner doc and still settles', async () => {
+      arrange({ meterQuota: 1000, cachedBalance: -300 });
+      const winner = makeUsageDoc();
+      mockUsageRepository.findByWeek.mockResolvedValueOnce(null).mockResolvedValueOnce(winner);
+      const e11000 = Object.assign(new Error('E11000 duplicate key'), { code: 11000 });
+      mockUsageRepository.upsertWeekSnapshot.mockRejectedValue(e11000);
+
+      await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
+
+      expect(mockUsageRepository.applySettlementUsage).toHaveBeenCalledWith(orgId, '2026-W18', 300, KEY);
+    });
+
+    test('non-duplicate insert error is rethrown before any credit', async () => {
+      arrange({ meterQuota: 1000, cachedBalance: -300 });
+      mockUsageRepository.upsertWeekSnapshot.mockRejectedValue(new Error('write failed'));
+
+      await expect(BillingResetService.resetWeek(orgId, new Date('2026-04-27'))).rejects.toThrow('write failed');
+      expect(mockExtraBalanceRepository.creditCompensation).not.toHaveBeenCalled();
+      expect(mockUsageRepository.applySettlementUsage).not.toHaveBeenCalled();
+    });
+
+    test('ignores a non-adjustment entry under the settlement refId', async () => {
+      arrange({ meterQuota: 1000, cachedBalance: 0 });
+      mockExtraBalanceRepository.findLedgerEntryByRefId.mockResolvedValue({ kind: 'debit', amount: -300, refId: KEY });
+
+      await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
+
+      expect(mockUsageRepository.applySettlementUsage).not.toHaveBeenCalled();
+    });
+
+    test('credit failure is logged, week stays at meterUsed = 0', async () => {
+      const { snapshot } = arrange({ meterQuota: 1000, cachedBalance: -300 });
+      mockExtraBalanceRepository.creditCompensation.mockRejectedValue(new Error('db down'));
+
+      const result = await BillingResetService.resetWeek(orgId, new Date('2026-04-27'));
+
+      // Credit failed → no ledger entry → nothing charged; the next reset retries the settlement.
+      expect(snapshot().meterUsed).toBe(0);
+      expect(mockUsageRepository.applySettlementUsage).not.toHaveBeenCalled();
+      expect(result).toEqual(expect.objectContaining({ meterUsed: 0 }));
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining('settlement credit failed'),
+        expect.objectContaining({ orgId, weekKey: '2026-W18', settle: 300 }),
+      );
     });
   });
 
