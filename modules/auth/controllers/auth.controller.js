@@ -484,6 +484,13 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
         });
       }
     }
+    // Marks THIS resolution as a brand-new account (branch 4 only — never set
+    // on branches 1-3, which resolve to an existing/linked user). Non-enumerable
+    // so it never leaks into a JSON response or a DB write; the OAuth strategy
+    // wrappers (google.js/apple.js) read it to decide whether to report
+    // `created: true` to passport's verify callback (issue #4115 follow-up —
+    // org provisioning must fire only for a genuine new signup, see oauthCallback).
+    Object.defineProperty(createdUser, '_isOAuthSignup', { value: true, enumerable: false, configurable: true });
     return createdUser;
   } catch (err) {
     if (err instanceof AppError) throw err;
@@ -600,7 +607,7 @@ const oauthCallback = async (req, res, next) => {
   // try/catch, any throw past the org-provisioning branch (which owns its own
   // best-effort catch) would become an unhandled rejection instead of the
   // client-facing error redirect every other failure in this callback gets.
-  return passport.authenticate(strategy, async (err, user) => {
+  return passport.authenticate(strategy, async (err, user, info) => {
     try {
       if (err) {
         logOAuthCallbackFailure(strategy, err);
@@ -610,16 +617,21 @@ const oauthCallback = async (req, res, next) => {
         logOAuthCallbackFailure(strategy, null);
         return oauthErrorRedirect(res, null, 'Could not define user in oAuth');
       }
-      // Org provisioning parity with local signup/verifyEmail (issue #4115): an
-      // OAuth signup never went through either path, so it never provisioned a
-      // workspace and the user landed on the org-required page. Only when the
-      // resolved user has no active org — covers new OAuth signups and any
-      // account left orphaned by this bug (self-heals, no backfill migration
-      // needed) — on every other resolution (existing/linked user already
-      // carrying a currentOrganization) this is a no-op, zero extra queries or
-      // events on a normal login. Best-effort, same pattern as `verifyEmail`
-      // above (#3762/#3765): a provisioning failure must never break the redirect.
-      if (!user.currentOrganization) {
+      // Org provisioning parity with local signup/verifyEmail (issue #4115): a
+      // brand-new OAuth signup never went through either path, so it never
+      // provisioned a workspace and the user landed on the org-required page.
+      // Gated on `info.created` (set by checkOAuthUserProfile's create branch,
+      // relayed through the strategy's verify callback — passport-oauth2 forwards
+      // this `info` object all the way to this custom-callback's 3rd argument)
+      // rather than "no currentOrganization": an EXISTING user who currently has
+      // no org (removed from their org, org deleted, a pending join request —
+      // local signin already treats this as valid and never provisions) must not
+      // be silently handed a fresh workspace on every OAuth login. Only a genuine
+      // new signup provisions; every other resolution (existing/linked user, with
+      // or without a current org) is a no-op, zero extra queries or events. Best-
+      // effort, same pattern as `verifyEmail` above (#3762/#3765): a provisioning
+      // failure must never break the redirect.
+      if (info?.created) {
         try {
           await AuthOrganizationService.handleSignupOrganization(user);
         } catch (orgErr) {
@@ -636,6 +648,14 @@ const oauthCallback = async (req, res, next) => {
       return res.redirect(302, `${getBaseUrl()}/token`);
     } catch (callbackErr) {
       logOAuthCallbackFailure(strategy, callbackErr);
+      // If a throw happens after the success redirect already started writing
+      // (e.g. a future statement added between res.cookie and res.redirect),
+      // headers may already be sent — a second oauthErrorRedirect() would either
+      // throw again (ERR_HTTP_HEADERS_SENT, re-creating the exact unhandled-
+      // rejection risk the outer try/catch exists to prevent) or send garbage
+      // after the real response. Log only in that case; the client already got
+      // its redirect.
+      if (res.headersSent) return;
       return oauthErrorRedirect(res, callbackErr, 'oAuth error');
     }
   })(req, res, next);

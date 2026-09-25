@@ -18,7 +18,8 @@ const callbackURL = `${config.api.protocol}://${config.api.host}${config.api.por
  * @param {string} refreshToken - Apple refresh token
  * @param {Object} decodedIdToken - Decoded Apple ID token
  * @param {Object} profile - Apple profile (may be empty on repeat sign-ins)
- * @param {Function} cb - Passport callback (err, user)
+ * @param {Function} cb - Passport callback (err, user, info) — `info.created` tells
+ *   oauthCallback whether this resolution is a brand-new signup (see auth.controller.js)
  * @returns {Promise<void>}
  */
 const prepare = async (req, accessToken, refreshToken, decodedIdToken, profile, cb) => {
@@ -42,7 +43,7 @@ const prepare = async (req, accessToken, refreshToken, decodedIdToken, profile, 
   // Save the user OAuth profile
   try {
     const user = await auth.checkOAuthUserProfile(_profile, 'sub', 'apple');
-    return cb(null, user);
+    return cb(null, user, { created: !!user._isOAuthSignup });
   } catch (err) {
     return cb(err);
   }

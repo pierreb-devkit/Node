@@ -8,19 +8,24 @@ import { jest, describe, test, expect, beforeEach } from '@jest/globals';
  * wiring (issue #4115). Mirrors auth.verifyEmail.signup-org.unit.tests.js.
  *
  * Verifies that:
- *  1. oauthCallback calls handleSignupOrganization when the resolved user has
- *     no currentOrganization (new OAuth signup, or an account orphaned by
- *     this bug before the fix).
- *  2. oauthCallback does NOT call handleSignupOrganization when the resolved
- *     user already has a currentOrganization (normal login — no extra
- *     queries/events).
- *  3. oauthCallback does NOT call handleSignupOrganization on the err/!user
+ *  1. oauthCallback calls handleSignupOrganization when passport's `info`
+ *     reports a brand-new signup (`info.created`, set by checkOAuthUserProfile's
+ *     create branch and relayed by the strategy — see google.js/apple.js).
+ *  2. oauthCallback does NOT call handleSignupOrganization for an EXISTING
+ *     user, even with no currentOrganization (e.g. removed from their org, or
+ *     a pending join request — local signin already treats this as valid and
+ *     never provisions; this must not silently hand them a fresh workspace).
+ *  3. oauthCallback does NOT call handleSignupOrganization for an existing
+ *     user who already has a currentOrganization (normal login).
+ *  4. oauthCallback does NOT call handleSignupOrganization on the err/!user
  *     failure paths.
- *  4. A provisioning rejection is best-effort: the TOKEN cookie is still set
+ *  5. A provisioning rejection is best-effort: the TOKEN cookie is still set
  *     and the response still redirects to /token.
- *  5. A throw past the org-provisioning branch (anything else in the
+ *  6. A throw past the org-provisioning branch (anything else in the
  *     callback) is caught by the outer handler, not left as an unhandled
  *     rejection (passport.authenticate() never awaits this callback).
+ *  7. A throw that happens AFTER the success redirect already sent headers
+ *     does not attempt a second redirect (headersSent guard).
  */
 describe('auth.controller oauthCallback — handleSignupOrganization wiring:', () => {
   let mockPassport;
@@ -154,9 +159,9 @@ describe('auth.controller oauthCallback — handleSignupOrganization wiring:', (
     return { res, cookies, redirectCalls };
   };
 
-  test('calls handleSignupOrganization when the resolved user has no currentOrganization', async () => {
+  test('calls handleSignupOrganization when passport reports a newly created user (info.created)', async () => {
     const user = { id: 'user_001', currentOrganization: null };
-    mockPassport.authenticate.mockImplementation((strategy, callback) => () => callback(null, user));
+    mockPassport.authenticate.mockImplementation((strategy, callback) => () => callback(null, user, { created: true }));
 
     const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
     const req = { params: { strategy: 'google' }, body: {} };
@@ -171,8 +176,43 @@ describe('auth.controller oauthCallback — handleSignupOrganization wiring:', (
     expect(redirectCalls[0].url).toMatch(/\/token$/);
   });
 
+  test('does not call handleSignupOrganization for an EXISTING user with no currentOrganization (e.g. a pending join request)', async () => {
+    // info.created is false/absent — checkOAuthUserProfile resolved to an
+    // existing/linked user (branches 1-3), not a new signup — even though
+    // this user happens to have no currentOrganization right now.
+    const user = { id: 'user_001b', currentOrganization: null };
+    mockPassport.authenticate.mockImplementation((strategy, callback) => () => callback(null, user, { created: false }));
+
+    const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
+    const req = { params: { strategy: 'google' }, body: {} };
+    const { res, cookies, redirectCalls } = buildRes();
+
+    await AuthController.oauthCallback(req, res, () => {});
+
+    expect(handleSignupOrganizationMock).not.toHaveBeenCalled();
+    expect(cookies.TOKEN).toBeDefined();
+    expect(redirectCalls[0]).toMatchObject({ code: 302 });
+  });
+
   test('does not call handleSignupOrganization when the resolved user already has a currentOrganization', async () => {
     const user = { id: 'user_002', currentOrganization: 'org_existing' };
+    mockPassport.authenticate.mockImplementation((strategy, callback) => () => callback(null, user, { created: false }));
+
+    const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
+    const req = { params: { strategy: 'google' }, body: {} };
+    const { res, cookies, redirectCalls } = buildRes();
+
+    await AuthController.oauthCallback(req, res, () => {});
+
+    expect(handleSignupOrganizationMock).not.toHaveBeenCalled();
+    expect(cookies.TOKEN).toBeDefined();
+    expect(redirectCalls[0]).toMatchObject({ code: 302 });
+  });
+
+  test('does not call handleSignupOrganization when passport supplies no info object at all', async () => {
+    // Defensive: a future/alternate strategy wiring that omits the 3rd `info`
+    // argument entirely must fail closed (no provisioning), not throw.
+    const user = { id: 'user_002b', currentOrganization: null };
     mockPassport.authenticate.mockImplementation((strategy, callback) => () => callback(null, user));
 
     const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
@@ -215,7 +255,7 @@ describe('auth.controller oauthCallback — handleSignupOrganization wiring:', (
   test('a provisioning rejection is best-effort: cookie is still set and it still redirects to /token', async () => {
     handleSignupOrganizationMock.mockRejectedValue(new Error('org boom'));
     const user = { id: 'user_003', currentOrganization: null };
-    mockPassport.authenticate.mockImplementation((strategy, callback) => () => callback(null, user));
+    mockPassport.authenticate.mockImplementation((strategy, callback) => () => callback(null, user, { created: true }));
 
     const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
     const req = { params: { strategy: 'google' }, body: {} };
@@ -249,5 +289,33 @@ describe('auth.controller oauthCallback — handleSignupOrganization wiring:', (
     expect(cookies.TOKEN).toBeUndefined();
     expect(redirectCalls[0]).toMatchObject({ code: 302 });
     expect(redirectCalls[0].url).toMatch(/\/token/);
+  });
+
+  test('a throw AFTER the success redirect already sent headers does not attempt a second redirect (headersSent guard)', async () => {
+    const user = { id: 'user_005', currentOrganization: 'org_existing' };
+    mockPassport.authenticate.mockImplementation((strategy, callback) => () => callback(null, user, { created: false }));
+
+    const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
+    const req = { params: { strategy: 'google' }, body: {} };
+    const cookies = {};
+    const redirectCalls = [];
+    const res = {
+      headersSent: false,
+      cookie(name, val, opts) { cookies[name] = { val, opts }; return this; },
+      // Simulates the success res.redirect() itself starting to write the
+      // response (headersSent flips true) before throwing — an edge case a
+      // future statement between res.cookie and res.redirect could introduce.
+      redirect(code, url) {
+        this.headersSent = true;
+        redirectCalls.push({ code, url });
+        throw new Error('simulated failure after headers were already sent');
+      },
+    };
+
+    // Must not throw / must not attempt a second, conflicting redirect.
+    await AuthController.oauthCallback(req, res, () => {});
+
+    expect(handleSignupOrganizationMock).not.toHaveBeenCalled();
+    expect(redirectCalls).toHaveLength(1); // only the original attempt — no error-envelope redirect appended
   });
 });
