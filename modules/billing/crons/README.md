@@ -13,7 +13,7 @@ No `node-cron` dependency — orchestration is handled by Kubernetes CronJob man
 | Script | Purpose | Recommended schedule |
 |--------|---------|----------------------|
 | `billing.weeklyReset.js` | Reset meter counters for orgs whose billing period rolled over | Daily `0 1 * * *` |
-| `billing.extrasExpiration.js` | Expire topup ledger entries past their `expiresAt` date | Daily `0 2 * * *` |
+| `billing.extrasExpiration.js` | Expire topup ledger entries past their `expiresAt` date (removes only each pack's own unspent units) | Daily `0 2 * * *` |
 | `billing.dunningSweep.js` | Downgrade stale `past_due` subs (>14d) to `unpaid` + `free` | Daily `0 3 * * *` |
 | `billing.referralReconcile.js` | Back-fill referral grants missed by the in-process `invitation.accepted` listener (#3842) | Daily `0 4 * * *` |
 
