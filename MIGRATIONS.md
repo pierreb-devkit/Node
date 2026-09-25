@@ -4,6 +4,24 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Organizations: welcome email now sent after signup provisioning (2026-09-25)
+
+Every successful signup that provisions a workspace — organizations enabled or
+disabled — now fires a fire-and-forget `welcome` email to the new user. Never
+sent on the A4 convergence path (existing membership) and never on the manual
+"create another org" flow, so it fires exactly once per real new workspace.
+Gated on `mailer.isConfigured()`: a disabled mailer, a synchronous throw, or a
+rejected send can never break or delay the signup / OAuth redirect response.
+
+**What you will see:** every new signup receives a welcome email once the
+mailer is configured. To opt out, set `organizations.welcomeEmail.enabled:
+false` in the project config (default `true`, fail-open — read with `?? true`
+so an absent key never silently disables it). To customize the copy, edit the
+same-named template at `config/templates/welcome.html` (`{{displayName}}`,
+`{{appName}}`, `{{url}}`, `{{appContact}}`, and an optional
+`{{#if orgName}}` block, omitted in B2C mode). No schema change, no migration
+to run.
+
 ## Billing: public plans listing now requires a plan tag (2026-09-25)
 
 `GET /api/billing/plans` no longer falls back to a Stripe product's raw id when

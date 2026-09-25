@@ -138,12 +138,20 @@ const createOrganizationForUser = async ({ name, slug, domain, user, slugGenerat
  * @param {Object} user - The newly signed-up user (id/_id, email, firstName, lastName).
  * @param {string} [orgName] - Organization display name. Omitted in B2C mode
  *   (organizations disabled) — the template must not require it.
+ * @param {string} [orgId] - Organization id, for failure logging only (never
+ *   passed to the template) — always in scope, including B2C mode.
  * @returns {void}
  */
-const sendWelcomeEmail = (user, orgName) => {
+const sendWelcomeEmail = (user, orgName, orgId) => {
   if (!(config.organizations?.welcomeEmail?.enabled ?? true)) return;
   if (!mailer.isConfigured()) return;
-  const onError = (err) => logger.warn('organizations: welcome email failed', { message: err?.message, stack: err?.stack });
+  const userId = user.id || user._id;
+  const onError = (err) => logger.warn('organizations: welcome email failed', {
+    userId: userId ? String(userId) : undefined,
+    ...(orgId ? { orgId: String(orgId) } : {}),
+    message: err?.message,
+    stack: err?.stack,
+  });
   try {
     mailer.sendMail({
       template: 'welcome',
@@ -276,7 +284,7 @@ const handleSignupOrganization = async (user) => {
     emitProvisioned(organization);
     const result = await buildResult(organization, membership);
     // B2C mode — the workspace is a hidden default, never named to the user.
-    sendWelcomeEmail(user);
+    sendWelcomeEmail(user, undefined, organization._id);
     return result;
   }
 
@@ -333,7 +341,7 @@ const handleSignupOrganization = async (user) => {
 
   emitProvisioned(organization);
   const result = await buildResult(organization, membership);
-  sendWelcomeEmail(user, organization.name);
+  sendWelcomeEmail(user, organization.name, organization._id);
   return {
     ...result,
     ...(suggestedJoin ? { suggestedJoin } : {}),

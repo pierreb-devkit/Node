@@ -193,8 +193,8 @@ describe('handleSignupOrganization — welcome email (Node#4116):', () => {
     expect(mockSendMail).not.toHaveBeenCalled();
   });
 
-  test('a rejecting sendMail does not break signup', async () => {
-    setupConfig({ enabled: true });
+  test('a rejecting sendMail does not break signup — failure is traceable (userId + orgId)', async () => {
+    const fakeOrg = setupConfig({ enabled: true });
     mockSendMail.mockRejectedValueOnce(new Error('smtp down'));
     const user = makeUser('frank@example.com');
 
@@ -204,7 +204,26 @@ describe('handleSignupOrganization — welcome email (Node#4116):', () => {
 
     expect(result.organization).not.toBeNull();
     expect(mockSendMail).toHaveBeenCalledTimes(1);
-    expect(mockLoggerWarn).toHaveBeenCalledWith('organizations: welcome email failed', expect.objectContaining({ message: 'smtp down' }));
+    expect(mockLoggerWarn).toHaveBeenCalledWith('organizations: welcome email failed', expect.objectContaining({
+      message: 'smtp down',
+      userId: user.id,
+      orgId: String(fakeOrg._id),
+    }));
+  });
+
+  test('a rejecting sendMail in B2C mode still logs orgId (hidden default org is in scope)', async () => {
+    const fakeOrg = setupConfig({ enabled: false });
+    mockSendMail.mockRejectedValueOnce(new Error('smtp down'));
+    const user = makeUser('heidi@example.com');
+
+    const result = await OrganizationsService.handleSignupOrganization(user);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(result.organization).not.toBeNull();
+    expect(mockLoggerWarn).toHaveBeenCalledWith('organizations: welcome email failed', expect.objectContaining({
+      userId: user.id,
+      orgId: String(fakeOrg._id),
+    }));
   });
 
   test('a sendMail call that does not return a promise does not break signup', async () => {
