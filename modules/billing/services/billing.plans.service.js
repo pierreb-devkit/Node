@@ -69,41 +69,46 @@ const fetchPlansFromStripe = async (stripe) => {
   // billing misrouting — warn explicitly with both plan IDs + the duplicate price ID.
   const priceIdToPlanIds = {};
 
-  const plans = products.map((product) => {
-    const productPrices = pricesByProduct[product.id] || [];
-    const planId = product.metadata?.planId || product.id;
+  // Only products explicitly tagged with metadata.planId are plans. Everything else
+  // active in the Stripe account (one-time packs, products sold outside the plans
+  // catalogue via a Payment Link, ...) is not part of the public plans listing.
+  const plans = products
+    .filter((product) => Boolean(product.metadata?.planId))
+    .map((product) => {
+      const productPrices = pricesByProduct[product.id] || [];
+      const planId = product.metadata.planId;
 
-    let monthlyPrice = 0;
-    let annualPrice = 0;
-    let stripePriceMonthly = null;
-    let stripePriceAnnual = null;
+      let monthlyPrice = 0;
+      let annualPrice = 0;
+      let stripePriceMonthly = null;
+      let stripePriceAnnual = null;
 
-    // Expects one active price per interval per product; last match wins if duplicates exist
-    for (const price of productPrices) {
-      const amount = typeof price.unit_amount === 'number' ? price.unit_amount : 0;
-      if (price.recurring?.interval === 'month') {
-        monthlyPrice = amount / 100;
-        stripePriceMonthly = price.id;
-      } else if (price.recurring?.interval === 'year') {
-        annualPrice = amount / 100;
-        stripePriceAnnual = price.id;
+      // Expects one active price per interval per product; last match wins if duplicates exist
+      for (const price of productPrices) {
+        const amount = typeof price.unit_amount === 'number' ? price.unit_amount : 0;
+        if (price.recurring?.interval === 'month') {
+          monthlyPrice = amount / 100;
+          stripePriceMonthly = price.id;
+        } else if (price.recurring?.interval === 'year') {
+          annualPrice = amount / 100;
+          stripePriceAnnual = price.id;
+        }
+        // Track price-to-plan mapping for duplicate detection
+        if (price.id) {
+          if (!priceIdToPlanIds[price.id]) priceIdToPlanIds[price.id] = [];
+          priceIdToPlanIds[price.id].push(planId);
+        }
       }
-      // Track price-to-plan mapping for duplicate detection
-      if (price.id) {
-        if (!priceIdToPlanIds[price.id]) priceIdToPlanIds[price.id] = [];
-        priceIdToPlanIds[price.id].push(planId);
-      }
-    }
 
-    return {
-      planId,
-      name: product.name,
-      monthlyPrice,
-      annualPrice,
-      stripePriceMonthly,
-      stripePriceAnnual,
-    };
-  });
+      return {
+        planId,
+        name: product.name,
+        monthlyPrice,
+        annualPrice,
+        stripePriceMonthly,
+        stripePriceAnnual,
+      };
+    });
 
   // Emit explicit warn for any Stripe price ID mapped to more than one plan.
   // This is a Stripe account configuration error that causes silent billing misrouting.

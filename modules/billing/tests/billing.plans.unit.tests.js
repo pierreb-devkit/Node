@@ -126,7 +126,7 @@ describe('Billing plans service unit tests:', () => {
     expect(plans[1].planId).toBe('pro');
   });
 
-  test('should fall back to product id when metadata planId is missing', async () => {
+  test('should drop products without metadata.planId instead of falling back to the raw product id', async () => {
     mockStripeInstance.products.list.mockReturnValue(mockListResult([{ id: 'prod_basic', name: 'Basic', metadata: {} }]));
     mockStripeInstance.prices.list.mockReturnValue(mockListResult([]));
 
@@ -134,7 +134,50 @@ describe('Billing plans service unit tests:', () => {
     BillingPlansService = mod.default;
 
     const plans = await BillingPlansService.getPlans();
-    expect(plans[0].planId).toBe('prod_basic');
+    expect(plans).toHaveLength(0);
+  });
+
+  test('should drop a product whose metadata exists but has no planId key', async () => {
+    mockStripeInstance.products.list.mockReturnValue(
+      mockListResult([{ id: 'prod_untagged', name: 'Untagged', metadata: { other: 'value' } }]),
+    );
+    mockStripeInstance.prices.list.mockReturnValue(mockListResult([]));
+
+    const mod = await import('../services/billing.plans.service.js');
+    BillingPlansService = mod.default;
+
+    const plans = await BillingPlansService.getPlans();
+    expect(plans).toHaveLength(0);
+  });
+
+  test('mixed catalogue: plan products + a one-time product + a recurring product without planId → only planId products returned', async () => {
+    mockStripeInstance.products.list.mockReturnValue(
+      mockListResult([
+        { id: 'prod_pro', name: 'Pro', metadata: { planId: 'pro' } },
+        { id: 'prod_starter', name: 'Starter', metadata: { planId: 'starter' } },
+        // One-time product sold through the extras endpoint (e.g. a compute pack) — no planId.
+        { id: 'prod_pack', name: 'Compute Pack', metadata: {} },
+        // Recurring product sold outside the plans catalogue (e.g. via a Payment Link) — no planId.
+        { id: 'prod_manual_recurring', name: 'Manually Sold Enterprise', metadata: {} },
+      ]),
+    );
+    mockStripeInstance.prices.list.mockReturnValue(
+      mockListResult([
+        { product: 'prod_pro', recurring: { interval: 'month' }, unit_amount: 2900, id: 'price_pro_m' },
+        { product: 'prod_starter', recurring: { interval: 'month' }, unit_amount: 900, id: 'price_starter_m' },
+        // One-time price — no `recurring` field.
+        { product: 'prod_pack', unit_amount: 5000, id: 'price_pack' },
+        { product: 'prod_manual_recurring', recurring: { interval: 'month' }, unit_amount: 9900, id: 'price_manual_m' },
+      ]),
+    );
+
+    const mod = await import('../services/billing.plans.service.js');
+    BillingPlansService = mod.default;
+
+    const plans = await BillingPlansService.getPlans();
+    expect(plans).toHaveLength(2);
+    expect(plans.map((p) => p.planId).sort()).toEqual(['pro', 'starter']);
+    expect(plans.every((p) => Boolean(p.planId))).toBe(true);
   });
 
   test('should use cached plans on second call', async () => {
