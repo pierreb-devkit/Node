@@ -17,6 +17,10 @@ const config = {
     //     is always auto-provisioned (same path as a mailer-not-configured env).
     // emailVerified stays server-only; this policy only gates the existing checks.
     emailVerification: { mode: 'strict' },
+    // Fail-open: read with `?? true` at the call site so an absent key (a
+    // downstream project that predates this option) never silently disables
+    // the welcome email — only an explicit `false` does.
+    welcomeEmail: { enabled: true },
     roles: ['owner', 'admin', 'member'],
     roleDescriptions: {
       owner: 'Full control — manage organization settings, members, roles, and billing.',

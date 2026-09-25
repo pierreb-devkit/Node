@@ -19,7 +19,7 @@ import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 
 const mockIsConfigured = jest.fn().mockReturnValue(false);
 jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
-  default: { isConfigured: mockIsConfigured },
+  default: { isConfigured: mockIsConfigured, sendMail: jest.fn().mockResolvedValue(null) },
 }));
 
 const mockOrgCreate = jest.fn();
