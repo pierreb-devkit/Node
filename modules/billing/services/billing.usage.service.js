@@ -92,6 +92,9 @@ const reset = (organizationId) => UsageRepository.reset(organizationId, currentM
  *              4. If quota is exceeded, debits extras balance directly (atomic single-doc).
  *                 On debit failure, logs a warning — usage is already counted.
  *              5. Detects configured threshold crossings (emits meter.threshold_crossed event, once per cycle).
+ *              6. On a one-shot signup-grant plan (meterQuota=0), detects extras-balance
+ *                 threshold crossings against the debit's own pre/post balance and emits
+ *                 billing.extras.balance_threshold_crossed (stateless, re-fires after a credit).
  *
  *              Returns applied=false when the idempotencyKey was already consumed (replay).
  *
@@ -216,6 +219,51 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
             logger.error('[billing.usage] billing.extras.runaway_debit listener failed', {
               error: evtErr?.message ?? String(evtErr),
             });
+          }
+        }
+
+        // Credit-balance alerts (#4117) — plans without a weekly quota (meterQuota=0,
+        // a one-shot signupGrant). There is no weekly usage doc to dedup against here
+        // (alertedAt80/alertedAt100 are scoped to a week and would re-fire every week
+        // against a lifetime balance — see billing.email.js), so this is stateless:
+        // detect a crossing purely from THIS debit's own pre/post balance snapshot.
+        // A later credit (pack, referral) that pushes the balance back above a level
+        // lets the next crossing alert again — intended.
+        // Limitation: "% of grant" only makes sense for the one-shot signup grant; once
+        // a pack tops up the same cachedBalance the denominator is ambiguous, so this is
+        // scoped to the signup-grant case only (see README.md).
+        if (
+          effectiveQuota === 0
+          && Number.isFinite(activePlan?.signupGrant)
+          && activePlan.signupGrant > 0
+        ) {
+          const post = currentBalance;
+          const pre = post + extrasConsumed;
+          // DESC order (100 before 80, from getAlertThresholdPercents()) — emit only the
+          // deepest crossing per debit (one debit crossing both levels → one email).
+          for (const threshold of getAlertThresholdPercents()) {
+            // Credit-balance alerts support only 80%/100% — reuse the weekly-quota
+            // alertedAtN schema fields (thresholdFields, above) as the single source
+            // of truth for the supported set, instead of a second duplicated list.
+            if (!thresholdFields[threshold]) continue;
+            // `signupGrant * (100 - threshold) / 100`, not `(1 - threshold/100) * signupGrant` —
+            // the latter hits float imprecision at common values (e.g. 500 * (1 - 80/100) =
+            // 99.99999999999997, not 100), which would silently miss an exact boundary crossing.
+            const level = (activePlan.signupGrant * (100 - threshold)) / 100;
+            if (!(pre > level && post <= level)) continue;
+            try {
+              billingEvents.emit('billing.extras.balance_threshold_crossed', {
+                organizationId,
+                threshold,
+                remaining: Math.max(0, post),
+                planId,
+              });
+            } catch (evtErr) {
+              logger.error('[billing.usage] billing.extras.balance_threshold_crossed listener failed', {
+                error: evtErr?.message ?? String(evtErr),
+              });
+            }
+            break;
           }
         }
       }

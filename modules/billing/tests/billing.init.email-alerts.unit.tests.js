@@ -299,6 +299,149 @@ describe('billing.email setupBillingEmails listeners:', () => {
     });
   });
 
+  // ── billing.extras.balance_threshold_crossed ─────────────────────────────
+
+  describe('billing.extras.balance_threshold_crossed listener', () => {
+    test('sends credit-warning email when threshold=80 and mailer configured', async () => {
+      expect(typeof listeners['billing.extras.balance_threshold_crossed']).toBe('function');
+      listeners['billing.extras.balance_threshold_crossed']({
+        organizationId: orgId,
+        threshold: 80,
+        remaining: 100,
+        planId: 'free',
+      });
+
+      await new Promise((r) => setImmediate(r));
+
+      expect(mockMembershipRepository.list).toHaveBeenCalledWith(
+        expect.objectContaining({ organizationId: orgId }),
+      );
+      expect(mockMailer.sendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: 'owner@test.com',
+          subject: expect.stringContaining('credits are running low'),
+          template: 'billing-credit-warning',
+          params: expect.objectContaining({ remaining: 100 }),
+        }),
+      );
+    });
+
+    test('sends credit-exhausted email when threshold=100', async () => {
+      listeners['billing.extras.balance_threshold_crossed']({
+        organizationId: orgId,
+        threshold: 100,
+        remaining: 0,
+        planId: 'free',
+      });
+
+      await new Promise((r) => setImmediate(r));
+
+      expect(mockMailer.sendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: 'owner@test.com',
+          subject: expect.stringContaining('out of credits'),
+          template: 'billing-credit-exhausted',
+          params: expect.objectContaining({ remaining: 0 }),
+        }),
+      );
+    });
+
+    test('subject includes appName from config.app.title, never the org id/name', async () => {
+      listeners['billing.extras.balance_threshold_crossed']({
+        organizationId: orgId,
+        threshold: 80,
+        remaining: 50,
+        planId: 'free',
+      });
+
+      await new Promise((r) => setImmediate(r));
+
+      const call = mockMailer.sendMail.mock.calls[0][0];
+      expect(call.subject).toEqual(expect.stringContaining('MyApp'));
+      expect(call.subject).not.toEqual(expect.stringContaining(orgId));
+      expect(JSON.stringify(call.params)).not.toContain(orgId);
+    });
+
+    test('skips email when threshold is neither 80 nor 100', async () => {
+      listeners['billing.extras.balance_threshold_crossed']({
+        organizationId: orgId,
+        threshold: 60,
+        remaining: 200,
+        planId: 'free',
+      });
+
+      await new Promise((r) => setImmediate(r));
+
+      expect(mockMailer.sendMail).not.toHaveBeenCalled();
+    });
+
+    test('skips email when mailer is not configured', async () => {
+      mockMailer.isConfigured.mockReturnValue(false);
+
+      listeners['billing.extras.balance_threshold_crossed']({
+        organizationId: orgId,
+        threshold: 80,
+        remaining: 100,
+        planId: 'free',
+      });
+
+      await new Promise((r) => setImmediate(r));
+
+      expect(mockMailer.sendMail).not.toHaveBeenCalled();
+    });
+
+    test('skips email when no owner/admin emails found', async () => {
+      mockMembershipRepository.list.mockResolvedValue([]);
+
+      listeners['billing.extras.balance_threshold_crossed']({
+        organizationId: orgId,
+        threshold: 80,
+        remaining: 100,
+        planId: 'free',
+      });
+
+      await new Promise((r) => setImmediate(r));
+
+      expect(mockMailer.sendMail).not.toHaveBeenCalled();
+    });
+
+    test('includes billingUrl built from config.app.url', async () => {
+      listeners['billing.extras.balance_threshold_crossed']({
+        organizationId: orgId,
+        threshold: 80,
+        remaining: 100,
+        planId: 'free',
+      });
+
+      await new Promise((r) => setImmediate(r));
+
+      expect(mockMailer.sendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          params: expect.objectContaining({ billingUrl: 'https://myapp.example.com/billing' }),
+        }),
+      );
+    });
+
+    test('logs error but does not throw when sendMail rejects', async () => {
+      mockMailer.sendMail.mockRejectedValue(new Error('SMTP error'));
+
+      listeners['billing.extras.balance_threshold_crossed']({
+        organizationId: orgId,
+        threshold: 100,
+        remaining: 0,
+        planId: 'free',
+      });
+
+      await new Promise((r) => setImmediate(r));
+      await new Promise((r) => setImmediate(r));
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining('email failed'),
+        expect.objectContaining({ error: 'SMTP error' }),
+      );
+    });
+  });
+
   // ── payment.failed ────────────────────────────────────────────────────────
 
   describe('payment.failed listener', () => {

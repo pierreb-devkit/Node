@@ -110,6 +110,37 @@ Consumers wanting clean-break behavior on downgrade should pass `{ preserveUsage
 - **Runaway detector:** the negative-balance alert (`billing.extras.runaway_debit`) only fires on plans with a weekly quota (`meterQuota > 0`).
 - **Overflow debt is repaid once per week.** Units consumed past the quota are debited from extras, which may go negative. On each `resetWeek` (weeks with a quota > 0 only) it repays debt from the target week's REMAINING quota: `settle = min(meterQuota − meterUsed, overflowDebt)` — the week is often already partly used, since the cron anchors on the current time. Extras are credited `settle` via an `adjustment` entry with refId `settle:<weekKey>`, then the week doc is charged that stored credit once (`meterUsed += settle`, guarded by the `settle:<weekKey>` key in `consumedAttributionKeys`) — a re-run, retry or concurrent reset never credits or charges twice. What does not fit stays as debt for the next reset. Refund debt and pack-expiry shortfall (the part of a pack clawback or a pack expiry that took the balance below zero) are never settled from quota — only a new pack repays them. The expiry sweep removes only a pack's own unspent units at its `expiresAt` (spending is attributed earliest-expiry-first; a fully spent pack gets a zero-amount marker, hidden from the customer ledger), so new expiries only create debt for usage recorded between a pack's `expiresAt` and the sweep (that part is never settled from quota); legacy full-amount expiration entries are left as is. Plans with `meterQuota = 0` are unchanged.
 
+## Credit-balance alerts (plans without a weekly quota)
+
+A plan with `meterQuota: 0` and a one-shot `signupGrant` (e.g. the stack default `free`
+plan) has no weekly usage doc to alert against — every unit is debited straight from
+`BillingExtraBalance.cachedBalance`, so that balance IS the limit. `incrementMeter` detects
+crossings of the configured `billing.alerts.thresholdPercents` (filtered to 80/100, same
+supported set as the weekly-quota alerts) against `plan.signupGrant * (100 - threshold) / 100`
+(not `(1 - threshold/100) * signupGrant` — that form hits float imprecision at common values,
+e.g. `500 * (1 - 80/100) = 99.99999999999997`, silently missing an exact boundary crossing),
+comparing the debit's own pre/post balance, and emits `billing.extras.balance_threshold_crossed`
+(`{ organizationId, threshold, remaining, planId }`). `billing.email.js` sends a
+credit-warning (80%) or credit-exhausted (100%) email off of it.
+
+- **Stateless — no `alertedAtN` field.** The weekly `alertedAt80`/`alertedAt100` fields
+  are scoped to a week and would re-fire every week against a lifetime balance, so this
+  path re-derives the crossing from the debit itself each time. A pack or referral credit
+  that pushes the balance back above a level means the next crossing alerts again — intended.
+- **Accepted limitation — "% of grant" only fits the signup grant.** Once a pack purchase
+  tops up the same `cachedBalance`, "percent of grant remaining" is ambiguous, so this only
+  applies when `meterQuota === 0` and the plan has a valid `signupGrant`. Copy always speaks
+  in absolute credits left, never a percentage.
+- **Accepted limitation — expiry and refunds don't alert.** A balance drop from a pack
+  expiring (`crons/billing.extrasExpiration.js`) or a refund (`billing.refund.service.js`)
+  does not go through `incrementMeter`'s debit path, so it never triggers this crossing check.
+- **Accepted limitation — a debit that fails outright never alerts either.** The crossing
+  check only runs on `debitResult.applied && debitResult.doc` (see below); if
+  `BillingExtraService.debit()` itself throws, the catch block logs a warning and the
+  usage stays counted but unreconciled — there is no retry cron anymore (the outbox
+  pattern was dropped, see "Extras debit reliability" below), so that debit never reaches
+  the crossing check and never alerts.
+
 ## Extras debit reliability
 
 `attribute()` returns optimistically after usage increment + outbox row insert. Extras debit happens out of band; if it fails, cron `retry-pending-extras-debit` reconciles on the configured retry interval. After the configured failed-attempt limit, the outbox row is marked `failed` and the configured exhausted event is emitted for alerting.
