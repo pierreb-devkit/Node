@@ -31,8 +31,10 @@ const GrantSource = z.enum(['signup_grant', 'adjustment', 'referral']);
 /**
  * Single ledger entry schema.
  * Enforces:
- *   - amount !== 0 (zero is always a bug)
- *   - sign by kind: topup/adjustment must be > 0; debit/expiration/refund must be < 0
+ *   - amount !== 0 (zero is a bug), except for kind 'expiration'
+ *   - sign by kind: topup/adjustment must be > 0; debit/refund must be < 0;
+ *     expiration must be <= 0 (0 = marker for a pack fully spent at expiry, which
+ *     records the pack as handled for the sweep's idempotency guard)
  */
 const LedgerEntry = z
   .object({
@@ -42,9 +44,10 @@ const LedgerEntry = z
      * Signed amount in meter units.
      * Positive for topup/adjustment; negative for debit/expiration/refund.
      * 'refund' entries are clawbacks (negative) reflecting reclaimed units.
-     * Zero is rejected as an operational guard (zero-amount entries are always a bug).
+     * Zero is rejected as an operational guard, except the 'expiration' marker of a
+     * pack fully spent at expiry (see superRefine below).
      */
-    amount: z.number().refine((n) => n !== 0, { message: 'Ledger entry amount must not be zero' }),
+    amount: z.number(),
     stripeSessionId: z.string().trim().optional().nullable(),
     historyId: z
       .string()
@@ -64,6 +67,14 @@ const LedgerEntry = z
   })
   .superRefine((entry, ctx) => {
     const { kind, amount } = entry;
+    if (amount === 0 && kind !== 'expiration') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Ledger entry amount must not be zero',
+        path: ['amount'],
+      });
+      return;
+    }
     if (kind === 'topup' || kind === 'adjustment') {
       if (amount <= 0) {
         ctx.addIssue({
@@ -72,7 +83,15 @@ const LedgerEntry = z
           path: ['amount'],
         });
       }
-    } else if (kind === 'debit' || kind === 'expiration' || kind === 'refund') {
+    } else if (kind === 'expiration') {
+      if (amount > 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Ledger entry of kind '${kind}' must not have a positive amount`,
+          path: ['amount'],
+        });
+      }
+    } else if (kind === 'debit' || kind === 'refund') {
       if (amount >= 0) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,

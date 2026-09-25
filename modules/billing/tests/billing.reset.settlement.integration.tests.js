@@ -252,20 +252,54 @@ describe('BillingResetService overflow debt settlement integration tests:', () =
     expect(w1.balance).toBe(0);
   });
 
-  test('pack expiry after overflow use → expiration debt is never settled', async () => {
+  test('pack expiry after overflow use → removes only the unspent part, nothing to settle', async () => {
     await Subscription.create({ organization: orgId, plan: 'pro', status: 'active' });
     await seedExtras([
       { kind: 'topup', amount: 100, stripeSessionId: 'cs_exp', expiresAt: t(3), at: t(1) },
       { kind: 'debit', amount: -80, refId: 'run-overflow-exp', at: t(2) },
     ]);
-    // The real sweep: expiry removes the FULL pack amount although 80 was consumed.
+    // The real sweep: expiry removes only the pack's own 20 unspent units.
     await expect(BillingExtraBalanceRepository.addExpirationEntries(orgId, now)).resolves.toBe(1);
-    expect((await stateAt(0)).balance).toBe(-80);
+    expect((await stateAt(0)).balance).toBe(0);
+
+    await BillingResetService.resetWeek(orgId, week(1));
+    const w1 = await stateAt(1);
+    expect(w1.meterUsed).toBe(0);
+    expect(w1.balance).toBe(0);
+    expect(w1.adjustments).toHaveLength(0);
+  });
+
+  test('legacy full-amount expiration entry → its shortfall is never settled', async () => {
+    await Subscription.create({ organization: orgId, plan: 'pro', status: 'active' });
+    const topupId = new mongoose.Types.ObjectId();
+    await seedExtras([
+      { _id: topupId, kind: 'topup', amount: 100, stripeSessionId: 'cs_exp', expiresAt: t(3), at: t(1) },
+      { kind: 'debit', amount: -80, refId: 'run-overflow-exp', at: t(2) },
+      { kind: 'expiration', amount: -100, refId: `expire-${topupId}`, at: t(4) },
+    ]);
+    // Already handled: the sweep leaves the legacy entry as is.
+    await expect(BillingExtraBalanceRepository.addExpirationEntries(orgId, now)).resolves.toBe(0);
 
     await BillingResetService.resetWeek(orgId, week(1));
     const w1 = await stateAt(1);
     expect(w1.meterUsed).toBe(0);
     expect(w1.balance).toBe(-80);
+    expect(w1.adjustments).toHaveLength(0);
+  });
+
+  test('usage after a pack expired, before the sweep → that shortfall is never settled', async () => {
+    await Subscription.create({ organization: orgId, plan: 'pro', status: 'active' });
+    await seedExtras([
+      { kind: 'topup', amount: 100, stripeSessionId: 'cs_exp', expiresAt: t(2), at: t(1) },
+      { kind: 'debit', amount: -30, refId: 'run-after-expiry', at: t(3) },
+    ]);
+    // The pack held 100 unspent units at its expiry: all 100 go.
+    await expect(BillingExtraBalanceRepository.addExpirationEntries(orgId, now)).resolves.toBe(1);
+    expect((await stateAt(0)).balance).toBe(-30);
+
+    await BillingResetService.resetWeek(orgId, week(1));
+    const w1 = await stateAt(1);
+    expect(w1.balance).toBe(-30);
     expect(w1.adjustments).toHaveLength(0);
   });
 

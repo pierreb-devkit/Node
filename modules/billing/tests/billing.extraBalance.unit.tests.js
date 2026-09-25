@@ -66,12 +66,20 @@ describe('BillingExtraBalance unit tests:', () => {
           { kind: 'adjustment', amount: 100 },
           { kind: 'debit', amount: -100 },
           { kind: 'expiration', amount: -100 },
+          { kind: 'expiration', amount: 0 },
           { kind: 'refund', amount: -100 },
         ];
         for (const entry of cases) {
           const result = schema.LedgerEntry.safeParse(entry);
           expect(result.error).toBeFalsy();
         }
+      });
+
+      test('should reject zero on every kind but expiration, and a positive expiration', () => {
+        for (const kind of ['topup', 'adjustment', 'debit', 'refund']) {
+          expect(schema.LedgerEntry.safeParse({ kind, amount: 0 }).error).toBeDefined();
+        }
+        expect(schema.LedgerEntry.safeParse({ kind: 'expiration', amount: 5 }).error).toBeDefined();
       });
 
       test('should accept negative amount for debit kind', () => {
@@ -452,9 +460,24 @@ describe('BillingExtraBalance unit tests:', () => {
 
         // Verify expiration entry references the topup id
         const call = mockModel.findOneAndUpdate.mock.calls[0];
-        expect(call[1].$push.ledger.refId).toBe(`expire-${entryId}`);
-        expect(call[1].$push.ledger.kind).toBe('expiration');
-        expect(call[1].$push.ledger.amount).toBe(-1000);
+        expect(call[0].ledger).toEqual({ $size: 1 });
+        expect(call[0]['ledger.refId']).toEqual({ $nin: [`expire-${entryId}`] });
+        expect(call[1].$push.ledger.$each).toEqual([
+          expect.objectContaining({ refId: `expire-${entryId}`, kind: 'expiration', amount: -1000 }),
+        ]);
+        expect(call[1].$inc.cachedBalance).toBe(-1000);
+      });
+
+      test('should retry on a concurrent write, then throw after the bounded attempts', async () => {
+        const past = new Date(Date.now() - 1000);
+        const doc = makeDoc({
+          ledger: [{ _id: '507f1f77bcf86cd799439abc', kind: 'topup', amount: 1000, expiresAt: past }],
+        });
+        mockModel.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(doc) });
+        mockModel.findOneAndUpdate.mockResolvedValue(null);
+
+        await expect(BillingExtraBalanceRepository.addExpirationEntries(orgId, new Date())).rejects.toThrow('ledger kept changing');
+        expect(mockModel.findOneAndUpdate).toHaveBeenCalledTimes(5);
       });
 
       test('should NOT add a second expiration entry when already expired (idempotent)', async () => {
