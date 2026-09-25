@@ -127,19 +127,11 @@ describe('Billing plans service unit tests:', () => {
   });
 
   test('should drop products without metadata.planId instead of falling back to the raw product id', async () => {
-    mockStripeInstance.products.list.mockReturnValue(mockListResult([{ id: 'prod_basic', name: 'Basic', metadata: {} }]));
-    mockStripeInstance.prices.list.mockReturnValue(mockListResult([]));
-
-    const mod = await import('../services/billing.plans.service.js');
-    BillingPlansService = mod.default;
-
-    const plans = await BillingPlansService.getPlans();
-    expect(plans).toHaveLength(0);
-  });
-
-  test('should drop a product whose metadata exists but has no planId key', async () => {
     mockStripeInstance.products.list.mockReturnValue(
-      mockListResult([{ id: 'prod_untagged', name: 'Untagged', metadata: { other: 'value' } }]),
+      mockListResult([
+        { id: 'prod_basic', name: 'Basic', metadata: {} },
+        { id: 'prod_untagged', name: 'Untagged', metadata: { other: 'value' } },
+      ]),
     );
     mockStripeInstance.prices.list.mockReturnValue(mockListResult([]));
 
