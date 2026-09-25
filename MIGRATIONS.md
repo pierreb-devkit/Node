@@ -4,6 +4,22 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Billing: public plans listing now requires a plan tag (2026-09-25)
+
+`GET /api/billing/plans` no longer falls back to a Stripe product's raw id when
+`metadata.planId` is missing. Any active Stripe product without that metadata key —
+a one-time pack, a recurring product sold outside the plans catalogue via a Payment
+Link, or anything else active in the Stripe account — disappears from the listing
+instead of showing up as a plan with a null price. Subscription/webhook plan
+resolution is unchanged: such a product still works as a normal purchase, it just no
+longer appears in `GET /api/billing/plans`.
+
+**What you will see:** any Stripe product you want listed as a plan needs
+`metadata.planId` set. `createCheckout` validates the requested `priceId` against the
+same listing, so self-serve checkout also accepts only prices of tagged plans. An
+untagged catalogue logs a `[billing.plans]` warning and lists no plans. No schema
+change, no migration to run.
+
 ## Billing: weekly reset now repays overflow debt (2026-09-24)
 
 In `meterMode`, units consumed past the weekly quota are debited from extras, which
