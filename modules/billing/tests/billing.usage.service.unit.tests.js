@@ -730,6 +730,26 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
 
       expect(balanceCrossedEmits()).toHaveLength(0);
     });
+
+    test('billing.extras.balance_threshold_crossed emit throws — logs error, does not propagate', async () => {
+      const loggerMod = await import('../../../lib/services/logger.js');
+      const mockLoggerError = loggerMod.default.error;
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'free' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan({ planId: 'free', meterQuota: 0, signupGrant: 500 }));
+      mockUsageRepository.incrementMeter.mockResolvedValue(makeUsageDoc({ meterUsed: 20, meterQuota: 0 }));
+      mockExtraService.debit.mockResolvedValue({ applied: true, doc: { cachedBalance: 90 } });
+      mockBillingEventsEmit.mockImplementationOnce(() => {
+        throw new Error('listener exploded');
+      });
+
+      const result = await BillingUsageService.incrementMeter(orgId, 20, {}, 'hist_credit_alert_emit_throws');
+
+      expect(result.applied).toBe(true);
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        '[billing.usage] billing.extras.balance_threshold_crossed listener failed',
+        expect.objectContaining({ error: 'listener exploded' }),
+      );
+    });
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
