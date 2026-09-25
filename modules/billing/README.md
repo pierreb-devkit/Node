@@ -116,7 +116,9 @@ A plan with `meterQuota: 0` and a one-shot `signupGrant` (e.g. the stack default
 plan) has no weekly usage doc to alert against — every unit is debited straight from
 `BillingExtraBalance.cachedBalance`, so that balance IS the limit. `incrementMeter` detects
 crossings of the configured `billing.alerts.thresholdPercents` (filtered to 80/100, same
-supported set as the weekly-quota alerts) against `(1 - threshold/100) * plan.signupGrant`,
+supported set as the weekly-quota alerts) against `plan.signupGrant * (100 - threshold) / 100`
+(not `(1 - threshold/100) * signupGrant` — that form hits float imprecision at common values,
+e.g. `500 * (1 - 80/100) = 99.99999999999997`, silently missing an exact boundary crossing),
 comparing the debit's own pre/post balance, and emits `billing.extras.balance_threshold_crossed`
 (`{ organizationId, threshold, remaining, planId }`). `billing.email.js` sends a
 credit-warning (80%) or credit-exhausted (100%) email off of it.
