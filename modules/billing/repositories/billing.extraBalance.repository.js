@@ -421,9 +421,9 @@ const getBalance = async (orgId) => {
  *              settled from quota; only a new Stripe pack 'topup' (stripeSessionId set —
  *              creditPack) repays them, floored at 0. Grants, 'adjustment' entries
  *              (including `settle:<weekKey>` settlements) and debits never repay them.
- *              The expiry sweep removes only a pack's own unspent units, so new expiration
- *              entries never go below zero; legacy full-amount entries still can, and their
- *              below-zero part stays non-settleable. Zero-amount expiration markers are
+ *              The expiry sweep removes only a pack's own unspent units, so a new expiration
+ *              entry goes below zero only for usage recorded between the pack.s expiresAt
+ *              and the sweep; that part, like legacy full-amount entries, stays non-settleable. Zero-amount expiration markers are
  *              neutral. The result is capped at max(0, -cachedBalance).
  * @param {string} orgId - The organization ObjectId (string).
  * @returns {Promise<{cachedBalance: number, nonSettleableDebt: number}>} Zeros when no document exists.
