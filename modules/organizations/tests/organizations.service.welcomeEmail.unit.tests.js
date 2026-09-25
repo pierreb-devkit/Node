@@ -60,6 +60,11 @@ jest.unstable_mockModule('../../../lib/helpers/abilities.js', () => ({
 }));
 
 jest.unstable_mockModule('../helpers/organizations.slug.js', () => ({
+  /**
+   * Lowercase and hyphenate a string for use as a slug (test stub).
+   * @param {string} str - The string to slugify.
+   * @returns {string} The slugified string.
+   */
   slugify: (str) => str.toLowerCase().replace(/\s+/g, '-'),
   generateOrganizationSlug: jest.fn().mockResolvedValue('alice-org'),
 }));
@@ -87,10 +92,24 @@ const { default: OrganizationsService } = await import('../services/organization
  * Configure config mock and repository happy-path defaults for a fresh signup.
  * Must mutate configStore's `organizations` key in-place.
  * @param {Object} orgConfig - `config.organizations` values.
+ * @returns {Object} The fake organization document `OrganizationsRepository.create` resolves to.
  */
 function setupConfig(orgConfig) {
   configStore.organizations = { publicDomains: [], ...orgConfig };
-  const fakeOrg = { _id: new mongoose.Types.ObjectId(), name: 'Acme Corp', slug: 'acme', domain: '', plan: 'free', toJSON() { return { _id: this._id, name: this.name }; } };
+  const fakeOrg = {
+    _id: new mongoose.Types.ObjectId(),
+    name: 'Acme Corp',
+    slug: 'acme',
+    domain: '',
+    plan: 'free',
+    /**
+     * Serialize the fake organization to its public JSON shape (test stub).
+     * @returns {{_id: import('mongoose').Types.ObjectId, name: string}} The serialized organization.
+     */
+    toJSON() {
+      return { _id: this._id, name: this.name };
+    },
+  };
   mockOrgCreate.mockResolvedValue(fakeOrg);
   mockMembershipCreate.mockResolvedValue({ _id: new mongoose.Types.ObjectId(), role: 'owner' });
   return fakeOrg;
