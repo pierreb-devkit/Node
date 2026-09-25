@@ -143,6 +143,7 @@ const createOrganizationForUser = async ({ name, slug, domain, user, slugGenerat
 const sendWelcomeEmail = (user, orgName) => {
   if (!(config.organizations?.welcomeEmail?.enabled ?? true)) return;
   if (!mailer.isConfigured()) return;
+  const onError = (err) => logger.warn('organizations: welcome email failed', { message: err?.message, stack: err?.stack });
   try {
     mailer.sendMail({
       template: 'welcome',
@@ -155,9 +156,9 @@ const sendWelcomeEmail = (user, orgName) => {
         appContact: config.app.contact,
         ...(orgName ? { orgName } : {}),
       },
-    }).catch((err) => logger.warn('organizations: welcome email failed', { message: err?.message, stack: err?.stack }));
+    }).catch(onError);
   } catch (err) {
-    logger.warn('organizations: welcome email failed', { message: err?.message, stack: err?.stack });
+    onError(err);
   }
 };
 
