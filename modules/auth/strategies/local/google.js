@@ -16,7 +16,8 @@ const callbackURL = `${config.api.protocol}://${config.api.host}${config.api.por
  * @param {string} accessToken - Google access token
  * @param {string} refreshToken - Google refresh token
  * @param {Object} profile - Google profile object
- * @param {Function} cb - Passport callback (err, user)
+ * @param {Function} cb - Passport callback (err, user, info) — `info.created` tells
+ *   oauthCallback whether this resolution is a brand-new signup (see auth.controller.js)
  * @returns {Promise<void>}
  */
 const prepare = async (accessToken, refreshToken, profile, cb) => {
@@ -37,7 +38,7 @@ const prepare = async (accessToken, refreshToken, profile, cb) => {
   // Save the user OAuth profile
   try {
     const user = await auth.checkOAuthUserProfile(_profile, 'sub', 'google');
-    return cb(null, user);
+    return cb(null, user, { created: !!user._isOAuthSignup });
   } catch (err) {
     return cb(err);
   }

@@ -160,6 +160,11 @@ describe('auth.controller checkOAuthUserProfile analytics (#4002/#4003):', () =>
 
     expect(mockCreate).toHaveBeenCalledTimes(1);
     expect(result.id).toBe('u9');
+    // (#4115 follow-up) branch 4 marks its result so the OAuth strategy
+    // wrappers can report `created: true` to oauthCallback via passport's
+    // `info` — non-enumerable so it never leaks into a JSON response.
+    expect(result._isOAuthSignup).toBe(true);
+    expect(Object.keys(result)).not.toContain('_isOAuthSignup');
 
     expect(mockIdentify).toHaveBeenCalledWith('u9', expect.objectContaining({
       email: 'newoauth@test.com', provider: 'google',
@@ -195,6 +200,7 @@ describe('auth.controller checkOAuthUserProfile analytics (#4002/#4003):', () =>
     expect(mockCreate).not.toHaveBeenCalled();
     expect(mockIdentify).not.toHaveBeenCalled();
     expect(mockCapture).not.toHaveBeenCalled();
+    expect(result._isOAuthSignup).toBeUndefined();
   });
 
   test('branch 2 (linked identity match): does NOT fire analytics', async () => {
@@ -213,6 +219,7 @@ describe('auth.controller checkOAuthUserProfile analytics (#4002/#4003):', () =>
     expect(mockCreate).not.toHaveBeenCalled();
     expect(mockIdentify).not.toHaveBeenCalled();
     expect(mockCapture).not.toHaveBeenCalled();
+    expect(result._isOAuthSignup).toBeUndefined();
   });
 
   test('branch 3 (link on verified email to an existing local account): does NOT fire analytics', async () => {
@@ -237,5 +244,6 @@ describe('auth.controller checkOAuthUserProfile analytics (#4002/#4003):', () =>
     expect(mockCreate).not.toHaveBeenCalled();
     expect(mockIdentify).not.toHaveBeenCalled();
     expect(mockCapture).not.toHaveBeenCalled();
+    expect(result._isOAuthSignup).toBeUndefined();
   });
 });

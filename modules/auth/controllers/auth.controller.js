@@ -484,6 +484,13 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
         });
       }
     }
+    // Marks THIS resolution as a brand-new account (branch 4 only — never set
+    // on branches 1-3, which resolve to an existing/linked user). Non-enumerable
+    // so it never leaks into a JSON response or a DB write; the OAuth strategy
+    // wrappers (google.js/apple.js) read it to decide whether to report
+    // `created: true` to passport's verify callback (issue #4115 follow-up —
+    // org provisioning must fire only for a genuine new signup, see oauthCallback).
+    Object.defineProperty(createdUser, '_isOAuthSignup', { value: true, enumerable: false, configurable: true });
     return createdUser;
   } catch (err) {
     if (err instanceof AppError) throw err;
@@ -560,6 +567,21 @@ const oauthErrorRedirect = (res, err, fallbackTitle) => {
 };
 
 /**
+ * @desc Log an OAuth callback failure with a consistent shape. Shared by every
+ * failure branch in `oauthCallback` (passport error, no user, and the outer
+ * catch-all) so the three sites can't drift on what gets logged.
+ * @param {string} strategy - OAuth strategy name (req.params.strategy)
+ * @param {Object|null} errArg - the error to log (may be null for the !user case)
+ * @returns {void}
+ */
+const logOAuthCallbackFailure = (strategy, errArg) => {
+  logger.error(
+    { err: { message: errArg?.message, code: errArg?.code, stack: errArg?.stack }, strategy },
+    'OAuth callback failed',
+  );
+};
+
+/**
  * @desc Endpoint for oautCallCallBack
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
@@ -579,26 +601,63 @@ const oauthCallback = async (req, res, next) => {
   // function as the 2nd/3rd arg) never calls req.logIn() itself — session
   // establishment is entirely the caller's responsibility below (JWT + cookie,
   // no express-session) — so the `session` option has nothing to act on.
-  return passport.authenticate(strategy, (err, user) => {
-    if (err) {
-      logger.error(
-        { err: { message: err?.message, code: err?.code, stack: err?.stack }, strategy },
-        'OAuth callback failed',
-      );
-      return oauthErrorRedirect(res, err, 'oAuth error');
+  // The callback below is async (org provisioning needs to `await`), but
+  // passport.authenticate() invokes it fire-and-forget — it never awaits or
+  // otherwise observes the promise this callback returns. Without the outer
+  // try/catch, any throw past the org-provisioning branch (which owns its own
+  // best-effort catch) would become an unhandled rejection instead of the
+  // client-facing error redirect every other failure in this callback gets.
+  return passport.authenticate(strategy, async (err, user, info) => {
+    try {
+      if (err) {
+        logOAuthCallbackFailure(strategy, err);
+        return oauthErrorRedirect(res, err, 'oAuth error');
+      }
+      if (!user) {
+        logOAuthCallbackFailure(strategy, null);
+        return oauthErrorRedirect(res, null, 'Could not define user in oAuth');
+      }
+      // Org provisioning parity with local signup/verifyEmail (issue #4115): a
+      // brand-new OAuth signup never went through either path, so it never
+      // provisioned a workspace and the user landed on the org-required page.
+      // Gated on `info.created` (set by checkOAuthUserProfile's create branch,
+      // relayed through the strategy's verify callback — passport-oauth2 forwards
+      // this `info` object all the way to this custom-callback's 3rd argument)
+      // rather than "no currentOrganization": an EXISTING user who currently has
+      // no org (removed from their org, org deleted, a pending join request —
+      // local signin already treats this as valid and never provisions) must not
+      // be silently handed a fresh workspace on every OAuth login. Only a genuine
+      // new signup provisions; every other resolution (existing/linked user, with
+      // or without a current org) is a no-op, zero extra queries or events. Best-
+      // effort, same pattern as `verifyEmail` above (#3762/#3765): a provisioning
+      // failure must never break the redirect.
+      if (info?.created) {
+        try {
+          await AuthOrganizationService.handleSignupOrganization(user);
+        } catch (orgErr) {
+          logger.warn('[auth.oauthCallback] org provisioning failed (non-fatal)', {
+            userId: user.id,
+            error: orgErr?.message,
+          });
+        }
+      }
+      const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
+        expiresIn: config.jwt.expiresIn,
+      });
+      res.cookie('TOKEN', token, tokenCookieOptions);
+      return res.redirect(302, `${getBaseUrl()}/token`);
+    } catch (callbackErr) {
+      logOAuthCallbackFailure(strategy, callbackErr);
+      // If a throw happens after the success redirect already started writing
+      // (e.g. a future statement added between res.cookie and res.redirect),
+      // headers may already be sent — a second oauthErrorRedirect() would either
+      // throw again (ERR_HTTP_HEADERS_SENT, re-creating the exact unhandled-
+      // rejection risk the outer try/catch exists to prevent) or send garbage
+      // after the real response. Log only in that case; the client already got
+      // its redirect.
+      if (res.headersSent) return;
+      return oauthErrorRedirect(res, callbackErr, 'oAuth error');
     }
-    if (!user) {
-      logger.error(
-        { err: { message: err?.message, code: err?.code, stack: err?.stack }, strategy },
-        'OAuth callback failed',
-      );
-      return oauthErrorRedirect(res, null, 'Could not define user in oAuth');
-    }
-    const token = jwt.sign({ userId: user.id }, config.jwt.secret, {
-      expiresIn: config.jwt.expiresIn,
-    });
-    res.cookie('TOKEN', token, tokenCookieOptions);
-    return res.redirect(302, `${getBaseUrl()}/token`);
   })(req, res, next);
 };
 
