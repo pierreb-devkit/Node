@@ -34,12 +34,20 @@ const LedgerEntrySchema = new Schema(
      * Negative for debit/expiration/refund (subtract from balance).
      * Note: 'refund' entries are clawbacks and carry a negative amount,
      * reflecting the economic debt when credits already consumed must be reclaimed.
+     * Zero is allowed only for kind='expiration': the marker of a pack fully spent at
+     * expiry, recorded so the expiry sweep treats that pack as handled.
      */
     amount: {
       type: Number,
       required: true,
       validate: {
-        validator: (v) => v !== 0,
+        /**
+         * @param {number} v - Candidate amount.
+         * @returns {boolean} True unless zero on a kind other than 'expiration'.
+         */
+        validator(v) {
+          return v !== 0 || this?.kind === 'expiration';
+        },
         message: 'Ledger entry amount cannot be zero',
       },
     },

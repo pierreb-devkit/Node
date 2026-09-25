@@ -4,6 +4,7 @@
 import mongoose from 'mongoose';
 import AppError from '../../../lib/helpers/AppError.js';
 import BillingExtraBalanceSchema from '../models/billing.extraBalance.schema.js';
+import { computeExpiryRemovals } from '../lib/billing.packExpiry.js';
 
 /**
  * Validate that orgId is a syntactically valid MongoDB ObjectId.
@@ -284,63 +285,69 @@ const creditCompensation = async (orgId, amount, refId, memo = '') => {
 };
 
 /**
+ * Bound on the read → guarded-write retries of addExpirationEntries. Each retry means a
+ * concurrent write landed between the read and the write; past this bound the sweep
+ * throws so the cron logs the org and retries it on its next run.
+ */
+const EXPIRY_MAX_ATTEMPTS = 5;
+
+/**
  * @function addExpirationEntries
- * @description Sweep topup entries that have expired and push matching expiration
- *              ledger entries to reduce cachedBalance.
- *              Idempotent: each topup entry can only produce one expiration entry
- *              (keyed by 'expire-<entryId>'). Re-running this method on already-expired
- *              entries is a no-op because the refId filter excludes already-handled entries.
+ * @description Sweep topup entries that have expired and push one expiration ledger entry
+ *              per pack, removing only that pack's OWN unspent units at its `expiresAt`
+ *              (see lib/billing.packExpiry.js: ledger replay, earliest-expiry-first
+ *              attribution). A pack fully spent or refunded at expiry gets a zero-amount
+ *              expiration marker: it removes nothing but records the pack as handled, so a
+ *              later sweep never expires it against units bought afterwards.
+ *              Idempotent: each topup produces at most one expiration entry
+ *              (refId 'expire-<topupId>'). Existing legacy full-amount entries are left as is.
+ *              Concurrency: the removals are computed from a snapshot of the ledger, then
+ *              pushed with ONE findOneAndUpdate guarded by the snapshot's ledger length
+ *              (`$size`) and by the absence of every refId being written. The ledger is
+ *              append-only, so an unchanged length means an unchanged ledger: a concurrent
+ *              debit, topup, refund or sweep makes the guard miss, and the sweep re-reads and
+ *              recomputes (bounded by EXPIRY_MAX_ATTEMPTS, then throws). This keeps the
+ *              removal exact without a transaction or a new persisted field.
  * @param {string} orgId - The organization ObjectId (string).
  * @param {Date} now - The current timestamp used as the expiry cutoff.
- * @returns {Promise<number>} Number of expiration entries added.
+ * @returns {Promise<number>} Number of expiration entries added (zero markers included).
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const addExpirationEntries = async (orgId, now) => {
   if (!isValidOrgId(orgId)) return 0;
-  // Read the doc to find expired topups without a corresponding expiration entry.
-  const doc = await BillingExtraBalance().findOne({ organization: orgId }).lean();
-  if (!doc) return 0;
 
-  const existingExpireRefs = new Set(
-    doc.ledger.filter((e) => e.kind === 'expiration').map((e) => e.refId),
-  );
+  for (let attempt = 0; attempt < EXPIRY_MAX_ATTEMPTS; attempt += 1) {
+    const doc = await BillingExtraBalance().findOne({ organization: orgId }, { ledger: 1 }).lean();
+    if (!doc) return 0;
+    const ledger = doc.ledger ?? [];
 
-  const expiredTopups = doc.ledger.filter(
-    (e) =>
-      e.kind === 'topup' &&
-      e.expiresAt &&
-      new Date(e.expiresAt) < now &&
-      !existingExpireRefs.has(`expire-${e._id}`),
-  );
+    const removals = computeExpiryRemovals(ledger, now);
+    if (removals.length === 0) return 0;
 
-  if (expiredTopups.length === 0) return 0;
-
-  let applied = 0;
-  for (const topup of expiredTopups) {
-    const expireRefId = `expire-${topup._id}`;
-    const entry = {
+    const entries = removals.map(({ topupId, amount }) => ({
       kind: 'expiration',
-      amount: -topup.amount,
-      refId: expireRefId,
+      amount: amount > 0 ? -amount : 0,
+      refId: `expire-${topupId}`,
       at: now,
-    };
+    }));
+    const removed = removals.reduce((sum, r) => sum + r.amount, 0);
 
-    // Atomic: only push if this expiration refId is not already present.
     const result = await BillingExtraBalance().findOneAndUpdate(
       {
         organization: orgId,
-        'ledger.refId': { $ne: expireRefId },
+        ledger: { $size: ledger.length },
+        'ledger.refId': { $nin: entries.map((e) => e.refId) },
       },
       {
-        $push: { ledger: entry },
-        $inc: { cachedBalance: -topup.amount },
+        $push: { ledger: { $each: entries } },
+        $inc: { cachedBalance: -removed },
         $set: { cachedBalanceAt: now },
       },
     );
-    if (result) applied += 1;
+    if (result) return entries.length;
   }
 
-  return applied;
+  throw new Error(`addExpirationEntries: ledger kept changing for org ${orgId} after ${EXPIRY_MAX_ATTEMPTS} attempts`);
 };
 
 /**
@@ -414,9 +421,10 @@ const getBalance = async (orgId) => {
  *              settled from quota; only a new Stripe pack 'topup' (stripeSessionId set —
  *              creditPack) repays them, floored at 0. Grants, 'adjustment' entries
  *              (including `settle:<weekKey>` settlements) and debits never repay them.
- *              Known limitation, unchanged here: the expiry sweep removes a pack's full
- *              amount even when part of the pack was already consumed. The result is
- *              capped at max(0, -cachedBalance).
+ *              The expiry sweep removes only a pack's own unspent units, so a new expiration
+ *              entry goes below zero only for usage recorded between the pack's expiresAt
+ *              and the sweep; that part, like legacy full-amount entries, stays
+ *              non-settleable. Zero-amount expiration markers are neutral. The result is capped at max(0, -cachedBalance).
  * @param {string} orgId - The organization ObjectId (string).
  * @returns {Promise<{cachedBalance: number, nonSettleableDebt: number}>} Zeros when no document exists.
  */
@@ -476,11 +484,12 @@ const findLedgerEntryByRefId = async (orgId, refId) => {
  *              Entries are sorted descending by `at` (newest first) at the aggregation layer.
  *              The aggregation pipeline is:
  *                1. $match    — find the org's document
- *                2. $project  — capture total + cachedBalance, normalise ledger with $ifNull
- *                3. $unwind   — explode ledger entries into individual documents
- *                4. $sort     — sort by ledger.at descending (compatible with MongoDB ≥4.4)
- *                5. $group    — reassemble into a single document, collecting sorted entries
- *                6. $project  — apply skip+limit slice and reshape to final shape
+ *                2. $project  — normalise ledger with $ifNull, drop zero expiration markers
+ *                3. $project  — capture total + cachedBalance
+ *                4. $unwind   — explode ledger entries into individual documents
+ *                5. $sort     — sort by ledger.at descending (compatible with MongoDB ≥4.4)
+ *                6. $group    — reassemble into a single document, collecting sorted entries
+ *                7. $project  — apply skip+limit slice and reshape to final shape
  *
  *              Note: $sortArray (MongoDB ≥5.2) is intentionally avoided so the repository
  *              works on MongoDB 5.0.x (mongodb-memory-server default in CI).
@@ -502,13 +511,28 @@ const listLedgerPage = async (orgId, skip, limit) => {
 
   const results = await BillingExtraBalance().aggregate([
     { $match: { organization: new mongoose.Types.ObjectId(orgId) } },
-    // Capture total count and cachedBalance before unwinding; normalise missing ledger to [].
+    // Normalise a missing ledger to [] and drop zero-amount expiration markers: they only
+    // record that a fully spent pack's expiry was handled (addExpirationEntries), carry no
+    // balance change, and would read as a '+0' credit in a customer-facing ledger.
     {
       $project: {
         _id: 1,
         cachedBalance: 1,
-        total: { $size: { $ifNull: ['$ledger', []] } },
-        ledger: { $ifNull: ['$ledger', []] },
+        ledger: {
+          $filter: {
+            input: { $ifNull: ['$ledger', []] },
+            cond: { $not: [{ $and: [{ $eq: ['$$this.kind', 'expiration'] }, { $eq: ['$$this.amount', 0] }] }] },
+          },
+        },
+      },
+    },
+    // Capture total count and cachedBalance before unwinding.
+    {
+      $project: {
+        _id: 1,
+        cachedBalance: 1,
+        total: { $size: '$ledger' },
+        ledger: 1,
       },
     },
     // Preserve docs with an empty ledger (preserveNullAndEmptyArrays keeps the root doc).
