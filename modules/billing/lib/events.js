@@ -22,6 +22,10 @@ import { EventEmitter } from 'events';
  *     cannot be resolved to a plan (unmapped priceId AND no valid metadata.planId) — the write
  *     retains the last-known plan (or 'free' for a genuinely new org) instead of forcing 'free'.
  *     Payload: { organizationId, stripeSubscriptionId, priceId, retainedPlan, hadKnownPlan, eventId }
+ *   - `billing.extras.balance_threshold_crossed` — emitted when an extras-balance debit on a
+ *     one-shot signup-grant plan (meterQuota=0) crosses a configured percent-of-grant level
+ *     (stateless — no alertedAtN dedup field; a later credit lets the next crossing alert again).
+ *     Payload: { organizationId, threshold, remaining, planId }
  *
  * NOTE: The 'error' event listener is registered in billing.init.js (after config is ready)
  * to avoid module-load-time config reads in this low-level singleton.

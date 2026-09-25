@@ -51,8 +51,10 @@ export const sendBillingEmail = (mailOpts, context) => {
  * Call once from billing.init.js after config is ready.
  *
  * Listeners registered:
- *  - meter.threshold_crossed — sends 80% warning or 100% quota-reached email to org admins/owners
- *  - payment.failed          — sends payment-failed email prompting card update
+ *  - meter.threshold_crossed              — sends 80% warning or 100% quota-reached email to org admins/owners
+ *  - billing.extras.balance_threshold_crossed — sends a credit-warning or credit-exhausted email
+ *    (one-shot signup-grant plans, no weekly quota — see README.md § Credit-balance alerts)
+ *  - payment.failed                       — sends payment-failed email prompting card update
  *
  * Template resolution: devkit ships generic templates in config/templates/billing-*.html.
  * Downstream projects override by placing same-named files in their own config/templates/
@@ -88,6 +90,42 @@ export const setupBillingEmails = () => {
             },
           },
           isAt80 ? 'meter.threshold_crossed@80' : 'meter.threshold_crossed@100',
+        );
+      }
+    });
+  });
+
+  // ── billing.extras.balance_threshold_crossed — credit-balance alerts (#4117) ──
+  // One-shot signup-grant plans (no weekly quota): 80%-consumed warning or fully-out
+  // email. Copy speaks in absolute credits left, never "% of grant" — a pack or
+  // referral top-up can raise the balance again, at which point "% of grant" is
+  // meaningless (see README.md § Credit-balance alerts). No org name in the copy.
+
+  billingEvents.on('billing.extras.balance_threshold_crossed', ({ organizationId, threshold, remaining }) => {
+    if (threshold !== 80 && threshold !== 100) return;
+
+    const appName = config.app?.title ?? '';
+    const billingUrl = config.app?.url ? `${config.app.url}/billing` : '';
+    const isWarning = threshold === 80;
+
+    resolveOrgAdminEmails(organizationId).then((emails) => {
+      if (!emails.length) return;
+      for (const email of emails) {
+        sendBillingEmail(
+          {
+            to: email,
+            subject: isWarning
+              ? `${appName} — your credits are running low`
+              : `${appName} — you are out of credits`,
+            template: isWarning ? 'billing-credit-warning' : 'billing-credit-exhausted',
+            params: {
+              remaining: remaining ?? 0,
+              billingUrl,
+              appName,
+              appContact: config.app?.contact ?? '',
+            },
+          },
+          isWarning ? 'billing.extras.balance_threshold_crossed@80' : 'billing.extras.balance_threshold_crossed@100',
         );
       }
     });

@@ -604,6 +604,105 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // Credit-balance alerts — plans without a weekly quota (#4117)
+  // ─────────────────────────────────────────────────────────────────────────────
+  describe('incrementMeter — credit-balance alerts (no weekly quota, #4117):', () => {
+    const balanceCrossedEmits = () =>
+      mockBillingEventsEmit.mock.calls.filter(([name]) => name === 'billing.extras.balance_threshold_crossed');
+
+    test('boundary — post === level fires the crossing (inclusive on post)', async () => {
+      // signupGrant=500, threshold=80 → level = 0.2 * 500 = 100. pre=150 (post + extrasConsumed), post=100.
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'free' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan({ planId: 'free', meterQuota: 0, signupGrant: 500 }));
+      const updatedDoc = makeUsageDoc({ meterUsed: 50, meterQuota: 0 });
+      mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
+      mockExtraService.debit.mockResolvedValue({ applied: true, doc: { cachedBalance: 100 } });
+
+      await BillingUsageService.incrementMeter(orgId, 50, {}, 'hist_credit_boundary');
+
+      const emits = balanceCrossedEmits();
+      expect(emits).toHaveLength(1);
+      expect(emits[0][1]).toMatchObject({ organizationId: orgId, threshold: 80, remaining: 100, planId: 'free' });
+    });
+
+    test('two adjacent debits — exactly one crosses (the other stays below the level already)', async () => {
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'free' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan({ planId: 'free', meterQuota: 0, signupGrant: 500 }));
+      mockUsageRepository.incrementMeter.mockResolvedValue(makeUsageDoc({ meterUsed: 20, meterQuota: 0 }));
+
+      // Debit A: pre=110, post=90 → crosses level 80% (=100).
+      mockExtraService.debit.mockResolvedValueOnce({ applied: true, doc: { cachedBalance: 90 } });
+      await BillingUsageService.incrementMeter(orgId, 20, {}, 'hist_adjacent_a');
+
+      // Debit B: pre=90, post=80 → already below the level before this debit — no NEW crossing.
+      mockExtraService.debit.mockResolvedValueOnce({ applied: true, doc: { cachedBalance: 80 } });
+      await BillingUsageService.incrementMeter(orgId, 10, {}, 'hist_adjacent_b');
+
+      const emits = balanceCrossedEmits();
+      expect(emits).toHaveLength(1);
+      expect(emits[0][1]).toMatchObject({ threshold: 80, remaining: 90 });
+    });
+
+    test('one debit crossing both 80% and 100% emits only the deepest (100)', async () => {
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'free' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan({ planId: 'free', meterQuota: 0, signupGrant: 500 }));
+      mockUsageRepository.incrementMeter.mockResolvedValue(makeUsageDoc({ meterUsed: 600, meterQuota: 0 }));
+      // pre = 600 (post + extrasConsumed), post = -50 → crosses level 100% (=0) AND level 80% (=100).
+      mockExtraService.debit.mockResolvedValue({ applied: true, doc: { cachedBalance: -50 } });
+
+      await BillingUsageService.incrementMeter(orgId, 650, {}, 'hist_double_cross');
+
+      const emits = balanceCrossedEmits();
+      expect(emits).toHaveLength(1);
+      expect(emits[0][1]).toMatchObject({ threshold: 100, remaining: 0 });
+    });
+
+    test('re-cross after a credit tops the balance back up — alerts again (stateless)', async () => {
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'free' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan({ planId: 'free', meterQuota: 0, signupGrant: 500 }));
+      mockUsageRepository.incrementMeter.mockResolvedValue(makeUsageDoc({ meterUsed: 20, meterQuota: 0 }));
+
+      // First debit crosses level 80% (=100): pre=110, post=90.
+      mockExtraService.debit.mockResolvedValueOnce({ applied: true, doc: { cachedBalance: 90 } });
+      await BillingUsageService.incrementMeter(orgId, 20, {}, 'hist_recross_1');
+
+      // A pack/referral credit (outside incrementMeter) tops the balance back above the level.
+      // Next debit starts above 100 again and crosses it again: pre=150, post=95.
+      mockExtraService.debit.mockResolvedValueOnce({ applied: true, doc: { cachedBalance: 95 } });
+      await BillingUsageService.incrementMeter(orgId, 55, {}, 'hist_recross_2');
+
+      const emits = balanceCrossedEmits();
+      expect(emits).toHaveLength(2);
+      expect(emits[0][1]).toMatchObject({ threshold: 80, remaining: 90 });
+      expect(emits[1][1]).toMatchObject({ threshold: 80, remaining: 95 });
+    });
+
+    test('quota>0 overflow — no credit-balance event (meterQuota>0 is out of scope)', async () => {
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan({ meterQuota: 500000, signupGrant: 500 }));
+      const updatedDoc = makeUsageDoc({ meterUsed: 510000, meterQuota: 500000 });
+      mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
+      mockExtraService.debit.mockResolvedValue({ applied: true, doc: { cachedBalance: -5 } });
+
+      await BillingUsageService.incrementMeter(orgId, 10000, {}, 'hist_quota_overflow_no_credit_alert');
+
+      expect(balanceCrossedEmits()).toHaveLength(0);
+    });
+
+    test('quota=0 plan without a signupGrant — no credit-balance event', async () => {
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'free' });
+      // No signupGrant on the plan — the guard must not fire.
+      mockPlanService.getActivePlan.mockReturnValue(makePlan({ planId: 'free', meterQuota: 0 }));
+      mockUsageRepository.incrementMeter.mockResolvedValue(makeUsageDoc({ meterUsed: 5, meterQuota: 0 }));
+      mockExtraService.debit.mockResolvedValue({ applied: true, doc: { cachedBalance: -5 } });
+
+      await BillingUsageService.incrementMeter(orgId, 5, {}, 'hist_no_grant_no_alert');
+
+      expect(balanceCrossedEmits()).toHaveLength(0);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // runaway negative balance detection (Item 3 — Batch 2)
   // ─────────────────────────────────────────────────────────────────────────────
   describe('incrementMeter — runaway negative balance detection (Opus H1):', () => {
