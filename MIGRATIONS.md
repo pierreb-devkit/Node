@@ -4,6 +4,25 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## `responses.error`: optional title, derived from `http.STATUS_CODES` (2026-09-26)
+
+`lib/helpers/responses.js#error`'s `message` (title) param is now **optional**. Omitted, it is derived from Node's built-in `node:http` `STATUS_CODES` map for the RESOLVED status (e.g. `409` → `'Conflict'`), instead of requiring the caller to hand-write one.
+
+Why: the common call shape pairs a **dynamic** status with a **hardcoded** title (`responses.error(res, err.status || 422, 'Unprocessable Entity', ...)`), so whenever `err.status` differs from the hardcoded status the client-facing `message` contradicts `status`/`code` in the same envelope (a 409 conflict labelled "Unprocessable Entity"). The title is a pure function of the status — there is nothing project-specific about it — so fixing the derivation once here lets every downstream project drop its local `status → title` ternary at its own pace.
+
+### What changed (this repo)
+
+- **`lib/helpers/responses.js#error`** — `message` is now optional. Resolution order: explicit `message` (unchanged) → `STATUS_CODES[status]` for the already-resolved status → `'Something went wrong.'` for a valid-but-nonstandard code (e.g. `499`, which has no `STATUS_CODES` entry). The previous `error.message` fallback (used only when the title was omitted) is replaced by the STATUS_CODES lookup.
+- **New test** `lib/helpers/tests/responses.errorTitle.unit.tests.js` — regression guard asserting 400/403/404/409/422/503 all derive the matching `STATUS_CODES` title when the title is omitted.
+- **Deliberately NOT changed**: `getDescription`'s handling of `details`/`description` is untouched. Preferring an `AppError`'s `details.message` as the title is call-site specific and stays out of this stack default (see issue #4009's "Deliberately NOT proposed").
+
+### Action required for downstream projects (`/update-stack`)
+
+- **Explicit-title call sites (`responses.error(res, status, 'Title', description)`) are untouched** — this is the shape every call site in this repo uses today, so it is backward compatible here.
+- **This IS a behavior change for a call site that already omits the title** (`responses.error(res, status)(err)`, 2 args): `message` used to fall back to the raw `error.message`; it now derives from `STATUS_CODES[status]` instead. Grep downstream for that 2-arg shape — if found, either accept the new (more correct) status-matched title, or pass the title explicitly to keep the old text.
+
+---
+
 ## Organizations: welcome email now sent after signup provisioning (2026-09-25)
 
 Every successful signup that provisions a workspace — organizations enabled or
@@ -288,27 +307,6 @@ Downstreams running exclusively in meter mode (every `billingusages` document ha
 4. Because index-build failures now surface loudly stack-wide (not just for billing), watch the first post-deploy boot log for any `Index builds still in flight` warning or a boot failure — it means some model's schema declares an index MongoDB rejects, previously silent.
 5. Migrations run at boot before `listen()`; the index swap + `legacyPeriod` backfill land automatically once the duplicate-data audit passes.
 6. **Rolling deploys only:** the very first successful run of this migration on a given database briefly drops the index while backfilling (old, still-serving instances writing into that window can trip a duplicate-key abort — self-healing, retried on next boot). For a strict no-window guarantee, run this specific deploy during a maintenance window or scale to a single instance first. Every later boot (including every other instance in the same rolling deploy once the database has converged) skips the window entirely.
-
----
-
-## `responses.error`: optional title, derived from `http.STATUS_CODES` (2026-09-26)
-
-`lib/helpers/responses.js#error`'s `message` (title) param is now **optional**. Omitted, it is derived from Node's built-in `node:http` `STATUS_CODES` map for the RESOLVED status (e.g. `409` → `'Conflict'`), instead of requiring the caller to hand-write one.
-
-Why: the common call shape pairs a **dynamic** status with a **hardcoded** title (`responses.error(res, err.status || 422, 'Unprocessable Entity', ...)`), so whenever `err.status` differs from the hardcoded status the client-facing `message` contradicts `status`/`code` in the same envelope (a 409 conflict labelled "Unprocessable Entity"). The title is a pure function of the status — there is nothing project-specific about it — so fixing the derivation once here lets every downstream project drop its local `status → title` ternary at its own pace.
-
-### What changed (this repo)
-
-- **`lib/helpers/responses.js#error`** — `message` is now optional. Resolution order: explicit `message` (unchanged) → `STATUS_CODES[status]` for the already-resolved status → `'Something went wrong.'` for a valid-but-nonstandard code (e.g. `499`, which has no `STATUS_CODES` entry). The previous `error.message` fallback is replaced by the STATUS_CODES lookup — no existing call site relied on it (every current call site passes an explicit title).
-- **New test** `lib/helpers/tests/responses.errorTitle.unit.tests.js` — regression guard asserting 400/403/404/409/422/503 all derive the matching `STATUS_CODES` title when the title is omitted.
-- **Deliberately NOT changed**: `getDescription`'s handling of `details`/`description` is untouched. Preferring an `AppError`'s `details.message` as the title is call-site specific and stays out of this stack default (see issue #4009's "Deliberately NOT proposed").
-
-### Action required for downstream projects (`/update-stack`)
-
-- No action required. Every existing call site passes an explicit title, so this is **backward compatible** — behavior is unchanged until a call site is edited to omit the title.
-- Going forward, a new or edited call site with a dynamic status can drop its local title ternary and simply omit the title: `responses.error(res, err.status || 500, undefined, description)(err)` — the client-facing title now always matches the actual status.
-
----
 
 ## Config: `docs.excludeModules` — doc-only module exclusion (2026-06-29)
 
