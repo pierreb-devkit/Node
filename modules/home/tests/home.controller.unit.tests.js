@@ -9,9 +9,9 @@ import { jest, beforeEach, afterEach, describe, test, expect } from '@jest/globa
  * Issue #4064: responses.error(res, status, title, description)(x) reads
  * `x.details` off whatever it is handed. The degraded branch used to pass
  * the raw health-check payload directly — not error-shaped, no `.details`
- * key — the same wrong call convention fixed for
- * analytics.requireFeatureFlag.js (this issue) and billing.requireQuota.js
- * (#4062). No leak resulted (the payload carries nothing whitelisted), but
+ * key — the same wrong call convention fixed for the requireFeatureFlag
+ * middleware (removed as unused in #3998) in that issue and
+ * billing.requireQuota.js (#4062). No leak resulted (the payload carries nothing whitelisted), but
  * the shape was wrong and a health payload is exactly the kind of object
  * that accumulates internal detail over time.
  */

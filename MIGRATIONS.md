@@ -4,6 +4,22 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Removed unused APIs: `authorize()`, `requireFeatureFlag`, billing refund service (2026-09-26)
+
+Three APIs documented in earlier entries below had zero non-test callers in this repo. Removed as dead code (#3998).
+
+### What was removed, and the replacement
+
+- **`lib/helpers/authorize.js`** (`authorize(action, subject)`, introduced in "Decentralized Policy Subject Resolution" below) — never adopted; every route in this repo still uses `policy.isAllowed` (`lib/middlewares/policy.js`) for CASL route guards. **Replacement:** `policy.isAllowed`, but only where `isAllowed`'s HTTP-method-derived action (`get`/`head`/`options`→`read`, `post`→`create`, `put`/`patch`→`update`, `delete`→`delete`) matches the action `authorize()` named — `authorize()` took an explicit action and ran *after* `isAllowed` as a second, stricter check. A route needing a different action keeps an inline check after `isAllowed`: `(req, res, next) => (req.ability.can(action, subject) ? next() : responses.error(res, 403, 'Unauthorized', 'User is not authorized')())` — `isAllowed` still attaches `req.ability`. **Retracts that entry's deprecation notice** — `policy.isAllowed` was never actually superseded and remains the supported route guard. Register the subject your `authorize()` call named: export a `*SubjectRegistration` function from the module's policy file and call `registerDocumentSubject(reqProperty, subjectType)` for routes that load a document onto `req`, or `registerPathSubject(routeMatch, subjectType)` for collection routes — `discoverPolicies()` invokes these at startup but does not infer a mapping on its own, so an unregistered route falls through to a 403. Path registration is first-match-wins (`deriveSubjectType` iterates `pathSubjectRegistry` in registration order): a `registerPathSubject` for a route an earlier entry already matches never fires.
+- **`lib/middlewares/analytics.requireFeatureFlag.js`** (`requireFeatureFlag(flagName)`, introduced in "PostHog Analytics" below) — never wired into a route. The rest of the analytics module (`lib/services/analytics.js`, the auto-capture middleware `lib/middlewares/analytics.js`, `lib/services/analytics.featureFlags.js`) is untouched. **Replacement:** none built in — call `lib/services/analytics.featureFlags.js` from your own route middleware if you need this gate. `isEnabled()` returns `false` both when the flag is off and when analytics isn't configured — to keep the old fail-open behaviour (never blocking a project that isn't wired to PostHog), don't deny solely on `false`: also call `getVariant()` and allow the request through when it returns `undefined`.
+- **`modules/billing/services/billing.refund.service.js`** (`refundCharge()`) — dead since an earlier simplification inlined the same call into the admin controller; this file just outlived that change. **Replacement:** `stripe.refunds.create(...)` is already called directly in `modules/billing/controllers/billing.admin.controller.js` (`adminRefundCharge`) — migrate any direct import to that call (see the idempotency note below) rather than the removed service. The removed `refundCharge()` derived its own idempotency key from the charge and amount (`refund_${chargeId}_${amount ?? 'full'}`); pass an equivalent `{ idempotencyKey }` to `stripe.refunds.create(...)` or a retry can double-refund.
+
+### Action for downstream
+
+Grep for `helpers/authorize`, `analytics.requireFeatureFlag`, and `billing.refund.service` (or `refundCharge`) — if any import exists in your project code (not just the mirrored stack files), migrate it to the replacement above before running `/update-stack`.
+
+---
+
 ## `responses.error`: optional title, derived from `http.STATUS_CODES` (2026-09-26)
 
 `lib/helpers/responses.js#error`'s `message` (title) param is now **optional**. Omitted, it is derived from Node's built-in `node:http` `STATUS_CODES` map for the RESOLVED status (e.g. `409` → `'Conflict'`), instead of requiring the caller to hand-write one.
