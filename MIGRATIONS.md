@@ -1003,6 +1003,8 @@ Subject resolution in `lib/middlewares/policy.js` is now registry-based instead 
 
 > **Deprecation notice**: `policy.isAllowed` is supported for this release cycle only. New routes should use `authorize(action, subject)` from `lib/helpers/authorize.js`. Custom modules using `policy.isAllowed` should migrate to `authorize()` before the next major version. The legacy middleware will be removed once all built-in module routes have been migrated.
 
+> **Retracted (2026-09-26):** `lib/helpers/authorize.js` was removed and `policy.isAllowed` remains the supported route guard — see "Removed unused APIs" at the top of this file.
+
 ---
 
 ## Audit GDPR Flags (2026-03-26)
@@ -1124,7 +1126,7 @@ All features are no-op when `apiKey` is empty — safe to deploy without PostHog
 | Analytics service | `analytics.service.js` | `track()`, `identify()`, `groupIdentify()` |
 | Auto-capture middleware | `analytics.middleware.js` | Captures `api_request` on all routes (except health/public) |
 | Feature flags service | `analytics.featureFlags.service.js` | `isEnabled()` (safe default `false` when not configured), `getVariant()` (`undefined` when not configured) |
-| `requireFeatureFlag` middleware | `analytics.requireFeatureFlag.js` | 401 when unauthenticated, 403 when flag disabled, fail-open when analytics not configured |
+| ~~`requireFeatureFlag` middleware~~ | ~~`analytics.requireFeatureFlag.js`~~ | Removed 2026-09-26 (never wired) — see "Removed unused APIs" at the top of this file |
 | Billing integration | `analytics.init.js` | Listens to `plan.changed` event → `groupIdentify` |
 
 ### Action for downstream
