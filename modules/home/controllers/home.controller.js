@@ -65,8 +65,8 @@ const health = (req, res) => {
   const payload = isAdmin ? data : { status: data.status };
   if (data.status !== 'ok') {
     // responses.error(...)(x) reads `x.details`, not `x` itself (issue
-    // #4064 — same call-convention bug fixed for
-    // analytics.requireFeatureFlag.js in this issue and
+    // #4064 — same call-convention bug fixed for the requireFeatureFlag
+    // middleware (removed as unused in #3998) in that issue and
     // billing.requireQuota.js in #4062). The raw payload was passed
     // directly, so any whitelisted key it might one day carry (a health
     // check is exactly the kind of object that accumulates internal detail

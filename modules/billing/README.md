@@ -132,8 +132,10 @@ credit-warning (80%) or credit-exhausted (100%) email off of it.
   applies when `meterQuota === 0` and the plan has a valid `signupGrant`. Copy always speaks
   in absolute credits left, never a percentage.
 - **Accepted limitation — expiry and refunds don't alert.** A balance drop from a pack
-  expiring (`crons/billing.extrasExpiration.js`) or a refund (`billing.refund.service.js`)
-  does not go through `incrementMeter`'s debit path, so it never triggers this crossing check.
+  expiring (`crons/billing.extrasExpiration.js`) or a refund (`stripe.refunds.create` in
+  `billing.admin.controller.js`; the standalone `billing.refund.service.js` was removed as
+  unused in #3998) does not go through `incrementMeter`'s debit path, so it never triggers
+  this crossing check.
 - **Accepted limitation — a debit that fails outright never alerts either.** The crossing
   check only runs on `debitResult.applied && debitResult.doc` (see below); if
   `BillingExtraService.debit()` itself throws, the catch block logs a warning and the

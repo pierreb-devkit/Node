@@ -4,6 +4,22 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Removed unused APIs: `authorize()`, `requireFeatureFlag`, billing refund service (2026-09-26)
+
+Three APIs documented in earlier entries below had zero non-test callers in this repo, and re-verified 2026-09-26 across every downstream mirror (`ism_node`, `pierreb_node`, `comes_node`, `montaine_node`, `trawl_node`, `waos_node`), none calls them from project code either — the only occurrences anywhere were the stack's own mirrored files/tests and MIGRATIONS.md history. Removed as dead code (#3998).
+
+### What was removed, and the replacement
+
+- **`lib/helpers/authorize.js`** (`authorize(action, subject)`, introduced in "Decentralized Policy Subject Resolution" below) — never adopted; every route in this repo still uses `policy.isAllowed` (`lib/middlewares/policy.js`) for CASL route guards. **Replacement:** `policy.isAllowed`. **Retracts that entry's deprecation notice** — `policy.isAllowed` was never actually superseded and remains the supported route guard.
+- **`lib/middlewares/analytics.requireFeatureFlag.js`** (`requireFeatureFlag(flagName)`, introduced in "PostHog Analytics" below) — never wired into a route. The rest of the analytics module (`lib/services/analytics.js`, the auto-capture middleware `lib/middlewares/analytics.js`, `lib/services/analytics.featureFlags.js`) is untouched. **Replacement:** none built in — call `lib/services/analytics.featureFlags.js`'s `isEnabled()` / `getVariant()` directly from your own route middleware if you need this gate.
+- **`modules/billing/services/billing.refund.service.js`** (`refundCharge()`) — dead since an earlier simplification inlined the same call into the admin controller; this file just outlived that change. **Replacement:** `stripe.refunds.create(...)` is already called directly in `modules/billing/controllers/billing.admin.controller.js` (`adminRefundCharge`) — nothing to change downstream.
+
+### Action for downstream
+
+Grep for `helpers/authorize` and `analytics.requireFeatureFlag` — if either import exists in your project code (not just the mirrored stack files), switch to the replacement above before running `/update-stack`. No action needed for the refund service; it was never imported anywhere.
+
+---
+
 ## `responses.error`: optional title, derived from `http.STATUS_CODES` (2026-09-26)
 
 `lib/helpers/responses.js#error`'s `message` (title) param is now **optional**. Omitted, it is derived from Node's built-in `node:http` `STATUS_CODES` map for the RESOLVED status (e.g. `409` → `'Conflict'`), instead of requiring the caller to hand-write one.
