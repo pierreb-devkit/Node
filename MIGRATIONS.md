@@ -308,6 +308,8 @@ Downstreams running exclusively in meter mode (every `billingusages` document ha
 5. Migrations run at boot before `listen()`; the index swap + `legacyPeriod` backfill land automatically once the duplicate-data audit passes.
 6. **Rolling deploys only:** the very first successful run of this migration on a given database briefly drops the index while backfilling (old, still-serving instances writing into that window can trip a duplicate-key abort — self-healing, retried on next boot). For a strict no-window guarantee, run this specific deploy during a maintenance window or scale to a single instance first. Every later boot (including every other instance in the same rolling deploy once the database has converged) skips the window entirely.
 
+---
+
 ## Config: `docs.excludeModules` — doc-only module exclusion (2026-06-29)
 
 New opt-in `config.docs.excludeModules` (default `[]` → **no behavior change**). It drops a module's `doc/*.yml` (OpenAPI) + `doc/guides/*.md` (guide tree) from the public spec (`/api/spec.json`) and guide tree (`/api/public/docs`), **independent of module runtime activation** — so it works even for **core** modules (`core`/`auth`/`users`/`home`), which `filterByActivation` never filters.
