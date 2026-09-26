@@ -4,6 +4,25 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## `responses.error`: optional title, derived from `http.STATUS_CODES` (2026-09-26)
+
+`lib/helpers/responses.js#error`'s `message` (title) param is now **optional**. Omitted, it is derived from Node's built-in `node:http` `STATUS_CODES` map for the RESOLVED status (e.g. `409` → `'Conflict'`), instead of requiring the caller to hand-write one.
+
+Why: the common call shape pairs a **dynamic** status with a **hardcoded** title (`responses.error(res, err.status || 422, 'Unprocessable Entity', ...)`), so whenever `err.status` differs from the hardcoded status the client-facing `message` contradicts `status`/`code` in the same envelope (a 409 conflict labelled "Unprocessable Entity"). The title is a pure function of the status — there is nothing project-specific about it — so fixing the derivation once here lets every downstream project drop its local `status → title` ternary at its own pace.
+
+### What changed (this repo)
+
+- **`lib/helpers/responses.js#error`** — `message` is now optional. Resolution order: explicit `message` (unchanged) → `STATUS_CODES[status]` for the already-resolved status → `'Something went wrong.'` for a valid-but-nonstandard code (e.g. `499`, which has no `STATUS_CODES` entry). The previous `error.message` fallback (used only when the title was omitted) is replaced by the STATUS_CODES lookup.
+- **New test** `lib/helpers/tests/responses.errorTitle.unit.tests.js` — regression guard asserting 400/403/404/409/422/503 all derive the matching `STATUS_CODES` title when the title is omitted.
+- **Deliberately NOT changed**: `getDescription`'s handling of `details`/`description` is untouched. Preferring an `AppError`'s `details.message` as the title is call-site specific and stays out of this stack default (see issue #4009's "Deliberately NOT proposed").
+
+### Action required for downstream projects (`/update-stack`)
+
+- **Explicit-title call sites (`responses.error(res, status, 'Title', description)`) are untouched** — this is the shape every call site in this repo uses today, so it is backward compatible here.
+- **This IS a behavior change for a call site that already omits the title** (`responses.error(res, status)(err)`, 2 args): `message` used to fall back to the raw `error.message`; it now derives from `STATUS_CODES[status]` instead. Grep downstream for that 2-arg shape — if found, either accept the new (more correct) status-matched title, or pass the title explicitly to keep the old text.
+
+---
+
 ## Organizations: welcome email now sent after signup provisioning (2026-09-25)
 
 Every successful signup that provisions a workspace — organizations enabled or
