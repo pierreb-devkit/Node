@@ -6,7 +6,7 @@ Breaking changes and upgrade notes for downstream projects.
 
 ## Removed unused APIs: `authorize()`, `requireFeatureFlag`, billing refund service (2026-09-26)
 
-Three APIs documented in earlier entries below had zero non-test callers in this repo, and re-verified 2026-09-26 across every downstream mirror (`ism_node`, `pierreb_node`, `comes_node`, `montaine_node`, `trawl_node`, `waos_node`), none calls them from project code either — the only occurrences anywhere were the stack's own mirrored files/tests and MIGRATIONS.md history. Removed as dead code (#3998).
+Three APIs documented in earlier entries below had zero non-test callers in this repo. Removed as dead code (#3998).
 
 ### What was removed, and the replacement
 
