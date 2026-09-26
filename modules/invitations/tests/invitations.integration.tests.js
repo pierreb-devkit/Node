@@ -125,10 +125,49 @@ describe('Signup invitations:', () => {
       expect(removed.status).toBe(200);
     });
 
-    test('non-admin is forbidden from creating invitations', async () => {
-      const userAgent = await createUserAndSignin();
-      const res = await userAgent.post('/api/invitations').send({ email: 'x@y.co' });
-      expect([401, 403]).toContain(res.status);
+    // Both `invitations.userFacing` branches install their own value (set → assert → restore)
+    // so the suite passes whatever default a consumer config ships (#4020).
+    test('non-admin is forbidden from creating invitations when userFacing is OFF', async () => {
+      const savedUserFacing = config.invitations?.userFacing;
+      config.invitations = { ...config.invitations, userFacing: false };
+      try {
+        const userAgent = await createUserAndSignin();
+        const res = await userAgent.post('/api/invitations').send({ email: 'x@y.co' });
+        expect([401, 403]).toContain(res.status);
+      } finally {
+        config.invitations = { ...config.invitations, userFacing: savedUserFacing };
+      }
+    });
+
+    test('non-admin can create + read their own invitation when userFacing is ON, scoped away from others', async () => {
+      const savedUserFacing = config.invitations?.userFacing;
+      config.invitations = { ...config.invitations, userFacing: true };
+      try {
+        const userAgent = await createUserAndSignin();
+
+        const created = await userAgent.post('/api/invitations').send({ email: 'referee@example.com' });
+        expect(created.status).toBe(200);
+        expect(created.body.data.email).toBe('referee@example.com');
+        const id = created.body.data.id;
+
+        // Scoped list (#3833): the non-admin sees their own invitation...
+        const listed = await userAgent.get('/api/invitations');
+        expect(listed.status).toBe(200);
+        expect(listed.body.data.some((i) => i.id === id)).toBe(true);
+
+        // ...but not an admin-created one that isn't theirs.
+        const adminAgent = await createAdminAndSignin();
+        const adminCreated = await adminAgent.post('/api/invitations').send({ email: 'not-yours@example.com' });
+        expect(adminCreated.status).toBe(200);
+        const listedAgain = await userAgent.get('/api/invitations');
+        expect(listedAgain.body.data.some((i) => i.id === adminCreated.body.data.id)).toBe(false);
+
+        // Non-admin still cannot revoke (delete stays admin-only).
+        const removed = await userAgent.delete(`/api/invitations/${id}`);
+        expect([401, 403]).toContain(removed.status);
+      } finally {
+        config.invitations = { ...config.invitations, userFacing: savedUserFacing };
+      }
     });
   });
 
