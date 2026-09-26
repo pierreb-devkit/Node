@@ -368,7 +368,10 @@ describe('Core unit tests:', () => {
 
       expect(mockRes.status).toHaveBeenCalledWith(500);
       expect(result.status).toBe(500);
-      expect(result.message).toBe('Something went wrong.');
+      // No explicit title -> derived from STATUS_CODES[500] (#4009), not the
+      // generic string (that string is now only the fallback for a status
+      // with no STATUS_CODES entry, e.g. 499).
+      expect(result.message).toBe('Internal Server Error');
       expect(result.description).toBe('');
     });
 

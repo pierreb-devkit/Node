@@ -291,6 +291,25 @@ Downstreams running exclusively in meter mode (every `billingusages` document ha
 
 ---
 
+## `responses.error`: optional title, derived from `http.STATUS_CODES` (2026-09-26)
+
+`lib/helpers/responses.js#error`'s `message` (title) param is now **optional**. Omitted, it is derived from Node's built-in `node:http` `STATUS_CODES` map for the RESOLVED status (e.g. `409` → `'Conflict'`), instead of requiring the caller to hand-write one.
+
+Why: the common call shape pairs a **dynamic** status with a **hardcoded** title (`responses.error(res, err.status || 422, 'Unprocessable Entity', ...)`), so whenever `err.status` differs from the hardcoded status the client-facing `message` contradicts `status`/`code` in the same envelope (a 409 conflict labelled "Unprocessable Entity"). The title is a pure function of the status — there is nothing project-specific about it — so fixing the derivation once here lets every downstream project drop its local `status → title` ternary at its own pace.
+
+### What changed (this repo)
+
+- **`lib/helpers/responses.js#error`** — `message` is now optional. Resolution order: explicit `message` (unchanged) → `STATUS_CODES[status]` for the already-resolved status → `'Something went wrong.'` for a valid-but-nonstandard code (e.g. `499`, which has no `STATUS_CODES` entry). The previous `error.message` fallback is replaced by the STATUS_CODES lookup — no existing call site relied on it (every current call site passes an explicit title).
+- **New test** `lib/helpers/tests/responses.errorTitle.unit.tests.js` — regression guard asserting 400/403/404/409/422/503 all derive the matching `STATUS_CODES` title when the title is omitted.
+- **Deliberately NOT changed**: `getDescription`'s handling of `details`/`description` is untouched. Preferring an `AppError`'s `details.message` as the title is call-site specific and stays out of this stack default (see issue #4009's "Deliberately NOT proposed").
+
+### Action required for downstream projects (`/update-stack`)
+
+- No action required. Every existing call site passes an explicit title, so this is **backward compatible** — behavior is unchanged until a call site is edited to omit the title.
+- Going forward, a new or edited call site with a dynamic status can drop its local title ternary and simply omit the title: `responses.error(res, err.status || 500, undefined, description)(err)` — the client-facing title now always matches the actual status.
+
+---
+
 ## Config: `docs.excludeModules` — doc-only module exclusion (2026-06-29)
 
 New opt-in `config.docs.excludeModules` (default `[]` → **no behavior change**). It drops a module's `doc/*.yml` (OpenAPI) + `doc/guides/*.md` (guide tree) from the public spec (`/api/spec.json`) and guide tree (`/api/public/docs`), **independent of module runtime activation** — so it works even for **core** modules (`core`/`auth`/`users`/`home`), which `filterByActivation` never filters.
