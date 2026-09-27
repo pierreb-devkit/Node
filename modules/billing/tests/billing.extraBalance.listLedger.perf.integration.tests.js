@@ -2,33 +2,24 @@
  * Module dependencies.
  */
 import mongoose from 'mongoose';
-import { describe, beforeAll, beforeEach, afterAll, test, expect } from '@jest/globals';
+import { jest, describe, beforeAll, beforeEach, afterAll, afterEach, test, expect } from '@jest/globals';
 
 import mongooseService from '../../../lib/services/mongoose.js';
 
 /**
- * Performance integration tests for BillingExtraBalanceRepository.listLedgerPage.
+ * Integration tests for BillingExtraBalanceRepository.listLedgerPage on a large ledger.
  *
- * Asserts that fetching page 1 of a large ledger does not scale with ledger size —
- * confirming that only the requested page is transferred over the wire, not the full
- * document. The guard is a relative bound (large-ledger fetch vs small-ledger fetch),
- * not a hardcoded wall-clock number: an absolute `< 50ms` assertion flakes on shared
- * CI runners under load, where every query gets slower but the *ratio* between a
- * large-ledger fetch and a small-ledger fetch stays roughly constant.
+ * Guards the paging design: page 1 of a 1000-entry ledger must come from a single
+ * aggregation that slices server-side, never from reading the whole document. This used
+ * to be a wall-clock bound (`< 50ms`), which flaked on shared CI runners and could not
+ * tell the two designs apart at this ledger size anyway.
  */
 describe('BillingExtraBalanceRepository.listLedgerPage performance integration tests:', () => {
   let BillingExtraBalanceRepository;
   let BillingExtraBalance;
 
   const orgId = new mongoose.Types.ObjectId();
-  const smallOrgId = new mongoose.Types.ObjectId();
 
-  // Sort ascending and pick the middle value(s) — resilient to a single slow/fast outlier run.
-  const median = (values) => {
-    const sorted = [...values].sort((a, b) => a - b);
-    const mid = Math.floor(sorted.length / 2);
-    return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
-  };
 
   beforeAll(async () => {
     await mongooseService.loadModels();
@@ -38,89 +29,56 @@ describe('BillingExtraBalanceRepository.listLedgerPage performance integration t
   });
 
   beforeEach(async () => {
-    await BillingExtraBalance.deleteMany({ organization: { $in: [orgId, smallOrgId] } });
+    await BillingExtraBalance.deleteMany({ organization: orgId });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   afterAll(async () => {
     await mongooseService.disconnect();
   });
 
-  test('listLedgerPage: fetching page 1 of a large ledger does not scale with ledger size (relative bound)', async () => {
+  test('listLedgerPage: pages a large ledger server-side (one aggregate, no full-document read)', async () => {
     const PAGE_SIZE = 20;
     const LARGE_LEDGER_SIZE = 1000;
-    const RUNS = 5;
 
-    const buildLedger = (size) =>
-      Array.from({ length: size }, (_, i) => ({
-        kind: 'topup',
-        amount: 1000,
-        stripeSessionId: `cs_perf_${size}_${i}`,
-        at: new Date(Date.now() - i * 1000),
-      }));
-
-    // Large ledger under test, plus a same-page-size baseline ledger (one page's worth of
-    // entries) so the only variable between the two fetches is ledger size, not page size.
     await BillingExtraBalance.create({
       organization: orgId,
-      ledger: buildLedger(LARGE_LEDGER_SIZE),
+      ledger: Array.from({ length: LARGE_LEDGER_SIZE }, (_, i) => ({
+        kind: 'topup',
+        amount: 1000,
+        stripeSessionId: `cs_perf_${i}`,
+        at: new Date(Date.now() - i * 1000),
+      })),
       cachedBalance: 1000000,
       cachedBalanceAt: new Date(),
     });
-    await BillingExtraBalance.create({
-      organization: smallOrgId,
-      ledger: buildLedger(PAGE_SIZE),
-      cachedBalance: 1000000,
-      cachedBalanceAt: new Date(),
-    });
 
-    const timeFetch = async (id) => {
-      const start = performance.now();
-      const result = await BillingExtraBalanceRepository.listLedgerPage(String(id), 0, PAGE_SIZE);
-      return { elapsed: performance.now() - start, result };
-    };
+    // Design guard, not a stopwatch: at this ledger size a full-document read costs about
+    // the same wall-clock time as the aggregation, so a timing bound cannot tell the two
+    // apart (and flakes on shared runners). Assert the paging path directly instead.
+    const aggregateSpy = jest.spyOn(BillingExtraBalance, 'aggregate');
+    const findOneSpy = jest.spyOn(BillingExtraBalance, 'findOne');
+    const findSpy = jest.spyOn(BillingExtraBalance, 'find');
 
-    // Warm up each connection/query plan once before measuring — the first aggregate on a
-    // fresh connection is not representative and would skew the first timed run.
-    await timeFetch(orgId);
-    await timeFetch(smallOrgId);
+    const result = await BillingExtraBalanceRepository.listLedgerPage(String(orgId), 0, PAGE_SIZE);
 
-    const largeTimes = [];
-    const smallTimes = [];
-    let sample;
-    for (let i = 0; i < RUNS; i += 1) {
-      const large = await timeFetch(orgId);
-      largeTimes.push(large.elapsed);
-      sample = large.result;
-      const small = await timeFetch(smallOrgId);
-      smallTimes.push(small.elapsed);
-    }
+    expect(aggregateSpy).toHaveBeenCalledTimes(1);
+    expect(findOneSpy).not.toHaveBeenCalled();
+    expect(findSpy).not.toHaveBeenCalled();
+    // The page is cut inside the pipeline: its last stage slices the sorted ledger.
+    const pipeline = aggregateSpy.mock.calls[0][0];
+    expect(JSON.stringify(pipeline[pipeline.length - 1])).toContain('$slice');
 
-    // Correctness (kept from the original assertion, checked on one of the large-ledger runs)
-    expect(sample).not.toBeNull();
-    expect(sample.total).toBe(LARGE_LEDGER_SIZE);
-    expect(sample.ledgerPage).toHaveLength(PAGE_SIZE);
-    expect(sample.cachedBalance).toBe(1000000);
-
-    // Entries should be sorted descending by `at` (newest first)
-    const firstAt = new Date(sample.ledgerPage[0].at).getTime();
-    const secondAt = new Date(sample.ledgerPage[1].at).getTime();
+    // Correctness
+    expect(result.total).toBe(LARGE_LEDGER_SIZE);
+    expect(result.ledgerPage).toHaveLength(PAGE_SIZE);
+    expect(result.cachedBalance).toBe(1000000);
+    const firstAt = new Date(result.ledgerPage[0].at).getTime();
+    const secondAt = new Date(result.ledgerPage[1].at).getTime();
     expect(firstAt).toBeGreaterThanOrEqual(secondAt);
-
-    // Performance gate: page 1 of a 1000-entry ledger must not scale with ledger size.
-    // Compared against the median of several page-1 fetches from a ledger that is exactly
-    // one page long, rather than a hardcoded wall-clock number, so the guard survives a busy
-    // shared runner (both fetches slow down together, but their ratio stays roughly constant).
-    // RATIO_MARGIN is deliberately generous — the aggregation does sort the full ledger
-    // server-side before slicing, so some growth with ledger size is expected; this only
-    // needs to catch a real regression (e.g. reverting to fetching the whole document and
-    // slicing in JS), not runner jitter. The denominator is floored at BASELINE_FLOOR_MS so a
-    // sub-millisecond baseline on a fast Mongo can't turn one scheduler pause on the large
-    // fetch into a failure: the effective ceiling is never below RATIO_MARGIN * BASELINE_FLOOR_MS.
-    const RATIO_MARGIN = 10;
-    const BASELINE_FLOOR_MS = 5;
-    const largeMedian = median(largeTimes);
-    const smallMedian = median(smallTimes);
-    expect(largeMedian / Math.max(smallMedian, BASELINE_FLOOR_MS)).toBeLessThan(RATIO_MARGIN);
   });
 
   test('listLedgerPage: returns null for a valid but non-existent org', async () => {
