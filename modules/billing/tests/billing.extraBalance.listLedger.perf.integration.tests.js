@@ -2,16 +2,17 @@
  * Module dependencies.
  */
 import mongoose from 'mongoose';
-import { describe, beforeAll, beforeEach, afterAll, test, expect } from '@jest/globals';
+import { jest, describe, beforeAll, beforeEach, afterAll, afterEach, test, expect } from '@jest/globals';
 
 import mongooseService from '../../../lib/services/mongoose.js';
 
 /**
- * Performance integration tests for BillingExtraBalanceRepository.listLedgerPage.
+ * Integration tests for BillingExtraBalanceRepository.listLedgerPage on a large ledger.
  *
- * Asserts that `listLedger` fetches a page from a 1000-entry ledger in < 50ms
- * when using the aggregation $slice path — confirming that only the requested
- * page is transferred over the wire, not the full document.
+ * Guards the paging design: page 1 of a 1000-entry ledger must come from a single
+ * aggregation that slices server-side, never from reading the whole document. This used
+ * to be a wall-clock bound (`< 50ms`), which flaked on shared CI runners and could not
+ * tell the two designs apart at this ledger size anyway.
  */
 describe('BillingExtraBalanceRepository.listLedgerPage performance integration tests:', () => {
   let BillingExtraBalanceRepository;
@@ -30,42 +31,55 @@ describe('BillingExtraBalanceRepository.listLedgerPage performance integration t
     await BillingExtraBalance.deleteMany({ organization: orgId });
   });
 
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   afterAll(async () => {
     await mongooseService.disconnect();
   });
 
-  test('listLedgerPage: fetching page 1 of a 1000-entry ledger takes < 50ms', async () => {
-    // Seed a document with 1000 ledger entries
-    const ledger = Array.from({ length: 1000 }, (_, i) => ({
-      kind: 'topup',
-      amount: 1000,
-      stripeSessionId: `cs_perf_${i}`,
-      at: new Date(Date.now() - i * 1000),
-    }));
+  test('listLedgerPage: pages a large ledger server-side (one aggregate, no full-document read)', async () => {
+    const PAGE_SIZE = 20;
+    const LARGE_LEDGER_SIZE = 1000;
 
     await BillingExtraBalance.create({
       organization: orgId,
-      ledger,
+      ledger: Array.from({ length: LARGE_LEDGER_SIZE }, (_, i) => ({
+        kind: 'topup',
+        amount: 1000,
+        stripeSessionId: `cs_perf_${i}`,
+        at: new Date(Date.now() - i * 1000),
+      })),
       cachedBalance: 1000000,
       cachedBalanceAt: new Date(),
     });
 
-    const start = performance.now();
-    const result = await BillingExtraBalanceRepository.listLedgerPage(String(orgId), 0, 20);
-    const elapsed = performance.now() - start;
+    // Design guard, not a stopwatch: at this ledger size a full-document read costs about
+    // the same wall-clock time as the aggregation, so a timing bound cannot tell the two
+    // apart (and flakes on shared runners). Assert the paging path directly instead.
+    const aggregateSpy = jest.spyOn(BillingExtraBalance, 'aggregate');
+    const findOneSpy = jest.spyOn(BillingExtraBalance, 'findOne');
+    const findSpy = jest.spyOn(BillingExtraBalance, 'find');
 
-    expect(result).not.toBeNull();
-    expect(result.total).toBe(1000);
-    expect(result.ledgerPage).toHaveLength(20);
+    const result = await BillingExtraBalanceRepository.listLedgerPage(String(orgId), 0, PAGE_SIZE);
+
+    expect(aggregateSpy).toHaveBeenCalledTimes(1);
+    expect(findOneSpy).not.toHaveBeenCalled();
+    expect(findSpy).not.toHaveBeenCalled();
+    // The page is cut inside the pipeline, and only the page comes back over the wire.
+    const pipeline = JSON.stringify(aggregateSpy.mock.calls[0][0]);
+    expect(pipeline).toMatch(/"\$(slice|limit)"/);
+
+    expect(Object.keys(result).sort()).toEqual(['cachedBalance', 'ledgerPage', 'total']);
+
+    // Correctness
+    expect(result.total).toBe(LARGE_LEDGER_SIZE);
+    expect(result.ledgerPage).toHaveLength(PAGE_SIZE);
     expect(result.cachedBalance).toBe(1000000);
-
-    // Entries should be sorted descending by `at` (newest first)
     const firstAt = new Date(result.ledgerPage[0].at).getTime();
     const secondAt = new Date(result.ledgerPage[1].at).getTime();
     expect(firstAt).toBeGreaterThanOrEqual(secondAt);
-
-    // Performance gate: < 50ms for a 1000-entry ledger page fetch
-    expect(elapsed).toBeLessThan(50);
   });
 
   test('listLedgerPage: returns null for a valid but non-existent org', async () => {
