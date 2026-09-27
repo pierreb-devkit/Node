@@ -111,9 +111,8 @@ describe('organizations event-seam isolation (extra registered hook):', () => {
     const user = buildUser();
     const result = await OrganizationsService.handleSignupOrganization(user);
 
-    expect(result.organization).toBeDefined();
-    expect(result.organization).not.toBeNull();
-    expect(result.membership).toBeDefined();
+    expect(result.organization).toBe(fakeOrg);
+    expect(result.membership).toBe(fakeMembership);
     expect(extraHook).toHaveBeenCalledTimes(1);
     expect(extraHook).toHaveBeenCalledWith({
       userId: String(user.id),
@@ -143,9 +142,8 @@ describe('organizations event-seam isolation (extra registered hook):', () => {
     const user = buildUser();
     const result = await OrganizationsService.handleSignupOrganization(user);
 
-    expect(result.organization).toBeDefined();
-    expect(result.organization).not.toBeNull();
-    expect(result.membership).toBeDefined();
+    expect(result.organization).toBe(fakeOrg);
+    expect(result.membership).toBe(fakeMembership);
     expect(throwingHook).toHaveBeenCalledTimes(1);
   });
 });

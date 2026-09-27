@@ -4,6 +4,8 @@
  * resetPasswordToken, resetPasswordExpires).
  */
 import { jest, describe, test, expect, beforeEach } from '@jest/globals';
+import config from '../../../config/index.js';
+import { removeSensitive as realRemoveSensitive } from '../utils/sanitizeUser.js';
 
 // ── mock UserService ──────────────────────────────────────────────────────────
 const mockRemoveSensitive = jest.fn();
@@ -52,14 +54,6 @@ jest.unstable_mockModule('../../../lib/helpers/responses.js', () => ({
 const { default: controller } = await import('../controllers/users.admin.controller.js');
 
 // ── helpers ───────────────────────────────────────────────────────────────────
-const SAFE_KEYS = ['_id', 'id', 'firstName', 'lastName', 'email', 'roles', 'provider'];
-
-/** Simulates what UserService.removeSensitive does: pick only safe keys. */
-const sanitize = (user) => {
-  const plain = typeof user.toJSON === 'function' ? user.toJSON() : { ...user };
-  return Object.fromEntries(SAFE_KEYS.filter((k) => k in plain).map((k) => [k, plain[k]]));
-};
-
 const buildMockUser = () => ({
   _id: 'uid-1',
   id: 'uid-1',
@@ -94,8 +88,9 @@ describe('users.admin.controller unit tests:', () => {
         status: jest.fn().mockReturnThis(),
       };
       mockListByUser.mockResolvedValue([]);
-      // Wire removeSensitive to the real sanitize logic (picks only safe keys)
-      mockRemoveSensitive.mockImplementation(sanitize);
+      // Wire removeSensitive to the REAL production function (not a hand-rolled
+      // stand-in) so these tests exercise the actual whitelist, not a copy of it.
+      mockRemoveSensitive.mockImplementation((u, conf) => realRemoveSensitive(u, conf));
     });
 
     test('should NOT include password in the response', async () => {
@@ -127,6 +122,21 @@ describe('users.admin.controller unit tests:', () => {
       const responseUser = res.json.mock.calls[0][0].data;
       expect(responseUser.email).toBe('alice@test.com');
       expect(responseUser.roles).toEqual(['user', 'admin']);
+    });
+
+    test('should only expose keys from the real config.whitelists.users.default', async () => {
+      await controller.get(req, res);
+      const responseUser = res.json.mock.calls[0][0].data;
+      const whitelist = config.whitelists.users.default;
+      // `memberships` is appended by the controller AFTER removeSensitive() runs
+      // (see users.admin.controller#get) — it is not part of the user whitelist itself.
+      // eslint-disable-next-line no-unused-vars
+      const { memberships, ...sanitizedUser } = responseUser;
+      // Every remaining key came out of the real whitelist, not a hardcoded stand-in.
+      expect(Object.keys(sanitizedUser).every((k) => whitelist.includes(k))).toBe(true);
+      // Whitelisted keys actually present on the source user are preserved.
+      expect(sanitizedUser._id).toBe(mockUser._id);
+      expect(sanitizedUser.provider).toBe('local');
     });
 
     test('should return empty-ish object when req.model is absent', async () => {

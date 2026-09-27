@@ -14,14 +14,9 @@ describe('SubscriptionMongoose schema — cancelAtPeriodEnd + cancelAt paths:', 
   // Import the model file directly — it registers itself via mongoose.model().
   // We need the raw Schema to inspect .path(), so we re-read the schema from the
   // registered model rather than importing the Schema directly (it is not exported).
+  // Jest isolates the module registry per test file, so `mongoose` here is always
+  // a fresh instance — no prior registration to guard against.
   beforeAll(async () => {
-    // Ensure a fresh model registration for this test file.
-    // If mongoose already has a 'Subscription' model registered (e.g. from a prior jest
-    // module run), delete it so our import triggers a fresh registration.
-    if (mongoose.modelNames().includes('Subscription')) {
-      delete mongoose.models.Subscription;
-      delete mongoose.modelSchemas?.Subscription;
-    }
     await import('../models/billing.subscription.model.mongoose.js');
     SubscriptionMongoose = mongoose.model('Subscription');
   });

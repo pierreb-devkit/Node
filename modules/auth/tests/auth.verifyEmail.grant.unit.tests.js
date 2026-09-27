@@ -1,16 +1,11 @@
 /**
- * Unit tests — verifyEmail credits signup grant in prod (mailer-configured) path.
- *
- * Root cause: handleSignupOrganization early-returns with emailVerificationRequired=true
- * when mailer is configured. verifyEmail previously only flipped emailVerified — no org
- * provisioned, no grant credited. Self-serve prod users received 0 units at signup.
- *
- * Fix: verifyEmail calls OrganizationsService.handleSignupOrganization(user) on success
- * so the normal org+grant provisioning runs after email is confirmed.
+ * Unit tests — verifyEmail provisions the org (and its signup grant) after a
+ * successful email verification, via OrganizationsService.handleSignupOrganization(user).
+ * Provisioning failure must stay non-fatal: verifyEmail still returns success.
  */
 import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globals';
 
-describe('verifyEmail — signup grant credited on email verification:', () => {
+describe('verifyEmail — org provisioning after email verification (non-fatal):', () => {
   let verifyEmail;
   let mockUserService;
   let mockOrganizationsService;
@@ -59,11 +54,6 @@ describe('verifyEmail — signup grant credited on email verification:', () => {
 
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
       default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
-    }));
-
-    // Mailer is configured (prod path)
-    jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
-      default: { isConfigured: jest.fn().mockReturnValue(true) },
     }));
 
     jest.unstable_mockModule('../../../lib/helpers/responses.js', () => ({
@@ -121,7 +111,7 @@ describe('verifyEmail — signup grant credited on email verification:', () => {
       default: { sign: jest.fn(() => 'fake_token') },
     }));
 
-    // Mock eligibility registry (auth.controller imports it post-P2 refactor)
+    // Mock eligibility registry (imported by auth.controller.js)
     jest.unstable_mockModule('../services/auth.eligibility.js', () => ({
       default: {
         registerSignupEligibility: jest.fn(),
