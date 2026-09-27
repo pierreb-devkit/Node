@@ -4,21 +4,40 @@
  * Stream error handlers in `get()` and `getSharp()` must guard against
  * `ERR_HTTP_HEADERS_SENT` when a GridFS stream fails mid-transfer after
  * response headers have already been flushed to the client.
+ *
+ * True unit test: UploadsService is mocked at the module boundary (its real
+ * implementation reaches a GridFS bucket + a `mongoose.model('Uploads')` call
+ * at import time, both of which require a live DB connection) so the suite
+ * never needs `bootstrap()`.
  */
-import { jest, afterAll, beforeAll } from '@jest/globals';
-import path from 'path';
-import { bootstrap } from '../../../lib/app.js';
-import mongooseService from '../../../lib/services/mongoose.js';
-import logger from '../../../lib/services/logger.js';
+import { jest, describe, test, expect, beforeEach, afterEach } from '@jest/globals';
 
 describe('Uploads controller unit tests:', () => {
   let UploadsController;
-  let UploadsService;
+  let mockUploadsService;
+  let mockLogger;
 
-  beforeAll(async () => {
-    await bootstrap();
-    UploadsController = (await import(path.resolve('./modules/uploads/controllers/uploads.controller.js'))).default;
-    UploadsService = (await import(path.resolve('./modules/uploads/services/uploads.service.js'))).default;
+  beforeEach(async () => {
+    jest.resetModules();
+
+    mockUploadsService = {
+      getStream: jest.fn(),
+      get: jest.fn(),
+      remove: jest.fn(),
+    };
+
+    mockLogger = { error: jest.fn(), warn: jest.fn(), info: jest.fn() };
+
+    jest.unstable_mockModule('../services/uploads.service.js', () => ({
+      default: mockUploadsService,
+    }));
+
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: mockLogger,
+    }));
+
+    const mod = await import('../controllers/uploads.controller.js');
+    UploadsController = mod.default;
   });
 
   afterEach(() => {
@@ -49,7 +68,7 @@ describe('Uploads controller unit tests:', () => {
         return stream;
       }),
     };
-    jest.spyOn(UploadsService, 'getStream').mockResolvedValueOnce(stream);
+    mockUploadsService.getStream.mockResolvedValueOnce(stream);
     return { stream, listeners };
   };
 
@@ -81,7 +100,6 @@ describe('Uploads controller unit tests:', () => {
     });
 
     test('calls res.destroy(err) when stream errors AFTER headers are sent', async () => {
-      const loggerSpy = jest.spyOn(logger, 'error').mockImplementation(() => {});
       const { listeners } = installStream();
       const res = buildRes();
 
@@ -96,8 +114,7 @@ describe('Uploads controller unit tests:', () => {
       expect(res.status).not.toHaveBeenCalled();
       expect(res.destroy).toHaveBeenCalledWith(err);
       // Error must reach the logger so mid-stream GridFS failures are visible.
-      expect(loggerSpy).toHaveBeenCalledWith(expect.stringContaining('uploads.get'), err);
-      loggerSpy.mockRestore();
+      expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining('uploads.get'), err);
     });
   });
 
@@ -132,7 +149,6 @@ describe('Uploads controller unit tests:', () => {
     });
 
     test('calls res.destroy(err) when stream errors AFTER headers are sent', async () => {
-      const loggerSpy = jest.spyOn(logger, 'error').mockImplementation(() => {});
       const { listeners } = installStream();
       const res = buildRes();
 
@@ -145,8 +161,7 @@ describe('Uploads controller unit tests:', () => {
       expect(res.status).not.toHaveBeenCalled();
       expect(res.destroy).toHaveBeenCalledWith(err);
       // Error must reach the logger so mid-stream GridFS failures are visible.
-      expect(loggerSpy).toHaveBeenCalledWith(expect.stringContaining('uploads.getSharp'), err);
-      loggerSpy.mockRestore();
+      expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining('uploads.getSharp'), err);
     });
   });
 
@@ -213,14 +228,5 @@ describe('Uploads controller unit tests:', () => {
       const dispCall = res.set.mock.calls.find(([h]) => h === 'Content-Disposition');
       expect(dispCall).toBeUndefined();
     });
-  });
-
-  afterAll(async () => {
-    try {
-      await mongooseService.disconnect();
-    } catch (err) {
-      // Best-effort cleanup; ignore connection teardown noise.
-      console.log(err);
-    }
   });
 });

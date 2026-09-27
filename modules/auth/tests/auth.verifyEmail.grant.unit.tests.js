@@ -14,7 +14,6 @@ describe('verifyEmail — signup grant credited on email verification:', () => {
   let verifyEmail;
   let mockUserService;
   let mockOrganizationsService;
-  let mockGrantOnSignup;
 
   const fakeUser = {
     id: '507f1f77bcf86cd799439011',
@@ -42,7 +41,6 @@ describe('verifyEmail — signup grant credited on email verification:', () => {
       update: jest.fn().mockResolvedValue({}),
     };
 
-    mockGrantOnSignup = jest.fn().mockResolvedValue({ applied: true });
     mockOrganizationsService = {
       handleSignupOrganization: jest.fn().mockResolvedValue({
         organization: { _id: 'org_abc' },
@@ -57,10 +55,6 @@ describe('verifyEmail — signup grant credited on email verification:', () => {
 
     jest.unstable_mockModule('../../organizations/services/organizations.service.js', () => ({
       default: mockOrganizationsService,
-    }));
-
-    jest.unstable_mockModule('../../billing/services/billing.signupGrant.service.js', () => ({
-      default: { grantOnSignup: mockGrantOnSignup },
     }));
 
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
@@ -163,12 +157,18 @@ describe('verifyEmail — signup grant credited on email verification:', () => {
     expect(calledUser.emailVerified).toBe(true);
   });
 
-  test('org provisioning failure is non-fatal — verifyEmail still returns 200', async () => {
+  test('org provisioning failure is non-fatal — verifyEmail still sends the success envelope', async () => {
     mockOrganizationsService.handleSignupOrganization.mockRejectedValue(new Error('DB unavailable'));
     const req = makeReq();
     const res = makeRes();
 
-    await expect(verifyEmail(req, res)).resolves.not.toThrow();
+    await verifyEmail(req, res);
+
+    const { default: responses } = await import('../../../lib/helpers/responses.js');
+    expect(responses.error).not.toHaveBeenCalled();
+    expect(responses.success).toHaveBeenCalledWith(res, 'Email verified successfully');
+    const successBody = responses.success.mock.results[0].value;
+    expect(successBody).toHaveBeenCalledWith({ emailVerified: true });
   });
 
   test('invalid/expired token — handleSignupOrganization NOT called', async () => {
