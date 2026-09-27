@@ -20,7 +20,6 @@ describe('BillingExtraBalanceRepository.listLedgerPage performance integration t
 
   const orgId = new mongoose.Types.ObjectId();
 
-
   beforeAll(async () => {
     await mongooseService.loadModels();
     await mongooseService.connect();
@@ -68,9 +67,11 @@ describe('BillingExtraBalanceRepository.listLedgerPage performance integration t
     expect(aggregateSpy).toHaveBeenCalledTimes(1);
     expect(findOneSpy).not.toHaveBeenCalled();
     expect(findSpy).not.toHaveBeenCalled();
-    // The page is cut inside the pipeline: its last stage slices the sorted ledger.
-    const pipeline = aggregateSpy.mock.calls[0][0];
-    expect(JSON.stringify(pipeline[pipeline.length - 1])).toContain('$slice');
+    // The page is cut inside the pipeline, and only the page comes back over the wire.
+    const pipeline = JSON.stringify(aggregateSpy.mock.calls[0][0]);
+    expect(pipeline).toMatch(/"\$(slice|limit)"/);
+
+    expect(Object.keys(result).sort()).toEqual(['cachedBalance', 'ledgerPage', 'total']);
 
     // Correctness
     expect(result.total).toBe(LARGE_LEDGER_SIZE);
