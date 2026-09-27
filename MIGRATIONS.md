@@ -4,6 +4,14 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## `test`/`test:unit` raise the heap ceiling to 8192 MB (2026-09-27)
+
+`--experimental-vm-modules` leaks ESM module registries between suites (upstream jest issue, present on jest 30); a large suite can hit Node's default ~4 GB old-space ceiling and OOM (not a test failure — the same suite passes clean at 8192). `NODE_OPTIONS` on the `test` and `test:unit` scripts now includes `--max-old-space-size=8192`; `:coverage` variants are untouched (#3948).
+
+**Action required:** `package.json` is project-owned (`--ours`, not part of the ISO merge) — if your suite is large enough to OOM under `--runInBand`, add the same flag to your project's `test`/`test:unit` scripts.
+
+---
+
 ## Removed unused APIs: `authorize()`, `requireFeatureFlag`, billing refund service (2026-09-26)
 
 Three APIs documented in earlier entries below had zero non-test callers in this repo. Removed as dead code (#3998).
