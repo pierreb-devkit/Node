@@ -113,12 +113,14 @@ describe('BillingExtraBalanceRepository.listLedgerPage performance integration t
     // RATIO_MARGIN is deliberately generous — the aggregation does sort the full ledger
     // server-side before slicing, so some growth with ledger size is expected; this only
     // needs to catch a real regression (e.g. reverting to fetching the whole document and
-    // slicing in JS), not runner jitter. Math.max(..., 1) floors the denominator so a
-    // sub-millisecond baseline on a fast local Mongo can't blow up the ratio.
+    // slicing in JS), not runner jitter. The denominator is floored at BASELINE_FLOOR_MS so a
+    // sub-millisecond baseline on a fast Mongo can't turn one scheduler pause on the large
+    // fetch into a failure: the effective ceiling is never below RATIO_MARGIN * BASELINE_FLOOR_MS.
     const RATIO_MARGIN = 10;
+    const BASELINE_FLOOR_MS = 5;
     const largeMedian = median(largeTimes);
     const smallMedian = median(smallTimes);
-    expect(largeMedian / Math.max(smallMedian, 1)).toBeLessThan(RATIO_MARGIN);
+    expect(largeMedian / Math.max(smallMedian, BASELINE_FLOOR_MS)).toBeLessThan(RATIO_MARGIN);
   });
 
   test('listLedgerPage: returns null for a valid but non-existent org', async () => {
