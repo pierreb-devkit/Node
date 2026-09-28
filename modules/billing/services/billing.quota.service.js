@@ -23,7 +23,7 @@ import BillingUsageService from './billing.usage.service.js';
 import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
 import BillingPlanService from './billing.plan.service.js';
 
-import { activeStatuses } from '../lib/constants.js';
+import { activeStatuses, failClosedStatuses } from '../lib/constants.js';
 import { getDefaultPlanId, getGracePeriodDays } from '../lib/billing.constants.js';
 import config from '../../../config/index.js';
 import AppError from '../../../lib/helpers/AppError.js';
@@ -75,8 +75,9 @@ async function assertCanExecute({ orgId, organization, user, resource, action })
   if (config.billing?.meterMode === true) {
     const subscription = await SubscriptionRepository.findByOrganization(orgIdStr);
 
-    // Fail-closed statuses → route to free plan quota
-    const failClosedStatuses = ['paused', 'unpaid', 'incomplete_expired', 'incomplete', 'canceled'];
+    // Fail-closed statuses → route to free plan quota. Shared with
+    // billing.usage.service.js's incrementMeter so the gate and the meter can never
+    // diverge on which statuses are treated as free (#4151).
     if (subscription && failClosedStatuses.includes(subscription.status)) {
       const planId = getDefaultPlanId();
       const freePlan = BillingPlanService.getActivePlan(planId);

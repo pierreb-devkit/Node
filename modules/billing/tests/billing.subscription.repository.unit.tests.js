@@ -226,8 +226,11 @@ describe('BillingSubscriptionRepository unit tests:', () => {
   // ── findPlan ──────────────────────────────────────────────────────────────
 
   describe('findPlan', () => {
-    test('returns plan field for a valid organizationId', async () => {
-      const planDoc = { _id: subId, plan: 'pro' };
+    // #4151: widened to also project `status` so callers (incrementMeter) can detect a
+    // fail-closed subscription without a second query — same fields the admission gate
+    // (billing.quota.service.js) already reads.
+    test('returns plan and status fields for a valid organizationId', async () => {
+      const planDoc = { _id: subId, plan: 'pro', status: 'active' };
       const execMock = jest.fn().mockResolvedValue(planDoc);
       const leanMock = jest.fn().mockReturnValue({ exec: execMock });
       mockModel.findOne.mockReturnValue({ lean: leanMock });
@@ -236,7 +239,7 @@ describe('BillingSubscriptionRepository unit tests:', () => {
 
       expect(mockModel.findOne).toHaveBeenCalledWith(
         { organization: orgId },
-        { plan: 1 },
+        { plan: 1, status: 1 },
       );
       expect(leanMock).toHaveBeenCalled();
       expect(result).toEqual(planDoc);

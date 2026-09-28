@@ -243,7 +243,60 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
 
       expect(mockPlanService.getActivePlan).toHaveBeenCalledWith('free');
     });
+  });
 
+  /**
+   * #4151 — billing.quota.service.js (the admission gate) already treats a fail-closed
+   * subscription status (paused/unpaid/incomplete/incomplete_expired/canceled) as the
+   * free plan. incrementMeter must bill the SAME way, or the gate lets the org through
+   * on free-plan grounds while the meter keeps consuming the paid quota snapshot.
+   */
+  describe('incrementMeter — fail-closed statuses bill against the default (free) plan', () => {
+    test('unpaid subscription bills the default plan quota, not the stale paid-plan snapshot', async () => {
+      mockConfig.billing.defaultPlan = 'free';
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro', status: 'unpaid' });
+      mockPlanService.getActivePlan.mockImplementation((planId) =>
+        makePlan({ planId, meterQuota: planId === 'free' ? 0 : 500000 }));
+      mockUsageRepository.incrementMeter.mockResolvedValue(makeUsageDoc({ meterUsed: 10, meterQuota: 0 }));
+
+      const result = await BillingUsageService.incrementMeter(orgId, 10, { scrap: 10 }, 'hist_failclosed');
+
+      expect(mockPlanService.getActivePlan).toHaveBeenCalledWith('free');
+      expect(mockPlanService.getActivePlan).not.toHaveBeenCalledWith('pro');
+      expect(result.meterQuota).toBe(0);
+      // Free-plan behavior: every unit is billed to extras, none absorbed by a quota
+      // the org no longer has access to.
+      expect(result.extrasConsumed).toBe(10);
+    });
+
+    test('every status in the shared fail-closed list routes to the default plan (reuse, not a second literal list)', async () => {
+      mockConfig.billing.defaultPlan = 'free';
+      mockPlanService.getActivePlan.mockImplementation((planId) =>
+        makePlan({ planId, meterQuota: planId === 'free' ? 0 : 500000 }));
+      mockUsageRepository.incrementMeter.mockResolvedValue(makeUsageDoc({ meterUsed: 1, meterQuota: 0 }));
+
+      const { failClosedStatuses } = await import('../lib/constants.js');
+      expect(failClosedStatuses.length).toBeGreaterThan(0);
+
+      for (const status of failClosedStatuses) {
+        mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'enterprise', status });
+        await BillingUsageService.incrementMeter(orgId, 1, {}, `hist_${status}`);
+        expect(mockPlanService.getActivePlan).toHaveBeenLastCalledWith('free');
+      }
+    });
+
+    test('active subscription still bills its own paid plan (fail-closed guard does not over-fire)', async () => {
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro', status: 'active' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan());
+      mockUsageRepository.incrementMeter.mockResolvedValue(makeUsageDoc({ meterUsed: 10 }));
+
+      await BillingUsageService.incrementMeter(orgId, 10, {}, 'hist_active');
+
+      expect(mockPlanService.getActivePlan).toHaveBeenCalledWith('pro');
+    });
+  });
+
+  describe('incrementMeter — replay', () => {
     test('should return applied=false and fetch existing doc on replay', async () => {
       mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
       mockPlanService.getActivePlan.mockReturnValue(makePlan());

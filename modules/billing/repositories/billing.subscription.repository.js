@@ -112,16 +112,19 @@ const findByStripeSubscriptionId = (stripeSubscriptionId) => {
 
 /**
  * @function findPlan
- * @description Lean lookup that returns only the `plan` field for a given organization.
- *              Used on hot paths (meter attribution, weekly reset) where only the plan
- *              identifier is needed — avoids the full populate overhead of findByOrganization.
+ * @description Lean lookup that returns the `plan` and `status` fields for a given
+ *              organization. Used on hot paths (meter attribution, weekly reset) where
+ *              only these two fields are needed — avoids the full populate overhead of
+ *              findByOrganization. `status` lets callers detect a fail-closed
+ *              subscription (see `failClosedStatuses` in `../lib/constants.js`) without
+ *              a second query (#4151).
  * @param {String} organizationId - The organization ID.
- * @returns {Promise<{plan: string}|null>} A lean plain object with just `plan`, or null.
+ * @returns {Promise<{plan: string, status: string}|null>} A lean plain object, or null.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const findPlan = (organizationId) => {
   if (!mongoose.Types.ObjectId.isValid(organizationId)) return null;
-  return Subscription.findOne({ organization: organizationId }, { plan: 1 }).lean().exec();
+  return Subscription.findOne({ organization: organizationId }, { plan: 1, status: 1 }).lean().exec();
 };
 
 /**
