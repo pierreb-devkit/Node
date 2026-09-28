@@ -1184,6 +1184,23 @@ describe('BillingExtraBalance unit tests:', () => {
         expect(result).toEqual({ doc: null, applied: false });
         expect(mockModel.findOneAndUpdate).not.toHaveBeenCalled();
       });
+
+      // #4151 — the idempotency guard in step 2 below only excludes a matching refId
+      // WITHIN this org's own ledger ('ledger.refId': { $ne }), so a retry whose target
+      // org changed between attempts (e.g. an org merge/reassignment) is credited twice.
+      test('returns applied:false duplicate_grant when the refId was already granted to a DIFFERENT org', async () => {
+        // Cross-org existence check finds a prior grant under this refId in any org.
+        mockModel.exists.mockResolvedValue({ _id: 'some-other-orgs-balance-doc' });
+
+        const result = await BillingExtraBalanceRepository.creditGrant(orgId, 500, 'referral', {
+          refId: 'referral:64b2f0000000000000000001:referrer',
+        });
+
+        expect(result).toEqual({ doc: null, applied: false, reason: 'duplicate_grant' });
+        expect(mockModel.exists).toHaveBeenCalledWith({ 'ledger.refId': 'referral:64b2f0000000000000000001:referrer' });
+        // Must short-circuit before any write.
+        expect(mockModel.findOneAndUpdate).not.toHaveBeenCalled();
+      });
     });
   });
 });

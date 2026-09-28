@@ -169,7 +169,11 @@ const debit = async (orgId, amount, refId) => {
  * @description Atomically credit extra meter units for a non-Stripe grant (e.g. signup free
  *              tier, referral grant). Idempotent: if a ledger entry with the same refId
  *              already exists, the update is a no-op and applied=false is returned.
- *              2-step pattern aligned with creditPack:
+ *              Idempotency is checked ACROSS ALL orgs, not just this one: a retry whose
+ *              target org changed between attempts (e.g. an org merge/reassignment) must
+ *              not be credited twice under the same refId (#4151).
+ *              3-step pattern aligned with creditPack:
+ *                Step 0 — cross-org existence check (any org's ledger, not just this one).
  *                Step 1 — ensure doc exists (atomic getOrCreate, no-op on replay).
  *                Step 2 — idempotency-guarded credit (no upsert).
  *              Idempotency key: `options.refId` when supplied (#3842 referral grants —
@@ -211,6 +215,12 @@ const creditGrant = async (orgId, amount, source, { refId = null, expiresAt = nu
     at: new Date(),
     ...(expiresAt ? { expiresAt } : {}),
   };
+
+  // Step 0: cross-org idempotency guard. The step-2 filter below only excludes a
+  // matching refId within THIS org's own ledger, so it misses a replay whose target
+  // org changed between attempts. Check across every org's ledger before writing.
+  const alreadyGranted = await BillingExtraBalance().exists({ 'ledger.refId': idempotencyKey });
+  if (alreadyGranted) return { doc: null, applied: false, reason: 'duplicate_grant' };
 
   // Step 1: ensure the document exists (atomic getOrCreate, no-op if already present).
   await getOrCreate(orgId);
