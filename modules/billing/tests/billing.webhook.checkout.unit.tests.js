@@ -429,17 +429,23 @@ describe('Billing webhook checkout unit tests:', () => {
       );
     });
 
-    test('should abort without persisting when stripe.subscriptions.retrieve throws', async () => {
+    test('should throw and not persist when stripe.subscriptions.retrieve fails, so Stripe redelivers the event', async () => {
+      // #4151: a silent `return` here recorded the event as processed while the
+      // subscription row stayed unlinked on the free plan. Throwing propagates through
+      // withIdempotency (attempts persist, no delete-on-failure) so the controller
+      // returns 5xx and Stripe redelivers instead.
       mockStripeInstance.subscriptions.retrieve.mockRejectedValue(new Error('Stripe API error'));
 
-      await BillingWebhookService.handleCheckoutCompleted(
-        {
-          customer: 'cus_123',
-          subscription: 'sub_456',
-          metadata: { organizationId: orgId, plan: 'pro' },
-        },
-        checkoutEvent,
-      );
+      await expect(
+        BillingWebhookService.handleCheckoutCompleted(
+          {
+            customer: 'cus_123',
+            subscription: 'sub_456',
+            metadata: { organizationId: orgId, plan: 'pro' },
+          },
+          checkoutEvent,
+        ),
+      ).rejects.toThrow('Stripe API error');
 
       // Should not persist anything — aborting to avoid stale 'active' assumption
       expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();

@@ -245,9 +245,10 @@ const handleCheckoutCompleted = async (session, event) => {
   }
 
   // Fetch real status from Stripe — never assume 'active' (could be 'trialing', 'incomplete', etc.)
-  // On retrieval failure we abort: persisting 'active' on a failed fetch would silently
-  // misclassify trialing/incomplete subscriptions and bypass dunning. The next webhook
-  // (subscription.updated or invoice.payment_failed) will reconcile the correct status.
+  // On retrieval failure we throw (see catch below): persisting 'active' on a failed
+  // fetch would silently misclassify trialing/incomplete subscriptions and bypass
+  // dunning, and swallowing the failure would let the event be recorded as processed
+  // while the subscription row stays unlinked (#4151). Throwing lets Stripe redeliver.
   const stripe = getStripe();
   if (!stripe) {
     logger.error('[billing.webhook] checkout.session.completed — Stripe not configured, aborting', {
@@ -266,11 +267,16 @@ const handleCheckoutCompleted = async (session, event) => {
       return;
     }
   } catch (err) {
-    logger.error('[billing.webhook] checkout.session.completed — subscription retrieve failed, aborting to avoid stale active assumption', {
+    // Throw (do NOT swallow) — a silent return here still lets withIdempotency record
+    // the event as processed while the subscription row stays unlinked on the free
+    // plan. Throwing propagates through withIdempotency's catch (attempts persists,
+    // the claim doc is never deleted on failure), so the controller returns a 5xx and
+    // Stripe redelivers the event instead (#4151).
+    logger.error('[billing.webhook] checkout.session.completed — subscription retrieve failed, will retry via Stripe redelivery', {
       stripeSubscriptionId,
       error: err?.message ?? String(err),
     });
-    return;
+    throw err;
   }
 
   const existing = await SubscriptionRepository.findByOrganization(organizationId);
