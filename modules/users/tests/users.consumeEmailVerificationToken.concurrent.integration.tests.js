@@ -72,6 +72,28 @@ describe('UserService.consumeEmailVerificationToken — concurrent verification 
     expect(dbUser.emailVerificationExpires).toBeNull();
   });
 
+  test('a user with no email is never verified (mirrors the old !user.email guard)', async () => {
+    const token = `tok_noemail_${Date.now()}`;
+    // Schema allows a missing email (no `required`); the old controller code checked
+    // `!user.email` after a separate read — the atomic filter must reject the same case.
+    const created = await User.create({
+      firstName: 'No',
+      lastName: 'Email',
+      provider: 'local',
+      emailVerified: false,
+      emailVerificationToken: token,
+      emailVerificationExpires: Date.now() + 3600000,
+    });
+
+    try {
+      const result = await UserService.consumeEmailVerificationToken(token);
+      expect(result).toBeNull();
+    } finally {
+      // Not covered by the afterEach's email-regex cleanup (this doc has no email).
+      await User.deleteOne({ _id: created._id }).exec();
+    }
+  });
+
   test('an expired token is never consumed', async () => {
     const token = `tok_expired_${Date.now()}`;
     await User.create({

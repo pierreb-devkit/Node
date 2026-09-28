@@ -109,15 +109,16 @@ const update = (user) => {
 
 /**
  * @desc Atomically verify an email address: only a document whose
- *       emailVerificationToken matches AND emailVerificationExpires is still in the
- *       future is updated, in the SAME findOneAndUpdate that reads it — closing the
- *       read-then-write race where two concurrent requests for the same token both
- *       pass a separate read check and both provision a workspace. A second
- *       concurrent call, or a replay after the token was already consumed, matches
- *       no document and returns null.
+ *       emailVerificationToken matches, emailVerificationExpires is still in the
+ *       future, AND email is a non-empty string is updated, in the SAME
+ *       findOneAndUpdate that reads it — closing the read-then-write race where two
+ *       concurrent requests for the same token both pass a separate read check and
+ *       both provision a workspace. A second concurrent call, a replay after the
+ *       token was already consumed, or a doc with no email (mirrors the previous
+ *       controller-level `!user.email` guard), matches no document and returns null.
  * @param {String} token - The raw emailVerificationToken from the verification link.
  * @returns {Object|null} the updated user document, or null when the token is
- *   missing, unknown, expired, or already consumed.
+ *   missing, unknown, expired, already consumed, or the account has no email.
  */
 const consumeEmailVerificationToken = (token) => {
   if (!token) return Promise.resolve(null);
@@ -125,6 +126,7 @@ const consumeEmailVerificationToken = (token) => {
     {
       emailVerificationToken: token,
       emailVerificationExpires: { $gt: Date.now() },
+      email: { $exists: true, $nin: [null, ''] },
     },
     {
       emailVerified: true,
