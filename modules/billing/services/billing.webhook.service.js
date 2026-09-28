@@ -645,6 +645,9 @@ const handleInvoicePaymentFailed = async (invoice, event) => {
 
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId);
   if (!existing) return;
+  // A late/out-of-order invoice event must not bring a canceled subscription back to
+  // past_due — the subscription no longer exists on Stripe (#4151).
+  if (existing.status === 'canceled') return;
 
   const fields = { status: 'past_due' };
 
@@ -691,6 +694,9 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
 
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId);
   if (!existing) return;
+  // A late invoice.payment_succeeded (e.g. a delayed Stripe retry queued before the
+  // cancellation) must not resurrect a canceled subscription to 'active' (#4151).
+  if (existing.status === 'canceled') return;
 
   // Always advance the invoice-family marker (lastInvoiceEventCreatedAt / lastInvoiceEventId)
   // so stale replays of older invoice events are correctly rejected by the ordering guard.
