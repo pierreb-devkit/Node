@@ -56,6 +56,8 @@ Operational runbooks for the billing module. Each runbook references real endpoi
 
 **Context**: Stripe webhook events that fail processing 5+ times (or where the idempotency guard fires on a poisoned payload) are marked `deadLetter: true` in `processedStripeEvents`. They accumulate and must be reviewed manually — partial TTL index excludes them from auto-expiry.
 
+**Common trigger:** customer paid but no credit → `POST /api/admin/billing/webhook/replay {eventId}` (an event lost mid-handler is replayed by hand).
+
 **Steps**:
 
 1. List all dead-letter events:
