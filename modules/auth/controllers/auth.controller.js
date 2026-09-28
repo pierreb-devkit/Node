@@ -750,18 +750,15 @@ const getConfig = async (req, res) => {
  */
 const verifyEmail = async (req, res) => {
   try {
-    const user = await UserService.getBrut({ emailVerificationToken: req.params.token });
-    const isExpired = !user?.emailVerificationExpires || Number(user.emailVerificationExpires) < Date.now();
-    if (!user || !user.email || isExpired) {
+    // Atomic read+write (#4151): a separate getBrut() read then update() write let two
+    // concurrent requests for the same token both pass the read check and both
+    // provision a workspace. consumeEmailVerificationToken does both in one
+    // findOneAndUpdate — only the first concurrent caller can match the still-unexpired
+    // token; the second gets null and falls into the same 400 as an invalid token.
+    const user = await UserService.consumeEmailVerificationToken(req.params.token);
+    if (!user) {
       return responses.error(res, 400, 'Bad Request', 'Email verification token is invalid or has expired.')();
     }
-    await UserService.update(user, {
-      emailVerified: true,
-      emailVerificationToken: null,
-      emailVerificationExpires: null,
-    }, 'recover');
-    // Mark verified on the local object so handleSignupOrganization sees emailVerified=true
-    user.emailVerified = true;
 
     // Post-verification org setup — provision org/grant if not yet done (best-effort).
     // handleSignupOrganization is idempotent: if the org already exists it converges

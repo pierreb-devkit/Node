@@ -32,8 +32,15 @@ describe('verifyEmail — org provisioning after email verification (non-fatal):
     jest.resetModules();
 
     mockUserService = {
-      getBrut: jest.fn().mockResolvedValue({ ...fakeUser }),
-      update: jest.fn().mockResolvedValue({}),
+      // #4151: verifyEmail consumes the token via one atomic findOneAndUpdate instead
+      // of a separate getBrut() read + update() write — the resolved doc already
+      // carries emailVerified: true (set by the atomic write), not mutated locally.
+      consumeEmailVerificationToken: jest.fn().mockResolvedValue({
+        ...fakeUser,
+        emailVerified: true,
+        emailVerificationToken: null,
+        emailVerificationExpires: null,
+      }),
     };
 
     mockOrganizationsService = {
@@ -162,7 +169,7 @@ describe('verifyEmail — org provisioning after email verification (non-fatal):
   });
 
   test('invalid/expired token — handleSignupOrganization NOT called', async () => {
-    mockUserService.getBrut.mockResolvedValue(null);
+    mockUserService.consumeEmailVerificationToken.mockResolvedValue(null);
     const req = makeReq('bad_token');
     const res = makeRes();
 

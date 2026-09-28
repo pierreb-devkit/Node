@@ -149,6 +149,18 @@ const update = async (user, body, option) => {
 };
 
 /**
+ * @desc Atomically consume an email-verification token: verifies the email and clears
+ *       the token in one write (see UserRepository.consumeEmailVerificationToken),
+ *       instead of a separate read-then-write that lets two concurrent requests for
+ *       the same token both pass the read check.
+ * @param {String} token - The raw emailVerificationToken from the verification link.
+ * @returns {Promise<Object|null>} full ("brut", unsanitized — same convention as
+ *   getBrut) user document, or null when the token could not be atomically consumed
+ *   (unknown, expired, or already used).
+ */
+const consumeEmailVerificationToken = (token) => UserRepository.consumeEmailVerificationToken(token);
+
+/**
  * @desc Function to ask repository to sign terms for current user
  * @param {Object} user - original user document
  * @returns {Promise<Object>} updated user (sanitized)
@@ -288,6 +300,7 @@ export default {
   get,
   getBrut,
   update,
+  consumeEmailVerificationToken,
   terms,
   remove,
   stats,

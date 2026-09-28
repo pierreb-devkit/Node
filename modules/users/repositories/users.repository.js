@@ -108,6 +108,34 @@ const update = (user) => {
 };
 
 /**
+ * @desc Atomically verify an email address: only a document whose
+ *       emailVerificationToken matches AND emailVerificationExpires is still in the
+ *       future is updated, in the SAME findOneAndUpdate that reads it — closing the
+ *       read-then-write race where two concurrent requests for the same token both
+ *       pass a separate read check and both provision a workspace. A second
+ *       concurrent call, or a replay after the token was already consumed, matches
+ *       no document and returns null.
+ * @param {String} token - The raw emailVerificationToken from the verification link.
+ * @returns {Object|null} the updated user document, or null when the token is
+ *   missing, unknown, expired, or already consumed.
+ */
+const consumeEmailVerificationToken = (token) => {
+  if (!token) return Promise.resolve(null);
+  return User.findOneAndUpdate(
+    {
+      emailVerificationToken: token,
+      emailVerificationExpires: { $gt: Date.now() },
+    },
+    {
+      emailVerified: true,
+      emailVerificationToken: null,
+      emailVerificationExpires: null,
+    },
+    { returnDocument: 'after', runValidators: true },
+  ).exec();
+};
+
+/**
  * @desc Function to remove a user from db by id or email
  * @param {Object} user
  * @returns {Object} confirmation of delete
@@ -252,6 +280,7 @@ export default {
   get,
   search,
   update,
+  consumeEmailVerificationToken,
   remove,
   stats,
   count,
