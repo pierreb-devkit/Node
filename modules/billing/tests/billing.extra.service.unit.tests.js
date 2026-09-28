@@ -143,6 +143,29 @@ describe('BillingExtraService unit tests:', () => {
       expect(r1.applied).toBe(true);
       expect(r2.applied).toBe(false);
     });
+
+    // #4151 — a transient DB error must not make the overflow free: debit is idempotent
+    // by refId (see 'debit same refId twice' above), so retrying it cannot double-charge.
+    test('retries a transient repository failure and succeeds without double-crediting', async () => {
+      const doc = makeDoc({ cachedBalance: 300000 });
+      mockRepository.debit
+        .mockRejectedValueOnce(new Error('Mongo topology closed'))
+        .mockResolvedValueOnce({ doc, applied: true });
+
+      const result = await BillingExtraService.debit(orgId, 100000, 'ref_transient');
+
+      expect(mockRepository.debit).toHaveBeenCalledTimes(2);
+      expect(mockRepository.debit).toHaveBeenNthCalledWith(1, orgId, 100000, 'ref_transient');
+      expect(mockRepository.debit).toHaveBeenNthCalledWith(2, orgId, 100000, 'ref_transient');
+      expect(result.applied).toBe(true);
+      expect(result.doc).toBe(doc);
+    });
+
+    test('gives up after repeated transient failures and surfaces the error (never silently frees the overflow)', async () => {
+      mockRepository.debit.mockRejectedValue(new Error('Mongo topology closed'));
+
+      await expect(BillingExtraService.debit(orgId, 100000, 'ref_down')).rejects.toThrow('Mongo topology closed');
+    });
   });
 
   describe('getOrgBalanceContext', () => {
