@@ -245,15 +245,21 @@ const handleCheckoutCompleted = async (session, event) => {
   }
 
   // Fetch real status from Stripe — never assume 'active' (could be 'trialing', 'incomplete', etc.)
-  // On retrieval failure we abort: persisting 'active' on a failed fetch would silently
-  // misclassify trialing/incomplete subscriptions and bypass dunning. The next webhook
-  // (subscription.updated or invoice.payment_failed) will reconcile the correct status.
+  // On retrieval failure we throw (see catch below): persisting 'active' on a failed
+  // fetch would silently misclassify trialing/incomplete subscriptions and bypass
+  // dunning, and swallowing the failure would let the event be recorded as processed
+  // while the subscription row stays unlinked (#4151). Throwing lets Stripe redeliver.
   const stripe = getStripe();
   if (!stripe) {
-    logger.error('[billing.webhook] checkout.session.completed — Stripe not configured, aborting', {
+    // Throw (do NOT return) — same reasoning as the retrieval catch below: a silent
+    // return here still lets withIdempotency record the event as processed while the
+    // subscription row stays unlinked, even though nothing was actually done. Throwing
+    // lets an event received during a Stripe-configuration outage retry once
+    // configuration is restored (#4155).
+    logger.error('[billing.webhook] checkout.session.completed — Stripe not configured, will retry via Stripe redelivery', {
       stripeSubscriptionId,
     });
-    return;
+    throw new Error('Stripe not configured');
   }
   let realStatus;
   try {
@@ -266,11 +272,16 @@ const handleCheckoutCompleted = async (session, event) => {
       return;
     }
   } catch (err) {
-    logger.error('[billing.webhook] checkout.session.completed — subscription retrieve failed, aborting to avoid stale active assumption', {
+    // Throw (do NOT swallow) — a silent return here still lets withIdempotency record
+    // the event as processed while the subscription row stays unlinked on the free
+    // plan. Throwing propagates through withIdempotency's catch (attempts persists,
+    // the claim doc is never deleted on failure), so the controller returns a 5xx and
+    // Stripe redelivers the event instead (#4151).
+    logger.error('[billing.webhook] checkout.session.completed — subscription retrieve failed, will retry via Stripe redelivery', {
       stripeSubscriptionId,
       error: err?.message ?? String(err),
     });
-    return;
+    throw err;
   }
 
   const existing = await SubscriptionRepository.findByOrganization(organizationId);
@@ -639,6 +650,11 @@ const handleInvoicePaymentFailed = async (invoice, event) => {
 
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId);
   if (!existing) return;
+  // A late/out-of-order invoice event must not bring a canceled subscription back to
+  // past_due — the subscription no longer exists on Stripe (#4151). Fast-path only: a
+  // concurrent cancellation can still commit after this read, so the write below
+  // re-asserts `status: { $ne: 'canceled' }` atomically (#4155).
+  if (existing.status === 'canceled') return;
 
   const fields = { status: 'past_due' };
 
@@ -647,7 +663,14 @@ const handleInvoicePaymentFailed = async (invoice, event) => {
     fields.pastDueSince = new Date();
   }
 
-  const updated = await SubscriptionRepository.updateIfEventNewer(String(existing._id), event.created, event.id, fields, 'invoice');
+  const updated = await SubscriptionRepository.updateIfEventNewer(
+    String(existing._id),
+    event.created,
+    event.id,
+    fields,
+    'invoice',
+    { status: { $ne: 'canceled' } },
+  );
   if (!updated) {
     logger.info('[billing.webhook] skipped stale event', { eventId: event.id, type: event.type });
     return;
@@ -685,6 +708,11 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
 
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId);
   if (!existing) return;
+  // A late invoice.payment_succeeded (e.g. a delayed Stripe retry queued before the
+  // cancellation) must not resurrect a canceled subscription to 'active' (#4151). Fast-path
+  // only: a concurrent cancellation can still commit after this read, so the write below
+  // re-asserts `status: { $ne: 'canceled' }` atomically (#4155).
+  if (existing.status === 'canceled') return;
 
   // Always advance the invoice-family marker (lastInvoiceEventCreatedAt / lastInvoiceEventId)
   // so stale replays of older invoice events are correctly rejected by the ordering guard.
@@ -725,6 +753,7 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
     event.id,
     fields,
     'invoice',
+    { status: { $ne: 'canceled' } },
   );
   if (!updated) {
     logger.info('[billing.webhook] skipped stale event', { eventId: event.id, type: event.type });

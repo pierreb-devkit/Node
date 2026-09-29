@@ -6,6 +6,7 @@ import logger from '../../../lib/services/logger.js';
 import billingEvents from '../lib/events.js';
 import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
 import { SENTINEL_PENDING } from '../lib/billing.constants.js';
+import { retryWithBackoff } from '../lib/billing.retry.js';
 
 /**
  * @function creditPack
@@ -40,6 +41,14 @@ const creditPack = async (orgId, packId, stripeSessionId) => {
  * @function debit
  * @description Debit meter units from the extra balance.
  *              Returns applied=false if balance is insufficient or refId already used.
+ *              Wrapped in retryWithBackoff: the write is idempotent by refId (a retry
+ *              cannot double-charge), so a transient DB error must not fall through and
+ *              silently make the overflow free (#4151).
+ *              `shouldRetry` excludes the repository's deterministic failures — an
+ *              `invalid argument: ...` (bad amount/refId) or the `ORGANIZATION_NOT_FOUND`
+ *              AppError never succeeds on retry, so retrying it only burns the backoff
+ *              budget (2 extra DB round trips, ~600ms) before surfacing the identical
+ *              error.
  *
  * @param {string} orgId - The organization ObjectId (string).
  * @param {number} units - Meter units to debit (must be > 0).
@@ -48,7 +57,11 @@ const creditPack = async (orgId, packId, stripeSessionId) => {
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const debit = (orgId, units, refId) =>
-  BillingExtraBalanceRepository.debit(orgId, units, refId);
+  retryWithBackoff(() => BillingExtraBalanceRepository.debit(orgId, units, refId), {
+    shouldRetry: (err) =>
+      !(typeof err?.message === 'string' && err.message.startsWith('invalid argument'))
+      && err?.code !== 'ORGANIZATION_NOT_FOUND',
+  });
 
 /**
  * @function getOrgBalanceContext

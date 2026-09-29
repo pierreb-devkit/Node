@@ -462,6 +462,7 @@ describe('Billing webhook subscription unit tests:', () => {
         'evt_succeeded',
         expect.objectContaining({ pastDueSince: null, status: 'active' }),
         'invoice',
+        { status: { $ne: 'canceled' } },
       );
     });
 
@@ -485,6 +486,7 @@ describe('Billing webhook subscription unit tests:', () => {
         'evt_succeeded',
         {},
         'invoice',
+        { status: { $ne: 'canceled' } },
       );
     });
 
@@ -509,6 +511,7 @@ describe('Billing webhook subscription unit tests:', () => {
         'evt_succeeded',
         expect.objectContaining({ pastDueSince: null, status: 'active' }),
         'invoice',
+        { status: { $ne: 'canceled' } },
       );
     });
 
@@ -524,6 +527,18 @@ describe('Billing webhook subscription unit tests:', () => {
       await BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_unknown' }, makeEvent());
 
       expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();
+    });
+
+    test('#4151 — should return early without writing when subscription is already canceled', async () => {
+      // A late invoice.payment_succeeded (e.g. a delayed retry Stripe queued before the
+      // cancellation) must not bring a canceled subscription back to 'active'.
+      const existing = { _id: subId, organization: orgId, status: 'canceled', pastDueSince: null };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+
+      await BillingWebhookService.handleInvoicePaymentSucceeded({ subscription: 'sub_456' }, makeEvent());
+
+      expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();
+      expect(mockStripe.subscriptions.retrieve).not.toHaveBeenCalled();
     });
 
     test('should log info when event is stale (V5 P1 #1 ordering guard)', async () => {
@@ -572,6 +587,7 @@ describe('Billing webhook subscription unit tests:', () => {
         'evt_succeeded',
         expect.objectContaining({ plan: 'pro', status: 'active', pastDueSince: null }),
         'invoice',
+        { status: { $ne: 'canceled' } },
       );
       expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
     });
@@ -598,6 +614,7 @@ describe('Billing webhook subscription unit tests:', () => {
         'evt_succeeded',
         expect.not.objectContaining({ plan: expect.anything() }),
         'invoice',
+        { status: { $ne: 'canceled' } },
       );
     });
 
@@ -716,6 +733,7 @@ describe('Billing webhook subscription unit tests:', () => {
         'evt_succeeded',
         expect.objectContaining({ plan: 'pro', status: 'active', pastDueSince: null }),
         'invoice',
+        { status: { $ne: 'canceled' } },
       );
       expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
       expect(mockEvents.emit).toHaveBeenCalledWith(
@@ -740,6 +758,7 @@ describe('Billing webhook subscription unit tests:', () => {
         'evt_failed',
         expect.objectContaining({ status: 'past_due' }),
         'invoice',
+        { status: { $ne: 'canceled' } },
       );
     });
 
@@ -797,6 +816,17 @@ describe('Billing webhook subscription unit tests:', () => {
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(null);
 
       await BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_unknown' }, makeEvent());
+
+      expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();
+    });
+
+    test('#4151 — should return early without writing when subscription is already canceled', async () => {
+      // A late invoice.payment_failed for a canceled subscription must not touch it —
+      // there is nothing to mark past_due on a subscription that no longer exists on Stripe.
+      const existing = { _id: subId, organization: orgId, status: 'canceled', pastDueSince: null };
+      mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
+
+      await BillingWebhookService.handleInvoicePaymentFailed({ subscription: 'sub_456' }, makeEvent());
 
       expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();
     });

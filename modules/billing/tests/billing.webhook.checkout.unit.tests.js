@@ -429,17 +429,23 @@ describe('Billing webhook checkout unit tests:', () => {
       );
     });
 
-    test('should abort without persisting when stripe.subscriptions.retrieve throws', async () => {
+    test('should throw and not persist when stripe.subscriptions.retrieve fails, so Stripe redelivers the event', async () => {
+      // #4151: a silent `return` here recorded the event as processed while the
+      // subscription row stayed unlinked on the free plan. Throwing propagates through
+      // withIdempotency (attempts persist, no delete-on-failure) so the controller
+      // returns 5xx and Stripe redelivers instead.
       mockStripeInstance.subscriptions.retrieve.mockRejectedValue(new Error('Stripe API error'));
 
-      await BillingWebhookService.handleCheckoutCompleted(
-        {
-          customer: 'cus_123',
-          subscription: 'sub_456',
-          metadata: { organizationId: orgId, plan: 'pro' },
-        },
-        checkoutEvent,
-      );
+      await expect(
+        BillingWebhookService.handleCheckoutCompleted(
+          {
+            customer: 'cus_123',
+            subscription: 'sub_456',
+            metadata: { organizationId: orgId, plan: 'pro' },
+          },
+          checkoutEvent,
+        ),
+      ).rejects.toThrow('Stripe API error');
 
       // Should not persist anything — aborting to avoid stale 'active' assumption
       expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();
@@ -476,7 +482,10 @@ describe('Billing webhook checkout unit tests:', () => {
       expect(mockSubscriptionRepository.create).not.toHaveBeenCalled();
     });
 
-    test('should abort without querying when Stripe is not configured (getStripe returns null)', async () => {
+    // #4155 — CodeRabbit: a silent return here let withIdempotency record the event as
+    // processed while the subscription row stayed unlinked. Must throw so Stripe
+    // redelivers once configuration is restored (mirrors the retrieval-catch below it).
+    test('throws (does not silently return) when Stripe is not configured (getStripe returns null) — lets Stripe redeliver', async () => {
       // The billing.webhook.checkout.unit.tests.js mocks stripe.js at module level.
       // To test the getStripe()=null branch, we reload the module with a null-returning mock.
       jest.resetModules();
@@ -510,14 +519,16 @@ describe('Billing webhook checkout unit tests:', () => {
       const mod2 = await import('../services/billing.webhook.service.js');
       const svc2 = mod2.default;
 
-      await svc2.handleCheckoutCompleted(
-        {
-          customer: 'cus_123',
-          subscription: 'sub_456',
-          metadata: { organizationId: orgId, plan: 'pro' },
-        },
-        checkoutEvent,
-      );
+      await expect(
+        svc2.handleCheckoutCompleted(
+          {
+            customer: 'cus_123',
+            subscription: 'sub_456',
+            metadata: { organizationId: orgId, plan: 'pro' },
+          },
+          checkoutEvent,
+        ),
+      ).rejects.toThrow('Stripe not configured');
 
       expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();
       expect(mockSubscriptionRepository.create).not.toHaveBeenCalled();

@@ -10,6 +10,7 @@ import BillingExtraService from './billing.extra.service.js';
 import billingEvents from '../lib/events.js';
 import { currentWeekKey } from '../lib/billing.isoWeek.js';
 import { getAlertThresholdPercents, getDefaultPlanId } from '../lib/billing.constants.js';
+import { failClosedStatuses } from '../lib/constants.js';
 
 /**
  * Compute the current month string in YYYY-MM format.
@@ -115,9 +116,14 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
   const weekKey = currentWeekKey();
   const monthKey = currentMonth();
 
-  // Fetch active plan for quota snapshot — config-static, no DB read
+  // Fetch active plan for quota snapshot — config-static, no DB read.
+  // Fail-closed statuses (paused/unpaid/incomplete/incomplete_expired/canceled) bill
+  // against the default (free) plan — same list and same fallback the admission gate
+  // uses (billing.quota.service.js) — otherwise the gate treats the org as free while
+  // the meter keeps consuming the stale paid-plan quota snapshot (#4151).
   const subscription = await BillingSubscriptionRepository.findPlan(organizationId);
-  const planId = subscription?.plan ?? getDefaultPlanId();
+  const isFailClosed = subscription && failClosedStatuses.includes(subscription.status);
+  const planId = isFailClosed ? getDefaultPlanId() : (subscription?.plan ?? getDefaultPlanId());
   const activePlan = BillingPlanService.getActivePlan(planId);
   const meterQuota = activePlan?.meterQuota ?? 0;
   const planVersion = activePlan?.version ?? null;

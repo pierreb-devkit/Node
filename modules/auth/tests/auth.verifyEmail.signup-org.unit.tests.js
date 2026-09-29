@@ -22,14 +22,15 @@ describe('auth.controller verifyEmail — handleSignupOrganization wiring:', () 
 
     mockUserService = {
       create: jest.fn(),
-      getBrut: jest.fn().mockResolvedValue({
+      // #4151: verifyEmail consumes the token via one atomic findOneAndUpdate instead
+      // of a separate getBrut() read + update() write — the resolved doc already
+      // carries emailVerified: true (set by the atomic write), not mutated locally.
+      consumeEmailVerificationToken: jest.fn().mockResolvedValue({
         _id: 'user_001',
         id: 'user_001',
         email: 'user@example.com',
-        emailVerificationToken: 'tok',
-        emailVerificationExpires: Date.now() + 3600000,
+        emailVerified: true,
       }),
-      update: jest.fn().mockResolvedValue({}),
       remove: jest.fn(),
       search: jest.fn(),
       count: jest.fn().mockResolvedValue(0),

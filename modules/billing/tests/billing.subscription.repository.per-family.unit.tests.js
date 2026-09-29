@@ -91,4 +91,35 @@ describe('updateIfEventNewer — per-family guard:', () => {
     expect(update.$set.lastSubscriptionEventCreatedAt).toBe(300);
     expect(update.$set.lastInvoiceEventCreatedAt).toBeUndefined();
   });
+
+  // #4155 — extraMatch: an invoice-family write must not resurrect a subscription a
+  // concurrent cancellation already moved to 'canceled' between the caller's own status
+  // read and this write. The exclusion has to live in the SAME findOneAndUpdate filter as
+  // the event-ordering guard so both are checked atomically at write time.
+  test('extraMatch is merged into the top-level filter alongside the event-ordering guard', async () => {
+    await SubscriptionRepository.updateIfEventNewer(
+      '507f1f77bcf86cd799439011',
+      400,
+      'evt_4',
+      { status: 'active' },
+      'invoice',
+      { status: { $ne: 'canceled' } },
+    );
+
+    expect(mockModel.findOneAndUpdate).toHaveBeenCalledTimes(1);
+    const [filter] = mockModel.findOneAndUpdate.mock.calls[0];
+
+    expect(filter.status).toEqual({ $ne: 'canceled' });
+    // The event-ordering guard still applies — extraMatch adds to it, not replaces it.
+    expect(Array.isArray(filter.$or)).toBe(true);
+  });
+
+  test('extraMatch defaults to {} — no unrelated top-level filter field is added', async () => {
+    await SubscriptionRepository.updateIfEventNewer('507f1f77bcf86cd799439011', 500, 'evt_5', { plan: 'pro' }, 'subscription');
+
+    expect(mockModel.findOneAndUpdate).toHaveBeenCalledTimes(1);
+    const [filter] = mockModel.findOneAndUpdate.mock.calls[0];
+
+    expect(filter.status).toBeUndefined();
+  });
 });

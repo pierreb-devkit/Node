@@ -143,6 +143,48 @@ describe('BillingExtraService unit tests:', () => {
       expect(r1.applied).toBe(true);
       expect(r2.applied).toBe(false);
     });
+
+    // #4151 — a transient DB error must not make the overflow free: debit is idempotent
+    // by refId (see 'debit same refId twice' above), so retrying it cannot double-charge.
+    test('retries a transient repository failure and succeeds without double-crediting', async () => {
+      const doc = makeDoc({ cachedBalance: 300000 });
+      mockRepository.debit
+        .mockRejectedValueOnce(new Error('Mongo topology closed'))
+        .mockResolvedValueOnce({ doc, applied: true });
+
+      const result = await BillingExtraService.debit(orgId, 100000, 'ref_transient');
+
+      expect(mockRepository.debit).toHaveBeenCalledTimes(2);
+      expect(mockRepository.debit).toHaveBeenNthCalledWith(1, orgId, 100000, 'ref_transient');
+      expect(mockRepository.debit).toHaveBeenNthCalledWith(2, orgId, 100000, 'ref_transient');
+      expect(result.applied).toBe(true);
+      expect(result.doc).toBe(doc);
+    });
+
+    test('gives up after repeated transient failures and surfaces the error (never silently frees the overflow)', async () => {
+      mockRepository.debit.mockRejectedValue(new Error('Mongo topology closed'));
+
+      await expect(BillingExtraService.debit(orgId, 100000, 'ref_down')).rejects.toThrow('Mongo topology closed');
+    });
+
+    // CodeRabbit follow-up on #4155's PR: retryWithBackoff's default shouldRetry retries
+    // every error, including the repository's own deterministic validation/existence
+    // failures — those never succeed on retry, so retrying them only wastes 2 DB round
+    // trips (~600ms) before surfacing the identical error.
+    test('does NOT retry an "invalid argument" error from the repository — fails fast on attempt 1', async () => {
+      mockRepository.debit.mockRejectedValue(new Error('invalid argument: amount must be a positive finite number'));
+
+      await expect(BillingExtraService.debit(orgId, -1, 'ref_bad_amount')).rejects.toThrow('invalid argument');
+      expect(mockRepository.debit).toHaveBeenCalledTimes(1);
+    });
+
+    test('does NOT retry an ORGANIZATION_NOT_FOUND AppError from the repository — fails fast on attempt 1', async () => {
+      const err = Object.assign(new Error('Organization not found: ghost-org'), { code: 'ORGANIZATION_NOT_FOUND', status: 404 });
+      mockRepository.debit.mockRejectedValue(err);
+
+      await expect(BillingExtraService.debit('ghost-org', 100, 'ref_ghost')).rejects.toThrow('Organization not found');
+      expect(mockRepository.debit).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('getOrgBalanceContext', () => {
