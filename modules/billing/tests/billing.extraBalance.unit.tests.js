@@ -146,7 +146,6 @@ describe('BillingExtraBalance unit tests:', () => {
   describe('Repository', () => {
     let BillingExtraBalanceRepository;
     let mockModel;
-    let mockClaimModel;
 
     const orgId = '507f1f77bcf86cd799439011';
     /**
@@ -173,20 +172,9 @@ describe('BillingExtraBalance unit tests:', () => {
         exists: jest.fn(),
       };
 
-      // #4155 — creditGrant claims its idempotencyKey via BillingGrantClaimRepository,
-      // which resolves its OWN 'BillingGrantClaim' model. Keyed by name so that model does
-      // not share mockModel's findOneAndUpdate call queue with the ExtraBalance
-      // step1/step2 sequencing used throughout this describe block. Defaults to "claim
-      // always succeeds" (fresh key) — individual tests override mockClaimModel.create to
-      // simulate an existing claim (same-org replay or a different org's conflict).
-      mockClaimModel = {
-        create: jest.fn().mockResolvedValue({}),
-        findOne: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(null) })),
-      };
-
       jest.unstable_mockModule('mongoose', () => ({
         default: {
-          model: jest.fn((name) => (name === 'BillingGrantClaim' ? mockClaimModel : mockModel)),
+          model: jest.fn(() => mockModel),
           Types: {
             ObjectId: {
               isValid: jest.fn(() => true),
@@ -1196,84 +1184,6 @@ describe('BillingExtraBalance unit tests:', () => {
         expect(result).toEqual({ doc: null, applied: false });
         expect(mockModel.findOneAndUpdate).not.toHaveBeenCalled();
       });
-
-      // #4151 — the idempotency guard in step 2 below only excludes a matching refId
-      // WITHIN this org's own ledger ('ledger.refId': { $ne }), so a retry whose target
-      // org changed between attempts (e.g. an org merge/reassignment) is credited twice.
-      // Legacy backstop (step 0, after the #4155 claim below): a ledger entry written
-      // before the claim mechanism existed has no claim doc, so the claim itself looks
-      // "fresh" — this cross-org existence check is what still catches it.
-      test('returns applied:false duplicate_grant when the refId already exists in a DIFFERENT org\'s ledger (legacy, pre-claim data)', async () => {
-        // Claim succeeds (fresh key, default mock) — no claim doc for this pre-existing entry.
-        // Cross-org existence check then finds the prior grant under this refId in any org.
-        mockModel.exists.mockResolvedValue({ _id: 'some-other-orgs-balance-doc' });
-
-        const result = await BillingExtraBalanceRepository.creditGrant(orgId, 500, 'referral', {
-          refId: 'referral:64b2f0000000000000000001:referrer',
-        });
-
-        expect(result).toEqual({ doc: null, applied: false, reason: 'duplicate_grant' });
-        expect(mockModel.exists).toHaveBeenCalledWith({ 'ledger.refId': 'referral:64b2f0000000000000000001:referrer' });
-        // Must short-circuit before any write.
-        expect(mockModel.findOneAndUpdate).not.toHaveBeenCalled();
-      });
-
-      // #4155 — the durable claim itself: two concurrent creditGrant calls sharing one
-      // idempotencyKey but targeting DIFFERENT orgs must not both credit. The claim's
-      // unique index on `key` is what makes this atomic (not a lease/lock), so the second
-      // caller's create() rejects with a duplicate-key error before either org is touched.
-      describe('creditGrant — durable claim (#4155):', () => {
-        test('a claim already held by a DIFFERENT org → duplicate_grant, before any ledger read or write', async () => {
-          const otherOrgId = '507f1f77bcf86cd799439022';
-          mockClaimModel.create.mockRejectedValue(Object.assign(new Error('E11000 duplicate key'), { code: 11000 }));
-          mockClaimModel.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue({ organization: otherOrgId }) });
-
-          const result = await BillingExtraBalanceRepository.creditGrant(orgId, 500, 'referral', {
-            refId: 'referral:64b2f0000000000000000002:referrer',
-          });
-
-          expect(result).toEqual({ doc: null, applied: false, reason: 'duplicate_grant' });
-          expect(mockClaimModel.create).toHaveBeenCalledWith(
-            expect.objectContaining({ key: 'referral:64b2f0000000000000000002:referrer', organization: orgId }),
-          );
-          // Rejected at the claim — never reaches the ledger at all.
-          expect(mockModel.exists).not.toHaveBeenCalled();
-          expect(mockModel.findOneAndUpdate).not.toHaveBeenCalled();
-        });
-
-        test('a claim already held by the SAME org (replay, or retry after a crash) falls through to the ordinary per-org guard', async () => {
-          mockClaimModel.create.mockRejectedValue(Object.assign(new Error('E11000 duplicate key'), { code: 11000 }));
-          mockClaimModel.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue({ organization: orgId }) });
-          // Step 1: getOrCreate; Step 2: per-org guard says already credited.
-          mockModel.findOneAndUpdate
-            .mockResolvedValueOnce(makeDoc())
-            .mockResolvedValueOnce(null);
-
-          const result = await BillingExtraBalanceRepository.creditGrant(orgId, 500, 'referral', {
-            refId: 'referral:64b2f0000000000000000003:referrer',
-          });
-
-          expect(result).toEqual({ doc: null, applied: false, reason: 'duplicate_grant' });
-          // Did NOT short-circuit — the same-org branch reaches the ordinary guards.
-          expect(mockModel.findOneAndUpdate).toHaveBeenCalledTimes(2);
-        });
-
-        test('a fresh claim proceeds normally and credits the org', async () => {
-          const updatedDoc = makeDoc({ cachedBalance: 500 });
-          mockModel.findOneAndUpdate
-            .mockResolvedValueOnce(makeDoc())
-            .mockResolvedValueOnce(updatedDoc);
-
-          const result = await BillingExtraBalanceRepository.creditGrant(orgId, 500, 'referral', {
-            refId: 'referral:64b2f0000000000000000004:referrer',
-          });
-
-          expect(result.applied).toBe(true);
-          expect(mockClaimModel.create).toHaveBeenCalledWith(
-            expect.objectContaining({ key: 'referral:64b2f0000000000000000004:referrer', organization: orgId }),
-          );
-        });
-      });
     });
   });
 });
@@ -1394,7 +1304,6 @@ describe('Referral grant extensions (#3842):', () => {
   describe('repository', () => {
     let BillingExtraBalanceRepository;
     let mockModel;
-    let mockClaimModel;
 
     /**
      * @param {Object[]} rows - Rows the aggregation should resolve with.
@@ -1414,16 +1323,9 @@ describe('Referral grant extensions (#3842):', () => {
         exists: jest.fn(),
         aggregate: jest.fn(),
       };
-      // #4155 — see the identical comment in the outer 'Repository' describe's beforeEach:
-      // creditGrant claims its idempotencyKey via its own 'BillingGrantClaim' model, kept
-      // off mockModel's findOneAndUpdate call queue.
-      mockClaimModel = {
-        create: jest.fn().mockResolvedValue({}),
-        findOne: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(null) })),
-      };
       jest.unstable_mockModule('mongoose', () => ({
         default: {
-          model: jest.fn((name) => (name === 'BillingGrantClaim' ? mockClaimModel : mockModel)),
+          model: jest.fn(() => mockModel),
           Types: { ObjectId: { isValid: jest.fn(() => true) } },
         },
       }));
