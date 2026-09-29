@@ -109,7 +109,7 @@
     "prettier": "^3.9.9",
     "semantic-release": "^25.0.9",
     "supertest": "^7.2.2",
-    "ts-jest": "^29.4.13"
+    "ts-jest": "^29.4.14"
   },
   "release": {
     "branches": [
