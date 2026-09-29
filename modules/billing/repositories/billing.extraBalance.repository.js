@@ -1,9 +1,9 @@
 /**
  * Module dependencies
  */
-import { randomUUID } from 'node:crypto';
 import mongoose from 'mongoose';
 import AppError from '../../../lib/helpers/AppError.js';
+import BillingGrantClaimRepository from './billing.grantClaim.repository.js';
 import BillingExtraBalanceSchema from '../models/billing.extraBalance.schema.js';
 import { computeExpiryRemovals } from '../lib/billing.packExpiry.js';
 
@@ -166,15 +166,6 @@ const debit = async (orgId, amount, refId) => {
 };
 
 /**
- * Lock TTL for the creditGrant critical section (existence check + getOrCreate + guarded
- * write). Generous relative to the operation's normal sub-100ms cost so a slow write never
- * loses its own lock mid-flight; short enough that a crashed holder does not block a retry
- * for long — the caller's own retry (Stripe redelivery) or the referral reconcile cron
- * picks it back up well within this window.
- */
-const GRANT_LOCK_TTL_MS = 15_000;
-
-/**
  * @function creditGrant
  * @description Atomically credit extra meter units for a non-Stripe grant (e.g. signup free
  *              tier, referral grant). Idempotent: if a ledger entry with the same refId
@@ -187,31 +178,38 @@ const GRANT_LOCK_TTL_MS = 15_000;
  *              sharing the same idempotencyKey but resolving to DIFFERENT orgs (e.g. the
  *              in-process referral listener racing the reconcile cron backfill for the same
  *              invitation) can both observe "not yet granted" before either writes, and both
- *              would credit their own org (#4155, CodeRabbit). This is closed with a
- *              database-enforced claim: `lib/services/distributedLock.js` upserts a lock
- *              document on a unique `_id`, so only ONE concurrent call can hold the key at a
- *              time — the same primitive the billing crons already use for pod-level mutual
- *              exclusion, here scoped per-idempotencyKey instead of per-cron.
+ *              would credit their own org. A TTL/lease-based lock does not close this either
+ *              — it only narrows the window to "the write took longer than the lease" (#4155,
+ *              CodeRabbit, both rounds). Closed instead with a genuinely durable claim:
+ *              `BillingGrantClaimRepository.tryClaim` inserts into a brand-new collection
+ *              with a unique index on `key` — new collection, so the index is built fresh
+ *              with no pre-existing data to migrate, and MongoDB enforces it permanently.
+ *              There is no lease to expire and nothing to release.
  *
- *              Sequence while the lock is held:
+ *              Sequence:
+ *                Step -1 — claim the key (BillingGrantClaimRepository.tryClaim). A claim
+ *                  held by a DIFFERENT org is the cross-org conflict this exists to catch
+ *                  → duplicate_grant immediately. A claim held by THIS SAME org (a replay,
+ *                  or this exact call retrying after a crash between claiming and writing)
+ *                  falls through — the per-org ledger guard in Step 2 is idempotent on its
+ *                  own and decides the outcome from there. The claim itself is never rolled
+ *                  back: it is a permanent "this key belongs to this org" record, not a
+ *                  lock — a same-org retry after ANY failure (crash, transient DB error)
+ *                  re-enters here and proceeds exactly like a fresh call whose claim already
+ *                  exists.
  *                Step 0 — cross-org existence check (any org's ledger, not just this one).
+ *                  Legacy backstop: entries written before this claim mechanism existed have
+ *                  no claim doc, so a legacy key retried from a reassigned org would pass
+ *                  Step -1 as a "fresh" claim without this check.
  *                Step 1 — ensure doc exists (atomic getOrCreate, no-op on replay).
  *                Step 2 — idempotency-guarded credit (no upsert).
- *              The lock only serializes this sequence for a given key; the org-scoped
- *              `'ledger.refId': { $ne: key }` guard in Step 2 remains the durable dedup once
- *              the lock is released (a later replay of the SAME org+key still resolves
- *              correctly without needing the lock to still be held).
- *              Lock not acquired (another call for this exact key is mid-flight) → treated
- *              like any other idempotent replay: `{ applied: false, reason: 'duplicate_grant' }`.
- *              A request that loses this race is not lost — referral grants are re-derived
- *              and retried by crons/billing.referralReconcile.js; the signup-grant synthetic
- *              key (`<source>-<orgId>`) embeds orgId and so can never collide across orgs by
- *              construction, making this path relevant to the referral (explicit refId) case.
  *
  *              Idempotency key: `options.refId` when supplied (#3842 referral grants —
  *              several grants per org, one per invitation, e.g.
  *              `referral:<invitationId>:referrer`), otherwise the synthetic per-org key
- *              `<source>-<orgId>` (signup grant — one per org).
+ *              `<source>-<orgId>` (signup grant — one per org; embeds orgId, so it can
+ *              never collide across orgs by construction — the cross-org path is only ever
+ *              reachable via an explicit `refId`, i.e. referral grants).
  *              `options.expiresAt` mirrors the creditPack expiry mechanism: the entry is
  *              swept by crons/billing.extrasExpiration.js once past its expiry.
  *              No stripeSessionId required.
@@ -248,46 +246,39 @@ const creditGrant = async (orgId, amount, source, { refId = null, expiresAt = nu
     ...(expiresAt ? { expiresAt } : {}),
   };
 
-  // Database-enforced claim on the idempotencyKey (see JSDoc): serializes the cross-org
-  // check + write below against any other creditGrant call for this exact key. Dynamic
-  // import — this is the only function in the repository that needs the lock's own
-  // CronLock model, so no other test in this file has to account for a second
-  // mongoose.model() registration it never exercises.
-  const { acquireLock, releaseLock } = await import('../../../lib/services/distributedLock.js');
-  const lockName = `billing.creditGrant.${idempotencyKey}`;
-  const lockHolder = `${process.env.HOSTNAME ?? 'unknown'}:${randomUUID()}`;
-  const locked = await acquireLock({ name: lockName, ttlMs: GRANT_LOCK_TTL_MS, holder: lockHolder });
-  if (!locked) return { doc: null, applied: false, reason: 'duplicate_grant' };
-
-  try {
-    // Step 0: cross-org idempotency guard. The step-2 filter below only excludes a
-    // matching refId within THIS org's own ledger, so it misses a replay whose target
-    // org changed between attempts. Check across every org's ledger before writing.
-    const alreadyGranted = await BillingExtraBalance().exists({ 'ledger.refId': idempotencyKey });
-    if (alreadyGranted) return { doc: null, applied: false, reason: 'duplicate_grant' };
-
-    // Step 1: ensure the document exists (atomic getOrCreate, no-op if already present).
-    await getOrCreate(orgId);
-
-    // Step 2: idempotency-guarded credit (no upsert — doc is guaranteed to exist after step 1).
-    const doc = await BillingExtraBalance().findOneAndUpdate(
-      {
-        organization: orgId,
-        'ledger.refId': { $ne: idempotencyKey },
-      },
-      {
-        $push: { ledger: entry },
-        $inc: { cachedBalance: amount },
-        $set: { cachedBalanceAt: new Date() },
-      },
-      { returnDocument: 'after' },
-    );
-
-    if (doc) return { doc, applied: true };
+  // Step -1: durable cross-org claim (see JSDoc). A different org already owns this key →
+  // reject now. This org already owns it (fresh or a replay) → fall through to the
+  // existing per-org guards, which decide the outcome idempotently on their own.
+  const claim = await BillingGrantClaimRepository.tryClaim(idempotencyKey, orgId);
+  if (!claim.claimed && claim.ownerOrgId !== orgId) {
     return { doc: null, applied: false, reason: 'duplicate_grant' };
-  } finally {
-    await releaseLock({ name: lockName, holder: lockHolder });
   }
+
+  // Step 0: legacy backstop — cross-org existence check for ledger entries written before
+  // the claim mechanism existed (no claim doc for those). The step-2 filter below only
+  // excludes a matching refId within THIS org's own ledger, so it misses those.
+  const alreadyGranted = await BillingExtraBalance().exists({ 'ledger.refId': idempotencyKey });
+  if (alreadyGranted) return { doc: null, applied: false, reason: 'duplicate_grant' };
+
+  // Step 1: ensure the document exists (atomic getOrCreate, no-op if already present).
+  await getOrCreate(orgId);
+
+  // Step 2: idempotency-guarded credit (no upsert — doc is guaranteed to exist after step 1).
+  const doc = await BillingExtraBalance().findOneAndUpdate(
+    {
+      organization: orgId,
+      'ledger.refId': { $ne: idempotencyKey },
+    },
+    {
+      $push: { ledger: entry },
+      $inc: { cachedBalance: amount },
+      $set: { cachedBalanceAt: new Date() },
+    },
+    { returnDocument: 'after' },
+  );
+
+  if (doc) return { doc, applied: true };
+  return { doc: null, applied: false, reason: 'duplicate_grant' };
 };
 
 /**

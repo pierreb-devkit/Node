@@ -13,15 +13,17 @@ import mongooseService from '../../../lib/services/mongoose.js';
  * sharing the same idempotencyKey but targeting DIFFERENT orgs (e.g. the in-process
  * referral listener racing the reconcile cron backfill for the same invitation) could
  * both observe "not yet granted" before either writes, and both would credit their own
- * org — double-crediting the same logical grant. Fixed by serializing the cross-org
- * check + write behind a database-enforced lock (lib/services/distributedLock.js) keyed
- * per idempotencyKey. These tests run against REAL MongoDB — the lock's unique-`_id`
- * claim is the property under test, which a mocked model cannot demonstrate.
+ * org — double-crediting the same logical grant. A TTL/lease-based lock does not close
+ * this either — it only narrows the window to "the write took longer than the lease".
+ * Fixed with a genuinely durable claim (BillingGrantClaimRepository.tryClaim): a brand-new
+ * collection, unique index on `key`, no TTL, nothing to release. These tests run against
+ * REAL MongoDB — the unique-index claim is the property under test, which a mocked model
+ * cannot demonstrate.
  */
 describe('BillingExtraBalanceRepository.creditGrant — cross-org race closure integration tests:', () => {
   let BillingExtraBalance;
+  let BillingGrantClaim;
   let BillingExtraBalanceRepository;
-  let CronLock;
 
   const orgA = new mongoose.Types.ObjectId().toString();
   const orgB = new mongoose.Types.ObjectId().toString();
@@ -31,14 +33,17 @@ describe('BillingExtraBalanceRepository.creditGrant — cross-org race closure i
     await mongooseService.connect();
 
     BillingExtraBalance = mongoose.model('BillingExtraBalance');
+    BillingGrantClaim = mongoose.model('BillingGrantClaim');
+    // The unique index on `key` is what makes the claim atomic — build it before the first
+    // concurrent test runs, otherwise the first run can race the (async) index build.
+    await BillingGrantClaim.syncIndexes();
     BillingExtraBalanceRepository = (await import('../repositories/billing.extraBalance.repository.js')).default;
-    ({ CronLock } = await import('../../../lib/services/distributedLock.js'));
   });
 
   beforeEach(async () => {
     await Promise.all([
       BillingExtraBalance.deleteMany({ organization: { $in: [orgA, orgB] } }),
-      CronLock.deleteMany({ _id: /^billing\.creditGrant\./ }),
+      BillingGrantClaim.deleteMany({ organization: { $in: [orgA, orgB] } }),
     ]);
   });
 
@@ -46,7 +51,7 @@ describe('BillingExtraBalanceRepository.creditGrant — cross-org race closure i
     await mongooseService.disconnect();
   });
 
-  test('concurrent creditGrant calls sharing one refId across TWO orgs → exactly ONE applied:true, ONE ledger entry total', async () => {
+  test('concurrent creditGrant calls sharing one refId across TWO orgs → exactly ONE applied:true, ONE ledger entry total, ONE claim', async () => {
     const sharedKey = `referral:${new mongoose.Types.ObjectId()}:referrer`;
 
     const [first, second] = await Promise.all([
@@ -69,9 +74,15 @@ describe('BillingExtraBalanceRepository.creditGrant — cross-org race closure i
     const entriesA = (docA?.ledger ?? []).filter((e) => e.refId === sharedKey);
     const entriesB = (docB?.ledger ?? []).filter((e) => e.refId === sharedKey);
     expect(entriesA.length + entriesB.length).toBe(1);
+
+    // Exactly one claim document for the key, owned by whichever org actually won.
+    const claims = await BillingGrantClaim.find({ key: sharedKey }).lean();
+    expect(claims).toHaveLength(1);
+    const winnerOrg = entriesA.length === 1 ? orgA : orgB;
+    expect(String(claims[0].organization)).toBe(winnerOrg);
   }, 15000);
 
-  test('a losing call releases the lock — a later replay for the SAME org+key still resolves idempotently', async () => {
+  test('a losing call leaves the claim permanently owned by the winner — a later replay for the SAME org+key still resolves idempotently', async () => {
     const sharedKey = `referral:${new mongoose.Types.ObjectId()}:referrer`;
 
     const [first] = await Promise.all([
@@ -80,10 +91,14 @@ describe('BillingExtraBalanceRepository.creditGrant — cross-org race closure i
     ]);
     const winnerOrg = first.applied ? orgA : orgB;
 
-    // Sequential replay against the org that actually won — must stay a no-op (lock is
-    // released after each call; this is the durable Step 0/2 dedup doing its job, not
-    // the lock still being held).
+    // Sequential replay against the org that actually won — must stay a no-op. No lock to
+    // release: the claim is permanent, the per-org ledger guard is the durable dedup.
     const replay = await BillingExtraBalanceRepository.creditGrant(winnerOrg, 1000, 'referral', { refId: sharedKey });
     expect(replay).toMatchObject({ applied: false, reason: 'duplicate_grant' });
+
+    // A retry from the LOSING org must still be rejected — the claim does not expire.
+    const loserOrg = winnerOrg === orgA ? orgB : orgA;
+    const loserRetry = await BillingExtraBalanceRepository.creditGrant(loserOrg, 1000, 'referral', { refId: sharedKey });
+    expect(loserRetry).toMatchObject({ applied: false, reason: 'duplicate_grant' });
   }, 15000);
 });
