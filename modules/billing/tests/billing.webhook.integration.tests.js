@@ -494,6 +494,7 @@ describe('Billing webhook integration tests:', () => {
         'evt_failed',
         expect.objectContaining({ status: 'past_due' }),
         'invoice',
+        { status: { $ne: 'canceled' } },
       );
     });
 

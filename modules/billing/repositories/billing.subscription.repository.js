@@ -227,16 +227,26 @@ const markUnpaid = (id, threshold) => {
  *              'subscription' family (customer.subscription.*) or the 'invoice' family
  *              (invoice.*).  Same-second cross-family deliveries no longer cancel each other.
  *
- *              Returns null when the guard prevents the write (stale event).
+ *              Returns null when the guard prevents the write (stale event, or — when
+ *              `extraMatch` excludes it — a status the write must not apply over, e.g. a
+ *              canceled subscription).
  * @param {string} id - The subscription ObjectId (string).
  * @param {number} eventCreatedAt - Stripe event.created Unix timestamp (seconds).
  * @param {string} eventId - Stripe event.id (e.g. evt_xxx) — tiebreaker for same-second delivery.
  * @param {Object} fields - Fields to $set on the document.
  * @param {'subscription'|'invoice'} [family='subscription'] - Event family to scope the ordering guard.
- * @returns {Promise<Object|null>} Updated doc, or null if id invalid or event is stale.
+ * @param {Object} [extraMatch={}] - Additional top-level filter fields ANDed into the
+ *              query alongside the event-ordering guard, evaluated atomically in the same
+ *              findOneAndUpdate. Used by the invoice handlers to require
+ *              `status: { $ne: 'canceled' }` so a cancellation that commits between the
+ *              caller's own status read and this write still wins — the write's own filter
+ *              is re-checked at write time, closing the read-then-write race the read-side
+ *              check alone cannot (#4155).
+ * @returns {Promise<Object|null>} Updated doc, or null if id invalid, event is stale, or
+ *              `extraMatch` no longer matches.
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
-const updateIfEventNewer = (id, eventCreatedAt, eventId, fields, family = 'subscription') => {
+const updateIfEventNewer = (id, eventCreatedAt, eventId, fields, family = 'subscription', extraMatch = {}) => {
   if (!id || !mongoose.Types.ObjectId.isValid(id)) return null;
 
   const createdAtField = family === 'invoice' ? 'lastInvoiceEventCreatedAt' : 'lastSubscriptionEventCreatedAt';
@@ -245,6 +255,7 @@ const updateIfEventNewer = (id, eventCreatedAt, eventId, fields, family = 'subsc
   return Subscription.findOneAndUpdate(
     {
       _id: id,
+      ...extraMatch,
       $or: [
         { [createdAtField]: { $exists: false } },
         { [createdAtField]: null },

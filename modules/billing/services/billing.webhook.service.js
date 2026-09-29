@@ -646,7 +646,9 @@ const handleInvoicePaymentFailed = async (invoice, event) => {
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId);
   if (!existing) return;
   // A late/out-of-order invoice event must not bring a canceled subscription back to
-  // past_due — the subscription no longer exists on Stripe (#4151).
+  // past_due — the subscription no longer exists on Stripe (#4151). Fast-path only: a
+  // concurrent cancellation can still commit after this read, so the write below
+  // re-asserts `status: { $ne: 'canceled' }` atomically (#4155).
   if (existing.status === 'canceled') return;
 
   const fields = { status: 'past_due' };
@@ -656,7 +658,14 @@ const handleInvoicePaymentFailed = async (invoice, event) => {
     fields.pastDueSince = new Date();
   }
 
-  const updated = await SubscriptionRepository.updateIfEventNewer(String(existing._id), event.created, event.id, fields, 'invoice');
+  const updated = await SubscriptionRepository.updateIfEventNewer(
+    String(existing._id),
+    event.created,
+    event.id,
+    fields,
+    'invoice',
+    { status: { $ne: 'canceled' } },
+  );
   if (!updated) {
     logger.info('[billing.webhook] skipped stale event', { eventId: event.id, type: event.type });
     return;
@@ -695,7 +704,9 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId);
   if (!existing) return;
   // A late invoice.payment_succeeded (e.g. a delayed Stripe retry queued before the
-  // cancellation) must not resurrect a canceled subscription to 'active' (#4151).
+  // cancellation) must not resurrect a canceled subscription to 'active' (#4151). Fast-path
+  // only: a concurrent cancellation can still commit after this read, so the write below
+  // re-asserts `status: { $ne: 'canceled' }` atomically (#4155).
   if (existing.status === 'canceled') return;
 
   // Always advance the invoice-family marker (lastInvoiceEventCreatedAt / lastInvoiceEventId)
@@ -737,6 +748,7 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
     event.id,
     fields,
     'invoice',
+    { status: { $ne: 'canceled' } },
   );
   if (!updated) {
     logger.info('[billing.webhook] skipped stale event', { eventId: event.id, type: event.type });

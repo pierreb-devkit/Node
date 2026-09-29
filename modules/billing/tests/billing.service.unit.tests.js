@@ -368,6 +368,7 @@ describe('Billing webhook service unit tests:', () => {
         'evt_fail',
         expect.objectContaining({ status: 'past_due', pastDueSince: expect.any(Date) }),
         'invoice',
+        { status: { $ne: 'canceled' } },
       );
     });
 

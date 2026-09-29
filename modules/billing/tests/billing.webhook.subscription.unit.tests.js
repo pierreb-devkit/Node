@@ -462,6 +462,7 @@ describe('Billing webhook subscription unit tests:', () => {
         'evt_succeeded',
         expect.objectContaining({ pastDueSince: null, status: 'active' }),
         'invoice',
+        { status: { $ne: 'canceled' } },
       );
     });
 
@@ -485,6 +486,7 @@ describe('Billing webhook subscription unit tests:', () => {
         'evt_succeeded',
         {},
         'invoice',
+        { status: { $ne: 'canceled' } },
       );
     });
 
@@ -509,6 +511,7 @@ describe('Billing webhook subscription unit tests:', () => {
         'evt_succeeded',
         expect.objectContaining({ pastDueSince: null, status: 'active' }),
         'invoice',
+        { status: { $ne: 'canceled' } },
       );
     });
 
@@ -584,6 +587,7 @@ describe('Billing webhook subscription unit tests:', () => {
         'evt_succeeded',
         expect.objectContaining({ plan: 'pro', status: 'active', pastDueSince: null }),
         'invoice',
+        { status: { $ne: 'canceled' } },
       );
       expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
     });
@@ -610,6 +614,7 @@ describe('Billing webhook subscription unit tests:', () => {
         'evt_succeeded',
         expect.not.objectContaining({ plan: expect.anything() }),
         'invoice',
+        { status: { $ne: 'canceled' } },
       );
     });
 
@@ -728,6 +733,7 @@ describe('Billing webhook subscription unit tests:', () => {
         'evt_succeeded',
         expect.objectContaining({ plan: 'pro', status: 'active', pastDueSince: null }),
         'invoice',
+        { status: { $ne: 'canceled' } },
       );
       expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
       expect(mockEvents.emit).toHaveBeenCalledWith(
@@ -752,6 +758,7 @@ describe('Billing webhook subscription unit tests:', () => {
         'evt_failed',
         expect.objectContaining({ status: 'past_due' }),
         'invoice',
+        { status: { $ne: 'canceled' } },
       );
     });
 
