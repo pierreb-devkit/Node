@@ -251,10 +251,15 @@ const handleCheckoutCompleted = async (session, event) => {
   // while the subscription row stays unlinked (#4151). Throwing lets Stripe redeliver.
   const stripe = getStripe();
   if (!stripe) {
-    logger.error('[billing.webhook] checkout.session.completed — Stripe not configured, aborting', {
+    // Throw (do NOT return) — same reasoning as the retrieval catch below: a silent
+    // return here still lets withIdempotency record the event as processed while the
+    // subscription row stays unlinked, even though nothing was actually done. Throwing
+    // lets an event received during a Stripe-configuration outage retry once
+    // configuration is restored (#4155).
+    logger.error('[billing.webhook] checkout.session.completed — Stripe not configured, will retry via Stripe redelivery', {
       stripeSubscriptionId,
     });
-    return;
+    throw new Error('Stripe not configured');
   }
   let realStatus;
   try {
