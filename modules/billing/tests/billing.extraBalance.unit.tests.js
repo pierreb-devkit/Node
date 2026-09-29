@@ -146,6 +146,7 @@ describe('BillingExtraBalance unit tests:', () => {
   describe('Repository', () => {
     let BillingExtraBalanceRepository;
     let mockModel;
+    let mockLockModel;
 
     const orgId = '507f1f77bcf86cd799439011';
     /**
@@ -172,9 +173,29 @@ describe('BillingExtraBalance unit tests:', () => {
         exists: jest.fn(),
       };
 
+      // #4155 — creditGrant dynamically imports lib/services/distributedLock.js, which
+      // registers its OWN 'CronLock' model. Keyed by name so that model does not share
+      // mockModel's findOneAndUpdate call queue with the ExtraBalance step1/step2
+      // sequencing used throughout this describe block. Defaults to "lock always
+      // acquired" (echoes the holder it was given, matching acquireLock's success
+      // check) and "release always succeeds" — individual tests override
+      // mockLockModel.findOneAndUpdate to simulate lock contention.
+      mockLockModel = {
+        findOneAndUpdate: jest.fn((_filter, update) => Promise.resolve({ holder: update?.$set?.holder })),
+        deleteOne: jest.fn().mockResolvedValue({ deletedCount: 1 }),
+      };
+
       jest.unstable_mockModule('mongoose', () => ({
         default: {
-          model: jest.fn(() => mockModel),
+          model: jest.fn((name) => (name === 'CronLock' ? mockLockModel : mockModel)),
+          models: {},
+          // distributedLock.js does `new mongoose.Schema(...).index(...)` at import time —
+          // never actually executed by mongoose here, just needs to not throw.
+          Schema: class MockSchema {
+            index() {
+              return this;
+            }
+          },
           Types: {
             ObjectId: {
               isValid: jest.fn(() => true),
@@ -1321,6 +1342,7 @@ describe('Referral grant extensions (#3842):', () => {
   describe('repository', () => {
     let BillingExtraBalanceRepository;
     let mockModel;
+    let mockLockModel;
 
     /**
      * @param {Object[]} rows - Rows the aggregation should resolve with.
@@ -1340,9 +1362,22 @@ describe('Referral grant extensions (#3842):', () => {
         exists: jest.fn(),
         aggregate: jest.fn(),
       };
+      // #4155 — see the identical comment in the outer 'Repository' describe's beforeEach:
+      // creditGrant's dynamic import of distributedLock.js needs its own 'CronLock' model,
+      // kept off mockModel's findOneAndUpdate call queue.
+      mockLockModel = {
+        findOneAndUpdate: jest.fn((_filter, update) => Promise.resolve({ holder: update?.$set?.holder })),
+        deleteOne: jest.fn().mockResolvedValue({ deletedCount: 1 }),
+      };
       jest.unstable_mockModule('mongoose', () => ({
         default: {
-          model: jest.fn(() => mockModel),
+          model: jest.fn((name) => (name === 'CronLock' ? mockLockModel : mockModel)),
+          models: {},
+          Schema: class MockSchema {
+            index() {
+              return this;
+            }
+          },
           Types: { ObjectId: { isValid: jest.fn(() => true) } },
         },
       }));
