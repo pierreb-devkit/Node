@@ -1,0 +1,31 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`mailer baseline render — all shared templates: renders billing-credit-exhausted with every referenced variable present in its fixture 1`] = `"Hello, Your Acme account is out of credits . Usage is paused until you add more credits or upgrade your plan — nothing is charged automatically. Add credits or upgrade your plan on your billing dashboard . The Acme Team. Please do not reply to this email, you can contact us here ."`;
+
+exports[`mailer baseline render — all shared templates: renders billing-credit-warning with every referenced variable present in its fixture 1`] = `"Hello, Your Acme account has 12 credits left . Usage keeps working while credits remain. Once they run out, usage is paused until you add credits — nothing is charged automatically. Add more credits or upgrade your plan on your billing dashboard . The Acme Team. Please do not reply to this email, you can contact us here ."`;
+
+exports[`mailer baseline render — all shared templates: renders billing-payment-failed with every referenced variable present in its fixture 1`] = `"Hello, We were unable to process the latest payment for your Acme subscription. Your account remains active for now. Please update your payment method before the grace period ends to avoid any service interruption. Update your card on your billing portal . The Acme Team. Please do not reply to this email, you can contact us here ."`;
+
+exports[`mailer baseline render — all shared templates: renders billing-quota-reached-100 with every referenced variable present in its fixture 1`] = `"Hello, Your Acme weekly quota is now fully used (1000 / 1000 units). If you have an extras pack, your usage continues drawing from its remaining balance until it's used up. Otherwise it pauses until you add an extras pack or upgrade your plan — nothing is charged automatically. Check your consumption or add an extras pack on your billing dashboard . The Acme Team. Please do not reply to this email, you can contact us here ."`;
+
+exports[`mailer baseline render — all shared templates: renders billing-quota-warning-80 with every referenced variable present in its fixture 1`] = `"Hello, Your Acme plan has reached 80% of its weekly quota (800 / 1000 units used). You still have room to keep going. Once you reach 100%, runs continue only while you have an extras-pack balance; without one they pause until you add an extras pack or upgrade your plan — nothing is charged automatically. Review your usage, add an extras pack, or upgrade your plan on your billing dashboard . The Acme Team. Please do not reply to this email, you can contact us here ."`;
+
+exports[`mailer baseline render — all shared templates: renders org-member-added with every referenced variable present in its fixture 1`] = `"Acme invitation Hello Alice, You have been invited to join Acme Org on Acme. Review and accept the invitation: Accept invitation Button not working? https://acme.test/org The Acme Team."`;
+
+exports[`mailer baseline render — all shared templates: renders org-request-approved with every referenced variable present in its fixture 1`] = `"Hello Alice, Your request to join Acme Org on Acme has been approved. You can now access the organization. The Acme Team."`;
+
+exports[`mailer baseline render — all shared templates: renders org-request-new with every referenced variable present in its fixture 1`] = `"Hello, Bob (bob@example.com) has requested to join your organization Acme Org on Acme. Review this request in your dashboard: Review request Button not working? https://acme.test/request The Acme Team."`;
+
+exports[`mailer baseline render — all shared templates: renders org-request-rejected with every referenced variable present in its fixture 1`] = `"Hello Alice, Your request to join Acme Org on Acme has been declined. The Acme Team."`;
+
+exports[`mailer baseline render — all shared templates: renders referral-reward-earned with every referenced variable present in its fixture 1`] = `"Acme referral reward Hello Alice, Great news — someone you invited just joined Acme, and you've earned a referral reward of 5 units. Thanks for helping grow Acme. The Acme Team."`;
+
+exports[`mailer baseline render — all shared templates: renders reset-password-confirm-email with every referenced variable present in its fixture 1`] = `"Dear Alice, This is a confirmation that the password for your account has just been changed The Acme Support Team. Please do not reply to this email, you can contact us here ."`;
+
+exports[`mailer baseline render — all shared templates: renders reset-password-email with every referenced variable present in its fixture 1`] = `"Dear Alice, You have requested to reset your password on Acme Click the button below to choose a new password: Reset password Button not working? https://acme.test/reset The Acme Support Team. If you didn't make this request, you can ignore this email. Please do not reply to this email, you can contact us here ."`;
+
+exports[`mailer baseline render — all shared templates: renders signup-invite with every referenced variable present in its fixture 1`] = `"You've been invited — complete your signup Hello, You've been invited to join Acme . Click the button below to create your account: Create your account Button not working? https://acme.test/invite The Acme Team. If you weren't expecting this invitation you can ignore this email. Please do not reply to this email, you can contact us here ."`;
+
+exports[`mailer baseline render — all shared templates: renders verify-email with every referenced variable present in its fixture 1`] = `"Dear Alice, Thank you for signing up on Acme. Please verify your email address by clicking the button below: Verify email address Button not working? https://acme.test/verify This link will expire in 24 hours. The Acme Support Team. If you didn't create this account, you can ignore this email. Please do not reply to this email, you can contact us here ."`;
+
+exports[`mailer baseline render — all shared templates: renders welcome with every referenced variable present in its fixture 1`] = `"Acme Hello Alice, Welcome to Acme — your workspace Acme Org is ready. Here's where to pick things up: Get started Button not working? https://acme.test/dashboard The Acme Team. Please do not reply to this email, you can contact us here ."`;

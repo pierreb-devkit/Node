@@ -187,6 +187,10 @@ const config = {
       // resend options
       apiKey: 'DEVKIT_NODE_mailer_options_apiKey',
     },
+    // Map a template key to a project-owned relative .html path (must resolve
+    // inside the project root). A key not listed here falls back to
+    // config/templates/<key>.html. Empty by default.
+    templates: {},
   },
   seedDB: {
     seed: true,
