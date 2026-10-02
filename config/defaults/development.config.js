@@ -191,11 +191,23 @@ const config = {
     // inside the project root). A key not listed here falls back to
     // config/templates/<key>.html. Empty by default.
     templates: {},
+    // Override the shared layout (wraps every template body that isn't a
+    // full HTML document) with a project-owned relative .html path; must
+    // resolve inside the project root. Unset falls back to Devkit's own
+    // config/templates/_layout/layout.html.
+    layout: undefined,
+    // Override one or more of the layout's partials — header, footer,
+    // button, styles — the same way. An unset partial falls back to
+    // Devkit's own config/templates/_layout/<name>.html. Empty by default.
+    partials: {},
     // Central brand values injected into every rendered template (see
     // lib/helpers/mailer/brand.js getBrand()). Unset fields fall back to
     // config.app.{title,contact} and getBaseUrl(), so an empty brand here
     // renders identically to today. Settable per-field via
-    // DEVKIT_NODE_mailer_brand_<field> env vars.
+    // DEVKIT_NODE_mailer_brand_<field> env vars. An explicit '' (e.g. an
+    // env var set but empty) is a real override for name/url/contact —
+    // it blanks the field rather than falling back to app.* (see the
+    // "explicit empty string" test in mailer.brand.unit.tests.js).
     brand: {},
   },
   seedDB: {
