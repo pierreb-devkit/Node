@@ -177,6 +177,45 @@ describe('handleSignupOrganization — welcome email (Node#4116):', () => {
     expect(params).not.toHaveProperty('orgName');
   });
 
+  test('forwards config.organizations.welcomeEmail.from/.replyTo when a downstream project sets them (Node#4161)', async () => {
+    const fakeOrg = setupConfig({
+      enabled: true,
+      autoCreate: false,
+      domainMatching: false,
+      welcomeEmail: { enabled: true, from: 'Acme <hello@acme.test>', replyTo: 'support@acme.test' },
+    });
+    const user = makeUser('grace@corp.example.com');
+
+    const result = await OrganizationsService.handleSignupOrganization(user);
+
+    expect(result.organization).not.toBeNull();
+    expect(mockSendMail).toHaveBeenCalledWith({
+      template: 'welcome',
+      to: user.email,
+      subject: 'Welcome to Acme App',
+      from: 'Acme <hello@acme.test>',
+      replyTo: 'support@acme.test',
+      params: {
+        displayName: 'Alice Smith',
+        url: 'https://app.acme.test',
+        appName: 'Acme App',
+        appContact: 'hi@acme.test',
+        orgName: fakeOrg.name,
+      },
+    });
+  });
+
+  test('omits from/replyTo when config.organizations.welcomeEmail does not set them (unchanged)', async () => {
+    setupConfig({ enabled: true, welcomeEmail: { enabled: true } });
+    const user = makeUser('heidi2@example.com');
+
+    await OrganizationsService.handleSignupOrganization(user);
+
+    const call = mockSendMail.mock.calls[0][0];
+    expect(call).not.toHaveProperty('from');
+    expect(call).not.toHaveProperty('replyTo');
+  });
+
   test('NOT sent on the A4 convergence path (existing active membership)', async () => {
     setupConfig({ enabled: true });
     const existingOrg = { _id: new mongoose.Types.ObjectId(), name: 'Existing Org' };
