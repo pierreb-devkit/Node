@@ -1,0 +1,11 @@
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+  <tr>
+    <td class="email-footer" style="padding: 16px 32px 24px;">
+      {{#if brand.signature}}<p>{{brand.signature}}</p>{{/if}}
+      {{#if brand.footerText}}<p>{{brand.footerText}}</p>{{/if}}
+      {{#if brand.contact}}<p>Questions? <a href="mailto:{{brand.contact}}"{{#if brand.primaryColor}} style="color: {{brand.primaryColor}};"{{/if}}>{{brand.contact}}</a></p>{{/if}}
+      {{#each brand.links}}<a href="{{this}}"{{#if ../brand.primaryColor}} style="color: {{../brand.primaryColor}};"{{/if}}>{{@key}}</a> {{/each}}
+      {{#if brand.url}}<p><a href="{{brand.url}}"{{#if brand.primaryColor}} style="color: {{brand.primaryColor}};"{{/if}}>{{brand.url}}</a></p>{{/if}}
+    </td>
+  </tr>
+</table>
