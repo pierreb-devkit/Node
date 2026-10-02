@@ -1106,5 +1106,12 @@ describe('Core unit tests:', () => {
       result.items.push('c');
       expect(sourceArr).toEqual(['a', 'b']);
     });
+
+    it('should deep merge a partial nested override onto existing sibling fields (mailer.brand shape, #4130)', () => {
+      const target = { mailer: { brand: { primaryColor: '#000000', textColor: '#ffffff' } } };
+      const source = { mailer: { brand: { primaryColor: '#123456' } } };
+      const result = deepMerge(target, source);
+      expect(result.mailer.brand).toEqual({ primaryColor: '#123456', textColor: '#ffffff' });
+    });
   });
 });
