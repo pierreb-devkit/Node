@@ -191,6 +191,12 @@ const config = {
     // inside the project root). A key not listed here falls back to
     // config/templates/<key>.html. Empty by default.
     templates: {},
+    // Central brand values injected into every rendered template (see
+    // lib/helpers/mailer/brand.js getBrand()). Unset fields fall back to
+    // config.app.{title,contact} and getBaseUrl(), so an empty brand here
+    // renders identically to today. Settable per-field via
+    // DEVKIT_NODE_mailer_brand_<field> env vars.
+    brand: {},
   },
   seedDB: {
     seed: true,
