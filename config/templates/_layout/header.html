@@ -4,7 +4,7 @@
       {{#if brand.logoUrl}}
         <img src="{{brand.logoUrl}}" alt="{{brand.name}}" height="32" style="display: block; border: 0;" />
       {{else}}
-        <span class="email-brand-name">{{brand.name}}</span>
+        {{#if brand.name}}<span class="email-brand-name">{{brand.name}}</span>{{/if}}
       {{/if}}
     </td>
   </tr>

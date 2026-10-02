@@ -5,7 +5,7 @@
       {{#if brand.footerText}}<p>{{brand.footerText}}</p>{{/if}}
       {{#if brand.contact}}<p>Questions? <a href="mailto:{{brand.contact}}">{{brand.contact}}</a></p>{{/if}}
       {{#each brand.links}}<a href="{{this}}">{{@key}}</a> {{/each}}
-      <p><a href="{{brand.url}}">{{brand.url}}</a></p>
+      {{#if brand.url}}<p><a href="{{brand.url}}">{{brand.url}}</a></p>{{/if}}
     </td>
   </tr>
 </table>
