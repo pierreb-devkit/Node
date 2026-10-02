@@ -135,6 +135,10 @@ const createOrganizationForUser = async ({ name, slug, domain, user, slugGenerat
  * awaited by the caller: a disabled toggle, a disabled mailer, a synchronous
  * throw, or a rejected send must never break or delay the signup / OAuth
  * redirect response.
+ *
+ * `config.organizations.welcomeEmail.from` / `.replyTo` are optional
+ * per-project overrides forwarded to `mailer.sendMail` only when set —
+ * absent means today's behavior (mailer's own default `from`, no `replyTo`).
  * @param {Object} user - The newly signed-up user (id/_id, email, firstName, lastName).
  * @param {string} [orgName] - Organization display name. Omitted in B2C mode
  *   (organizations disabled) — the template must not require it.
@@ -153,10 +157,13 @@ const sendWelcomeEmail = (user, orgName, orgId) => {
     stack: err?.stack,
   });
   try {
+    const { from, replyTo } = config.organizations?.welcomeEmail || {};
     mailer.sendMail({
       template: 'welcome',
       to: user.email,
       subject: `Welcome to ${config.app.title}`,
+      ...(from ? { from } : {}),
+      ...(replyTo ? { replyTo } : {}),
       params: {
         displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
         url: getBaseUrl(),

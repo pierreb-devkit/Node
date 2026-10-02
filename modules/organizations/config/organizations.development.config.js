@@ -19,7 +19,9 @@ const config = {
     emailVerification: { mode: 'strict' },
     // Fail-open: read with `?? true` at the call site so an absent key (a
     // downstream project that predates this option) never silently disables
-    // the welcome email — only an explicit `false` does.
+    // the welcome email — only an explicit `false` does. `from` / `replyTo`
+    // (both unset here) are optional per-project overrides forwarded to
+    // mailer.sendMail only when set (Node#4161).
     welcomeEmail: { enabled: true },
     roles: ['owner', 'admin', 'member'],
     roleDescriptions: {
