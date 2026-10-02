@@ -82,7 +82,7 @@
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",
     "posthog-node": "^5.54.1",
-    "resend": "^6.28.1",
+    "resend": "^6.30.0",
     "sharp": "^0.35.5",
     "snyk": "^1.1305.2",
     "stripe": "^22.6.2",
