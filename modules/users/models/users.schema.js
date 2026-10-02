@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import config from '../../../config/index.js';
 import zodHelpers from '../../../lib/helpers/zod.js';
+import { EmailPreferences, EmailKind } from './users.emailPreferences.schema.js';
 
 const names = /^[a-zA-ZàáâäãåąčćęèéêëėįìíîïłńòóôöõøùúûüųūÿýżźñçčšžÀÁÂÄÃÅĄĆČĖĘÈÉÊËÌÍÎÏĮŁŃÒÓÔÖÕØÙÚÛÜŲŪŸÝŻŹÑßÇŒÆČŠŽ∂ð ,.'-]+$/u;
 
@@ -24,6 +25,12 @@ const Attribution = z.object({
   utmTerm: z.string().max(256).trim().optional(),
   utmContent: z.string().max(256).trim().optional(),
 }).strict();
+
+// `EmailPreferences` / `EmailKind` (#4162) live in their own file, imported
+// above, and are re-exported below so `usersSchema.EmailPreferences` /
+// `usersSchema.EmailKind` keep working for any existing caller — see that
+// file's doc comment for why: `users.service.js` needs `EmailKind` without
+// pulling in this file's `config.whitelists.users.roles` coupling.
 
 /**
  * User Data Schema
@@ -91,6 +98,11 @@ const User = z.object({
   // client must never be able to overwrite its own first-touch attribution
   // after the fact via the profile-update surface.
   attribution: Attribution.optional(),
+  // Per-kind product-email opt-out (#4162) — unlike `attribution`, this one
+  // IS self-editable (see `UserUpdate` below and the `update` whitelist in
+  // modules/users/config/users.development.config.js); a user must be able
+  // to change their own email preferences.
+  emailPreferences: EmailPreferences.optional(),
 });
 
 // `attribution` is EXCLUDED here (not just left off the `update`/`updateAdmin`
@@ -153,4 +165,6 @@ export default {
   UserUpdate,
   SignupUser,
   Attribution,
+  EmailPreferences,
+  EmailKind,
 };

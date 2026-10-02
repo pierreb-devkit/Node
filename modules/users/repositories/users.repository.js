@@ -138,6 +138,27 @@ const consumeEmailVerificationToken = (token) => {
 };
 
 /**
+ * @desc Atomically set one `emailPreferences` kind for a user (#4162). Used
+ * by the public one-click unsubscribe route — the caller has already
+ * verified the HMAC token and only needs the write. Tolerant of an
+ * invalid/unknown id: returns null rather than letting an invalid ObjectId
+ * string reach Mongoose and throw a CastError.
+ * @param {String} userId - the user id (from a verified unsubscribe token)
+ * @param {String} kind - email kind ('onboarding' | 'news')
+ * @param {Boolean} value - the new preference value
+ * @returns {Promise<Object|null>} the updated user document, or null when
+ *   the id is invalid or no document matched it.
+ */
+const setEmailPreference = (userId, kind, value) => {
+  if (!mongoose.Types.ObjectId.isValid(userId)) return Promise.resolve(null);
+  return User.findOneAndUpdate(
+    { _id: userId },
+    { $set: { [`emailPreferences.${kind}`]: value } },
+    { returnDocument: 'after', runValidators: true },
+  ).exec();
+};
+
+/**
  * @desc Function to remove a user from db by id or email
  * @param {Object} user
  * @returns {Object} confirmation of delete
@@ -283,6 +304,7 @@ export default {
   search,
   update,
   consumeEmailVerificationToken,
+  setEmailPreference,
   remove,
   stats,
   count,
