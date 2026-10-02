@@ -267,6 +267,32 @@ const findByIdAndUpdatePopulated = (id, data, populateFields) =>
 const findWithFilter = (filter, select) => User.find(filter).select(select || '').exec();
 
 /**
+ * @desc Fetch one `_id`-ordered page of users matching a filter, projected down
+ * to `select` (#4162 — UserService.announce's recipient fan-out). Each page is
+ * its own query, re-filtered by `_id: { $gt: afterId }` — no server-side cursor
+ * state — so a caller that does something slow (e.g. a sequential mail send)
+ * between pages can never hit a MongoDB cursor idle-timeout. Returns `[]` once
+ * the walk is exhausted.
+ * @param {Object} filter - Mongoose filter (ANDed with the `_id` page bound)
+ * @param {Object} [options]
+ * @param {String} [options.afterId] - exclusive lower bound (`_id` of the last
+ *   row from the previous page); omit for the first page
+ * @param {Number} [options.limit] - page size (default 200)
+ * @param {String} [options.select] - fields to select; callers MUST limit this
+ *   to what they actually read (e.g. never password/providerData)
+ * @returns {Promise<Array>} up to `limit` plain (lean) user objects, `_id`-ascending
+ */
+const findPage = (filter, { afterId, limit = 200, select } = {}) => {
+  const pageFilter = afterId ? { ...filter, _id: { $gt: afterId } } : filter;
+  return User.find(pageFilter)
+    .select(select || '')
+    .sort({ _id: 1 })
+    .limit(limit)
+    .lean()
+    .exec();
+};
+
+/**
  * @desc Function to update multiple users matching a filter
  * @param {Object} filter - Mongoose filter
  * @param {Object} data - Fields to update
@@ -314,6 +340,7 @@ export default {
   updateById,
   findByIdAndUpdatePopulated,
   findWithFilter,
+  findPage,
   updateMany,
   linkProviderByEmail,
 };

@@ -90,9 +90,10 @@ const me = (req, res) => {
  * @desc Public one-click unsubscribe endpoint (#4162, RFC 8058). No auth —
  * the token itself (verified via HMAC, see unsubscribeToken.js) IS the
  * authorization, so a mail client's automated one-click POST works with no
- * session and no page. Always responds the same way (200/400) whether the
- * token was tampered with, expired in format, or simply never existed —
- * nothing here lets a caller distinguish those cases.
+ * session and no page. Responds the same way (200/400) whether the token was
+ * tampered with, expired in format, or simply never existed — nothing here
+ * lets a caller distinguish those cases — barring an unexpected server error
+ * (422).
  * @param {Object} req - Express request object (req.params.token)
  * @param {Object} res - Express response object
  */
@@ -106,7 +107,7 @@ const unsubscribe = async (req, res) => {
 
     return responses.success(res, 'Unsubscribed successfully')({ kind: parsed.kind });
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    return responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
   }
 };
 

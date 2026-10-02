@@ -17,11 +17,12 @@ export default (app) => {
   app.route('/api/users/stats').all(policy.isAllowed).get(users.stats);
 
   // One-click unsubscribe (#4162) — public, token-authorized (RFC 8058), no
-  // passport/policy middleware. Rate-limited with the SAME profile as the
-  // other public, token-in-path auth routes (reset, verify-email) — reusing
-  // `limiters.auth` rather than inventing a new rate-limit profile for this
-  // one route.
-  app.route('/api/users/unsubscribe/:token').post(limiters.auth, users.unsubscribe);
+  // passport/policy middleware. Its OWN rate-limit profile (`unsubscribe`, see
+  // users.development.config.js / production.config.js) — NOT `limiters.auth`:
+  // these POSTs come from mail providers' shared egress IPs, so auth's
+  // 10/15min-per-IP cap would lock out genuine recipients after a handful of
+  // sends from the same provider.
+  app.route('/api/users/unsubscribe/:token').post(limiters.unsubscribe, users.unsubscribe);
 
   app.route('/api/users/me').get(passport.authenticate('jwt', { session: false }), policy.isAllowed, users.me);
 

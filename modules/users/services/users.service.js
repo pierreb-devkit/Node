@@ -212,11 +212,24 @@ const sendProductMail = async (user, { kind, template, subject, params, from, re
   });
 };
 
+// Page size for `announce`'s _id-ordered recipient walk (#4162) — see UserRepository.findPage.
+const ANNOUNCE_PAGE_SIZE = 200;
+
 /**
  * @desc Send a product email to every verified user who has not opted out of
- * `kind` (#4162). Sequential — never parallel — so a large user base can't
- * burst the mailer provider's rate limit. A per-recipient send failure is
- * logged and does NOT stop the loop; the rest of the list still gets mailed.
+ * `kind` (#4162). Recipients are walked in `_id`-ordered pages of
+ * `ANNOUNCE_PAGE_SIZE` (UserRepository.findPage) instead of one unbounded
+ * array load, so a large user base can't exhaust process memory; each page's
+ * projection is limited to exactly what `sendProductMail` reads (`_id`,
+ * `email`, `emailVerified`, `emailPreferences`) — never the password hash or
+ * OAuth provider tokens. Pages, not a server-side cursor, on purpose: the
+ * sequential per-recipient sends below can be slow enough between pages to
+ * outlive a MongoDB cursor's idle timeout. The opt-out/verified filter is
+ * applied per page query — a user who flips their preference mid-run is not
+ * re-checked at send time, only the already-fetched snapshot is used.
+ * Sequential sends — never parallel — so a large user base can't burst the
+ * mailer provider's rate limit. A per-recipient send failure is logged and
+ * does NOT stop the loop; the rest of the list still gets mailed.
  * @param {Object} mail
  * @param {'onboarding'|'news'} mail.kind
  * @param {string} mail.template
@@ -229,21 +242,32 @@ const sendProductMail = async (user, { kind, template, subject, params, from, re
  */
 const announce = async ({ kind, template, subject, params, from, replyTo }) => {
   const parsedKind = EmailKind.parse(kind);
-  const recipients = await UserRepository.findWithFilter({
+  const filter = {
     emailVerified: true,
     [`emailPreferences.${parsedKind}`]: { $ne: false },
-  });
+  };
+  const select = '_id email emailVerified emailPreferences';
 
   let sent = 0;
-  for (const recipient of recipients) {
-    try {
-      // Sequential on purpose — see the JSDoc above (never parallel: avoid bursting the mailer provider).
-      const result = await sendProductMail(recipient, { kind: parsedKind, template, subject, params, from, replyTo });
-      if (result) sent += 1;
-    } catch (err) {
-      logger.warn('users.announce: send failed for one recipient', { userId: recipient.id, kind: parsedKind, message: err?.message, stack: err?.stack });
+  let afterId;
+  let page;
+  do {
+    page = await UserRepository.findPage(filter, { afterId, limit: ANNOUNCE_PAGE_SIZE, select });
+
+    for (const recipient of page) {
+      try {
+        // Sequential on purpose — see the JSDoc above (never parallel: avoid bursting the mailer provider).
+        const result = await sendProductMail(recipient, { kind: parsedKind, template, subject, params, from, replyTo });
+        if (result) sent += 1;
+      } catch (err) {
+        // recipient is a lean object (no `id` virtual) — _id is the only identifier available.
+        logger.warn('users.announce: send failed for one recipient', { userId: String(recipient._id), kind: parsedKind, message: err?.message, stack: err?.stack });
+      }
     }
-  }
+
+    if (page.length > 0) afterId = page[page.length - 1]._id;
+  } while (page.length === ANNOUNCE_PAGE_SIZE);
+
   return { sent };
 };
 

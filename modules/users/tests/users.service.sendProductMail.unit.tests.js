@@ -11,6 +11,7 @@
 import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 
 const mockFindWithFilter = jest.fn();
+const mockFindPage = jest.fn();
 const mockSetEmailPreference = jest.fn();
 
 jest.unstable_mockModule('../repositories/users.repository.js', () => ({
@@ -31,6 +32,7 @@ jest.unstable_mockModule('../repositories/users.repository.js', () => ({
     updateById: jest.fn(),
     findByIdAndUpdatePopulated: jest.fn(),
     findWithFilter: mockFindWithFilter,
+    findPage: mockFindPage,
     updateMany: jest.fn(),
     linkProviderByEmail: jest.fn(),
   },
@@ -100,6 +102,7 @@ const verifiedUser = { _id: '64b2f0000000000000000abc', id: '64b2f00000000000000
 
 beforeEach(() => {
   mockFindWithFilter.mockReset();
+  mockFindPage.mockReset();
   mockSetEmailPreference.mockReset();
   mockSendMail.mockReset().mockResolvedValue({ accepted: ['a@test.com'], rejected: [] });
   mockLoggerWarn.mockReset();
@@ -178,27 +181,60 @@ describe('UserService.sendProductMail', () => {
 });
 
 describe('UserService.announce', () => {
-  test('queries only verified, not-opted-out-for-this-kind users', async () => {
-    mockFindWithFilter.mockResolvedValue([]);
+  // Recipients are deliberately LEAN-shaped (no `id` virtual) — matches what
+  // UserRepository.findPage actually returns in production (#4162). A mock with
+  // a convenience `id` field would hide a regression that reads `recipient.id`.
+  test('queries only verified, not-opted-out-for-this-kind users, projected to what sendProductMail reads', async () => {
+    mockFindPage.mockResolvedValue([]);
     await UserService.announce({ kind: 'news', template: 't', subject: 's' });
-    expect(mockFindWithFilter).toHaveBeenCalledWith({ emailVerified: true, 'emailPreferences.news': { $ne: false } });
+    expect(mockFindPage).toHaveBeenCalledWith(
+      { emailVerified: true, 'emailPreferences.news': { $ne: false } },
+      { afterId: undefined, limit: 200, select: '_id email emailVerified emailPreferences' },
+    );
   });
 
-  test('sends to every recipient the query returns and counts them', async () => {
-    mockFindWithFilter.mockResolvedValue([
-      { _id: '1', id: '1', email: 'one@test.com', emailVerified: true },
-      { _id: '2', id: '2', email: 'two@test.com', emailVerified: true },
-    ]);
+  test('sends to every recipient the first page returns and counts them', async () => {
+    mockFindPage
+      .mockResolvedValueOnce([
+        { _id: '1', email: 'one@test.com', emailVerified: true },
+        { _id: '2', email: 'two@test.com', emailVerified: true },
+      ]);
     const result = await UserService.announce({ kind: 'news', template: 't', subject: 's' });
     expect(mockSendMail).toHaveBeenCalledTimes(2);
     expect(result).toEqual({ sent: 2 });
+    // page smaller than the page size (2 < 200) — walk stops, no extra query
+    expect(mockFindPage).toHaveBeenCalledTimes(1);
   });
 
-  test('a per-recipient send failure is logged and does NOT stop the loop', async () => {
-    mockFindWithFilter.mockResolvedValue([
-      { _id: '1', id: '1', email: 'one@test.com', emailVerified: true },
-      { _id: '2', id: '2', email: 'two@test.com', emailVerified: true },
-    ]);
+  test('walks a second _id-ordered page when the first page is full, and stops on a short page', async () => {
+    const fullPage = Array.from({ length: 200 }, (_, i) => ({ _id: String(i + 1), email: `u${i + 1}@test.com`, emailVerified: true }));
+    mockFindPage
+      .mockResolvedValueOnce(fullPage)
+      .mockResolvedValueOnce([{ _id: '201', email: 'u201@test.com', emailVerified: true }]);
+
+    const result = await UserService.announce({ kind: 'news', template: 't', subject: 's' });
+
+    expect(mockFindPage).toHaveBeenCalledTimes(2);
+    expect(mockFindPage).toHaveBeenNthCalledWith(
+      1,
+      { emailVerified: true, 'emailPreferences.news': { $ne: false } },
+      { afterId: undefined, limit: 200, select: '_id email emailVerified emailPreferences' },
+    );
+    expect(mockFindPage).toHaveBeenNthCalledWith(
+      2,
+      { emailVerified: true, 'emailPreferences.news': { $ne: false } },
+      { afterId: '200', limit: 200, select: '_id email emailVerified emailPreferences' },
+    );
+    expect(mockSendMail).toHaveBeenCalledTimes(201);
+    expect(result).toEqual({ sent: 201 });
+  });
+
+  test('a per-recipient send failure is logged by _id (no `id` virtual on a lean doc) and does NOT stop the loop', async () => {
+    mockFindPage
+      .mockResolvedValueOnce([
+        { _id: '1', email: 'one@test.com', emailVerified: true },
+        { _id: '2', email: 'two@test.com', emailVerified: true },
+      ]);
     mockSendMail.mockRejectedValueOnce(new Error('provider down')).mockResolvedValueOnce({ accepted: ['two@test.com'], rejected: [] });
 
     const result = await UserService.announce({ kind: 'news', template: 't', subject: 's' });
@@ -209,7 +245,7 @@ describe('UserService.announce', () => {
   });
 
   test('returns { sent: 0 } with no recipients', async () => {
-    mockFindWithFilter.mockResolvedValue([]);
+    mockFindPage.mockResolvedValue([]);
     const result = await UserService.announce({ kind: 'onboarding', template: 't', subject: 's' });
     expect(result).toEqual({ sent: 0 });
     expect(mockSendMail).not.toHaveBeenCalled();
