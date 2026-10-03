@@ -141,18 +141,33 @@ describe('UserService.sendProductMail', () => {
     expect(mockSendMail).toHaveBeenCalledTimes(1);
   });
 
-  test('attaches the List-Unsubscribe / List-Unsubscribe-Post headers (RFC 8058)', async () => {
+  test('attaches the List-Unsubscribe / List-Unsubscribe-Post headers (RFC 8058) when the unsubscribe URL is HTTPS', async () => {
+    const originalDomain = config.domain;
+    config.domain = 'https://api.test.com';
+    try {
+      await UserService.sendProductMail(verifiedUser, { kind: 'news', template: 't', subject: 's' });
+      const call = mockSendMail.mock.calls[0][0];
+      expect(call.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');
+      expect(call.headers['List-Unsubscribe']).toMatch(/^<https:\/\/.+>$/);
+    } finally {
+      config.domain = originalDomain;
+    }
+  });
+
+  test('omits BOTH one-click headers when the unsubscribe URL is not HTTPS (RFC 8058 requires HTTPS; config.domain is empty in this real test config, so getApiBaseUrl() falls back to config.api.protocol = "http")', async () => {
+    expect(config.domain).toBeFalsy(); // guard the premise
+
     await UserService.sendProductMail(verifiedUser, { kind: 'news', template: 't', subject: 's' });
     const call = mockSendMail.mock.calls[0][0];
-    expect(call.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');
-    expect(call.headers['List-Unsubscribe']).toMatch(/^<https?:\/\/.+>$/);
+
+    expect(call.params.unsubscribeUrl).toMatch(/^http:\/\//);
+    expect(call.headers).toBeUndefined();
   });
 
   test('the unsubscribe URL embeds a token that verifies back to this user and kind', async () => {
     await UserService.sendProductMail(verifiedUser, { kind: 'news', template: 't', subject: 's' });
     const call = mockSendMail.mock.calls[0][0];
-    const url = call.headers['List-Unsubscribe'].slice(1, -1); // strip < >
-    const token = url.split('/').pop();
+    const token = call.params.unsubscribeUrl.split('/').pop();
     expect(verifyUnsubscribeToken(token)).toEqual({ userId: '64b2f0000000000000000abc', kind: 'news' });
   });
 
@@ -181,7 +196,7 @@ describe('UserService.sendProductMail', () => {
   });
 
   describe('two distinct URLs (epic-audit follow-up on #4160/#4127):', () => {
-    test('the List-Unsubscribe header/token URL host matches config.api.* (config.domain is empty in this real test config, so getApiBaseUrl() falls back to the bind-settings composition), NOT config.cors.origin', async () => {
+    test('params.unsubscribeUrl host matches config.api.* (config.domain is empty in this real test config, so getApiBaseUrl() falls back to the bind-settings composition), NOT config.cors.origin', async () => {
       // Guard the premise: if a future config change ever made these the
       // same host, this test would stop proving anything.
       expect(config.domain).toBeFalsy();
@@ -189,10 +204,10 @@ describe('UserService.sendProductMail', () => {
 
       await UserService.sendProductMail(verifiedUser, { kind: 'news', template: 't', subject: 's' });
       const call = mockSendMail.mock.calls[0][0];
-      const headerUrl = call.headers['List-Unsubscribe'].slice(1, -1);
+      const unsubscribeUrl = call.params.unsubscribeUrl;
 
-      expect(new URL(headerUrl).host).toBe(`${config.api.host}:${config.api.port}`);
-      expect(new URL(headerUrl).pathname).toBe(`/${config.api.base}/users/unsubscribe/${headerUrl.split('/').pop()}`);
+      expect(new URL(unsubscribeUrl).host).toBe(`${config.api.host}:${config.api.port}`);
+      expect(new URL(unsubscribeUrl).pathname).toBe(`/${config.api.base}/users/unsubscribe/${unsubscribeUrl.split('/').pop()}`);
     });
 
     test('params.emailSettingsUrl points at the frontend origin (config.cors.origin) + config.users.emailSettingsPath — distinct from the unsubscribe token URL', async () => {
@@ -204,11 +219,30 @@ describe('UserService.sendProductMail', () => {
       expect(new URL(call.params.emailSettingsUrl).host).toBe(new URL(config.cors.origin[0]).host);
     });
 
-    test('params.unsubscribeUrl is kept for backward compat and equals the List-Unsubscribe header URL', async () => {
-      await UserService.sendProductMail(verifiedUser, { kind: 'news', template: 't', subject: 's' });
-      const call = mockSendMail.mock.calls[0][0];
+    test('params.unsubscribeUrl is kept for backward compat and, when HTTPS, equals the List-Unsubscribe header URL', async () => {
+      const originalDomain = config.domain;
+      config.domain = 'https://api.test.com';
+      try {
+        await UserService.sendProductMail(verifiedUser, { kind: 'news', template: 't', subject: 's' });
+        const call = mockSendMail.mock.calls[0][0];
 
-      expect(call.params.unsubscribeUrl).toBe(call.headers['List-Unsubscribe'].slice(1, -1));
+        expect(call.params.unsubscribeUrl).toBe(call.headers['List-Unsubscribe'].slice(1, -1));
+      } finally {
+        config.domain = originalDomain;
+      }
+    });
+
+    test('params.emailSettingsUrl is undefined (link omitted) when getBaseUrl() is empty — never a bare relative path', async () => {
+      const originalOrigin = config.cors.origin;
+      config.cors.origin = [];
+      try {
+        await UserService.sendProductMail(verifiedUser, { kind: 'news', template: 't', subject: 's' });
+        const call = mockSendMail.mock.calls[0][0];
+
+        expect(call.params.emailSettingsUrl).toBeUndefined();
+      } finally {
+        config.cors.origin = originalOrigin;
+      }
     });
 
     test('emailSettingsUrl joins getBaseUrl() and config.users.emailSettingsPath with exactly one "/", even if a downstream override omits the leading slash', async () => {
