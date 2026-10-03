@@ -378,6 +378,31 @@ describe('User integration tests:', () => {
       }
     });
 
+    // #4162 follow-up (Vue#4708) — GET /api/auth/token is a SEPARATE read path from
+    // PUT /api/users: it re-derives req.user via the JWT strategy's `getBrut()`,
+    // a real mongoose document whose `emailPreferences` is a nested subdocument
+    // (unlike `complementary`, which is `Mixed`). The `me()`/PUT round-trip above
+    // doesn't exercise that path, and that gap is exactly what let the explicit
+    // allowlist in auth.controller.js#token omit the field despite #4168 adding it
+    // everywhere else. This proves the real end-to-end shape: a stored opt-out
+    // survives a token refresh, not just the sanitized plain-object projection.
+    test('should return the stored emailPreferences from GET /api/auth/token after a PUT /api/users update', async () => {
+      try {
+        await agent.put('/api/users').send({ emailPreferences: { onboarding: true, news: false } }).expect(200);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      try {
+        const result = await agent.get('/api/auth/token').expect(200);
+        expect(result.body.user.emailPreferences).toEqual({ onboarding: true, news: false });
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
     // P8a / E20: referredBy is a server-only referral field — a client must never be
     // able to self-assign a referrer via the self-update endpoint. It is absent from
     // config.whitelists.users.update, so removeSensitive strips it. This proves the
