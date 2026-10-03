@@ -5,6 +5,7 @@ import config from '../../config/index.js';
 import logger from '../../lib/services/logger.js';
 import billingEvents from './lib/events.js';
 import mailer from '../../lib/helpers/mailer/index.js';
+import getBaseUrl from '../../lib/helpers/getBaseUrl.js';
 import MembershipRepository from '../organizations/repositories/organizations.membership.repository.js';
 import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../organizations/lib/constants.js';
 
@@ -57,8 +58,9 @@ export const sendBillingEmail = (mailOpts, context) => {
  *  - payment.failed                       — sends payment-failed email prompting card update
  *
  * Template resolution: devkit ships generic templates in config/templates/billing-*.html.
- * Downstream projects override by placing same-named files in their own config/templates/
- * directory — those shadow devkit defaults via the template-resolution glob-merge in config.
+ * A downstream overrides one by adding a `config.mailer.templates` entry that maps the
+ * key to its own file; any other key keeps resolving to the devkit default
+ * (see `resolveTemplatePath` in lib/helpers/mailer/index.js).
  */
 export const setupBillingEmails = () => {
   // ── meter.threshold_crossed — 80% / 100% quota emails ──────────────────────
@@ -67,7 +69,7 @@ export const setupBillingEmails = () => {
     if (threshold !== 80 && threshold !== 100) return;
 
     const appName = config.app?.title ?? '';
-    const billingUrl = config.app?.url ? `${config.app.url}/billing` : '';
+    const billingUrl = `${config.app?.url || getBaseUrl()}/billing`;
 
     resolveOrgAdminEmails(organizationId).then((emails) => {
       if (!emails.length) return;
@@ -105,7 +107,7 @@ export const setupBillingEmails = () => {
     if (threshold !== 80 && threshold !== 100) return;
 
     const appName = config.app?.title ?? '';
-    const billingUrl = config.app?.url ? `${config.app.url}/billing` : '';
+    const billingUrl = `${config.app?.url || getBaseUrl()}/billing`;
     const isWarning = threshold === 80;
 
     resolveOrgAdminEmails(organizationId).then((emails) => {
@@ -135,7 +137,7 @@ export const setupBillingEmails = () => {
 
   billingEvents.on('payment.failed', ({ organizationId }) => {
     const appName = config.app?.title ?? '';
-    const billingPortalUrl = config.app?.url ? `${config.app.url}/billing` : '';
+    const billingPortalUrl = `${config.app?.url || getBaseUrl()}/billing`;
 
     resolveOrgAdminEmails(organizationId).then((emails) => {
       if (!emails.length) return;

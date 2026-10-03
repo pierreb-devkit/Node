@@ -14,6 +14,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
   let mockBillingEvents;
   let mockConfig;
   let mockLogger;
+  let mockGetBaseUrl;
 
   const orgId = '507f1f77bcf86cd799439011';
 
@@ -52,6 +53,8 @@ describe('billing.email setupBillingEmails listeners:', () => {
       error: jest.fn(),
     };
 
+    mockGetBaseUrl = jest.fn().mockReturnValue('https://frontend.example.com');
+
     // Capture registered listeners so we can invoke them directly
     mockBillingEvents = {
       on: jest.fn((event, handler) => {
@@ -69,6 +72,10 @@ describe('billing.email setupBillingEmails listeners:', () => {
 
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
       default: mockLogger,
+    }));
+
+    jest.unstable_mockModule('../../../lib/helpers/getBaseUrl.js', () => ({
+      default: mockGetBaseUrl,
     }));
 
     jest.unstable_mockModule('../lib/events.js', () => ({
@@ -297,6 +304,45 @@ describe('billing.email setupBillingEmails listeners:', () => {
         expect.objectContaining({ to: 'valid@test.com' }),
       );
     });
+
+    test('includes billingUrl built from config.app.url', async () => {
+      listeners['meter.threshold_crossed']({
+        organizationId: orgId,
+        threshold: 80,
+        meterUsed: 800,
+        meterQuota: 1000,
+        weekKey: '2026-W18',
+      });
+
+      await new Promise((r) => setImmediate(r));
+
+      expect(mockMailer.sendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          params: expect.objectContaining({ billingUrl: 'https://myapp.example.com/billing' }),
+        }),
+      );
+      expect(mockGetBaseUrl).not.toHaveBeenCalled();
+    });
+
+    test('falls back to getBaseUrl() for billingUrl when config.app.url is unset', async () => {
+      mockConfig.app = { title: 'MyApp', contact: 'support@myapp.example.com' };
+
+      listeners['meter.threshold_crossed']({
+        organizationId: orgId,
+        threshold: 80,
+        meterUsed: 800,
+        meterQuota: 1000,
+        weekKey: '2026-W18',
+      });
+
+      await new Promise((r) => setImmediate(r));
+
+      expect(mockMailer.sendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          params: expect.objectContaining({ billingUrl: 'https://frontend.example.com/billing' }),
+        }),
+      );
+    });
   });
 
   // ── billing.extras.balance_threshold_crossed ─────────────────────────────
@@ -422,6 +468,25 @@ describe('billing.email setupBillingEmails listeners:', () => {
       );
     });
 
+    test('falls back to getBaseUrl() for billingUrl when config.app.url is unset', async () => {
+      mockConfig.app = { title: 'MyApp', contact: 'support@myapp.example.com' };
+
+      listeners['billing.extras.balance_threshold_crossed']({
+        organizationId: orgId,
+        threshold: 80,
+        remaining: 100,
+        planId: 'free',
+      });
+
+      await new Promise((r) => setImmediate(r));
+
+      expect(mockMailer.sendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          params: expect.objectContaining({ billingUrl: 'https://frontend.example.com/billing' }),
+        }),
+      );
+    });
+
     test('logs error but does not throw when sendMail rejects', async () => {
       mockMailer.sendMail.mockRejectedValue(new Error('SMTP error'));
 
@@ -538,7 +603,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
       );
     });
 
-    test('sets billingPortalUrl to empty string when config.app.url is missing', async () => {
+    test('falls back to getBaseUrl() for billingPortalUrl when config.app.url is unset', async () => {
       mockConfig.app = {};
 
       listeners['payment.failed']({ organizationId: orgId });
@@ -547,7 +612,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
 
       expect(mockMailer.sendMail).toHaveBeenCalledWith(
         expect.objectContaining({
-          params: expect.objectContaining({ billingPortalUrl: '' }),
+          params: expect.objectContaining({ billingPortalUrl: 'https://frontend.example.com/billing' }),
         }),
       );
     });
