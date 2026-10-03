@@ -7,6 +7,7 @@ import _ from 'lodash';
 import config from '../../../config/index.js';
 import logger from '../../../lib/services/logger.js';
 import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
+import getApiBaseUrl from '../../../lib/helpers/getApiBaseUrl.js';
 import mailer from '../../../lib/helpers/mailer/index.js';
 import passwordHelper from '../../../lib/helpers/password.js';
 import UserRepository from '../repositories/users.repository.js';
@@ -168,11 +169,20 @@ const consumeEmailVerificationToken = (token) => UserRepository.consumeEmailVeri
  * @desc Send a product email (onboarding series / announcement) to one user,
  * respecting their per-kind opt-out (#4162). Mirrors the existing
  * `mailer.sendMail` contract (template/subject/params/from/replyTo) and adds
- * the one-click unsubscribe machinery on top: a signed, stateless token is
- * minted for this exact (user, kind) pair, exposed to the template as
- * `params.unsubscribeUrl`, and carried on the `List-Unsubscribe` /
- * `List-Unsubscribe-Post` headers (RFC 8058) so a mail client can offer a
- * true one-click unsubscribe with no page and no login.
+ * two distinct links on top (epic-audit follow-up on #4160/#4127):
+ *
+ * - `unsubscribeUrl` — the one-click token POST, `POST /api/users/unsubscribe/:token`.
+ *   An API route, not a frontend page, so it's built from `getApiBaseUrl()`
+ *   (`config.api.*`), never `getBaseUrl()` (`config.cors.origin`, the
+ *   frontend origin) — those two can be, and in a real deployment usually
+ *   are, different hosts. This is also the `List-Unsubscribe` /
+ *   `List-Unsubscribe-Post` header value (RFC 8058), so a mail client can
+ *   offer a true one-click unsubscribe with no page and no login.
+ * - `emailSettingsUrl` — the human-readable footer link, to the frontend's
+ *   account/profile page (`getBaseUrl()` + `config.users.emailSettingsPath`),
+ *   where a signed-in user can review every kind, not just toggle the one
+ *   this mail happens to carry. `unsubscribeUrl` is kept in `params` too
+ *   (backward compat for any template already rendering it directly).
  *
  * Skipped silently (no error, no send) when the user opted out of this kind,
  * or hasn't verified their email — product mail is never pushed at an
@@ -184,7 +194,8 @@ const consumeEmailVerificationToken = (token) => UserRepository.consumeEmailVeri
  * @param {'onboarding'|'news'} mail.kind - must match `EmailKind` (users.emailPreferences.schema.js)
  * @param {string} mail.template - handlebars template key (see mailer/index.js)
  * @param {string} mail.subject
- * @param {Object} [mail.params] - template params; `unsubscribeUrl` is added on top
+ * @param {Object} [mail.params] - template params; `unsubscribeUrl` and
+ *   `emailSettingsUrl` are added on top
  * @param {string} [mail.from]
  * @param {string|string[]} [mail.replyTo]
  * @returns {Promise<Object|null>} the mailer result, or null when skipped or
@@ -196,13 +207,14 @@ const sendProductMail = async (user, { kind, template, subject, params, from, re
   if (user.emailPreferences?.[parsedKind] === false) return null;
 
   const userId = String(user._id || user.id);
-  const unsubscribeUrl = `${getBaseUrl()}/api/users/unsubscribe/${createUnsubscribeToken(userId, parsedKind)}`;
+  const unsubscribeUrl = `${getApiBaseUrl()}/users/unsubscribe/${createUnsubscribeToken(userId, parsedKind)}`;
+  const emailSettingsUrl = `${getBaseUrl()}${config.users.emailSettingsPath}`;
 
   return mailer.sendMail({
     template,
     to: user.email,
     subject,
-    params: { ...params, unsubscribeUrl },
+    params: { ...params, unsubscribeUrl, emailSettingsUrl },
     from,
     replyTo,
     headers: {

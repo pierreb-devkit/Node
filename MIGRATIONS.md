@@ -4,6 +4,21 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## `users`/mailer: unsubscribe link split, API-origin links, legacy templates stop depending on `_layout` (2026-10-03)
+
+Epic-audit follow-up on #4160/#4127, four related fixes:
+
+- **`sendProductMail`'s `List-Unsubscribe` header and token URL now use the API's own origin** (`config.api.*`, via the new `lib/helpers/getApiBaseUrl.js`), not `getBaseUrl()` (`config.cors.origin`, the frontend origin). `POST /api/users/unsubscribe/:token` is an API route — building it from the frontend origin 404s whenever the frontend and the API are served from different hosts, which a real deployment usually does (e.g. prod's `config.api.host` defaults to `0.0.0.0`; a downstream overriding `config.api.{protocol,host,port}` to its real public API origin, the same assumption its OAuth `callbackURL` already made, is what makes this correct). `modules/auth/strategies/local/{google,apple}.js`'s OAuth `callbackURL` now shares this same helper instead of duplicating the expression.
+- **A second, distinct param**: `params.emailSettingsUrl` — the frontend account page (`getBaseUrl()` + new `config.users.emailSettingsPath`, default `/users/profile`) where a signed-in user manages every `emailPreferences` kind. `params.unsubscribeUrl` (the token URL) is kept for backward compat on any template already rendering it directly.
+- **The default footer partial** (`config/templates/_layout/footer.html`) now renders an "Email settings" link when `emailSettingsUrl` is present. The layout/partials render context only receives an explicit allow-list of link params (`emailSettingsUrl`, `unsubscribeUrl`) on top of `body`/`brand`/`subject` — not the caller's whole `params` object.
+- **A legacy full-document template** (one whose source starts with `<!doctype`/`<html>`) is now detected and compiled BEFORE the layout/partials are read at all, on its own pristine handlebars instance — it never depends on `_layout/*.html` existing or being readable, and can no longer use `{{> partial}}` (none of the 15 shipped legacy templates do today; a downstream one that does will now throw instead of silently resolving depending on render order).
+
+### Action for downstream
+
+None required for the common case — `config.users.emailSettingsPath` defaults to the Devkit Vue "Account Profile" route, and `getApiBaseUrl()` falls back to the same `config.api.*` defaults the OAuth strategies already relied on. **Check your `config.api.*` override** if your production API and frontend are on different hosts (they usually are): if the deployed `config.api.{protocol,host,port,base}` doesn't resolve to the API's real public origin, the unsubscribe link will be wrong, same failure mode the OAuth callback URL already had. A legacy full-document template using `{{> partial}}` (uncommon — check your own `config/templates/*.html`) needs its markup inlined; it will now throw instead of rendering.
+
+---
+
 ## `users`: config-declared email sequences cron (2026-10-03)
 
 New cron script `modules/users/crons/users.emailSequences.js` and new, fully optional `config.users.emailSequences` (default `{}` ⇒ no-op). A downstream project declares a timed series (e.g. day-7/day-21 onboarding) in config; the daily cron walks `UserRepository.findPage` per step and calls the existing `UserService.sendProductMail` (#4162) for every verified, non-opted-out user whose account age in UTC calendar days matches that step. See `modules/users/crons/README.md` for the config shape and the Kubernetes CronJob example (#4163).

@@ -97,6 +97,7 @@ jest.unstable_mockModule('../../organizations/lib/constants.js', () => ({
 
 const { default: UserService, walkSendProductMail } = await import('../services/users.service.js');
 const { verifyUnsubscribeToken } = await import('../utils/unsubscribeToken.js');
+const { default: config } = await import('../../../config/index.js');
 
 const verifiedUser = { _id: '64b2f0000000000000000abc', id: '64b2f0000000000000000abc', email: 'a@test.com', emailVerified: true };
 
@@ -177,6 +178,37 @@ describe('UserService.sendProductMail', () => {
     mockSendMail.mockResolvedValue(null);
     const result = await UserService.sendProductMail(verifiedUser, { kind: 'news', template: 't', subject: 's' });
     expect(result).toBeNull();
+  });
+
+  describe('two distinct URLs (epic-audit follow-up on #4160/#4127):', () => {
+    test('the List-Unsubscribe header/token URL host matches config.api.*, NOT config.cors.origin — these resolve to different hosts in this real test config', async () => {
+      // Guard the premise: if a future config change ever made these the
+      // same host, this test would stop proving anything.
+      expect(new URL(`http://${config.api.host}`).host).not.toBe(new URL(config.cors.origin[0]).host);
+
+      await UserService.sendProductMail(verifiedUser, { kind: 'news', template: 't', subject: 's' });
+      const call = mockSendMail.mock.calls[0][0];
+      const headerUrl = call.headers['List-Unsubscribe'].slice(1, -1);
+
+      expect(new URL(headerUrl).host).toBe(`${config.api.host}:${config.api.port}`);
+      expect(new URL(headerUrl).pathname).toBe(`/${config.api.base}/users/unsubscribe/${headerUrl.split('/').pop()}`);
+    });
+
+    test('params.emailSettingsUrl points at the frontend origin (config.cors.origin) + config.users.emailSettingsPath — distinct from the unsubscribe token URL', async () => {
+      await UserService.sendProductMail(verifiedUser, { kind: 'news', template: 't', subject: 's' });
+      const call = mockSendMail.mock.calls[0][0];
+
+      expect(call.params.emailSettingsUrl).toBe(`${config.cors.origin[0]}${config.users.emailSettingsPath}`);
+      expect(call.params.emailSettingsUrl).not.toBe(call.params.unsubscribeUrl);
+      expect(new URL(call.params.emailSettingsUrl).host).toBe(new URL(config.cors.origin[0]).host);
+    });
+
+    test('params.unsubscribeUrl is kept for backward compat and equals the List-Unsubscribe header URL', async () => {
+      await UserService.sendProductMail(verifiedUser, { kind: 'news', template: 't', subject: 's' });
+      const call = mockSendMail.mock.calls[0][0];
+
+      expect(call.params.unsubscribeUrl).toBe(call.headers['List-Unsubscribe'].slice(1, -1));
+    });
   });
 });
 

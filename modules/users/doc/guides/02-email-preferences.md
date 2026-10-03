@@ -27,3 +27,9 @@ POST /api/users/unsubscribe/:token
 ```
 
 The token is specific to one user and one kind, has no expiry, and can be posted more than once safely (turning the kind off again is a no-op). A request with an invalid or tampered token returns `400`; a successful one returns `200` with the kind that was turned off.
+
+This URL is built from the API's own origin (`config.api.*`, via `getApiBaseUrl()`), not the frontend origin — it's an API route a mail client POSTs to directly, never a page a browser navigates to.
+
+## Email settings link
+
+Every product email also carries a second, human-facing link in `params.emailSettingsUrl` — the frontend's account page (`config.cors.origin` + `config.users.emailSettingsPath`, default `/users/profile`) where a signed-in user can review and change every `emailPreferences` kind, not just the one this particular mail happens to carry. The default footer partial renders it as an "Email settings" link whenever it's present. `params.unsubscribeUrl` (the token URL above) is still passed through for backward compat on any template that renders it directly.
