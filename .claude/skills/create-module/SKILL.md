@@ -6,8 +6,7 @@ description: >
   vertical (controller + service + repo + model + routes + tests). Duplicates
   the canonical `modules/tasks` template, applies kebab/Pascal/camel renames,
   and registers config-driven enums. A `crud-only` option scaffolds a leaner
-  module for plain CRUD, skipping the bulk data service, the org integration
-  test, and the OpenAPI yaml. Module stays self-contained — never modify
+  module for plain CRUD, skipping the bulk data service and the OpenAPI yaml. Module stays self-contained — never modify
   shared `lib/` or `config/` to bolt on module logic.
 ---
 
@@ -43,10 +42,9 @@ cp -r modules/tasks modules/{new-module-name}
 
 #### `crud-only` option
 
-When the new module is plain CRUD with no bulk-import/export or multi-tenant need, scaffold it leaner by removing these **right after the copy, before step 4's renaming** (files are still named `tasks.*` at this point — the copy doesn't rename them):
+When the new module is plain CRUD with no bulk-import/export need, scaffold it leaner by removing these **right after the copy, before step 4's renaming** (files are still named `tasks.*` at this point — the copy doesn't rename them):
 
 - `services/tasks.data.service.js` — the bulk push/list/remove data service
-- `tests/tasks.organization.integration.tests.js` — the org-scoped integration test
 - `doc/tasks.yml` — the OpenAPI spec
 - `tests/tasks.openapi-operationid.unit.tests.js` — it only exists to check the yaml above, now gone with it
 
@@ -55,6 +53,8 @@ Each removal leaves a dangling reference in the main integration test — clean 
 - In `tests/tasks.integration.tests.js`: drop the `TasksDataService` variable, its `import(...)` in `beforeAll`, and the whole `describe('Data', ...)` block that exercises it.
 
 Then proceed to step 4, which renames what's left (including these surviving files) to `{new-module-name}`.
+
+Keep `tests/tasks.organization.integration.tests.js`: the copied service stays org-scoped and that file is its only cross-org isolation test.
 
 Skip this subsection entirely for a full-featured module — the plain copy already carries everything.
 

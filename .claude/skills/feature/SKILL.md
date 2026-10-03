@@ -159,7 +159,7 @@ Routes → Controllers → Services → Repositories → Models
 - **Services**: Business logic, call repositories, throw `AppError`
 - **Repositories**: Database only — sole layer importing mongoose
 
-A service whose every function is a 1:1 forward to the repository (no branching, no shaping, no `AppError`) may be `export default Repository;` instead of wrapping each function — the layer boundary stays, controllers still import the service, never the repository directly. The moment one function needs real logic, write it out.
+A service whose every function is a 1:1 forward to the repository (no branching, no shaping, no `AppError`) may be `export default Repository;` (only when the repository's exports are exactly the service's intended API) instead of wrapping each function — the layer boundary stays, controllers still import the service, never the repository directly. The moment one function needs real logic, write it out.
 
 ### 7. Apply modularity rules
 
