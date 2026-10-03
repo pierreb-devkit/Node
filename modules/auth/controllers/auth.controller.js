@@ -222,6 +222,12 @@ const token = async (req, res) => {
       currentOrganization: req.user.currentOrganization,
       lastLoginAt: req.user.lastLoginAt,
       complementary: req.user.complementary,
+      // #4162 — self-editable, so (like complementary) always reflected back;
+      // undefined for a user who never touched it (absent = every kind on).
+      // Follow-up to #4168, which added this to the `me()` projection but
+      // missed this one — the Vue auth store replaces its user wholesale from
+      // this response on every reload, so a stale default silently reverted it.
+      emailPreferences: req.user.emailPreferences,
     };
   }
 

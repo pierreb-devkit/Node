@@ -2,8 +2,11 @@
  * Module dependencies.
  *
  * Unit tests for auth.controller `token` handler.
- * Regression guard: /api/auth/token must include `complementary` in the user
- * projection so per-user UI prefs / extras rehydrate correctly across refresh.
+ * Regression guard: /api/auth/token must include `complementary` and
+ * `emailPreferences` in the user projection so per-user UI prefs / extras and
+ * email opt-outs rehydrate correctly across refresh (the latter per #4162
+ * follow-up, Vue#4708: #4168 added `emailPreferences` elsewhere but missed
+ * this explicit allowlist).
  */
 import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 
@@ -170,5 +173,75 @@ describe('auth.controller.token — user projection:', () => {
     expect(payload.user).toBeDefined();
     expect('complementary' in payload.user).toBe(true);
     expect(payload.user.complementary).toBeUndefined();
+  });
+
+  // #4162 follow-up (Vue#4708) — #4168 added `emailPreferences` to the `me()`
+  // projection and the `default` whitelist but missed this one; the Vue auth
+  // store replaces its user wholesale from this response on every reload, so
+  // a stale default silently reverted an explicit opt-out.
+  test('should include `emailPreferences` in the returned user object (regression guard: account switches must survive a token refresh)', async () => {
+    const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
+
+    const req = {
+      user: {
+        id: 'u3',
+        provider: 'local',
+        roles: ['user'],
+        avatar: '',
+        email: 'e@f.com',
+        lastName: 'Doe',
+        firstName: 'Jane',
+        additionalProvidersData: {},
+        emailVerified: true,
+        currentOrganization: null,
+        lastLoginAt: new Date(0),
+        complementary: {},
+        emailPreferences: { onboarding: true, news: false },
+      },
+    };
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      cookie: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+    };
+
+    await AuthController.token(req, res);
+
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.user).toBeDefined();
+    expect(payload.user.emailPreferences).toEqual({ onboarding: true, news: false });
+  });
+
+  test('should preserve a missing/undefined `emailPreferences` as undefined (no crash)', async () => {
+    const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
+
+    const req = {
+      user: {
+        id: 'u4',
+        provider: 'local',
+        roles: ['user'],
+        avatar: '',
+        email: 'g@h.com',
+        lastName: 'Smith',
+        firstName: 'John',
+        additionalProvidersData: {},
+        emailVerified: true,
+        currentOrganization: null,
+        lastLoginAt: new Date(0),
+        // emailPreferences intentionally omitted
+      },
+    };
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      cookie: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+    };
+
+    await AuthController.token(req, res);
+
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.user).toBeDefined();
+    expect('emailPreferences' in payload.user).toBe(true);
+    expect(payload.user.emailPreferences).toBeUndefined();
   });
 });
