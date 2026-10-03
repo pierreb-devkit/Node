@@ -99,7 +99,7 @@ describe('stepCreatedAtRange — startAt cutoff:', () => {
     expect(range).toBeNull();
   });
 
-  test('does not return null when startAt falls exactly on the range\'s lt boundary (adjacent day, still some overlap excluded correctly)', () => {
+  test('returns null when startAt falls exactly on the range\'s lt boundary (clampedGte == lt, no overlap left)', () => {
     const now = new Date('2026-10-10T00:00:00.000Z');
     // day:7 range is [Oct 3, Oct 4). startAt == Oct 4 (the range's lt) means clampedGte (Oct4) >= lt (Oct4) -> null.
     const startAt = new Date('2026-10-04T00:00:00.000Z');
