@@ -4,6 +4,21 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## mailer: the 15 shared `config/templates/*.html` mails are now body fragments on the default layout (2026-10-04)
+
+#4133: `billing-*`, `org-*`, `referral-reward-earned`, `reset-password-*`, `signup-invite`, `verify-email` and `welcome` are no longer full HTML documents — each is now a body fragment rendered inside the default layout (`_layout/layout.html` + its header/footer/button partials, #4132/#4166), the same mechanism #4164–#4171 already added for a downstream's own templates.
+
+- Each template's old hardcoded sign-off ("The `{{appName}}` Team." / "... Support Team.") is gone — replaced by `brand.signature`, which has **no fallback**: unset, none of the 15 sign off any more.
+- Each template's old inline "Please do not reply…" footer is gone, replaced by the shared footer's standardized contact line, which now reaches all 15 (5 of them — the 4 `org-*` mails and `referral-reward-earned` — never rendered a contact line before).
+- The 6 CTA templates render their button via `{{> button url=url label="..."}}` instead of a copy-pasted table.
+- Unchanged: every other variable each template renders, its CTA `url`, its "Button not working?" fallback link, and the three mail-specific caveat sentences (reset-password-email, signup-invite, verify-email).
+
+### Action for downstream
+
+Set `config.mailer.brand.signature` (and `brand.logoUrl`/`brand.primaryColor`/etc., #4165) if you want these mails to keep a sign-off or look branded — nothing renders by default. No other action needed: a downstream's own full-document template (source starting with `<!doctype`/`<html>`) is unaffected, it still bypasses the layout entirely.
+
+---
+
 ## skills: thin service re-export, zero-logic unit-test exception, `create-module` `crud-only` option (2026-10-03)
 
 `.claude/skills/{naming,feature,create-module,verify}/SKILL.md` updated — no runtime code changed:
