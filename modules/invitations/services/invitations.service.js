@@ -24,11 +24,9 @@ import AnalyticsService from '../../../lib/services/analytics.js';
 const inviteMailPayload = (invitation) => ({
   template: 'signup-invite',
   to: invitation.email,
-  subject: `You're invited to ${config.app.title}`,
+  subject: `You're invited to ${mails.getBrand().name}`,
   params: {
     url: `${getBaseUrl()}/signup?inviteToken=${invitation.token}`,
-    appName: config.app.title,
-    appContact: config.app.contact,
   },
 });
 

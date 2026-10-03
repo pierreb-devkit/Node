@@ -60,7 +60,11 @@ describe('billing.referral.service unit tests:', () => {
     mockLogger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
     // Mailer OFF by default (matches the mailer.isConfigured() gate default in most
     // deployments) — tests that need to assert notifyReferrer's email flip it ON.
-    mockMailer = { isConfigured: jest.fn().mockReturnValue(false), sendMail: jest.fn().mockResolvedValue({}) };
+    mockMailer = {
+      isConfigured: jest.fn().mockReturnValue(false),
+      sendMail: jest.fn().mockResolvedValue({}),
+      getBrand: jest.fn().mockReturnValue({ name: 'Test App' }),
+    };
 
     jest.unstable_mockModule('../../../config/index.js', () => ({ default: mockConfig }));
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mockLogger }));
@@ -281,7 +285,8 @@ describe('billing.referral.service unit tests:', () => {
       const mail = mockMailer.sendMail.mock.calls[0][0];
       expect(mail.to).toBe('inviter@example.com');
       expect(mail.template).toBe('referral-reward-earned');
-      expect(mail.params).toMatchObject({ units: 1000, appName: 'Test App', displayName: 'In Viter' });
+      expect(mail.subject).toContain('Test App');
+      expect(mail.params).toMatchObject({ units: 1000, displayName: 'In Viter' });
     });
 
     test('mailer ON but referrer side not applied (e.g. self-referral) → no email', async () => {

@@ -1,7 +1,6 @@
 /**
  * Module dependencies
  */
-import config from '../../../config/index.js';
 import logger from '../../../lib/services/logger.js';
 import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
 import mailer from '../../../lib/helpers/mailer/index.js';
@@ -245,7 +244,6 @@ const createJoinRequest = async (userId, organizationId) => {
               requesterEmail: user.email,
               orgName: org.name,
               url: `${getBaseUrl()}/users/organizations/${organizationId}`,
-              appName: config.app.title,
             },
           }).catch((err) => logger.warn('organizations.membership.createJoinRequest: admin notification email failed', { message: err?.message, stack: err?.stack }));
         }
@@ -287,7 +285,6 @@ const approveRequest = async (membership) => {
         params: {
           displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
           orgName: org.name,
-          appName: config.app.title,
         },
       }).catch((err) => logger.warn('organizations.membership.approveRequest: approval email failed', { message: err?.message, stack: err?.stack }));
     }
@@ -316,7 +313,6 @@ const rejectRequest = async (membership) => {
         params: {
           displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
           orgName: org.name,
-          appName: config.app.title,
         },
       }).catch((err) => logger.warn('organizations.membership.rejectRequest: rejection email failed', { message: err?.message, stack: err?.stack }));
     }
@@ -415,7 +411,6 @@ const addMember = async (organizationId, userId, role, addedBy) => {
           params: {
             displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
             orgName: org.name,
-            appName: config.app.title,
             url: `${getBaseUrl()}/users/organizations`,
           },
         }).catch((err) => logger.warn('organizations.membership.addMember: invitation email failed', { message: err?.message, stack: err?.stack }));

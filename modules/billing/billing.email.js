@@ -75,7 +75,7 @@ export const setupBillingEmails = () => {
   billingEvents.on('meter.threshold_crossed', ({ organizationId, threshold, meterUsed, meterQuota }) => {
     if (threshold !== 80 && threshold !== 100) return;
 
-    const appName = config.app?.title ?? '';
+    const appName = mailer.getBrand().name ?? '';
     const billingUrl = getBillingUrl();
 
     resolveOrgAdminEmails(organizationId).then((emails) => {
@@ -94,8 +94,6 @@ export const setupBillingEmails = () => {
               meterUsed: meterUsed ?? '?',
               meterQuota: meterQuota ?? '?',
               billingUrl,
-              appName,
-              appContact: config.app?.contact ?? '',
             },
           },
           isAt80 ? 'meter.threshold_crossed@80' : 'meter.threshold_crossed@100',
@@ -113,7 +111,7 @@ export const setupBillingEmails = () => {
   billingEvents.on('billing.extras.balance_threshold_crossed', ({ organizationId, threshold, remaining }) => {
     if (threshold !== 80 && threshold !== 100) return;
 
-    const appName = config.app?.title ?? '';
+    const appName = mailer.getBrand().name ?? '';
     const billingUrl = getBillingUrl();
     const isWarning = threshold === 80;
 
@@ -130,8 +128,6 @@ export const setupBillingEmails = () => {
             params: {
               remaining: remaining ?? 0,
               billingUrl,
-              appName,
-              appContact: config.app?.contact ?? '',
             },
           },
           isWarning ? 'billing.extras.balance_threshold_crossed@80' : 'billing.extras.balance_threshold_crossed@100',
@@ -143,7 +139,7 @@ export const setupBillingEmails = () => {
   // ── payment.failed — update card prompt ─────────────────────────────────────
 
   billingEvents.on('payment.failed', ({ organizationId }) => {
-    const appName = config.app?.title ?? '';
+    const appName = mailer.getBrand().name ?? '';
     const billingPortalUrl = getBillingUrl();
 
     resolveOrgAdminEmails(organizationId).then((emails) => {
@@ -156,8 +152,6 @@ export const setupBillingEmails = () => {
             template: 'billing-payment-failed',
             params: {
               billingPortalUrl,
-              appName,
-              appContact: config.app?.contact ?? '',
             },
           },
           'payment.failed',

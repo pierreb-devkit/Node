@@ -72,8 +72,6 @@ const forgot = async (req, res) => {
       params: {
         displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
         url: `${getBaseUrl()}/reset?token=${user.resetPasswordToken}`,
-        appName: config.app.title,
-        appContact: config.app.contact,
       },
     });
     if (!mail || !mail.accepted) {
@@ -130,8 +128,6 @@ const reset = async (req, res) => {
       subject: 'Your password has been changed',
       params: {
         displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
-        appName: config.app.title,
-        appContact: config.app.contact,
       },
     }).catch((err) => logger.warn('auth.password.reset: confirmation email failed', { message: err?.message, stack: err?.stack }));
     return res

@@ -161,14 +161,12 @@ const sendWelcomeEmail = (user, orgName, orgId) => {
     mailer.sendMail({
       template: 'welcome',
       to: user.email,
-      subject: `Welcome to ${config.app.title}`,
+      subject: `Welcome to ${mailer.getBrand().name}`,
       ...(from ? { from } : {}),
       ...(replyTo ? { replyTo } : {}),
       params: {
         displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
         url: getBaseUrl(),
-        appName: config.app.title,
-        appContact: config.app.contact,
         ...(orgName ? { orgName } : {}),
       },
     }).catch(onError);
