@@ -81,7 +81,7 @@ per-step DB error are all logged (see the summary line below) but never
 produce a non-zero exit. This is deliberate, not an oversight: there is no
 sent marker (see above), so a non-zero exit — and the restart/retry it would
 trigger — would re-mail every recipient this run already reached, with no
-way to tell who that was. A run that exits 1 therefore never retried any
+way to tell who that was. A run that exits 1 therefore never started any
 sending; it simply didn't get that far, and that day's matching users are
 not caught up on the next scheduled run (same "no catch-up" rule as above).
 

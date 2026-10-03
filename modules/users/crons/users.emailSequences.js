@@ -136,13 +136,15 @@ try {
             continue;
           }
 
-          const filter = buildStepFilter({ kind: parsedKind, ...range });
-
           // Per-step isolation (#4163): a transient DB error walking THIS step's
           // recipients (findPage) must not abort the sequences/steps still to come —
           // log and move on, same as a per-recipient send failure already does inside
-          // walkSendProductMail.
+          // walkSendProductMail. buildStepFilter() is pure and should never throw once
+          // `range` has already resolved, but it's built inside this try too: nothing
+          // after a prior step may have started sending can be allowed to reach the
+          // outer catch/exit 1 (see the top-of-file doc comment).
           try {
+            const filter = buildStepFilter({ kind: parsedKind, ...range });
             const { sent: stepSent, failed: stepFailed } = await walkSendProductMail(
               filter,
               { kind: parsedKind, template: step.template, subject: step.subject, from: sequence.from, replyTo: sequence.replyTo },
