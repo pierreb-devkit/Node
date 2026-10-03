@@ -159,12 +159,15 @@ Routes → Controllers → Services → Repositories → Models
 - **Services**: Business logic, call repositories, throw `AppError`
 - **Repositories**: Database only — sole layer importing mongoose
 
+A service whose every function is a 1:1 forward to the repository (no branching, no shaping, no `AppError`) may be `export default Repository;` instead of wrapping each function — the layer boundary stays, controllers still import the service, never the repository directly. The moment one function needs real logic, write it out.
+
 ### 7. Apply modularity rules
 
 - Isolate inside module boundary
 - No cross-module imports unless justified (shared code → `lib/helpers/`)
 - **No cross-module Repository/Model imports** — a service must never import another module's repositories or models; use the target module's Service instead
 - Follow `/naming` conventions
+- Fix the root cause once in the shared function, not a guard per caller
 
 ### 8. Handle notifications
 
@@ -186,6 +189,7 @@ If an action affects another user:
 
 **Tests:**
 - [ ] Tests: add unit (`*.unit.tests.js`) + integration (`*.integration.tests.js`) tests. Add E2E (`*.e2e.tests.js`) only if the change affects a critical user flow (auth, org onboarding, invite/join).
+- [ ] A file with zero logic (e.g. a one-line re-export service) needs no standalone unit test — the integration test already exercises the path through it. Coverage thresholds stay unchanged; don't lower them to compensate.
 
 **Schema consistency:**
 - [ ] New enum values added to ALL schema definitions (Mongoose model `enum`, Zod `z.enum`, tests)

@@ -23,6 +23,7 @@ description: >
      - Silent error swallowing (catch + console.log)
      - Config in wrong location, missing or orphaned files
      - Cross-module import violations
+     - A one-line re-export service (`export default Repository;`) with no standalone unit test — expected, not a gap, as long as an integration test still exercises the path through it (naming skill's thin-service allowance)
      - Module-specific logic added to shared files (`lib/middlewares/`, `lib/services/`, `config/`)
      - Module not self-registering its capabilities (subjects, abilities, config)
      - Cross-module dependencies that should use the target module's service instead
