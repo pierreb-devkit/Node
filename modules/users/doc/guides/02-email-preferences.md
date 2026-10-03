@@ -20,10 +20,16 @@ Send both fields together: this call replaces the whole `emailPreferences` objec
 
 ## One-click unsubscribe
 
-Every product email sent through `sendProductMail`/`announce` carries a `List-Unsubscribe` header (plus `List-Unsubscribe-Post: List-Unsubscribe=One-Click`, per RFC 8058). Mail clients that support one-click unsubscribe can turn a kind off with no login and no page — the header points directly at:
+Every product email sent through `sendProductMail`/`announce` carries a `List-Unsubscribe` header (plus `List-Unsubscribe-Post: List-Unsubscribe=One-Click`, per RFC 8058) **when the resolved unsubscribe URL is HTTPS** — RFC 8058 requires it, so an `http://` URL (an unset `config.domain` falling back to a non-HTTPS `config.api.protocol`, or an explicit `http://` `config.domain`) omits both headers for that send instead of shipping a non-compliant one-click link. Mail clients that support one-click unsubscribe can turn a kind off with no login and no page — the header points directly at:
 
 ```http
 POST /api/users/unsubscribe/:token
 ```
 
 The token is specific to one user and one kind, has no expiry, and can be posted more than once safely (turning the kind off again is a no-op). A request with an invalid or tampered token returns `400`; a successful one returns `200` with the kind that was turned off.
+
+This URL is built from `config.domain` (via `getApiBaseUrl()`) — the stack's one documented public domain, which **must resolve to the API's real public HTTPS origin** — not the frontend origin, and not `config.api.{protocol,host,port}` (the server's own bind settings, used only as a fallback when `config.domain` is empty). It's an API route a mail client POSTs to directly, never a page a browser navigates to; an unset or misconfigured `config.domain` means a broken link in a real mail.
+
+## Email settings link
+
+Every product email also carries a second, human-facing link in `params.emailSettingsUrl` — the frontend's account page (`config.cors.origin` + `config.users.emailSettingsPath`, default `/users/profile`) where a signed-in user can review and change every `emailPreferences` kind, not just the one this particular mail happens to carry. `undefined` (link omitted) when `config.cors.origin` is empty, rather than ship a bare relative path. The default footer partial renders it as an "Email settings" link whenever it's present. `params.unsubscribeUrl` (the token URL above) is still passed through for backward compat on any template that renders it directly.

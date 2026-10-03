@@ -4,6 +4,21 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## `users`/mailer: unsubscribe link split, API-origin links, legacy templates stop depending on `_layout` (2026-10-03)
+
+Epic-audit follow-up on #4160/#4127, four related fixes:
+
+- **`sendProductMail`'s `List-Unsubscribe` header and token URL now use the API's own PUBLIC origin** (`config.domain` — the stack's one documented public domain, via the new `lib/helpers/getApiBaseUrl.js`; same domain-to-origin rule as `lib/services/express.js#computeOpenApiServerUrl`), not `getBaseUrl()` (`config.cors.origin`, the frontend origin) and not `config.api.{protocol,host,port}` (the server's own BIND settings — e.g. `0.0.0.0` behind a reverse proxy, used ONLY as a fallback when `config.domain` is empty). `POST /api/users/unsubscribe/:token` is an API route — building it from the frontend origin, or from the bind settings, 404s/dead-ends whenever those don't match the API's real public origin, which a real deployment's usually don't. RFC 8058 requires HTTPS for this one-click flow: the `List-Unsubscribe`/`List-Unsubscribe-Post` headers are added ONLY when the resolved URL is `https://` — an `http://` `config.domain` or an `http` `config.api.protocol` fallback silently omits BOTH headers from that send (no error, no log) rather than ship a non-compliant one-click link. `params.unsubscribeUrl` itself is still always set, HTTPS or not.
+- **A second, distinct param**: `params.emailSettingsUrl` — the frontend account page (`getBaseUrl()` + new `config.users.emailSettingsPath`, default `/users/profile`) where a signed-in user manages every `emailPreferences` kind. `undefined` (and the footer link omitted) when `getBaseUrl()` (`config.cors.origin`) is empty — a bare relative path would otherwise land in the mail. `params.unsubscribeUrl` (the token URL) is kept for backward compat on any template already rendering it directly.
+- **The default footer partial** (`config/templates/_layout/footer.html`) now renders an "Email settings" link when `emailSettingsUrl` is present. The layout/partials render context only receives an explicit allow-list of link params (`emailSettingsUrl`, `unsubscribeUrl`) on top of `body`/`brand`/`subject` — not the caller's whole `params` object.
+- **A legacy full-document template** (one whose source starts with `<!doctype`/`<html>`) is now detected and compiled BEFORE the layout/partials are read at all, on its own pristine handlebars instance — it never depends on `_layout/*.html` existing or being readable, and can no longer use `{{> partial}}` (none of the 15 shipped legacy templates do today; a downstream one that does will now throw instead of silently resolving depending on render order).
+
+### Action for downstream
+
+**Set `config.domain` to your real public domain** (e.g. `acme.com`, or the full `https://api.acme.com` if your API isn't at the `api.` subdomain convention) — it must resolve to the API's actual public HTTPS origin. Without it, the unsubscribe link falls back to `config.api.{protocol,host,port}`, which are bind settings, not necessarily reachable from outside (a `0.0.0.0` bind host would land literally in the mail), AND an `http` scheme there (or an `http://` `config.domain`) means the `List-Unsubscribe` one-click headers are silently skipped for that send (RFC 8058 requires HTTPS). `config.users.emailSettingsPath` defaults to the Devkit Vue "Account Profile" route — override it if your project moved that page; also set `config.cors.origin` or the footer's "Email settings" link is omitted entirely. A legacy full-document template using `{{> partial}}` (uncommon — check your own `config/templates/*.html`) needs its markup inlined; it will now throw instead of rendering.
+
+---
+
 ## `users`: config-declared email sequences cron (2026-10-03)
 
 New cron script `modules/users/crons/users.emailSequences.js` and new, fully optional `config.users.emailSequences` (default `{}` ⇒ no-op). A downstream project declares a timed series (e.g. day-7/day-21 onboarding) in config; the daily cron walks `UserRepository.findPage` per step and calls the existing `UserService.sendProductMail` (#4162) for every verified, non-opted-out user whose account age in UTC calendar days matches that step. See `modules/users/crons/README.md` for the config shape and the Kubernetes CronJob example (#4163).

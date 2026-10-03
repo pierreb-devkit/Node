@@ -56,6 +56,17 @@ const config = {
   },
   users: {
     /**
+     * Frontend route (relative, under `getBaseUrl()`) to the account page
+     * where a signed-in user manages `emailPreferences` — the human footer
+     * link (`emailSettingsUrl`) `UserService.sendProductMail` builds on top
+     * of every product email, distinct from the one-click `unsubscribeUrl`
+     * token POST (epic-audit follow-up on #4160/#4127). Default matches the
+     * Devkit Vue stack's "Account Profile" route, which hosts the Emails
+     * section; override if a downstream moves that page.
+     */
+    emailSettingsPath: '/users/profile',
+
+    /**
      * Config-declared product email sequences (#4163) — e.g. a day-7 /
      * day-21 onboarding series. Default `{}`: the cron
      * (`modules/users/crons/users.emailSequences.js`) does nothing until a

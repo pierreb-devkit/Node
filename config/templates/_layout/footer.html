@@ -6,6 +6,7 @@
       {{#if brand.contact}}<p>Questions? <a href="mailto:{{brand.contact}}"{{#if brand.primaryColor}} style="color: {{brand.primaryColor}};"{{/if}}>{{brand.contact}}</a></p>{{/if}}
       {{#each brand.links}}<a href="{{this}}"{{#if ../brand.primaryColor}} style="color: {{../brand.primaryColor}};"{{/if}}>{{@key}}</a> {{/each}}
       {{#if brand.url}}<p><a href="{{brand.url}}"{{#if brand.primaryColor}} style="color: {{brand.primaryColor}};"{{/if}}>{{brand.url}}</a></p>{{/if}}
+      {{#if emailSettingsUrl}}<p><a href="{{emailSettingsUrl}}"{{#if brand.primaryColor}} style="color: {{brand.primaryColor}};"{{/if}}>Email settings</a></p>{{/if}}
     </td>
   </tr>
 </table>

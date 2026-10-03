@@ -7,6 +7,7 @@ import _ from 'lodash';
 import config from '../../../config/index.js';
 import logger from '../../../lib/services/logger.js';
 import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
+import getApiBaseUrl from '../../../lib/helpers/getApiBaseUrl.js';
 import mailer from '../../../lib/helpers/mailer/index.js';
 import passwordHelper from '../../../lib/helpers/password.js';
 import UserRepository from '../repositories/users.repository.js';
@@ -168,11 +169,29 @@ const consumeEmailVerificationToken = (token) => UserRepository.consumeEmailVeri
  * @desc Send a product email (onboarding series / announcement) to one user,
  * respecting their per-kind opt-out (#4162). Mirrors the existing
  * `mailer.sendMail` contract (template/subject/params/from/replyTo) and adds
- * the one-click unsubscribe machinery on top: a signed, stateless token is
- * minted for this exact (user, kind) pair, exposed to the template as
- * `params.unsubscribeUrl`, and carried on the `List-Unsubscribe` /
- * `List-Unsubscribe-Post` headers (RFC 8058) so a mail client can offer a
- * true one-click unsubscribe with no page and no login.
+ * two distinct links on top (epic-audit follow-up on #4160/#4127):
+ *
+ * - `unsubscribeUrl` — the one-click token POST, `POST /api/users/unsubscribe/:token`.
+ *   An API route, not a frontend page, so it's built from `getApiBaseUrl()`
+ *   (`config.domain`, the stack's one documented public domain — see
+ *   `lib/helpers/config.js`'s `validateDomainIsSet` warning; falls back to
+ *   `config.api.*`, the server's own BIND settings, ONLY when `domain` is
+ *   empty), never `getBaseUrl()` (`config.cors.origin`, the frontend
+ *   origin) — those two can be, and in a real deployment usually are,
+ *   different hosts. Always added to `params`, but the `List-Unsubscribe` /
+ *   `List-Unsubscribe-Post` headers (RFC 8058) are added ONLY when this URL
+ *   is HTTPS — the RFC requires it, and `getApiBaseUrl()` can still resolve
+ *   to `http://` (an explicit `http://` scheme in `config.domain`, or the
+ *   `config.api.*` fallback's own `protocol`, e.g. local dev). A mail client
+ *   offers a true one-click unsubscribe with no page and no login only once
+ *   that condition holds.
+ * - `emailSettingsUrl` — the human-readable footer link, to the frontend's
+ *   account/profile page (`getBaseUrl()` + `config.users.emailSettingsPath`).
+ *   `undefined` (link omitted entirely) when `getBaseUrl()` is empty —
+ *   otherwise the footer would render a bare relative path, meaningless
+ *   outside a browser tab already on that origin. `unsubscribeUrl` is kept
+ *   in `params` too (backward compat for any template already rendering it
+ *   directly).
  *
  * Skipped silently (no error, no send) when the user opted out of this kind,
  * or hasn't verified their email — product mail is never pushed at an
@@ -184,7 +203,8 @@ const consumeEmailVerificationToken = (token) => UserRepository.consumeEmailVeri
  * @param {'onboarding'|'news'} mail.kind - must match `EmailKind` (users.emailPreferences.schema.js)
  * @param {string} mail.template - handlebars template key (see mailer/index.js)
  * @param {string} mail.subject
- * @param {Object} [mail.params] - template params; `unsubscribeUrl` is added on top
+ * @param {Object} [mail.params] - template params; `unsubscribeUrl` and
+ *   `emailSettingsUrl` are added on top
  * @param {string} [mail.from]
  * @param {string|string[]} [mail.replyTo]
  * @returns {Promise<Object|null>} the mailer result, or null when skipped or
@@ -196,19 +216,35 @@ const sendProductMail = async (user, { kind, template, subject, params, from, re
   if (user.emailPreferences?.[parsedKind] === false) return null;
 
   const userId = String(user._id || user.id);
-  const unsubscribeUrl = `${getBaseUrl()}/api/users/unsubscribe/${createUnsubscribeToken(userId, parsedKind)}`;
+  const unsubscribeUrl = `${getApiBaseUrl()}/users/unsubscribe/${createUnsubscribeToken(userId, parsedKind)}`;
+  // RFC 8058 requires HTTPS for the one-click headers below. `getApiBaseUrl()`
+  // can still resolve to `http://` (an explicit scheme in `config.domain`, or
+  // the `config.api.*` fallback's own `protocol`) — gate the headers on it
+  // rather than tightening `getApiBaseUrl()` itself, which has other,
+  // scheme-agnostic callers (e.g. `computeOpenApiServerUrl`'s domain rule).
+  const isHttpsUnsubscribeUrl = /^https:\/\//i.test(unsubscribeUrl);
+  // Base URL (frontend origin). Empty when `config.cors.origin` is unset —
+  // omit the link entirely rather than render a bare relative path.
+  const baseUrl = getBaseUrl();
+  // Exactly one '/' between the two, regardless of whether a downstream's
+  // `config.users.emailSettingsPath` override carries its own leading slash.
+  const emailSettingsUrl = baseUrl
+    ? `${baseUrl}/${String(config.users.emailSettingsPath).replace(/^\/+/, '')}`
+    : undefined;
 
   return mailer.sendMail({
     template,
     to: user.email,
     subject,
-    params: { ...params, unsubscribeUrl },
+    params: { ...params, unsubscribeUrl, emailSettingsUrl },
     from,
     replyTo,
-    headers: {
-      'List-Unsubscribe': `<${unsubscribeUrl}>`,
-      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-    },
+    ...(isHttpsUnsubscribeUrl && {
+      headers: {
+        'List-Unsubscribe': `<${unsubscribeUrl}>`,
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+      },
+    }),
   });
 };
 
