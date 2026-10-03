@@ -173,7 +173,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
     });
 
     test('subject uses mailer.brand.name override, not config.app.title', async () => {
-      mockMailer.getBrand.mockReturnValue({ name: 'BrandedApp', contact: 'hello@branded.test' });
+      mockMailer.getBrand.mockReturnValueOnce({ name: 'BrandedApp', contact: 'hello@branded.test' });
 
       listeners['meter.threshold_crossed']({
         organizationId: orgId,
