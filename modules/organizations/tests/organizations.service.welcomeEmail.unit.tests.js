@@ -18,8 +18,11 @@ import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 
 const mockIsConfigured = jest.fn().mockReturnValue(true);
 const mockSendMail = jest.fn().mockResolvedValue({ accepted: ['a@b.com'], rejected: [] });
+// Lazy: reads `configStore` (declared further below) only when invoked, mirroring
+// getBrand()'s real fallback to config.app.title/contact when no brand override is set.
+const mockGetBrand = jest.fn(() => ({ name: configStore.app?.title, contact: configStore.app?.contact }));
 jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
-  default: { isConfigured: mockIsConfigured, sendMail: mockSendMail },
+  default: { isConfigured: mockIsConfigured, sendMail: mockSendMail, getBrand: mockGetBrand },
 }));
 
 const mockOrgCreate = jest.fn();
@@ -158,11 +161,21 @@ describe('handleSignupOrganization — welcome email (Node#4116):', () => {
       params: {
         displayName: 'Alice Smith',
         url: 'https://app.acme.test',
-        appName: 'Acme App',
-        appContact: 'hi@acme.test',
         orgName: fakeOrg.name,
       },
     });
+  });
+
+  test('subject uses mailer.brand.name override, not config.app.title', async () => {
+    setupConfig({ enabled: true });
+    mockGetBrand.mockReturnValueOnce({ name: 'BrandedApp', contact: 'hello@branded.test' });
+    const user = makeUser('ivy@example.com');
+
+    await OrganizationsService.handleSignupOrganization(user);
+
+    expect(mockSendMail).toHaveBeenCalledWith(
+      expect.objectContaining({ subject: 'Welcome to BrandedApp' }),
+    );
   });
 
   test('sent once on a fresh create, orgs disabled (B2C) — no orgName in params', async () => {
@@ -198,8 +211,6 @@ describe('handleSignupOrganization — welcome email (Node#4116):', () => {
       params: {
         displayName: 'Alice Smith',
         url: 'https://app.acme.test',
-        appName: 'Acme App',
-        appContact: 'hi@acme.test',
         orgName: fakeOrg.name,
       },
     });

@@ -91,7 +91,6 @@ describe('organizations.membership.service addMember invitation email:', () => {
       params: {
         displayName: 'Ada Lovelace',
         orgName: 'TestOrg',
-        appName: 'Test',
         url: 'http://localhost:3000/users/organizations',
       },
     });

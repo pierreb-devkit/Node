@@ -21,7 +21,7 @@ jest.unstable_mockModule('../lib/events.js', () => ({
 
 const mockIsConfigured = jest.fn();
 jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
-  default: { isConfigured: mockIsConfigured, sendMail: jest.fn().mockResolvedValue(null) },
+  default: { isConfigured: mockIsConfigured, sendMail: jest.fn().mockResolvedValue(null), getBrand: jest.fn().mockReturnValue({ name: 'Test App' }) },
 }));
 
 const mockOrganizationsRepositoryCreate = jest.fn();

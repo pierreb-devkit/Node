@@ -40,8 +40,6 @@ export const sendVerificationEmail = async (user, verificationToken) => {
     params: {
       displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
       url: `${getBaseUrl()}/verify-email?token=${verificationToken}`,
-      appName: config.app.title,
-      appContact: config.app.contact,
     },
   });
   return mail;

@@ -39,6 +39,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
     mockMailer = {
       isConfigured: jest.fn().mockReturnValue(true),
       sendMail: jest.fn().mockResolvedValue({ accepted: ['owner@test.com'], rejected: [] }),
+      getBrand: jest.fn().mockReturnValue({ name: 'MyApp', contact: 'support@myapp.example.com' }),
     };
 
     mockMembershipRepository = {
@@ -153,7 +154,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
       );
     });
 
-    test('subject includes appName from config.app.title', async () => {
+    test('subject includes appName from brand (falls back to config.app.title)', async () => {
       listeners['meter.threshold_crossed']({
         organizationId: orgId,
         threshold: 100,
@@ -167,6 +168,26 @@ describe('billing.email setupBillingEmails listeners:', () => {
       expect(mockMailer.sendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           subject: expect.stringContaining('MyApp'),
+        }),
+      );
+    });
+
+    test('subject uses mailer.brand.name override, not config.app.title', async () => {
+      mockMailer.getBrand.mockReturnValueOnce({ name: 'BrandedApp', contact: 'hello@branded.test' });
+
+      listeners['meter.threshold_crossed']({
+        organizationId: orgId,
+        threshold: 100,
+        meterUsed: 1000,
+        meterQuota: 1000,
+        weekKey: '2026-W18',
+      });
+
+      await new Promise((r) => setImmediate(r));
+
+      expect(mockMailer.sendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subject: expect.stringContaining('BrandedApp'),
         }),
       );
     });
@@ -392,7 +413,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
       );
     });
 
-    test('subject includes appName from config.app.title, never the org id/name', async () => {
+    test('subject includes appName from brand (falls back to config.app.title), never the org id/name', async () => {
       listeners['billing.extras.balance_threshold_crossed']({
         organizationId: orgId,
         threshold: 80,
@@ -528,7 +549,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
       );
     });
 
-    test('subject includes appName from config.app.title', async () => {
+    test('subject includes appName from brand (falls back to config.app.title)', async () => {
       listeners['payment.failed']({ organizationId: orgId });
 
       await new Promise((r) => setImmediate(r));

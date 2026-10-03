@@ -171,12 +171,11 @@ const notifyReferrer = async (userId, units) => {
     if (!user?.email) return;
     await mailer.sendMail({
       to: user.email,
-      subject: `You earned a referral reward — ${config.app.title}`,
+      subject: `You earned a referral reward — ${mailer.getBrand().name}`,
       template: 'referral-reward-earned',
       params: {
         displayName: [user.firstName, user.lastName].filter(Boolean).join(' '),
         units,
-        appName: config.app.title,
       },
     });
   } catch (err) {

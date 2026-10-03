@@ -144,8 +144,6 @@ const update = async (user, body, option) => {
       params: {
         displayName: [result.firstName, result.lastName].filter(Boolean).join(' '),
         url: `${getBaseUrl()}/verify-email?token=${verificationToken}`,
-        appName: config.app.title,
-        appContact: config.app.contact,
       },
     }).catch((err) => logger.warn('users.update: email-change verification email failed', { message: err?.message, stack: err?.stack }));
   }

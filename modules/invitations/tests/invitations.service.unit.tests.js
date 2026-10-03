@@ -20,7 +20,11 @@ jest.unstable_mockModule('../repositories/invitations.repository.js', () => ({
 const mockUserService = { findByEmail: jest.fn(), updateById: jest.fn() };
 jest.unstable_mockModule('../../users/services/users.service.js', () => ({ default: mockUserService }));
 
-const mockMailer = { isConfigured: jest.fn(() => false), sendMail: jest.fn() };
+const mockMailer = {
+  isConfigured: jest.fn(() => false),
+  sendMail: jest.fn(),
+  getBrand: jest.fn(() => ({ name: 'Test App', contact: 'contact@test.com' })),
+};
 jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
   default: mockMailer,
 }));
