@@ -4,11 +4,11 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
-## skills: thin service re-export, zero-logic unit-test exception, `create-module --crud-only` (2026-10-03)
+## skills: thin service re-export, zero-logic unit-test exception, `create-module` `crud-only` option (2026-10-03)
 
 `.claude/skills/{naming,feature,create-module,verify}/SKILL.md` updated — no runtime code changed:
 
-- A service whose every function is a 1:1 forward to its repository (no branching, no shaping, no `AppError`) may now be `export default Repository;` instead of a per-function wrapper. The layer boundary stays — controllers still import the service, never the repository.
+- A service whose every function is a 1:1 forward to its repository (no branching, no shaping, no `AppError`) may now be `export default Repository;` (only when the repository's exports are exactly the service's intended API) instead of a per-function wrapper. The layer boundary stays — controllers still import the service, never the repository.
 - A file with zero logic (such a re-export service) needs no standalone unit test — the integration test covers it. Coverage thresholds are unchanged.
 - `/create-module` gained a `crud-only` option: skips the bulk data service and the OpenAPI yaml (the org isolation test stays) for a module that doesn't need them.
 - `/feature`: fix the root cause once in the shared function, not a guard per caller.
