@@ -66,4 +66,4 @@ From a module name (e.g., `my-feature`):
 
 Routes → Controllers → Services → Repositories → Models
 
-Never skip layers. Controllers call services only. `mongoose` is imported exclusively in repositories and models.
+Never skip layers. Controllers call services only. `mongoose` is imported exclusively in repositories and models. A service whose every function is a 1:1 forward (no branching, no shaping, no `AppError`) may be `export default Repository;` (only when the repository's exports are exactly the service's intended API) — the boundary stays, only the file collapses; controllers still import the service, never the repository directly.

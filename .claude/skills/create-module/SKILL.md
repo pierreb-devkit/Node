@@ -5,8 +5,9 @@ description: >
   "add a domain", "new module called X", or starts work on a brand-new
   vertical (controller + service + repo + model + routes + tests). Duplicates
   the canonical `modules/tasks` template, applies kebab/Pascal/camel renames,
-  and registers config-driven enums. Module stays self-contained — never
-  modify shared `lib/` or `config/` to bolt on module logic.
+  and registers config-driven enums. A `crud-only` option scaffolds a leaner
+  module for plain CRUD, skipping the bulk data service and the OpenAPI yaml. Module stays self-contained — never modify
+  shared `lib/` or `config/` to bolt on module logic.
 ---
 
 # Create Module Skill
@@ -22,7 +23,7 @@ Create a new module by copying and renaming the `tasks` template module.
 
 ### 1. Ask for the module name
 
-Prompt user for the new module name in kebab-case (e.g., `my-feature`, `user-settings`)
+Prompt user for the new module name in kebab-case (e.g., `my-feature`, `user-settings`), and whether it's plain CRUD (→ `crud-only`, see step 3) or needs the full template. Non-interactive run (no human to ask) → full template.
 
 ### 2. Derive naming conventions
 
@@ -38,6 +39,24 @@ Follow `/naming` for the full reference. Quick summary from the module name (e.g
 ```bash
 cp -r modules/tasks modules/{new-module-name}
 ```
+
+#### `crud-only` option
+
+When the new module is plain CRUD with no bulk-import/export need, scaffold it leaner by removing these **right after the copy, before step 4's renaming** (files are still named `tasks.*` at this point — the copy doesn't rename them):
+
+- `services/tasks.data.service.js` — the bulk push/list/remove data service
+- `doc/tasks.yml` — the OpenAPI spec
+- `tests/tasks.openapi-operationid.unit.tests.js` — it only exists to check the yaml above, now gone with it
+
+Each removal leaves a dangling reference in the main integration test — clean it up in the same pass:
+
+- In `tests/tasks.integration.tests.js`: drop the `TasksDataService` variable, its `import(...)` in `beforeAll`, and the whole `describe('Data', ...)` block that exercises it.
+
+Then proceed to step 4, which renames what's left (including these surviving files) to `{new-module-name}`.
+
+Keep `tests/tasks.organization.integration.tests.js`: the copied service stays org-scoped and that file is its only cross-org isolation test.
+
+Skip this subsection entirely for a full-featured module — the plain copy already carries everything.
 
 ### 4. Rename references
 
