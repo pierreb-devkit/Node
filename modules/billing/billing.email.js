@@ -33,6 +33,13 @@ export const resolveOrgAdminEmails = async (organizationId) => {
 };
 
 /**
+ * Resolve the billing page URL. config.app.url wins when a project sets it;
+ * otherwise falls back to getBaseUrl() (mirrors getBrand()'s url fallback).
+ * @returns {string} Absolute URL to the billing page.
+ */
+const getBillingUrl = () => `${config.app?.url || getBaseUrl()}/billing`;
+
+/**
  * Fire-and-forget email send. Logs mailer errors without re-throwing.
  * @param {Object} mailOpts - Options passed directly to mailer.sendMail
  * @param {string} context  - Log prefix for error messages
@@ -69,7 +76,7 @@ export const setupBillingEmails = () => {
     if (threshold !== 80 && threshold !== 100) return;
 
     const appName = config.app?.title ?? '';
-    const billingUrl = `${config.app?.url || getBaseUrl()}/billing`;
+    const billingUrl = getBillingUrl();
 
     resolveOrgAdminEmails(organizationId).then((emails) => {
       if (!emails.length) return;
@@ -107,7 +114,7 @@ export const setupBillingEmails = () => {
     if (threshold !== 80 && threshold !== 100) return;
 
     const appName = config.app?.title ?? '';
-    const billingUrl = `${config.app?.url || getBaseUrl()}/billing`;
+    const billingUrl = getBillingUrl();
     const isWarning = threshold === 80;
 
     resolveOrgAdminEmails(organizationId).then((emails) => {
@@ -137,7 +144,7 @@ export const setupBillingEmails = () => {
 
   billingEvents.on('payment.failed', ({ organizationId }) => {
     const appName = config.app?.title ?? '';
-    const billingPortalUrl = `${config.app?.url || getBaseUrl()}/billing`;
+    const billingPortalUrl = getBillingUrl();
 
     resolveOrgAdminEmails(organizationId).then((emails) => {
       if (!emails.length) return;
