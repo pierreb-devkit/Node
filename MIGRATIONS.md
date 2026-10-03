@@ -11,11 +11,14 @@ Breaking changes and upgrade notes for downstream projects.
 - Each template's old hardcoded sign-off ("The `{{appName}}` Team." / "... Support Team.") is gone — replaced by `brand.signature`, which has **no fallback**: unset, none of the 15 sign off any more.
 - Each template's old inline "Please do not reply…" footer is gone, replaced by the shared footer's standardized contact line, which now reaches all 15 (5 of them — the 4 `org-*` mails and `referral-reward-earned` — never rendered a contact line before).
 - The 6 CTA templates render their button via `{{> button url=url label="..."}}` instead of a copy-pasted table.
-- Unchanged: every other variable each template renders, its CTA `url`, its "Button not working?" fallback link, and the three mail-specific caveat sentences (reset-password-email, signup-invite, verify-email).
+- `appName`/`appContact` no longer come from a caller-passed param — both are now resolved from the brand (#4177). `appContact` is gone from every body (10 of the 15 used to render it inline, now 0 do; it's footer-only, `brand.contact`). `appName` still renders inline in 14 of the 15 bodies (now brand-sourced, `brand.name`, and also used by the header partial); `reset-password-confirm-email` is the one template with none left — its only use was the removed sign-off. Each template's own `<title>` is gone too — 4 of them (`org-member-added`, `referral-reward-earned`, `signup-invite`, `welcome`) had a non-empty one (the other 11 were empty); the layout now has a single `<title>`, always the mail's `subject`.
+- Unchanged otherwise: every remaining variable each template renders, its CTA `url`, its "Button not working?" fallback link, and the three mail-specific caveat sentences (reset-password-email, signup-invite, verify-email).
 
 ### Action for downstream
 
 Set `config.mailer.brand.signature` (and `brand.logoUrl`/`brand.primaryColor`/etc., #4165) if you want these mails to keep a sign-off or look branded — nothing renders by default. No other action needed: a downstream's own full-document template (source starting with `<!doctype`/`<html>`) is unaffected, it still bypasses the layout entirely.
+
+**If a downstream already edited one of these 15 shared templates in place** (your copy of `config/templates/<name>.html` no longer matches upstream): move your edited copy to `config/templates/<project>/<name>.html`, add one `config.mailer.templates` entry pointing `<name>` at it (`{ templates: { '<name>': 'config/templates/<project>/<name>.html' } }`), then restore the shared file to upstream's version — explicitly (`git checkout devkit-node/master -- config/templates/<name>.html`) before your next `/update-stack`, or let that run's own ISO merge do it (`config/templates/*.html` is ISO-merge scope, same as `modules/`/`lib/`) — in that order, override first, so the ISO merge's overwrite never touches the only copy of your edits. Until that restore happens, your moved copy is still a full HTML document, so it keeps rendering unwrapped (the legacy-full-document path) the whole time — nothing breaks mid-migration, and converting it to a fragment on the shared layout afterward is optional.
 
 ---
 
@@ -126,11 +129,15 @@ rejected send can never break or delay the signup / OAuth redirect response.
 **What you will see:** every new signup receives a welcome email once the
 mailer is configured. To opt out, set `organizations.welcomeEmail.enabled:
 false` in the project config (default `true`, fail-open — read with `?? true`
-so an absent key never silently disables it). To customize the copy, edit the
-same-named template at `config/templates/welcome.html` (`{{displayName}}`,
-`{{appName}}`, `{{url}}`, `{{appContact}}`, and an optional
-`{{#if orgName}}` block, omitted in B2C mode). No schema change, no migration
-to run.
+so an absent key never silently disables it). To customize the copy, don't
+edit `config/templates/welcome.html` in place — it's a Devkit-owned shared
+template (#4133) and `/update-stack`'s ISO merge will overwrite it. Add a
+`config.mailer.templates` entry instead (`{ templates: { welcome:
+'config/templates/<project>/welcome.html' } }`) pointing at your own copy,
+seeded from the shared one (`{{displayName}}`, `{{appName}}`, `{{url}}`, and
+an optional `{{#if orgName}}` block, omitted in B2C mode — `appContact` is no
+longer a body variable, it's the brand-driven footer's contact line, #4133).
+No schema change, no migration to run.
 
 ## Billing: public plans listing now requires a plan tag (2026-09-25)
 
