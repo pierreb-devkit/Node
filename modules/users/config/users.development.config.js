@@ -54,6 +54,31 @@ const config = {
       legacyHeaders: false,
     },
   },
+  users: {
+    /**
+     * Config-declared product email sequences (#4163) — e.g. a day-7 /
+     * day-21 onboarding series. Default `{}`: the cron
+     * (`modules/users/crons/users.emailSequences.js`) does nothing until a
+     * downstream project declares at least one sequence.
+     *
+     * Shape: { <name>: { startAt: Date|ISOString, kind: 'onboarding'|'news',
+     *   from?: string, replyTo?: string|string[], steps: [{ day: number,
+     *   template: string, subject: string }] } }
+     *
+     * - `startAt` is the cutoff below: only users whose `createdAt >= startAt`
+     *   are ever considered (existing users don't retroactively join a
+     *   sequence declared after they signed up).
+     * - `day` is the account age in whole UTC calendar days at which that
+     *   step fires. A missed day (cron didn't run, or was added later) is
+     *   NOT caught up — the step simply never fires for that user.
+     * - `kind`/`from`/`replyTo`/`template`/`subject` are passed straight
+     *   through to `UserService.sendProductMail`, including its existing
+     *   opt-out and `emailVerified` checks.
+     *
+     * See `modules/users/crons/README.md` for the Kubernetes CronJob example.
+     */
+    emailSequences: {},
+  },
 };
 
 export default config;
