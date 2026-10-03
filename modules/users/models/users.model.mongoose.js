@@ -78,6 +78,15 @@ const UserMongoose = new Schema(
       utmTerm: String,
       utmContent: String,
     },
+    // Per-kind product-email opt-out (#4162). Both default true (opt-OUT
+    // model, matches the Zod schema) — a user document that never touched
+    // this field reads as emailPreferences: undefined, which the service
+    // layer's `=== false` skip check already treats as "every kind on", so
+    // no migration is needed for existing users.
+    emailPreferences: {
+      onboarding: { type: Boolean, default: true },
+      news: { type: Boolean, default: true },
+    },
   },
   {
     timestamps: true,

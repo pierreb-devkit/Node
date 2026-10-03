@@ -138,6 +138,27 @@ const consumeEmailVerificationToken = (token) => {
 };
 
 /**
+ * @desc Atomically set one `emailPreferences` kind for a user (#4162). Used
+ * by the public one-click unsubscribe route — the caller has already
+ * verified the HMAC token and only needs the write. Tolerant of an
+ * invalid/unknown id: returns null rather than letting an invalid ObjectId
+ * string reach Mongoose and throw a CastError.
+ * @param {String} userId - the user id (from a verified unsubscribe token)
+ * @param {String} kind - email kind ('onboarding' | 'news')
+ * @param {Boolean} value - the new preference value
+ * @returns {Promise<Object|null>} the updated user document, or null when
+ *   the id is invalid or no document matched it.
+ */
+const setEmailPreference = (userId, kind, value) => {
+  if (!mongoose.Types.ObjectId.isValid(userId)) return Promise.resolve(null);
+  return User.findOneAndUpdate(
+    { _id: userId },
+    { $set: { [`emailPreferences.${kind}`]: value } },
+    { returnDocument: 'after', runValidators: true },
+  ).exec();
+};
+
+/**
  * @desc Function to remove a user from db by id or email
  * @param {Object} user
  * @returns {Object} confirmation of delete
@@ -246,6 +267,32 @@ const findByIdAndUpdatePopulated = (id, data, populateFields) =>
 const findWithFilter = (filter, select) => User.find(filter).select(select || '').exec();
 
 /**
+ * @desc Fetch one `_id`-ordered page of users matching a filter, projected down
+ * to `select` (#4162 — UserService.announce's recipient fan-out). Each page is
+ * its own query, re-filtered by `_id: { $gt: afterId }` — no server-side cursor
+ * state — so a caller that does something slow (e.g. a sequential mail send)
+ * between pages can never hit a MongoDB cursor idle-timeout. Returns `[]` once
+ * the walk is exhausted.
+ * @param {Object} filter - Mongoose filter (ANDed with the `_id` page bound)
+ * @param {Object} [options]
+ * @param {String} [options.afterId] - exclusive lower bound (`_id` of the last
+ *   row from the previous page); omit for the first page
+ * @param {Number} [options.limit] - page size (default 200)
+ * @param {String} [options.select] - fields to select; callers MUST limit this
+ *   to what they actually read (e.g. never password/providerData)
+ * @returns {Promise<Array>} up to `limit` plain (lean) user objects, `_id`-ascending
+ */
+const findPage = (filter, { afterId, limit = 200, select } = {}) => {
+  const pageFilter = afterId ? { ...filter, _id: { $gt: afterId } } : filter;
+  return User.find(pageFilter)
+    .select(select || '')
+    .sort({ _id: 1 })
+    .limit(limit)
+    .lean()
+    .exec();
+};
+
+/**
  * @desc Function to update multiple users matching a filter
  * @param {Object} filter - Mongoose filter
  * @param {Object} data - Fields to update
@@ -283,6 +330,7 @@ export default {
   search,
   update,
   consumeEmailVerificationToken,
+  setEmailPreference,
   remove,
   stats,
   count,
@@ -292,6 +340,7 @@ export default {
   updateById,
   findByIdAndUpdatePopulated,
   findWithFilter,
+  findPage,
   updateMany,
   linkProviderByEmail,
 };

@@ -14,6 +14,10 @@ import MembershipService from '../../organizations/services/organizations.member
 import MembershipRepository from '../../organizations/repositories/organizations.membership.repository.js';
 import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../../organizations/lib/constants.js';
 import { removeSensitive } from '../utils/sanitizeUser.js';
+import { createUnsubscribeToken } from '../utils/unsubscribeToken.js';
+// `EmailKind` only — NOT `users.schema.js`, which reads `config.whitelists.users.roles`
+// at module-evaluation time (see users.emailPreferences.schema.js's doc comment).
+import { EmailKind } from '../models/users.emailPreferences.schema.js';
 
 /**
  * @function normalizeEmail
@@ -161,6 +165,129 @@ const update = async (user, body, option) => {
 const consumeEmailVerificationToken = (token) => UserRepository.consumeEmailVerificationToken(token);
 
 /**
+ * @desc Send a product email (onboarding series / announcement) to one user,
+ * respecting their per-kind opt-out (#4162). Mirrors the existing
+ * `mailer.sendMail` contract (template/subject/params/from/replyTo) and adds
+ * the one-click unsubscribe machinery on top: a signed, stateless token is
+ * minted for this exact (user, kind) pair, exposed to the template as
+ * `params.unsubscribeUrl`, and carried on the `List-Unsubscribe` /
+ * `List-Unsubscribe-Post` headers (RFC 8058) so a mail client can offer a
+ * true one-click unsubscribe with no page and no login.
+ *
+ * Skipped silently (no error, no send) when the user opted out of this kind,
+ * or hasn't verified their email — product mail is never pushed at an
+ * address the account owner hasn't proven. An unconfigured mailer degrades
+ * the same way `mailer.sendMail` already does elsewhere (resolves to null).
+ * @param {Object} user - user document (`_id`/`id`, `email`, `emailVerified`,
+ *   `emailPreferences`)
+ * @param {Object} mail
+ * @param {'onboarding'|'news'} mail.kind - must match `EmailKind` (users.emailPreferences.schema.js)
+ * @param {string} mail.template - handlebars template key (see mailer/index.js)
+ * @param {string} mail.subject
+ * @param {Object} [mail.params] - template params; `unsubscribeUrl` is added on top
+ * @param {string} [mail.from]
+ * @param {string|string[]} [mail.replyTo]
+ * @returns {Promise<Object|null>} the mailer result, or null when skipped or
+ *   the mailer isn't configured
+ */
+const sendProductMail = async (user, { kind, template, subject, params, from, replyTo }) => {
+  const parsedKind = EmailKind.parse(kind);
+  if (!user?.emailVerified) return null;
+  if (user.emailPreferences?.[parsedKind] === false) return null;
+
+  const userId = String(user._id || user.id);
+  const unsubscribeUrl = `${getBaseUrl()}/api/users/unsubscribe/${createUnsubscribeToken(userId, parsedKind)}`;
+
+  return mailer.sendMail({
+    template,
+    to: user.email,
+    subject,
+    params: { ...params, unsubscribeUrl },
+    from,
+    replyTo,
+    headers: {
+      'List-Unsubscribe': `<${unsubscribeUrl}>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    },
+  });
+};
+
+// Page size for `announce`'s _id-ordered recipient walk (#4162) — see UserRepository.findPage.
+const ANNOUNCE_PAGE_SIZE = 200;
+
+/**
+ * @desc Send a product email to every verified user who has not opted out of
+ * `kind` (#4162). Recipients are walked in `_id`-ordered pages of
+ * `ANNOUNCE_PAGE_SIZE` (UserRepository.findPage) instead of one unbounded
+ * array load, so a large user base can't exhaust process memory; each page's
+ * projection is limited to exactly what `sendProductMail` reads (`_id`,
+ * `email`, `emailVerified`, `emailPreferences`) — never the password hash or
+ * OAuth provider tokens. Pages, not a server-side cursor, on purpose: the
+ * sequential per-recipient sends below can be slow enough between pages to
+ * outlive a MongoDB cursor's idle timeout. The opt-out/verified filter is
+ * applied per page query — a user who flips their preference mid-run is not
+ * re-checked at send time, only the already-fetched snapshot is used.
+ * Sequential sends — never parallel — so a large user base can't burst the
+ * mailer provider's rate limit. A per-recipient send failure is logged and
+ * does NOT stop the loop; the rest of the list still gets mailed.
+ * @param {Object} mail
+ * @param {'onboarding'|'news'} mail.kind
+ * @param {string} mail.template
+ * @param {string} mail.subject
+ * @param {Object} [mail.params]
+ * @param {string} [mail.from]
+ * @param {string|string[]} [mail.replyTo]
+ * @returns {Promise<{sent: number}>} count of recipients actually mailed
+ *   (excludes per-recipient skips and failures)
+ */
+const announce = async ({ kind, template, subject, params, from, replyTo }) => {
+  const parsedKind = EmailKind.parse(kind);
+  const filter = {
+    emailVerified: true,
+    [`emailPreferences.${parsedKind}`]: { $ne: false },
+  };
+  const select = '_id email emailVerified emailPreferences';
+
+  let sent = 0;
+  let afterId;
+  let page;
+  do {
+    page = await UserRepository.findPage(filter, { afterId, limit: ANNOUNCE_PAGE_SIZE, select });
+
+    for (const recipient of page) {
+      try {
+        // Sequential on purpose — see the JSDoc above (never parallel: avoid bursting the mailer provider).
+        const result = await sendProductMail(recipient, { kind: parsedKind, template, subject, params, from, replyTo });
+        if (result) sent += 1;
+      } catch (err) {
+        // recipient is a lean object (no `id` virtual) — _id is the only identifier available.
+        logger.warn('users.announce: send failed for one recipient', { userId: String(recipient._id), kind: parsedKind, message: err?.message, stack: err?.stack });
+      }
+    }
+
+    if (page.length > 0) afterId = page[page.length - 1]._id;
+  } while (page.length === ANNOUNCE_PAGE_SIZE);
+
+  return { sent };
+};
+
+/**
+ * @desc Set one `emailPreferences` kind for a user by id (#4162). Used by the
+ * public one-click unsubscribe route, after the caller has already verified
+ * the request's HMAC token — this function does no token handling itself.
+ * @param {String} userId - the user id (from a verified unsubscribe token)
+ * @param {String} kind - email kind ('onboarding' | 'news')
+ * @param {Boolean} value - the new preference value
+ * @returns {Promise<Object|null>} sanitized updated user, or null when the
+ *   id is invalid or no user matched it
+ */
+const setEmailPreference = async (userId, kind, value) => {
+  const parsedKind = EmailKind.parse(kind);
+  const result = await UserRepository.setEmailPreference(userId, parsedKind, value);
+  return result ? removeSensitive(result) : null;
+};
+
+/**
  * @desc Function to ask repository to sign terms for current user
  * @param {Object} user - original user document
  * @returns {Promise<Object>} updated user (sanitized)
@@ -301,6 +428,9 @@ export default {
   getBrut,
   update,
   consumeEmailVerificationToken,
+  sendProductMail,
+  announce,
+  setEmailPreference,
   terms,
   remove,
   stats,

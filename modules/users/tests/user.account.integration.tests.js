@@ -337,6 +337,47 @@ describe('User integration tests:', () => {
       }
     });
 
+    // #4162 — emailPreferences is on the self-editable profile allowlist: a client
+    // CAN change its own product-email opt-out via the same PUT /api/users surface.
+    test('should be able to update own emailPreferences via PUT /api/users', async () => {
+      try {
+        const result = await agent.put('/api/users').send({ emailPreferences: { onboarding: true, news: false } }).expect(200);
+        expect(result.body.data.emailPreferences).toEqual({ onboarding: true, news: false });
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      try {
+        const raw = await UserService.getBrut({ id: user.id });
+        expect(raw.emailPreferences.onboarding).toBe(true);
+        expect(raw.emailPreferences.news).toBe(false);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
+    // #4162 — emailPreferences is writable, but that must not open the door to
+    // anything else: roles stays mass-assignment-blocked even in the SAME request.
+    test('mass-assignment is still blocked for other fields when emailPreferences is also sent', async () => {
+      try {
+        await agent.put('/api/users').send({ emailPreferences: { onboarding: true, news: true }, roles: ['admin'] }).expect(200);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+
+      try {
+        const raw = await UserService.getBrut({ id: user.id });
+        expect(raw.roles).toEqual(['user']);
+        expect(raw.emailPreferences.news).toBe(true);
+      } catch (err) {
+        console.log(err);
+        expect(err).toBeFalsy();
+      }
+    });
+
     // P8a / E20: referredBy is a server-only referral field — a client must never be
     // able to self-assign a referrer via the self-update endpoint. It is absent from
     // config.whitelists.users.update, so removeSensitive strips it. This proves the

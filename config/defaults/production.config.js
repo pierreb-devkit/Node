@@ -72,6 +72,18 @@ const config = {
       standardHeaders: true,
       legacyHeaders: false,
     },
+    // Public POST /api/users/unsubscribe/:token (#4162, RFC 8058 one-click).
+    // Unlike the profiles above, this is NOT tightened for prod — prod is exactly
+    // where mail providers' shared egress IPs send these POSTs from, so the cap
+    // stays generous (120/min/IP) rather than inheriting `auth`'s 10/15min, which
+    // would lock out genuine recipients after a handful of sends from one provider.
+    unsubscribe: {
+      windowMs: 60 * 1000,
+      max: 120,
+      message: { message: 'Too many requests, please try again later.' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    },
   },
   log: {
     format: 'custom',

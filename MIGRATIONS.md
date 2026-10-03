@@ -4,6 +4,18 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## `users`: email preferences, product mail, one-click unsubscribe (2026-10-03)
+
+New, fully optional `emailPreferences` sub-object on `User` (`onboarding`/`news`, both default `true`) plus two new `UserService` functions — `sendProductMail(user, { kind, template, subject, params, from, replyTo })` and `announce({ kind, template, subject, params, from, replyTo })` — for sending a product email (an onboarding series, an announcement) that respects a per-user, per-kind opt-out. Both skip silently (no error) for an unverified or opted-out user. Transactional email (`mailer.sendMail` call sites, password reset, email verification, invitations) is unaffected (#4162).
+
+A new public route, `POST /api/users/unsubscribe/:token`, lets a mail client's one-click unsubscribe (RFC 8058) turn a kind off with no login — `sendProductMail`/`announce` already attach the matching `List-Unsubscribe`/`List-Unsubscribe-Post` headers. The token is a stateless HMAC (userId + kind + the stack's existing `config.jwt.secret`), not stored anywhere, so it carries no expiry and no new collection.
+
+### Action for downstream
+
+None required — the field is optional (absent reads as "every kind on", no migration/backfill needed) and no existing call site changed shape. Opt in by calling `sendProductMail`/`announce` from your own cron/admin code with your own templates.
+
+---
+
 ## `test`/`test:unit` raise the heap ceiling to 8192 MB (2026-09-27)
 
 `--experimental-vm-modules` leaks ESM module registries between suites (upstream jest issue, present on jest 30); a large suite can hit Node's default ~4 GB old-space ceiling and OOM (not a test failure — the same suite passes clean at 8192). `NODE_OPTIONS` on every non-coverage test script (`test`, `test:unit`, `test:integration`, `test:e2e`, `test:all`, `test:watch`) now includes `--max-old-space-size=8192`; `:coverage` variants keep their own flags (#3948).
