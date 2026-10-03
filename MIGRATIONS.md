@@ -4,6 +4,16 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## `users`: config-declared email sequences cron (2026-10-03)
+
+New cron script `modules/users/crons/users.emailSequences.js` and new, fully optional `config.users.emailSequences` (default `{}` ⇒ no-op). A downstream project declares a timed series (e.g. day-7/day-21 onboarding) in config; the daily cron walks `UserRepository.findPage` per step and calls the existing `UserService.sendProductMail` (#4162) for every verified, non-opted-out user whose account age in UTC calendar days matches that step. See `modules/users/crons/README.md` for the config shape and the Kubernetes CronJob example (#4163).
+
+### Action for downstream
+
+None required — `emailSequences` defaults to `{}`, so the cron is a no-op until a project declares a sequence and schedules the script as a CronJob.
+
+---
+
 ## `users`: email preferences, product mail, one-click unsubscribe (2026-10-03)
 
 New, fully optional `emailPreferences` sub-object on `User` (`onboarding`/`news`, both default `true`) plus two new `UserService` functions — `sendProductMail(user, { kind, template, subject, params, from, replyTo })` and `announce({ kind, template, subject, params, from, replyTo })` — for sending a product email (an onboarding series, an announcement) that respects a per-user, per-kind opt-out. Both skip silently (no error) for an unverified or opted-out user. Transactional email (`mailer.sendMail` call sites, password reset, email verification, invitations) is unaffected (#4162).

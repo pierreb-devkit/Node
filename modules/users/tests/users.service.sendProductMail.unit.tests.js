@@ -95,7 +95,7 @@ jest.unstable_mockModule('../../organizations/lib/constants.js', () => ({
   MEMBERSHIP_STATUSES: { ACTIVE: 'active', PENDING: 'pending' },
 }));
 
-const { default: UserService } = await import('../services/users.service.js');
+const { default: UserService, walkSendProductMail } = await import('../services/users.service.js');
 const { verifyUnsubscribeToken } = await import('../utils/unsubscribeToken.js');
 
 const verifiedUser = { _id: '64b2f0000000000000000abc', id: '64b2f0000000000000000abc', email: 'a@test.com', emailVerified: true };
@@ -249,6 +249,64 @@ describe('UserService.announce', () => {
     const result = await UserService.announce({ kind: 'onboarding', template: 't', subject: 's' });
     expect(result).toEqual({ sent: 0 });
     expect(mockSendMail).not.toHaveBeenCalled();
+  });
+});
+
+describe('UserService.walkSendProductMail (internal helper shared with the email-sequences cron, #4163)', () => {
+  test('a per-recipient send failure is counted in `failed` and does NOT stop the walk', async () => {
+    mockFindPage.mockResolvedValueOnce([
+      { _id: '1', email: 'one@test.com', emailVerified: true },
+      { _id: '2', email: 'two@test.com', emailVerified: true },
+    ]);
+    mockSendMail.mockRejectedValueOnce(new Error('provider down')).mockResolvedValueOnce({ accepted: ['two@test.com'], rejected: [] });
+
+    const result = await walkSendProductMail({ emailVerified: true }, { kind: 'news', template: 't', subject: 's' });
+
+    expect(mockSendMail).toHaveBeenCalledTimes(2); // second recipient still attempted
+    expect(result).toEqual({ sent: 1, failed: 1 });
+  });
+
+  test('a findPage rejection on the FIRST page propagates — never caught here, no send attempted', async () => {
+    mockFindPage.mockRejectedValueOnce(new Error('connection reset'));
+
+    await expect(walkSendProductMail({ emailVerified: true }, { kind: 'news', template: 't', subject: 's' })).rejects.toThrow('connection reset');
+    expect(mockSendMail).not.toHaveBeenCalled();
+  });
+
+  test('a findPage rejection on a LATER page (after the first page already sent) still propagates', async () => {
+    const fullPage = Array.from({ length: 200 }, (_, i) => ({ _id: String(i + 1), email: `u${i + 1}@test.com`, emailVerified: true }));
+    mockFindPage.mockResolvedValueOnce(fullPage).mockRejectedValueOnce(new Error('connection reset'));
+
+    await expect(walkSendProductMail({ emailVerified: true }, { kind: 'news', template: 't', subject: 's' })).rejects.toThrow('connection reset');
+    // the first page's 200 recipients were already mailed before the second page's findPage threw —
+    // this is exactly why the cron wraps each step's call to this helper in its own try/catch (#4163).
+    expect(mockSendMail).toHaveBeenCalledTimes(200);
+  });
+
+  test('a custom pageSize is forwarded to findPage\'s `limit` and drives the walk\'s stop condition', async () => {
+    // 2 recipients < pageSize 5 — the walk stops after this one page, no second findPage call.
+    mockFindPage.mockResolvedValueOnce([{ _id: '1', email: 'one@test.com', emailVerified: true }, { _id: '2', email: 'two@test.com', emailVerified: true }]);
+
+    await walkSendProductMail({ emailVerified: true }, { kind: 'news', template: 't', subject: 's' }, { pageSize: 5 });
+
+    expect(mockFindPage).toHaveBeenCalledTimes(1);
+    expect(mockFindPage).toHaveBeenCalledWith({ emailVerified: true }, { afterId: undefined, limit: 5, select: '_id email emailVerified emailPreferences' });
+  });
+
+  test('logLabel and logContext are merged into the per-recipient failure log (the cron\'s own call shape)', async () => {
+    mockFindPage.mockResolvedValueOnce([{ _id: '1', email: 'one@test.com', emailVerified: true }]);
+    mockSendMail.mockRejectedValueOnce(new Error('provider down'));
+
+    await walkSendProductMail(
+      { emailVerified: true },
+      { kind: 'onboarding', template: 't', subject: 's' },
+      { logLabel: '[cron.emailSequences]', logContext: { sequence: 'welcome', day: 7 } },
+    );
+
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      '[cron.emailSequences]: send failed for one recipient',
+      expect.objectContaining({ userId: '1', kind: 'onboarding', sequence: 'welcome', day: 7, message: 'provider down' }),
+    );
   });
 });
 

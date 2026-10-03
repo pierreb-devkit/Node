@@ -216,20 +216,88 @@ const sendProductMail = async (user, { kind, template, subject, params, from, re
 const ANNOUNCE_PAGE_SIZE = 200;
 
 /**
+ * @desc Walk `UserRepository.findPage` in `_id`-ordered pages, calling
+ * `sendProductMail` for every recipient the filter matches (#4162, #4163).
+ * Factored out of `announce` so the config-declared email-sequences cron
+ * (`modules/users/crons/users.emailSequences.js`) can reuse the exact same
+ * paginate → send → catch → count walk instead of drifting a second,
+ * near-identical copy of it. NOT part of the default export below — this is
+ * an internal seam between this service and that one cron script, not a
+ * public `UserService` operation in its own right.
+ *
+ * Pages, not a server-side cursor, on purpose: the sequential per-recipient
+ * sends below can be slow enough between pages to outlive a MongoDB
+ * cursor's idle timeout. The opt-out/verified filter is applied per page
+ * query — a user who flips their preference mid-run is not re-checked at
+ * send time, only the already-fetched snapshot is used. Sequential sends —
+ * never parallel — so a large recipient set can't burst the mailer
+ * provider's rate limit.
+ *
+ * A page-fetch (`findPage`) failure is NOT caught here; it propagates to the
+ * caller. `announce` has always let a `findPage` failure abort that one
+ * call — unchanged. The cron instead wraps each call to this helper in its
+ * own per-step try/catch, so one step's transient DB error logs and moves on
+ * to the next step/sequence instead of aborting the whole run (#4163).
+ *
+ * A per-recipient `sendProductMail` failure, by contrast, IS caught here —
+ * logged and skipped, never stopping the walk — same contract `announce` has
+ * always had.
+ * @param {Object} filter - Mongo filter (already including the
+ *   `emailVerified` / opt-out check and any caller-specific narrowing, e.g.
+ *   the cron's per-step `createdAt` range)
+ * @param {Object} mail - same shape as `sendProductMail`'s second argument
+ * @param {'onboarding'|'news'} mail.kind - already-parsed `EmailKind`
+ * @param {string} mail.template
+ * @param {string} mail.subject
+ * @param {Object} [mail.params]
+ * @param {string} [mail.from]
+ * @param {string|string[]} [mail.replyTo]
+ * @param {Object} [options]
+ * @param {number} [options.pageSize] - defaults to `ANNOUNCE_PAGE_SIZE`
+ * @param {string} [options.logLabel] - prefix for the per-recipient warn log;
+ *   defaults to `'users.announce'`
+ * @param {Object} [options.logContext] - extra fields merged into the
+ *   per-recipient warn log (e.g. the cron's `sequence`/`day`)
+ * @returns {Promise<{sent: number, failed: number}>} counts of recipients
+ *   actually mailed vs. recipients whose send threw
+ */
+const walkSendProductMail = async (filter, { kind, template, subject, params, from, replyTo }, { pageSize = ANNOUNCE_PAGE_SIZE, logLabel = 'users.announce', logContext = {} } = {}) => {
+  const select = '_id email emailVerified emailPreferences';
+
+  let sent = 0;
+  let failed = 0;
+  let afterId;
+  let page;
+  do {
+    page = await UserRepository.findPage(filter, { afterId, limit: pageSize, select });
+
+    for (const recipient of page) {
+      try {
+        // Sequential on purpose — see the JSDoc above (never parallel: avoid bursting the mailer provider).
+        const result = await sendProductMail(recipient, { kind, template, subject, params, from, replyTo });
+        if (result) sent += 1;
+      } catch (err) {
+        failed += 1;
+        // recipient is a lean object (no `id` virtual) — _id is the only identifier available.
+        logger.warn(`${logLabel}: send failed for one recipient`, { userId: String(recipient._id), kind, ...logContext, message: err?.message, stack: err?.stack });
+      }
+    }
+
+    if (page.length > 0) afterId = page[page.length - 1]._id;
+  } while (page.length === pageSize);
+
+  return { sent, failed };
+};
+
+/**
  * @desc Send a product email to every verified user who has not opted out of
- * `kind` (#4162). Recipients are walked in `_id`-ordered pages of
- * `ANNOUNCE_PAGE_SIZE` (UserRepository.findPage) instead of one unbounded
- * array load, so a large user base can't exhaust process memory; each page's
- * projection is limited to exactly what `sendProductMail` reads (`_id`,
- * `email`, `emailVerified`, `emailPreferences`) — never the password hash or
- * OAuth provider tokens. Pages, not a server-side cursor, on purpose: the
- * sequential per-recipient sends below can be slow enough between pages to
- * outlive a MongoDB cursor's idle timeout. The opt-out/verified filter is
- * applied per page query — a user who flips their preference mid-run is not
- * re-checked at send time, only the already-fetched snapshot is used.
- * Sequential sends — never parallel — so a large user base can't burst the
- * mailer provider's rate limit. A per-recipient send failure is logged and
- * does NOT stop the loop; the rest of the list still gets mailed.
+ * `kind` (#4162). Recipients are walked via `walkSendProductMail` instead of
+ * one unbounded array load, so a large user base can't exhaust process
+ * memory; each page's projection is limited to exactly what
+ * `sendProductMail` reads (`_id`, `email`, `emailVerified`,
+ * `emailPreferences`) — never the password hash or OAuth provider tokens.
+ * A per-recipient send failure is logged and does NOT stop the loop; the
+ * rest of the list still gets mailed.
  * @param {Object} mail
  * @param {'onboarding'|'news'} mail.kind
  * @param {string} mail.template
@@ -246,28 +314,8 @@ const announce = async ({ kind, template, subject, params, from, replyTo }) => {
     emailVerified: true,
     [`emailPreferences.${parsedKind}`]: { $ne: false },
   };
-  const select = '_id email emailVerified emailPreferences';
 
-  let sent = 0;
-  let afterId;
-  let page;
-  do {
-    page = await UserRepository.findPage(filter, { afterId, limit: ANNOUNCE_PAGE_SIZE, select });
-
-    for (const recipient of page) {
-      try {
-        // Sequential on purpose — see the JSDoc above (never parallel: avoid bursting the mailer provider).
-        const result = await sendProductMail(recipient, { kind: parsedKind, template, subject, params, from, replyTo });
-        if (result) sent += 1;
-      } catch (err) {
-        // recipient is a lean object (no `id` virtual) — _id is the only identifier available.
-        logger.warn('users.announce: send failed for one recipient', { userId: String(recipient._id), kind: parsedKind, message: err?.message, stack: err?.stack });
-      }
-    }
-
-    if (page.length > 0) afterId = page[page.length - 1]._id;
-  } while (page.length === ANNOUNCE_PAGE_SIZE);
-
+  const { sent } = await walkSendProductMail(filter, { kind: parsedKind, template, subject, params, from, replyTo });
   return { sent };
 };
 
@@ -419,6 +467,11 @@ const linkProviderByEmail = async (email, provider, providerData) => {
   const result = await UserRepository.linkProviderByEmail(email, provider, providerData);
   return result ? removeSensitive(result) : null;
 };
+
+// Named (non-default) export on purpose: an internal seam shared with
+// `modules/users/crons/users.emailSequences.js` (#4163), not a public
+// `UserService` operation — see the JSDoc above `walkSendProductMail`.
+export { walkSendProductMail };
 
 export default {
   list,
