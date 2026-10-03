@@ -112,6 +112,17 @@ describe('Unsubscribe integration tests:', () => {
     await request(app).post(`/api/users/unsubscribe/${token}`).expect(200);
   });
 
+  test('a token with a valid signature but a kind outside the EmailKind enum hits the generic 422 path (defense in depth)', async () => {
+    // The HMAC only binds (userId, kind) together — it has no opinion on which kind
+    // strings are legal, so a token minted for a bogus kind still VERIFIES. The
+    // rejection happens one layer up, in UserService.setEmailPreference's Zod parse,
+    // which throws and is caught by the route's generic error handler (422), not the
+    // route's own 400 "invalid token" branch.
+    const token = createUnsubscribeToken(String(user.id), 'spam');
+    const result = await request(app).post(`/api/users/unsubscribe/${token}`).expect(422);
+    expect(result.body.type).toBe('error');
+  });
+
   // Mongoose disconnect
   afterAll(async () => {
     try {
