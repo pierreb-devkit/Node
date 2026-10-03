@@ -24,7 +24,7 @@ Create a new module by copying and renaming the `tasks` template module.
 
 ### 1. Ask for the module name
 
-Prompt user for the new module name in kebab-case (e.g., `my-feature`, `user-settings`), and whether it's plain CRUD (→ `crud-only`, see step 3) or needs the full template.
+Prompt user for the new module name in kebab-case (e.g., `my-feature`, `user-settings`), and whether it's plain CRUD (→ `crud-only`, see step 3) or needs the full template. Non-interactive run (no human to ask) → full template.
 
 ### 2. Derive naming conventions
 
