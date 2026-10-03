@@ -28,7 +28,7 @@ POST /api/users/unsubscribe/:token
 
 The token is specific to one user and one kind, has no expiry, and can be posted more than once safely (turning the kind off again is a no-op). A request with an invalid or tampered token returns `400`; a successful one returns `200` with the kind that was turned off.
 
-This URL is built from the API's own origin (`config.api.*`, via `getApiBaseUrl()`), not the frontend origin — it's an API route a mail client POSTs to directly, never a page a browser navigates to.
+This URL is built from `config.domain` (via `getApiBaseUrl()`) — the stack's one documented public domain, which **must resolve to the API's real public HTTPS origin** — not the frontend origin, and not `config.api.{protocol,host,port}` (the server's own bind settings, used only as a fallback when `config.domain` is empty). It's an API route a mail client POSTs to directly, never a page a browser navigates to; an unset or misconfigured `config.domain` means a broken link in a real mail.
 
 ## Email settings link
 

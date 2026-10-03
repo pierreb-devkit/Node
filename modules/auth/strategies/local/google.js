@@ -5,10 +5,11 @@ import passport from 'passport';
 import GoogleStrategy from 'passport-google-oauth20';
 
 import config from '../../../../config/index.js';
-import getApiBaseUrl from '../../../../lib/helpers/getApiBaseUrl.js';
 import auth from '../../controllers/auth.controller.js';
 
-const callbackURL = `${getApiBaseUrl()}/auth/google/callback`;
+const callbackURL = `${config.api.protocol}://${config.api.host}${config.api.port ? ':' : ''}${config.api.port ? config.api.port : ''}/${
+  config.api.base
+}/auth/google/callback`;
 
 /**
  * @desc Map Google OAuth callback to user profile and delegate to checkOAuthUserProfile

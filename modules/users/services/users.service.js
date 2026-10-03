@@ -173,9 +173,12 @@ const consumeEmailVerificationToken = (token) => UserRepository.consumeEmailVeri
  *
  * - `unsubscribeUrl` — the one-click token POST, `POST /api/users/unsubscribe/:token`.
  *   An API route, not a frontend page, so it's built from `getApiBaseUrl()`
- *   (`config.api.*`), never `getBaseUrl()` (`config.cors.origin`, the
- *   frontend origin) — those two can be, and in a real deployment usually
- *   are, different hosts. This is also the `List-Unsubscribe` /
+ *   (`config.domain`, the stack's one documented public domain — see
+ *   `lib/helpers/config.js`'s `validateDomainIsSet` warning; falls back to
+ *   `config.api.*`, the server's own BIND settings, ONLY when `domain` is
+ *   empty), never `getBaseUrl()` (`config.cors.origin`, the frontend
+ *   origin) — those two can be, and in a real deployment usually are,
+ *   different hosts. This is also the `List-Unsubscribe` /
  *   `List-Unsubscribe-Post` header value (RFC 8058), so a mail client can
  *   offer a true one-click unsubscribe with no page and no login.
  * - `emailSettingsUrl` — the human-readable footer link, to the frontend's
@@ -208,7 +211,9 @@ const sendProductMail = async (user, { kind, template, subject, params, from, re
 
   const userId = String(user._id || user.id);
   const unsubscribeUrl = `${getApiBaseUrl()}/users/unsubscribe/${createUnsubscribeToken(userId, parsedKind)}`;
-  const emailSettingsUrl = `${getBaseUrl()}${config.users.emailSettingsPath}`;
+  // Exactly one '/' between the two, regardless of whether a downstream's
+  // `config.users.emailSettingsPath` override carries its own leading slash.
+  const emailSettingsUrl = `${getBaseUrl()}/${String(config.users.emailSettingsPath).replace(/^\/+/, '')}`;
 
   return mailer.sendMail({
     template,

@@ -181,9 +181,10 @@ describe('UserService.sendProductMail', () => {
   });
 
   describe('two distinct URLs (epic-audit follow-up on #4160/#4127):', () => {
-    test('the List-Unsubscribe header/token URL host matches config.api.*, NOT config.cors.origin — these resolve to different hosts in this real test config', async () => {
+    test('the List-Unsubscribe header/token URL host matches config.api.* (config.domain is empty in this real test config, so getApiBaseUrl() falls back to the bind-settings composition), NOT config.cors.origin', async () => {
       // Guard the premise: if a future config change ever made these the
       // same host, this test would stop proving anything.
+      expect(config.domain).toBeFalsy();
       expect(new URL(`http://${config.api.host}`).host).not.toBe(new URL(config.cors.origin[0]).host);
 
       await UserService.sendProductMail(verifiedUser, { kind: 'news', template: 't', subject: 's' });
@@ -208,6 +209,20 @@ describe('UserService.sendProductMail', () => {
       const call = mockSendMail.mock.calls[0][0];
 
       expect(call.params.unsubscribeUrl).toBe(call.headers['List-Unsubscribe'].slice(1, -1));
+    });
+
+    test('emailSettingsUrl joins getBaseUrl() and config.users.emailSettingsPath with exactly one "/", even if a downstream override omits the leading slash', async () => {
+      const original = config.users.emailSettingsPath;
+      config.users.emailSettingsPath = 'account/emails'; // no leading slash — a plausible misconfiguration
+      try {
+        await UserService.sendProductMail(verifiedUser, { kind: 'news', template: 't', subject: 's' });
+        const call = mockSendMail.mock.calls[0][0];
+
+        expect(call.params.emailSettingsUrl).toBe(`${config.cors.origin[0]}/account/emails`);
+        expect(call.params.emailSettingsUrl).not.toMatch(/[^:]\/\//); // no double slash outside the scheme's "://"
+      } finally {
+        config.users.emailSettingsPath = original;
+      }
     });
   });
 });
