@@ -194,17 +194,12 @@ each link resolves to, who gets it, and the opt-out mechanics, see
 
 ## Migrating a template
 
-- **A template that only ever existed in your project** (added via a
-  `mailer.templates` entry, or resolved through the flat fallback above)
-  needs no migration — Devkit's ISO merge never touches a filename it
-  doesn't ship.
-- **Converting a shared template you'd edited in place**, or any other
-  breaking change to the 15 shared mails, is dated in `MIGRATIONS.md` — see
-  "mailer: the 15 shared `config/templates/*.html` mails are now body
-  fragments on the default layout" for the move-to-`<project>/`-and-restore
-  recipe. Because that change wraps every shared mail in the layout above,
-  **expect the rendered HTML of any shared mail to change shape** (a new
-  `<head>`/outer table from the layout, the old per-template sign-off/footer
-  replaced by `brand.signature`/`brand.footerText`/`brand.contact`) even
-  though no config changed — a visual/snapshot diff there is expected, not a
-  regression.
+A project-only template (Level 3's fallback) needs no migration — Devkit's
+ISO merge never touches a filename it doesn't ship. **Converting a shared
+template you'd edited in place**, or any other breaking change to the 15
+shared mails, is dated in `MIGRATIONS.md` ("mailer: the 15 shared
+`config/templates/*.html` mails are now body fragments on the default
+layout" and the entry just below it) — including the move-to-`<project>/`
+-and-restore recipe, and that a shared mail's rendered HTML now looks
+different (new `<head>`/outer table, old sign-offs replaced by `brand.*`)
+even when nothing in your config changed.
