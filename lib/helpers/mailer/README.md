@@ -14,8 +14,10 @@ customization levels, from broadest to narrowest:
 3. **`mailer.templates`** — a single mail's body.
 
 A fourth mode, **legacy full-document passthrough**, lets a project ship a
-mail that is already a complete HTML document and skip all three levels for
-that one mail.
+mail that is already a complete HTML document: it skips the `mailer.layout`/
+`mailer.partials` shell (Level 2) — no automatic header/footer/button — while
+still receiving `brand`, `appName`, and `appContact` through `render()`'s
+params, for the template to use itself if it wants them.
 
 Read `lib/helpers/mailer/brand.js`, `layout.js`, `paths.js` and `index.js`
 for the implementation — this guide follows what they actually do.
