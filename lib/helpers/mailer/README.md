@@ -78,7 +78,7 @@ export default {
       contact: 'support@rocket.example',
       logoUrl: 'https://rocket.example/logo.png',
       primaryColor: '#112233',
-      textColor: '#ffffff',
+      textColor: '#1a1a1a',
       mutedColor: '#999999',
       fontFamily: 'Helvetica, sans-serif',
       signature: 'The Rocket Team',
@@ -88,6 +88,10 @@ export default {
   },
 };
 ```
+
+`textColor` must contrast the white card the shell renders inside — the
+`.email-shell` background (`styles.html`) is a fixed white, not
+brand-configurable.
 
 Every scalar field is also settable individually via
 `DEVKIT_NODE_mailer_brand_<field>` (e.g. `DEVKIT_NODE_mailer_brand_primaryColor`),
