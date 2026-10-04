@@ -45,9 +45,11 @@ Two reasons this matters, not just style:
 ## Level 1 — `mailer.brand`
 
 `getBrand()` (`brand.js`) resolves one brand object, merged into every
-render. Three fields fall back to existing app config so an unconfigured
-brand renders identically to before `mailer.brand` existed; the rest have no
-fallback — they render only when set:
+render. Three fields fall back to existing app config so the legacy
+`appName`/`appContact` params resolve to the same values as before
+`mailer.brand` existed — but the shared mails' rendered HTML did change (new
+layout shell, new footer; see `MIGRATIONS.md`) even with an unconfigured
+brand. The rest have no fallback — they render only when set:
 
 | Field | Fallback | Rendered by |
 |---|---|---|
@@ -85,8 +87,12 @@ export default {
 };
 ```
 
-Each field is also settable individually via `DEVKIT_NODE_mailer_brand_<field>`
-(e.g. `DEVKIT_NODE_mailer_brand_primaryColor`), same as any other config key.
+Every scalar field is also settable individually via
+`DEVKIT_NODE_mailer_brand_<field>` (e.g. `DEVKIT_NODE_mailer_brand_primaryColor`),
+same as any other config key. `links` is an object, not a scalar — one env
+var can't set it; an env var always delivers a string, which fails
+`getBrand()`'s plain-object check and falls back to `{}` (configure `links`
+from a `config/defaults/<project>.config.js` file instead).
 
 **Legacy `appName`/`appContact`:** every render also receives `appName` (=
 `brand.name`) and `appContact` (= `brand.contact`) as plain params, for
@@ -121,8 +127,12 @@ exactly `body` (the compiled fragment, the only unescaped slot), `brand`,
 `subject` (fills `<title>`), and an explicit allow-list of two link params —
 `emailSettingsUrl`, `unsubscribeUrl` — lifted from the caller's `params`.
 Nothing else from `mail.params` reaches the layout or its partials; a footer
-that wants a third link needs that key added to the allow-list in
-`index.js`, not just passed in `params`.
+that wants a third, per-mail/per-recipient link needs that key added to the
+allow-list in `index.js` — a Devkit stack change (`lib/` is ISO-merge scope,
+so a downstream edit there is overwritten on the next `/update-stack`), not
+something a downstream project edits directly. A downstream wanting extra
+footer links that are the same on every mail adds them through `brand.links`
+(Level 1) instead, one `{ label: url }` entry at a time.
 
 The `button` partial takes its own hash args from the invoking template,
 not the layout context — the pattern every shared template uses:
@@ -183,11 +193,15 @@ mailer: { from: 'Rocket <hello@rocket.example>' },
 ## Product-email params for a custom layout/partials
 
 A product email sent through `sendProductMail`/`announce` carries two link
-params that the *default* footer partial already renders when present —
-`emailSettingsUrl` (the frontend's account page) and `unsubscribeUrl` (the
-one-click unsubscribe token link). A project that ships its own
-`mailer.partials.footer` (Level 2) and wants to keep either link only needs
-to render `{{emailSettingsUrl}}`/`{{unsubscribeUrl}}` itself — both reach
+params into the layout context — `emailSettingsUrl` (the frontend's account
+page) and `unsubscribeUrl` (the one-click unsubscribe token link). The
+*default* footer partial renders only `emailSettingsUrl`, as an "Email
+settings" link, when present. `unsubscribeUrl` reaches the layout context
+too (a custom `mailer.partials.footer` may render it), but nothing renders
+it by default — it surfaces instead as the `List-Unsubscribe` header, and
+only when the resolved URL is HTTPS. A project that ships its own
+`mailer.partials.footer` (Level 2) and wants to render `unsubscribeUrl`
+itself only needs `{{unsubscribeUrl}}` in its template — it already reaches
 the layout context unconditionally (the allow-list in Level 2). For what
 each link resolves to, who gets it, and the opt-out mechanics, see
 `modules/users/doc/guides/02-email-preferences.md` — not duplicated here.

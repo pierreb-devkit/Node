@@ -26,7 +26,7 @@ Set `config.mailer.brand.signature` (and `brand.logoUrl`/`brand.primaryColor`/et
 
 #4134, rounding out the #4133 body-fragment migration above:
 
-- **A template that only ever existed in your project** — added via a `config.mailer.templates` entry, or resolved through the flat `config/templates/<key>.html` fallback — needs no migration at all. Devkit's ISO merge only overwrites a filename it ships, and none of the 15 renamed mails are new filenames a downstream could collide with.
+- **A template that only ever existed in your project** — added via a `config.mailer.templates` entry, or resolved through the flat `config/templates/<key>.html` fallback — needs no migration at all. Devkit's ISO merge only overwrites a filename it ships, and none of the 15 converted mails are new filenames a downstream could collide with.
 - **Expect the rendered HTML of every shared mail to look different**, even with no config change on your side: each now renders inside the shared layout's own `<head>`/outer table and brand-driven header/footer instead of its old standalone markup. A visual or snapshot diff on a shared mail is the expected result of #4133 above, not a regression.
 
 See `lib/helpers/mailer/README.md` for the full customization guide (brand, layout/partials, templates, and the namespace rule).
