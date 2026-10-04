@@ -98,7 +98,7 @@ Continue to scope analysis below.
 ### 2. Module boundaries
 
 - All new code isolated inside the target module (`modules/{module}/`)
-- No modifications to shared core files (`lib/middlewares/`, `config/`) — except `config/templates/` for new email templates; additions to `lib/helpers/` or `lib/services/` require explicit justification
+- No modifications to shared core files (`lib/middlewares/`, `config/`) — except `config/templates/` for a new Devkit-owned email template (this repo); a downstream project's own new template goes to `config/templates/<project>/` with a `mailer.templates` map entry instead, never the flat folder (see `lib/helpers/mailer/README.md`). Additions to `lib/helpers/` or `lib/services/` require explicit justification
 - Module registers its own capabilities via exports (policies, subjects) and file discovery (config auto-discovered by filepath pattern) — auto-discovered by the core
 
 ### 3. Analyze flows & edge cases
@@ -174,7 +174,7 @@ A service whose every function is a 1:1 forward to the repository (no branching,
 If an action affects another user:
 - Use `lib/helpers/mailer/` abstraction (never nodemailer directly)
 - Check `mailer.isConfigured()` — skip silently if not configured
-- Create template in `config/templates/` for each new email type
+- Create the template: `config/templates/` for a Devkit-owned module (this repo), or `config/templates/<project>/` plus a `mailer.templates` map entry for a downstream project (see `lib/helpers/mailer/README.md`)
 - Send async, non-blocking (`.catch(() => {})`)
 
 ## Phase 2 — Definition of Done
@@ -196,7 +196,7 @@ If an action affects another user:
 - [ ] Grep existing enum values to find all locations before committing
 
 **Module autonomy:**
-- [ ] No shared-file changes unless explicitly required; any `lib/helpers/` or `lib/services/` additions include explicit justification, and `config/templates/` is used for new email templates
+- [ ] No shared-file changes unless explicitly required; any `lib/helpers/` or `lib/services/` additions include explicit justification, and a new email template goes to `config/templates/` (Devkit module authors) or `config/templates/<project>/` + a `mailer.templates` entry (downstream projects)
 - [ ] Module self-registers capabilities (subjects, abilities) via policy exports
 - [ ] New routes/middleware defined inside the module boundary
 
