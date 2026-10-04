@@ -1,7 +1,7 @@
 /**
  * Downstream project config template.
  *
- * 1. Copy this file and rename it to config.{yourproject}.js
+ * 1. Copy this file and rename it to {yourproject}.config.js
  * 2. Set NODE_ENV={yourproject} when running the app
  * 3. Override only the keys you need — development defaults are used for everything else
  *
