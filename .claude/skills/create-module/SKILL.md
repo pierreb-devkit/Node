@@ -42,6 +42,8 @@ cp -r modules/tasks modules/{new-module-name}
 
 #### `crud-only` option
 
+On this stack `crud-only` removes files (the Vue stack's option of the same name only thins the store test — its template has no extra files to drop).
+
 When the new module is plain CRUD with no bulk-import/export need, scaffold it leaner by removing these **right after the copy, before step 4's renaming** (files are still named `tasks.*` at this point — the copy doesn't rename them):
 
 - `services/tasks.data.service.js` — the bulk push/list/remove data service
