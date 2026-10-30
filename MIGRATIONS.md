@@ -4,6 +4,14 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## errorTracker: 4xx no longer captured; exceptions carry request context (2026-10-30)
+
+#4241: the Express error middleware (`setupExpressErrorHandler`) now captures only server errors (`err.status || 500` >= 500) — expected 4xx outcomes disappear from PostHog Error Tracking. Each captured exception carries `method`, `endpoint` (route pattern, or the path with secret segments redacted) and `statusCode`, the same names as the `api_request` event. An error with an empty message is captured as an `Error` named `<METHOD> <endpoint> <status>`.
+
+No action needed. A dashboard or alert that relied on 4xx exceptions should read `api_request` events instead (`analytics.posthog.autoCapture: true`).
+
+---
+
 ## mailer: the 15 shared `config/templates/*.html` mails are now body fragments on the default layout (2026-10-04)
 
 #4133: `billing-*`, `org-*`, `referral-reward-earned`, `reset-password-*`, `signup-invite`, `verify-email` and `welcome` are no longer full HTML documents — each is now a body fragment rendered inside the default layout (`_layout/layout.html` + its header/footer/button partials, #4132/#4166), the same mechanism #4164–#4171 already added for a downstream's own templates.
