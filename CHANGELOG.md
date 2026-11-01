@@ -1,3 +1,10 @@
+## [2.0.1](https://github.com/pierreb-devkit/Node/compare/v2.0.0...v2.0.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **errorTracker:** capture request context and name empty-message errors ([#4242](https://github.com/pierreb-devkit/Node/issues/4242)) ([3e3299f](https://github.com/pierreb-devkit/Node/commit/3e3299f0c5efd6cd2fb659d5f50ab0c24526aa95)), closes [#4241](https://github.com/pierreb-devkit/Node/issues/4241) [#4241](https://github.com/pierreb-devkit/Node/issues/4241)
+
 # [2.0.0](https://github.com/pierreb-devkit/Node/compare/v1.2.1...v2.0.0) (2026-10-21)
 
 
