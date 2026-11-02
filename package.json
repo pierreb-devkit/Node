@@ -50,7 +50,7 @@
     "release:auto": "npx semantic-release"
   },
   "dependencies": {
-    "@casl/ability": "^7.0.2",
+    "@casl/ability": "^7.1.0",
     "bcrypt": "^6.0.0",
     "bson": "^7.3.3",
     "chalk": "^6.0.1",
