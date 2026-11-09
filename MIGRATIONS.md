@@ -13,7 +13,7 @@ Breaking changes and upgrade notes for downstream projects.
 - **Be on Node 26 everywhere before updating**: locally, in your images, and in CI.
 - **A self-hosted runner image that cannot start Node 26**: fix that image first, then update.
 - **If you pinned `setup-node` to 24 as a workaround**: go back to `node-version-file: .nvmrc` after updating.
-- **Reusing a `node_modules` installed on Node 24**: reinstall (`npm ci`) after switching, so native addons (`bcrypt`, `sharp`) match the Node 26 ABI. Any other native addon you added must support Node 26.
+- **Reusing a `node_modules` installed on Node 24**: reinstall (`npm ci`) after switching, so any native addon built against the Node 24 ABI is rebuilt. The stack's own (`bcrypt`, `sharp`) use Node-API and are not tied to it. Any native addon you added must support Node 26.
 
 ---
 
