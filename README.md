@@ -48,7 +48,7 @@ Designed to be cloned into downstream projects and kept up-to-date via `git merg
 ## :pushpin: Prerequisites
 
 - Git - [Download & Install Git](https://git-scm.com/downloads)
-- Node.js (22.x or 24.x) - [Download & Install Node.js](https://nodejs.org/en/download/)
+- Node.js (26 or later) - [Download & Install Node.js](https://nodejs.org/en/download/)
   - Recommended: Use [nvm](https://github.com/nvm-sh/nvm) for Node version management
 - MongoDB **≥ 5.2** - [Download & Install MongoDB](https://www.mongodb.com/try/download/community) — **5.2 or later required** (the `billing` module uses the `$sortArray` aggregation operator, introduced in 5.2; CI runs `mongo:7`)
 
