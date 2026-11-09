@@ -4,6 +4,19 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Node 26 required: `.nvmrc` 26, `FROM node:26-slim`, `engines.node` `>=26.0.0` (2026-11-09)
+
+#4263: the stack now declares and builds on Node 26. `.npmrc` carries `engine-strict=true`, so **`npm ci` fails with `EBADENGINE` on Node 24** (or any Node below 26) as soon as this change is merged. `engines.npm` stays `>=11.0.0`. CI needs no change of its own: `actions/setup-node` reads `.nvmrc` via `node-version-file`.
+
+### Action for downstream
+
+- **Be on Node 26 everywhere before updating**: locally, in your images, and in CI.
+- **A self-hosted runner image that cannot start Node 26**: fix that image first, then update.
+- **If you pinned `setup-node` to 24 as a workaround**: go back to `node-version-file: .nvmrc` after updating.
+- **Reusing a `node_modules` installed on Node 24**: reinstall (`npm ci`) after switching, so any native addon built against the Node 24 ABI is rebuilt. The stack's own (`bcrypt`, `sharp`) use Node-API and are not tied to it. Any native addon you added must support Node 26.
+
+---
+
 ## errorTracker: 4xx no longer captured; exceptions carry request context (2026-10-30)
 
 #4241: the Express error middleware (`setupExpressErrorHandler`) now captures only server errors (`err.status || 500` >= 500) — expected 4xx outcomes disappear from PostHog Error Tracking. Each captured exception carries `method`, `endpoint` (route pattern, or the path with secret segments redacted) and `statusCode`, the same names as the `api_request` event. An error with an empty message is captured as an `Error` named `<METHOD> <endpoint> <status>`.

@@ -1,6 +1,6 @@
 # Pinned to the major declared in .nvmrc (not `lts-slim`, which floats
 # independently of it). Kept in sync by scripts/tests/dockerfileToolchain.unit.tests.js.
-FROM node:24-slim
+FROM node:26-slim
 
 # switch user
 USER node

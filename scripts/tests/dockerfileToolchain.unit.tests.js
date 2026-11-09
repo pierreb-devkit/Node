@@ -29,7 +29,7 @@
  *    graph, which is a Dockerfile parser, not a drift guard for one file.
  *    A stage that runs `npm ci` is expected to COPY `.npmrc` itself; widen
  *    this if that inheritance pattern shows up for real.
- *  - A digest-pinned image (`node:24-slim@sha256:...`) is accepted the
+ *  - A digest-pinned image (`node:26-slim@sha256:...`) is accepted the
  *    same as its tag-only form for the major check.
  *  - Stage boundaries are detected separately from image-token parsing: any
  *    line starting with `FROM` opens a new stage, but if its shape can't be
