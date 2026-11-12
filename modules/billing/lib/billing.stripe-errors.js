@@ -21,7 +21,7 @@ const NON_TRANSIENT_STRIPE_ERROR_CLASSES = new Set([
  * retrying. StripeCardError (402) is intentionally excluded — some decline codes
  * (processing_error, issuer_unavailable) are transient.
  *
- * @param {unknown} err
+ * @param {{type?: string, rawType?: string}|null|undefined} err - Stripe SDK error or raw API error object
  * @returns {boolean}
  */
 export function isNonTransientStripeError(err) {

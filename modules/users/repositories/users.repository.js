@@ -23,14 +23,15 @@ const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  */
 const normalizeEmail = (email) => (typeof email === 'string' ? email.toLowerCase().trim() : null);
 
+/** @type {import('mongoose').Model<Record<string, unknown>>} */
 const User = mongoose.model('User');
 
 /**
  * @desc Function to get all user in db
  * @param {String} search
- * @param {Int} page
- * @param {Int} perPage
- * @returns {Array}  users selected
+ * @param {number} page
+ * @param {number} perPage
+ * @returns {Promise<Array<Object>>}  users selected
  */
 const list = (search, page, perPage) => {
   const filter = search
@@ -54,14 +55,14 @@ const list = (search, page, perPage) => {
 /**
  * @desc Function to create a user in db
  * @param {Object} user
- * @returns {Object} user
+ * @returns {Promise<Object>} user
  */
 const create = (user) => new User(user).save();
 
 /**
  * @desc Function to get a user from db by id, email, or token
  * @param {Object} user
- * @returns {Object} user
+ * @returns {Promise<Object|null>|undefined} user, or undefined when no lookup key is given
  */
 const get = (user = {}) => {
   if (user.id && mongoose.Types.ObjectId.isValid(user.id)) return User.findOne({ _id: user.id }).exec();
@@ -90,15 +91,15 @@ const get = (user = {}) => {
 
 /**
  * @desc Function to get a search in db request
- * @param {Object} mongoose input request
- * @returns {Array} users
+ * @param {Object} input - mongoose filter
+ * @returns {Promise<Array<Object>>} users
  */
 const search = (input) => User.find(input).exec();
 
 /**
  * @desc Function to update a user in db
  * @param {Object} user
- * @returns {Object} user
+ * @returns {Promise<Object|null>} user
  */
 const update = (user) => {
   if (user._id) {
@@ -117,7 +118,7 @@ const update = (user) => {
  *       token was already consumed, or a doc with no email (mirrors the previous
  *       controller-level `!user.email` guard), matches no document and returns null.
  * @param {String} token - The raw emailVerificationToken from the verification link.
- * @returns {Object|null} the updated user document, or null when the token is
+ * @returns {Promise<Object|null>} the updated user document, or null when the token is
  *   missing, unknown, expired, already consumed, or the account has no email.
  */
 const consumeEmailVerificationToken = (token) => {
@@ -161,7 +162,7 @@ const setEmailPreference = (userId, kind, value) => {
 /**
  * @desc Function to remove a user from db by id or email
  * @param {Object} user
- * @returns {Object} confirmation of delete
+ * @returns {Promise<{deletedCount: number}>} confirmation of delete
  */
 const remove = async (user) => {
   if (user && user.id && mongoose.Types.ObjectId.isValid(user.id)) return User.deleteOne({ _id: user.id }).exec();
@@ -188,9 +189,9 @@ const count = (filter = {}) => User.countDocuments(filter).exec();
 
 /**
  * @desc Function to push list of users in db
- * @param {[Object]} users
- * @param {[String]} filters
- * @returns {Object} locations
+ * @param {Object[]} users
+ * @param {String[]} filters
+ * @returns {Promise<Object>} bulkWrite result
  */
 const push = (users, filters) => {
   if (!Array.isArray(filters) || filters.length === 0) {
@@ -220,7 +221,7 @@ const push = (users, filters) => {
 /**
  * @desc Function to search users by name or email with a regex
  * @param {String} search - The search string
- * @returns {Array} matching user IDs
+ * @returns {Promise<Array<Object>>} matching users (`_id` only)
  */
 const searchByNameOrEmail = (search) => {
   const regex = new RegExp(escapeRegex(search), 'i');
@@ -244,7 +245,7 @@ const findByEmail = (email) => {
  * @desc Function to update a user by ID with a partial update object
  * @param {String} id - The user ID
  * @param {Object} data - Fields to update
- * @returns {Object} update result
+ * @returns {Promise<Object>} update result
  */
 const updateById = (id, data) => User.updateOne({ _id: id }, data, { runValidators: true }).exec();
 
@@ -253,7 +254,7 @@ const updateById = (id, data) => User.updateOne({ _id: id }, data, { runValidato
  * @param {String} id - The user ID
  * @param {Object} data - Fields to update
  * @param {String|Array|Object} populateFields - Fields to populate
- * @returns {Object} updated user
+ * @returns {Promise<Object|null>} updated user
  */
 const findByIdAndUpdatePopulated = (id, data, populateFields) =>
   User.findByIdAndUpdate(id, data, { returnDocument: 'after', runValidators: true }).populate(populateFields).exec();
@@ -262,7 +263,7 @@ const findByIdAndUpdatePopulated = (id, data, populateFields) =>
  * @desc Function to find users matching a filter with optional field selection
  * @param {Object} filter - Mongoose filter
  * @param {String} [select] - Fields to select
- * @returns {Array} matching users
+ * @returns {Promise<Array<Object>>} matching users
  */
 const findWithFilter = (filter, select) => User.find(filter).select(select || '').exec();
 
@@ -296,7 +297,7 @@ const findPage = (filter, { afterId, limit = 200, select } = {}) => {
  * @desc Function to update multiple users matching a filter
  * @param {Object} filter - Mongoose filter
  * @param {Object} data - Fields to update
- * @returns {Object} update result
+ * @returns {Promise<Object>} update result
  */
 const updateMany = (filter, data) => User.updateMany(filter, data, { runValidators: true }).exec();
 

@@ -35,8 +35,8 @@ const normalizeEmail = (email) => (typeof email === 'string' ? email.toLowerCase
 /**
  * @desc Function to get all users in db
  * @param {String} search
- * @param {Int} page
- * @param {Int} perPage
+ * @param {number} page
+ * @param {number} perPage
  * @returns {Promise<Array>} users selected
  */
 const list = async (search, page, perPage) => {

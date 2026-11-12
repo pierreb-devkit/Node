@@ -3,6 +3,7 @@
  */
 import mongoose from 'mongoose';
 
+/** @type {import('mongoose').Model<Record<string, unknown>>} */
 const Organization = mongoose.model('Organization');
 
 const defaultPopulate = [
@@ -16,6 +17,8 @@ const defaultPopulate = [
  * @function list
  * @description Data access operation to fetch all organizations matching an optional filter.
  * @param {Object} [filter] - Optional filter to apply to the query.
+ * @param {number} [page] - Zero-based page index (used with perPage).
+ * @param {number} [perPage] - Page size; no pagination when absent.
  * @returns {Promise<Array>} An array of organizations.
  */
 const list = (filter, page, perPage) => {

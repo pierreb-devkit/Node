@@ -102,6 +102,7 @@ Tests are organized per module in `modules/*/tests/`. In CI the test job runs as
 ```bash
 npm run lint              # Check code quality (read-only)
 npm run lint:fix          # Auto-fix code quality issues
+npm run typecheck         # Check JSDoc types with tsc (read-only, CI)
 npm run format            # Format code with Prettier
 ```
 

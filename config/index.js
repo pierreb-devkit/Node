@@ -154,7 +154,7 @@ const initGlobalConfig = async () => {
   config = deepMerge(config, environmentConfigVars);
 
   // read package.json for project information
-  const packageJSON = JSON.parse(readFileSync(path.resolve('./package.json')));
+  const packageJSON = JSON.parse(readFileSync(path.resolve('./package.json'), 'utf8'));
   config = deepMerge(config, { package: packageJSON });
   // Initialize global globbed files
   config = deepMerge(config, { files: await configHelper.initGlobalConfigFiles(assets) });

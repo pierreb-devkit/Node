@@ -18,6 +18,7 @@ let stripeClient = null;
 const getStripe = () => {
   if (stripeClient) return stripeClient;
   if (!config.stripe?.secretKey) return null;
+  // @ts-expect-error stripe-node types only accept its latest apiVersion; pinning an older one is supported (stripe-node README)
   stripeClient = new Stripe(config.stripe.secretKey, { apiVersion: '2026-04-22.dahlia' });
   return stripeClient;
 };

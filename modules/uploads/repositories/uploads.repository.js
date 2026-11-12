@@ -304,17 +304,10 @@ const purgeUnreferenced = async (kind, collection, paths, graceMs) => {
   };
 
   const referenced = new Set();
-  // `noCursorTimeout` — this streams the WHOLE collection at cron/batch
-  // scale, not request-path scale; without it, MongoDB closes an idle
-  // cursor after 10 minutes and a slow pass over a large `collection` fails
-  // mid-run with the counters accumulated so far lost.
-  const referenceCursor = mongoose.connection.db.collection(collection).aggregate(
-    [
-      { $project: { _id: 0, refs: { $concatArrays: paths.map(toArrayExpr) } } },
-      { $match: { 'refs.0': { $exists: true } } },
-    ],
-    { noCursorTimeout: true },
-  );
+  const referenceCursor = mongoose.connection.db.collection(collection).aggregate([
+    { $project: { _id: 0, refs: { $concatArrays: paths.map(toArrayExpr) } } },
+    { $match: { 'refs.0': { $exists: true } } },
+  ]);
   for await (const doc of referenceCursor) {
     for (const filename of doc.refs) {
       if (typeof filename === 'string') referenced.add(filename);
@@ -328,6 +321,10 @@ const purgeUnreferenced = async (kind, collection, paths, graceMs) => {
   let deleteFailed = 0;
   let skippedTooYoung = 0;
 
+  // `noCursorTimeout` — this streams the WHOLE collection at cron/batch
+  // scale, not request-path scale; without it, MongoDB closes an idle
+  // cursor after 10 minutes and a slow pass over a large `collection` fails
+  // mid-run with the counters accumulated so far lost.
   const candidateCursor = Uploads.find({ 'metadata.kind': kind }, null, { noCursorTimeout: true })
     .select('filename uploadDate')
     .lean()

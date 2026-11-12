@@ -39,6 +39,7 @@
     "test:unit:coverage": "cross-env NODE_ENV=test NODE_OPTIONS=\"--experimental-vm-modules --max-old-space-size=4096 --expose-gc\" jest --coverage --maxWorkers=2 --testPathPatterns='unit'",
     "test:integration:coverage": "cross-env NODE_ENV=test NODE_OPTIONS=\"--experimental-vm-modules --max-old-space-size=4096 --expose-gc\" jest --coverage --maxWorkers=2 --testPathPatterns='integration'",
     "lint": "eslint ./modules ./lib ./config ./scripts",
+    "typecheck": "tsc -p tsconfig.check.json",
     "seed:dev": "cross-env NODE_ENV=development node scripts/seed.js seed",
     "seed:prod": "cross-env NODE_ENV=production node scripts/seed.js seed",
     "seed:user": "node scripts/seed.js seed:user",
@@ -109,7 +110,8 @@
     "prettier": "^3.9.10",
     "semantic-release": "^25.0.9",
     "supertest": "^7.3.2",
-    "ts-jest": "^29.4.15"
+    "ts-jest": "^29.4.15",
+    "typescript": "5.9.3"
   },
   "release": {
     "branches": [

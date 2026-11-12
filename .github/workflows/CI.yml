@@ -53,6 +53,10 @@ jobs:
         if: matrix.suite == 'unit'
         run: npm run lint
 
+      - name: Typecheck JSDoc (once on the unit job)
+        if: matrix.suite == 'unit'
+        run: npm run typecheck
+
       - name: Run tests
         run: |
           case "${{ matrix.suite }}" in

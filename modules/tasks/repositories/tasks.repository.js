@@ -3,6 +3,7 @@
  */
 import mongoose from 'mongoose';
 
+/** @type {import('mongoose').Model<Record<string, unknown>>} */
 const Task = mongoose.model('Task');
 
 const defaultPopulate = [
@@ -16,7 +17,7 @@ const defaultPopulate = [
  * @function list
  * @description Data access operation to fetch all tasks from the database with an optional filter.
  * @param {Object} [filter] - Optional filter to apply to the query.
- * @returns {Array} An array of tasks.
+ * @returns {Promise<Array<Object>>} An array of tasks.
  */
 const list = (filter) => Task.find(filter).populate(defaultPopulate).sort('-createdAt').exec();
 
@@ -24,7 +25,7 @@ const list = (filter) => Task.find(filter).populate(defaultPopulate).sort('-crea
  * @function create
  * @description Data access operation to create a new task in the database.
  * @param {Object} task - The task object to create.
- * @returns {Object} The created task.
+ * @returns {Promise<Object>} The created task.
  */
 const create = (task) => new Task(task).save().then((doc) => doc.populate(defaultPopulate));
 
@@ -32,7 +33,7 @@ const create = (task) => new Task(task).save().then((doc) => doc.populate(defaul
  * @function get
  * @description Data access operation to fetch a single task by its ID.
  * @param {String} id - The ID of the task to fetch.
- * @returns {Object} The retrieved task or null if the ID is not valid.
+ * @returns {Promise<Object|null>|null} The retrieved task, or null if the ID is not valid.
  */
 const get = (id) => {
   if (!mongoose.Types.ObjectId.isValid(id)) return null;
@@ -43,7 +44,7 @@ const get = (id) => {
  * @function update
  * @description Data access operation to update an existing task in the database.
  * @param {import('mongoose').Document} task - The hydrated Mongoose Task document to update. Must support `.save()`.
- * @returns {Object} The updated task.
+ * @returns {Promise<Object>} The updated task.
  */
 const update = (task) => task.save().then((doc) => doc.populate(defaultPopulate));
 
@@ -51,7 +52,7 @@ const update = (task) => task.save().then((doc) => doc.populate(defaultPopulate)
  * @function remove
  * @description Data access operation to delete a single task by its ID.
  * @param {Object} task - The task object to delete.
- * @returns {Object} A confirmation of the deletion.
+ * @returns {Promise<Object>} A confirmation of the deletion.
  */
 const remove = (task) => Task.deleteOne({ _id: task.id }).exec();
 
@@ -59,7 +60,7 @@ const remove = (task) => Task.deleteOne({ _id: task.id }).exec();
  * @function deleteMany
  * @description Data access operation to delete multiple tasks based on a filter.
  * @param {Object} filter - The filter to apply to the deletion query.
- * @returns {Object} A confirmation of the deletion.
+ * @returns {Promise<Object>|undefined} A confirmation of the deletion, or undefined without a filter.
  */
 const deleteMany = (filter) => {
   if (filter) return Task.deleteMany(filter).exec();
@@ -78,7 +79,7 @@ const stats = (filter = {}) => Task.countDocuments(filter).exec();
  * @description Data access operation to update or insert multiple tasks in the database.
  * @param {Array} tasks - The array of task objects to update or insert.
  * @param {Array} filters - The array of property names to use as filters for the update.
- * @returns {Object} The result of the bulkWrite operation.
+ * @returns {Promise<Object>} The result of the bulkWrite operation.
  */
 const push = async (tasks, filters) =>
   Task.bulkWrite(

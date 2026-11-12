@@ -23,7 +23,9 @@ const syncIndexes = () => mongoose.model('Migration').syncIndexes();
  * still `'running'` (#3992).
  * @returns {Promise<Array<{name: string, status?: string}>>} Lean records with `name` + `status`.
  */
-const listExecuted = () => mongoose.model('Migration').find({}, { name: 1, status: 1, _id: 0 }).lean();
+const listExecuted = () =>
+  /** @type {import('mongoose').Model<{name: string, status?: string}>} */ (mongoose.model('Migration'))
+    .find({}, { name: 1, status: 1, _id: 0 }).lean();
 
 /**
  * @function listRunning

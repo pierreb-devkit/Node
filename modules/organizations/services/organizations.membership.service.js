@@ -361,7 +361,7 @@ const findUserByExactEmail = async (email) => {
  * @param {String} organizationId - The organization to add the user to.
  * @param {String} userId - The user being invited.
  * @param {String} [role] - The role to grant on acceptance (defaults to MEMBER).
- * @param {String} addedBy - The id of the owner/admin performing the add (provenance).
+ * @param {String} [addedBy] - The id of the owner/admin performing the add (provenance).
  * @returns {Promise<Object>} The created PENDING owner_add membership. When the
  *   mailer is configured, also notifies the invited user by email (invitation
  *   wording — the membership awaits THEIR acceptance) with a link to their

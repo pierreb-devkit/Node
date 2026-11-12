@@ -4,6 +4,7 @@
 import mongoose from 'mongoose';
 import { MEMBERSHIP_STATUSES } from '../lib/constants.js';
 
+/** @type {import('mongoose').Model<Record<string, unknown>>} */
 const Membership = mongoose.model('Membership');
 
 const defaultPopulate = [
@@ -21,6 +22,8 @@ const defaultPopulate = [
  * @function list
  * @description Data access operation to fetch all memberships matching a filter.
  * @param {Object} [filter] - Optional filter to apply to the query.
+ * @param {number} [page] - Zero-based page index (used with perPage).
+ * @param {number} [perPage] - Page size; no pagination when absent.
  * @returns {Promise<Array>} An array of memberships.
  */
 const list = (filter, page, perPage) => {
