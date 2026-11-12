@@ -53,12 +53,13 @@ const creditPack = async (orgId, packId, stripeSessionId) => {
  * @param {string} orgId - The organization ObjectId (string).
  * @param {number} units - Meter units to debit (must be > 0).
  * @param {string} refId - Unique reference for this debit (idempotency key).
- * @returns {Promise<{doc: Object|null, applied: boolean}>} Updated doc and whether debit was applied.
+ * @returns {Promise<{doc: Object|null, applied: boolean, reason?: string}>} Updated doc and whether debit was applied
+ *          (`reason: 'duplicate_step'` on a refId replay).
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const debit = (orgId, units, refId) =>
   retryWithBackoff(() => BillingExtraBalanceRepository.debit(orgId, units, refId), {
-    shouldRetry: (err) =>
+    shouldRetry: /** @param {Error & {code?: string}} err - error thrown by the repository debit */ (err) =>
       !(typeof err?.message === 'string' && err.message.startsWith('invalid argument'))
       && err?.code !== 'ORGANIZATION_NOT_FOUND',
   });

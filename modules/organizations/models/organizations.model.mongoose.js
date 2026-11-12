@@ -36,7 +36,7 @@ const OrganizationMongoose = new Schema(
     },
     plan: {
       type: String,
-      enum: config.billing.plans,
+      enum: /** @type {string[]} */ (config.billing.plans),
       default: 'free',
     },
     meterExempt: {

@@ -32,7 +32,7 @@ const get = async (uploadName) => {
 
 /**
  * @desc Function to ask repository to get stream of chunks data
- * @param {Object} Upload
+ * @param {Object} upload - an Upload doc (with `_id`)
  * @return {Promise} result stream
  */
 const getStream = async (upload) => {
@@ -42,9 +42,9 @@ const getStream = async (upload) => {
 
 /**
  * @desc Function to ask repository to update an upload
- * @param {Object} req.file
- * @param {Object} User
- * @param {String} kind, upload configuration path (important for futur transformations)
+ * @param {Object} file - the uploaded file (req.file)
+ * @param {Object} user - the authenticated user
+ * @param {String} [kind] - upload configuration path (important for futur transformations)
  * @return {Promise} Upload
  */
 const update = async (file, user, kind) => {
@@ -61,7 +61,7 @@ const update = async (file, user, kind) => {
 
 /**
  * @desc Function to ask repository to remove chunks data
- * @param {Object} Upload
+ * @param {Object} upload - an Upload doc, or a bare lookup key (e.g. `{ filename }`)
  * @return {Promise} confirmation of delete
  */
 const remove = async (upload) => {

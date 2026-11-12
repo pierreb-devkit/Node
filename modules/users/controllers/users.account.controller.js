@@ -64,6 +64,7 @@ const me = (req, res) => {
   // TODO create proper passport mock: See https://gist.github.com/mweibel/5219403
   // providerData (OAuth access+refresh tokens, see auth/strategies/local/{google,apple}.js)
   // is intentionally NOT whitelisted here — never forward it to the client (#3963).
+  /** @type {{id: string, provider: string, roles: string[], avatar: string, email: string, lastName: string, firstName: string, complementary: Object, emailPreferences: Object, bio?: string, position?: string, terms?: Date, referralCode?: string}|null} */
   let user = null;
   if (req.user) {
     user = {

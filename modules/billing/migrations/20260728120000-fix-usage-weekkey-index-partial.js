@@ -34,16 +34,16 @@ const isExactTargetIndex = (ix) =>
  * unique partial index would reject. Shared by the upfront pre-check (a) and
  * the post-createIndex E11000 re-derivation, so both report the identical set.
  * @param {import('mongodb').Collection} usages - the billingusages collection.
- * @returns {Promise<Array<{_id: {organizationId: *, weekKey: string}, count: number, ids: Array}>>}
+ * @returns {Promise<Array<{_id: {organizationId: import('mongodb').ObjectId, weekKey: string}, count: number, ids: Array<import('mongodb').ObjectId>}>>}
  */
 const findWeekKeyDuplicates = (usages) =>
-  usages
+  /** @type {Promise<Array<{_id: {organizationId: import('mongodb').ObjectId, weekKey: string}, count: number, ids: Array<import('mongodb').ObjectId>}>>} */ (usages
     .aggregate([
       { $match: { weekKey: { $exists: true } } },
       { $group: { _id: { organizationId: '$organizationId', weekKey: '$weekKey' }, count: { $sum: 1 }, ids: { $push: '$_id' } } },
       { $match: { count: { $gt: 1 } } },
     ])
-    .toArray();
+    .toArray());
 
 /**
  * Migration: working (organizationId, weekKey) meter-mode partial-unique index (#3991).

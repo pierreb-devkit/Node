@@ -23,11 +23,23 @@ const SIGNUP_GRANT_AMOUNT = 500;
 const GRANT_SOURCE = 'signup_grant';
 
 /**
+ * Raw `billingextrabalances` document fields this migration writes (driver level, no Mongoose).
+ * @typedef {Object} ExtraBalanceRawDoc
+ * @property {import('mongodb').ObjectId} organization
+ * @property {Array<{kind: string, amount: number, source?: string, refId?: string, at: Date}>} ledger
+ * @property {number} cachedBalance
+ * @property {Date} cachedBalanceAt
+ * @property {Date} [createdAt]
+ * @property {Date} [updatedAt]
+ */
+
+/**
  * @returns {Promise<void>}
  */
 export async function up() {
   const db = mongoose.connection.db;
   const subscriptions = db.collection('subscriptions');
+  /** @type {import('mongodb').Collection<ExtraBalanceRawDoc>} */
   const extraBalances = db.collection('billingextrabalances');
 
   const cursor = subscriptions.find(
@@ -107,7 +119,7 @@ export async function up() {
 export async function down() {
   const db = mongoose.connection.db;
 
-  const result = await db.collection('billingextrabalances').updateMany(
+  const result = await /** @type {import('mongodb').Collection<ExtraBalanceRawDoc>} */ (db.collection('billingextrabalances')).updateMany(
     { 'ledger.source': GRANT_SOURCE },
     { $pull: { ledger: { source: GRANT_SOURCE } } },
   );

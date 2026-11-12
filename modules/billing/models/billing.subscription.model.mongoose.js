@@ -29,12 +29,12 @@ const SubscriptionMongoose = new Schema(
     },
     plan: {
       type: String,
-      enum: config.billing.plans,
+      enum: /** @type {string[]} */ (config.billing.plans),
       default: 'free',
     },
     status: {
       type: String,
-      enum: config.billing.statuses,
+      enum: /** @type {string[]} */ (config.billing.statuses),
       default: 'active',
     },
 

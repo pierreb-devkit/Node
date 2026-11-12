@@ -751,6 +751,7 @@ describe('Auth integration tests:', () => {
       await AuthController.oauthCallback(mockReq, mockRes, () => {});
 
       expect(loggerSpy).toHaveBeenCalledWith(
+        'OAuth callback failed',
         expect.objectContaining({
           err: expect.objectContaining({
             message: 'token exchange failed',
@@ -759,7 +760,6 @@ describe('Auth integration tests:', () => {
           }),
           strategy: 'google',
         }),
-        'OAuth callback failed',
       );
       expect(redirectCalls[0].code).toBe(302);
       expect(redirectCalls[0].url).not.toContain('error={}');
@@ -866,6 +866,7 @@ describe('Auth integration tests:', () => {
       await AuthController.oauthCallback(mockReq, mockRes, () => {});
 
       expect(loggerSpy).toHaveBeenCalledWith(
+        'OAuth callback failed',
         expect.objectContaining({
           err: expect.objectContaining({
             message: undefined,
@@ -874,7 +875,6 @@ describe('Auth integration tests:', () => {
           }),
           strategy: 'google',
         }),
-        'OAuth callback failed',
       );
       expect(redirectCalls[0].code).toBe(302);
       expect(redirectCalls[0].url).not.toContain('error={}');

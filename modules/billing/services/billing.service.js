@@ -94,7 +94,7 @@ const _ensureStripeCustomer = async (stripe, organization) => {
 /**
  * @desc Create a Stripe Customer Portal session for the given organization
  * @param {Object} organization - The organization document
- * @param {String} returnUrl - Optional URL to redirect back to after portal
+ * @param {String} [returnUrl] - Optional URL to redirect back to after portal
  * @returns {Promise<String>} Portal session URL
  */
 const createPortalSession = async (organization, returnUrl) => {
@@ -149,6 +149,7 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
   const blockStatuses = ['active', 'trialing', 'past_due'];
   if (existingForBlock?.stripeSubscriptionId && blockStatuses.includes(existingForBlock.status)) {
     const portalUrl = await createPortalSession(organization);
+    /** @type {Error & {statusCode?: number, code?: string, portalUrl?: string}} */
     const err = new Error('Subscription already active');
     err.statusCode = 409;
     err.code = 'subscription_already_active';
@@ -172,6 +173,7 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
     const blockingSub = liveSubs.data.find((s) => ['active', 'trialing'].includes(s.status));
     if (blockingSub) {
       const portalUrl = await createPortalSession(organization);
+      /** @type {Error & {statusCode?: number, code?: string, portalUrl?: string}} */
       const err = new Error('Subscription already active');
       err.statusCode = 409;
       err.code = 'subscription_already_active';

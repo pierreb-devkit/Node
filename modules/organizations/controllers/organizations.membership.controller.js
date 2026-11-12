@@ -12,7 +12,7 @@ import { MEMBERSHIP_ROLES } from '../lib/constants.js';
  * @description Endpoint to fetch all members of an organization.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const list = async (req, res) => {
   try {
@@ -35,7 +35,7 @@ const list = async (req, res) => {
  *   Returns minimal identity (id, displayName, email) for a match, or null.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const findUserByEmail = async (req, res) => {
   try {
@@ -81,7 +81,7 @@ const findUserByEmail = async (req, res) => {
  *       and would otherwise pass for any user who holds that grant in the same org.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const addMember = async (req, res) => {
   try {
@@ -125,7 +125,7 @@ const addMember = async (req, res) => {
  * @description Endpoint to change the role of a member in an organization.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const updateRole = async (req, res) => {
   try {
@@ -150,7 +150,7 @@ const updateRole = async (req, res) => {
  * @description Endpoint to remove a member from an organization.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const remove = async (req, res) => {
   try {
@@ -181,7 +181,7 @@ const remove = async (req, res) => {
  * @param {Object} res - Express response object
  * @param {Function} next - Express next middleware function
  * @param {String} id - ID of the membership to fetch
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const memberByID = async (req, res, next, id) => {
   try {

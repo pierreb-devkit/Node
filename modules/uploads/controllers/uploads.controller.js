@@ -139,7 +139,7 @@ const remove = async (req, res) => {
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  * @param {Function} next - Express next middleware function
- * @param {String} filename - upload filename
+ * @param {String} uploadName - upload filename
  */
 const uploadByName = async (req, res, next, uploadName) => {
   try {
@@ -159,7 +159,7 @@ const uploadByName = async (req, res, next, uploadName) => {
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  * @param {Function} next - Express next middleware function
- * @param {String} filename & params - upload filename & eventual params (two max) filename-maxSize-options.png
+ * @param {String} uploadImageName - upload filename & eventual params (two max) filename-maxSize-options.png
  */
 const uploadByImageName = async (req, res, next, uploadImageName) => {
   try {

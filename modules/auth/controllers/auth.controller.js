@@ -124,7 +124,6 @@ const signinAuthenticate = (req, res, next) => {
  * @desc Endpoint to ask the service to connect a user
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @param {Function} next - Express next middleware function
  */
 const signin = async (req, res) => {
   if (!config.sign.in) return responses.error(res, 404, 'Signin error', 'Login is currently deactivated')();
@@ -584,10 +583,10 @@ const oauthErrorRedirect = (res, err, fallbackTitle) => {
  * @returns {void}
  */
 const logOAuthCallbackFailure = (strategy, errArg) => {
-  logger.error(
-    { err: { message: errArg?.message, code: errArg?.code, stack: errArg?.stack }, strategy },
-    'OAuth callback failed',
-  );
+  logger.error('OAuth callback failed', {
+    err: { message: errArg?.message, code: errArg?.code, stack: errArg?.stack },
+    strategy,
+  });
 };
 
 /**
@@ -755,7 +754,7 @@ const getConfig = async (req, res) => {
  * @desc Endpoint to verify a user email address using a token
  * @param {Object} req - Express request object (req.params.token)
  * @param {Object} res - Express response object
- * @returns {void} Sends JSON response indicating verification success or failure
+ * @returns {Promise<void>} Sends JSON response indicating verification success or failure
  */
 const verifyEmail = async (req, res) => {
   try {
@@ -791,7 +790,7 @@ const verifyEmail = async (req, res) => {
  * @desc Endpoint to resend the verification email for the authenticated user
  * @param {Object} req - Express request object (req.user must be set)
  * @param {Object} res - Express response object
- * @returns {void} Sends JSON response confirming the email was resent or an error
+ * @returns {Promise<void>} Sends JSON response confirming the email was resent or an error
  */
 const resendVerification = async (req, res) => {
   try {

@@ -6,7 +6,19 @@ import mongoose from 'mongoose';
 import AppError from '../../../lib/helpers/AppError.js';
 import logger from '../../../lib/services/logger.js';
 
-const Uploads = mongoose.model('Uploads');
+/**
+ * Stored GridFS file fields (see uploads.model.mongoose.js).
+ * @typedef {Object} UploadDoc
+ * @property {number} length
+ * @property {number} chunkSize
+ * @property {Date} uploadDate
+ * @property {string} [md5]
+ * @property {string} filename
+ * @property {string} [contentType]
+ * @property {{user?: import('mongoose').Types.ObjectId, organizationId?: import('mongoose').Types.ObjectId, kind?: string, contentType?: string}} [metadata]
+ */
+
+const Uploads = /** @type {import('mongoose').Model<UploadDoc>} */ (mongoose.model('Uploads'));
 
 const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {
   bucketName: 'uploads',
@@ -29,14 +41,14 @@ const list = async (filter) => {
 /**
  * @desc Function to get an upload from db
  * @param {String} uploadName
- * @return {Stream} upload
+ * @return {Promise<Object|null>} upload
  */
 const get = (uploadName) => Uploads.findOne({ filename: uploadName }).exec();
 
 /**
  * @desc Function to get an upload stream from db
- * @param {Object} Upload
- * @return {Stream} upload
+ * @param {Object} upload - an Upload doc (with `_id`)
+ * @return {import('mongodb').GridFSBucketReadStream} upload
  */
 const getStream = (upload) => {
   try {
@@ -65,9 +77,9 @@ const isFileNotFound = (err) => err?.name === 'MongoRuntimeError' && typeof err.
 
 /**
  * @desc Function to update an upload in db
- * @param {ObjectID} upload ID
+ * @param {import('mongoose').Types.ObjectId|string} id - upload ID
  * @param {Object} update
- * @return {Object} upload updated
+ * @return {Promise<Object|null>} upload updated
  */
 const update = (id, update) => Uploads.findOneAndUpdate({ _id: id }, update, { returnDocument: 'after' }).exec();
 
@@ -84,7 +96,7 @@ const update = (id, update) => Uploads.findOneAndUpdate({ _id: id }, update, { r
  * @param {Object} upload - an Upload doc (with `_id`), or a bare lookup key
  *   (e.g. `{ filename }`); `null`/`undefined`/`{}` are also valid — all
  *   resolve to a lookup that matches nothing and hit the no-op path below
- * @return {Object} a no-op marker ({ deletedCount: 0, notFound: true }) when
+ * @return {Promise<Object>} a no-op marker ({ deletedCount: 0, notFound: true }) when
  *   no matching file was found, or otherwise whatever the underlying GridFS
  *   bucket delete resolves with (unchanged from before this no-op path was
  *   added — callers on the delete-success path never relied on a specific
@@ -133,7 +145,7 @@ const remove = async (upload) => {
 /**
  * @desc Function to remove uploads of one user in db
  * @param {Object} filter
- * @return {Object} confirmation of delete
+ * @return {Promise<{deletedCount: number}>} confirmation of delete
  */
 const deleteMany = async (filter) => {
   const uploads = await list(filter);
@@ -155,9 +167,9 @@ const deleteMany = async (filter) => {
 /**
  * @desc Function to purge uploads by kind if they are not referenced in another collection
  * @param {String} kind - metadata kind to match
- * @param {collection} collection - name of the collection to check reference presence
+ * @param {String} collection - name of the collection to check reference presence
  * @param {String} key - name of the key to check id
- * @return {Object} confirmation of delete
+ * @return {Promise<{deletedCount: number}>} confirmation of delete
  */
 const purge = async (kind, collection, key) => {
   const toDelete = await Uploads.aggregate([
