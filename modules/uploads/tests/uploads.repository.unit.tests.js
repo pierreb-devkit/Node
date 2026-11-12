@@ -175,13 +175,37 @@ describe('UploadRepository unit tests:', () => {
     });
   });
 
+  describe('list', () => {
+    test('returns contentType from metadata.contentType, falling back to the legacy top-level field', async () => {
+      const chain = {
+        select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockReturnThis(),
+        exec: jest.fn().mockResolvedValue([
+          { _id: 'a1', filename: 'a.png', metadata: { contentType: 'image/png' } },
+          { _id: 'a2', filename: 'b.jpeg', contentType: 'image/jpeg' },
+        ]),
+      };
+      mockUploadsModel.find.mockReturnValue(chain);
+
+      const result = await UploadRepository.list({ owner: 'u1' });
+
+      expect(chain.select).toHaveBeenCalledWith('filename uploadDate contentType metadata.contentType');
+      expect(result).toEqual([
+        { _id: 'a1', filename: 'a.png', contentType: 'image/png' },
+        { _id: 'a2', filename: 'b.jpeg', contentType: 'image/jpeg' },
+      ]);
+    });
+  });
+
   describe('deleteMany', () => {
     test('curates details to { message } only on a bucket delete failure (issue #4059)', async () => {
-      // deleteMany() lists candidates via list() -> find().select().sort().exec()
+      // deleteMany() lists candidates via list() -> find().select().sort().lean().exec()
       // (a different chain shape than setCandidates()'s .select().lean().cursor()).
       mockUploadsModel.find.mockReturnValue({
         select: jest.fn().mockReturnThis(),
         sort: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockReturnThis(),
         exec: jest.fn().mockResolvedValue([{ _id: 'a1', filename: 'a.png' }]),
       });
       const rawError = Object.assign(new Error('ECONNREFUSED 10.0.4.12:27017 - mongo replset primary unreachable'), {
