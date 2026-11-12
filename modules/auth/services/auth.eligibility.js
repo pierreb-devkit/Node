@@ -16,7 +16,7 @@ const checks = [];
 /**
  * Register a signup eligibility check. Each fn(ctx) may throw an AppError to block
  * signup, and/or return a result object (opaque to auth) — or undefined.
- * @param {(ctx: { email?: string, body?: Object, req?: Object, oauth?: Object }) => (any|Promise<any>)} fn
+ * @param {(ctx: { email?: string, body?: Object, req?: Object, oauth?: Object, signupOpen?: boolean }) => (any|Promise<any>)} fn
  * @returns {void}
  */
 export const registerSignupEligibility = (fn) => {
@@ -40,7 +40,7 @@ export const registerSignupEligibility = (fn) => {
  * check aborts the whole chain and blocks signup — even a check that runs AFTER
  * an earlier one already resolved a non-null result. Throwing is "block signup",
  * not "I have no opinion"; return `undefined` for the latter. Order matters.
- * @param {{ email?: string, body?: Object, req?: Object, oauth?: Object }} ctx
+ * @param {{ email?: string, body?: Object, req?: Object, oauth?: Object, signupOpen?: boolean }} ctx - `signupOpen`: public signup is open, so an invite is presented but not required
  * @returns {Promise<any|null>} the first non-null check result, or null
  */
 export const assertSignupEligible = async (ctx) => {

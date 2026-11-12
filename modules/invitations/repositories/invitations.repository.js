@@ -3,7 +3,22 @@
  */
 import mongoose from 'mongoose';
 
-const Invitation = mongoose.model('Invitation');
+/**
+ * Stored Invitation fields (see invitations.model.mongoose.js).
+ * @typedef {Object} InvitationDoc
+ * @property {string} email
+ * @property {string} token
+ * @property {import('mongoose').Types.ObjectId|null} invitedBy
+ * @property {Date} expiresAt
+ * @property {Date|null} usedAt
+ * @property {Date|null} consumingAt
+ * @property {Date|null} acceptedAt
+ * @property {import('mongoose').Types.ObjectId|null} acceptedUserId
+ * @property {Date|null} revokedAt
+ * @property {'pending'|'accepted'|'revoked'} status
+ */
+
+const Invitation = /** @type {import('mongoose').Model<InvitationDoc>} */ (mongoose.model('Invitation'));
 
 /**
  * @desc Create an invitation document

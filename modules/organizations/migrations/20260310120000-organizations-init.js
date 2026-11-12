@@ -6,6 +6,16 @@ import mongoose from 'mongoose';
 import { generateOrganizationSlug } from '../helpers/organizations.slug.js';
 
 /**
+ * Fields this migration reads/writes on each collection (see each module's model).
+ * @typedef {import('mongoose').Types.ObjectId} ObjectId
+ * @typedef {import('mongoose').Model<{firstName?: string, lastName?: string, currentOrganization?: ObjectId|null}>} UserModel
+ * @typedef {import('mongoose').Model<{name: string, slug: string, createdBy?: ObjectId}>} OrganizationModel
+ * @typedef {import('mongoose').Model<{userId: ObjectId, organizationId: ObjectId, role: string, status?: string}>} MembershipModel
+ * @typedef {import('mongoose').Model<{user?: ObjectId, organizationId?: ObjectId|null}>} TaskModel
+ * @typedef {import('mongoose').Model<{metadata?: {user?: ObjectId, organizationId?: ObjectId|null}}>} UploadModel
+ */
+
+/**
  * Migration: Create default organizations for existing users.
  * For each user without a membership, creates a personal organization
  * and an owner membership. Also backfills organizationId on tasks
@@ -16,9 +26,9 @@ import { generateOrganizationSlug } from '../helpers/organizations.slug.js';
  * @returns {Promise<void>} Resolves when all records have been created/updated.
  */
 export async function up() {
-  const User = mongoose.model('User');
-  const Organization = mongoose.model('Organization');
-  const Membership = mongoose.model('Membership');
+  const User = /** @type {UserModel} */ (mongoose.model('User'));
+  const Organization = /** @type {OrganizationModel} */ (mongoose.model('Organization'));
+  const Membership = /** @type {MembershipModel} */ (mongoose.model('Membership'));
 
   // ── Step 1: Find users who don't have any membership yet ──────────
   const allMemberships = await Membership.find({}, 'userId').lean();
@@ -69,9 +79,10 @@ export async function up() {
   }
 
   // ── Step 3: Backfill organizationId on tasks without one ──────────
+  /** @type {TaskModel|null} */
   let Task;
   try {
-    Task = mongoose.model('Task');
+    Task = /** @type {TaskModel} */ (mongoose.model('Task'));
   } catch {
     // Task model not registered — skip task backfill only
     Task = null;
@@ -94,9 +105,10 @@ export async function up() {
   }
 
   // ── Step 4: Backfill organizationId on uploads without one ──────────
+  /** @type {UploadModel|null} */
   let Upload;
   try {
-    Upload = mongoose.model('Uploads');
+    Upload = /** @type {UploadModel} */ (mongoose.model('Uploads'));
   } catch {
     // Upload model not registered — skip upload backfill only
     Upload = null;

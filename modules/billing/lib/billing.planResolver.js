@@ -24,6 +24,7 @@ const validPlans = new Set(config.billing?.plans || ['free', 'starter', 'pro', '
  * @returns {Record<string, string>} priceId → planId map (built once at module init)
  */
 export const buildPriceIdToPlanMap = () => {
+  /** @type {Record<string, string>} */
   const map = {};
   const stripePrices = config.stripe?.prices || {};
   for (const [planId, intervals] of Object.entries(stripePrices)) {

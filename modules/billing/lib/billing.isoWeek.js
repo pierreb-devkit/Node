@@ -1,11 +1,11 @@
+const MS_PER_DAY = 86_400_000;
+
 /**
  * @function isoWeekKey
  * @description Compute the ISO 8601 week key in YYYY-Www format.
  * @param {Date} date - Date to compute.
  * @returns {string} ISO week key.
  */
-const MS_PER_DAY = 86_400_000;
-
 export const isoWeekKey = (date) => {
   const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));

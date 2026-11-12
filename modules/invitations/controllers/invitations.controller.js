@@ -9,6 +9,7 @@ import InvitationService from '../services/invitations.service.js';
 /**
  * @desc Admin: create + email a signup invitation
  * @param {Object} req - Express request object
+ * @param {Object} req.body - Request body
  * @param {string} req.body.email - Email address to invite
  * @param {Object} req.user - Authenticated admin user
  * @param {Object} res - Express response object
@@ -119,6 +120,7 @@ const resend = async (req, res) => {
 /**
  * @desc Public: report whether a token is a valid invite (+ prefill email)
  * @param {Object} req - Express request object
+ * @param {Object} req.params - Route parameters
  * @param {string} req.params.token - Invitation token to verify
  * @param {Object} res - Express response object
  * @returns {Promise<void>} Sends HTTP 200 with { valid, email } or 422 on error

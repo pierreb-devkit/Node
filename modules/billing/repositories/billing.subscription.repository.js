@@ -4,7 +4,29 @@
 import mongoose from 'mongoose';
 import { bumpEventMarkers } from '../lib/billing.markerBump.js';
 
-const Subscription = mongoose.model('Subscription');
+/**
+ * Stored Subscription fields (see billing.subscription.model.mongoose.js).
+ * @typedef {Object} SubscriptionDoc
+ * @property {import('mongoose').Types.ObjectId} organization
+ * @property {string} [stripeCustomerId]
+ * @property {string} [stripeSubscriptionId]
+ * @property {string} plan
+ * @property {string} status
+ * @property {string} [planVersion]
+ * @property {Date|null} currentPeriodStart
+ * @property {Date|null} pastDueSince
+ * @property {Date|null} lastResetAt
+ * @property {number|null} lastSubscriptionEventCreatedAt
+ * @property {string|null} lastSubscriptionEventId
+ * @property {number|null} lastInvoiceEventCreatedAt
+ * @property {string|null} lastInvoiceEventId
+ * @property {Date|null} adminUpdatedAt
+ * @property {import('mongoose').Types.ObjectId|null} adminUpdatedBy
+ * @property {boolean|null} cancelAtPeriodEnd
+ * @property {Date|null} cancelAt
+ */
+
+const Subscription = /** @type {import('mongoose').Model<SubscriptionDoc>} */ (mongoose.model('Subscription'));
 
 const defaultPopulate = [
   {
@@ -119,7 +141,7 @@ const findByStripeSubscriptionId = (stripeSubscriptionId) => {
  *              subscription (see `failClosedStatuses` in `../lib/constants.js`) without
  *              a second query (#4151).
  * @param {String} organizationId - The organization ID.
- * @returns {Promise<{plan: string, status: string}|null>} A lean plain object, or null.
+ * @returns {Promise<{plan: string, status: string}|null>|null} A lean plain object, or null (also returned synchronously for an invalid id).
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const findPlan = (organizationId) => {
@@ -134,7 +156,8 @@ const findPlan = (organizationId) => {
  *              because resetWeek derives the next usage period from that timestamp.
  *              Returns lean plain objects (no population) for performance.
  * @param {Date} now - The current timestamp used to compute the stale-reset threshold.
- * @returns {Promise<Array<{organization: string, currentPeriodStart: Date, lastResetAt: Date|null}>>}
+ * @returns {PromiseLike<Array<{organization: import('mongoose').Types.ObjectId, currentPeriodStart: Date, lastResetAt: Date|null}>>}
+ *          A thenable lean query (awaited by the caller).
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const findAllDueForResetByLastReset = (now) => {
@@ -180,7 +203,8 @@ const updateLastResetAt = (organizationId, date) => {
  *              Used by the dunning sweep cron to transition stale past_due subs to 'unpaid'.
  *              Returns lean plain objects for performance.
  * @param {Date} threshold - Subscriptions with pastDueSince <= threshold are returned.
- * @returns {Promise<Array<{_id: string, organization: string}>>}
+ * @returns {PromiseLike<Array<{_id: import('mongoose').Types.ObjectId, organization: import('mongoose').Types.ObjectId}>>}
+ *          A thenable lean query (awaited by the caller).
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const findStaleDunning = (threshold) => {

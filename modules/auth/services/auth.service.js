@@ -140,9 +140,9 @@ const checkPassword = (password) => {
 /**
  * @desc Seed : Function to generateRandomPassphrase
  * Generates a random passphrase that passes the zxcvbn test
- * Returns a promise that resolves with the generated passphrase, or rejects with an error if something goes wrong.
+ * Returns the generated passphrase, or throws if it fails the strength test.
  * NOTE: Passphrases are only tested against the required zxcvbn strength tests, and not the optional tests.
- * @return {Promise} user
+ * @return {string} the generated passphrase
  */
 const generateRandomPassphrase = () => {
   let password = '';

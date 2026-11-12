@@ -25,7 +25,7 @@ const tokenCookieOptions = {
  * @description Endpoint to fetch the list of organizations the current user belongs to.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const list = async (req, res) => {
   try {
@@ -41,7 +41,7 @@ const list = async (req, res) => {
  * @description Endpoint to create a new organization. The creator becomes the owner.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const create = async (req, res) => {
   try {
@@ -78,7 +78,7 @@ const get = (req, res) => {
  * @description Endpoint to update an existing organization.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const update = async (req, res) => {
   try {
@@ -102,7 +102,7 @@ const update = async (req, res) => {
  * @description Endpoint to delete an existing organization.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const remove = async (req, res) => {
   try {
@@ -130,7 +130,7 @@ const remove = async (req, res) => {
  * @description Platform admin endpoint to list all organizations.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const adminList = async (req, res) => {
   try {
@@ -181,7 +181,7 @@ const organizationByPage = async (req, res, next, params) => {
  * @description Endpoint to search organizations by name.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const search = async (req, res) => {
   try {
@@ -209,7 +209,7 @@ const search = async (req, res) => {
  * @param {Object} res - Express response object
  * @param {Function} next - Express next middleware function
  * @param {String} id - ID of the organization to fetch
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const organizationByID = async (req, res, next, id) => {
   try {
@@ -237,7 +237,7 @@ const organizationByID = async (req, res, next, id) => {
  * for the new org context, and returns the updated user with abilities.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const switchOrganization = async (req, res) => {
   try {
@@ -291,7 +291,7 @@ const switchOrganization = async (req, res) => {
  * @description Endpoint to leave an organization.
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const leave = async (req, res) => {
   try {
@@ -313,7 +313,7 @@ const leave = async (req, res) => {
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  * @param {Function} next - Express next middleware function
- * @returns {void}
+ * @returns {Promise<void>}
  */
 const loadMembership = async (req, res, next) => {
   if (req.organization && req.user && !req.membership) {

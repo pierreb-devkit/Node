@@ -9,6 +9,6 @@
     "moduleResolution": "nodenext",
     "target": "es2024"
   },
-  "include": ["lib", "config", "server.js", "modules/core", "modules/home", "modules/audit", "modules/public", "modules/tasks"],
+  "include": ["lib", "config", "server.js", "modules/core", "modules/home", "modules/audit", "modules/public", "modules/tasks", "modules/auth", "modules/users", "modules/invitations", "modules/billing", "modules/organizations", "modules/uploads"],
   "exclude": ["node_modules", "**/tests/**", "**/*.tests.js"]
 }

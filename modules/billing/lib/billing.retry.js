@@ -10,6 +10,7 @@
  * false for a thrown error, the error is rethrown immediately without
  * further attempts or delay.
  *
+ * @template T
  * @param {() => Promise<T>} fn - Async function to attempt.
  * @param {object}  [opts]
  * @param {number}  [opts.attempts=3]  - Maximum number of attempts (including the first call).

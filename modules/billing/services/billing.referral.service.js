@@ -92,6 +92,7 @@ const expectedGrantKeys = (record, cfg) => {
   if (!described) return [];
   const { root, referrerId, refereeId, referrerSuffix = '' } = described;
   const keys = referralKeys(root);
+  /** @type {Array<{side: 'referrer'|'referee', key: string}>} */
   const expected = [];
   // Referee side — needs configured units and a referee user (legacy rows may have none).
   if (cfg.refereeUnits > 0 && refereeId) expected.push({ side: 'referee', key: keys.referee });
@@ -285,10 +286,10 @@ const grantRecord = async (record, referrerId, refereeId, cfg) => {
  *              `grantRecord`). No-op (`skipped:'disabled'`) when
  *              `config.billing.referral.enabled` is false. Each side is keyed
  *              `referral:<invitationId>:<side>` so replays can never double-credit.
- * @param {Object} payload - The `invitation.accepted` payload (or its cron reconstruction).
- * @param {string} payload.invitationId - The accepted invitation id (idempotency root).
- * @param {string|null} payload.invitedBy - The inviter user id, or null.
- * @param {string|null} payload.acceptedUserId - The referee (just-created user) id, or null for legacy/cron rows.
+ * @param {Object} [payload] - The `invitation.accepted` payload (or its cron reconstruction).
+ * @param {string} [payload.invitationId] - The accepted invitation id (idempotency root); skipped (`no_invitation_id`) when missing.
+ * @param {string|null} [payload.invitedBy] - The inviter user id, or null.
+ * @param {string|null} [payload.acceptedUserId] - The referee (just-created user) id, or null for legacy/cron rows.
  * @returns {Promise<{skipped?: string, referrer?: Object, referee?: Object}>}
  */
 // biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
@@ -349,9 +350,9 @@ const linkBudget = async (referredBy, cap) => {
  *              (`cap_reached`; a user whose own referrer grant already landed is never
  *              locked out of finishing their referee side). May reject on infrastructure
  *              errors — callers own their failure handling.
- * @param {Object} payload
- * @param {string} payload.userId - The referred (just-signed-up) user id.
- * @param {string} payload.referredBy - The referrer user id.
+ * @param {Object} [payload]
+ * @param {string} [payload.userId] - The referred (just-signed-up) user id; skipped (`no_link`) when missing.
+ * @param {string} [payload.referredBy] - The referrer user id; skipped (`no_link`) when missing.
  * @param {Object|null} [payload.invitation] - The caller's already-fetched accepted
  *        invitation for this user (null = looked up, none). Omit to look it up here.
  * @returns {Promise<{skipped?: string, referrer?: Object, referee?: Object}>}
