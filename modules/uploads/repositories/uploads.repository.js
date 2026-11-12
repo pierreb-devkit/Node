@@ -13,11 +13,18 @@ const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {
 });
 
 /**
- * @desc Function to get all upload in db with filter or not
- * @param {Object} Filter
- * @return {Array} uploads
+ * @desc Function to get all upload in db with filter or not. The MIME type is
+ * stored in `metadata.contentType` (the driver dropped the top-level GridFS
+ * `contentType` option); it is returned as `contentType`, falling back to the
+ * top-level field older files may still carry.
+ * @param {Object} filter
+ * @return {Promise<Array>} uploads - { _id, filename, uploadDate, contentType }
  */
-const list = (filter) => Uploads.find(filter).select('filename uploadDate contentType').sort('-createdAt').exec();
+const list = async (filter) => {
+  /** @type {Array<{ _id: unknown, filename?: string, uploadDate?: Date, contentType?: string, metadata?: { contentType?: string } }>} */
+  const uploads = await Uploads.find(filter).select('filename uploadDate contentType metadata.contentType').sort('-createdAt').lean().exec();
+  return uploads.map(({ metadata, ...upload }) => ({ ...upload, contentType: upload.contentType || metadata?.contentType }));
+};
 
 /**
  * @desc Function to get an upload from db
