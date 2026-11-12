@@ -583,10 +583,10 @@ const oauthErrorRedirect = (res, err, fallbackTitle) => {
  * @returns {void}
  */
 const logOAuthCallbackFailure = (strategy, errArg) => {
-  logger.error(
-    { err: { message: errArg?.message, code: errArg?.code, stack: errArg?.stack }, strategy },
-    'OAuth callback failed',
-  );
+  logger.error('OAuth callback failed', {
+    err: { message: errArg?.message, code: errArg?.code, stack: errArg?.stack },
+    strategy,
+  });
 };
 
 /**
