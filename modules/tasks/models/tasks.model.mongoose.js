@@ -27,9 +27,9 @@ const TaskMongoose = new Schema(
 );
 
 /**
- * @desc Function to add id (+ _id) to all objects
- * @param {Object} task
- * @return {Object} Task
+ * @desc Virtual getter returning the document id as a hex string
+ * @this {import('mongoose').Document & {_id: import('mongoose').Types.ObjectId}}
+ * @return {string} id
  */
 function addID() {
   return this._id.toHexString();

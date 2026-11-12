@@ -30,6 +30,7 @@ const validate = (data) => AuditSchema.AuditLog.safeParse(data);
 const create = (data) => {
   const parsed = validate(data);
   if (!parsed.success) {
+    /** @type {Error & {validationErrors?: Object}} */
     const err = new Error('AuditLog validation failed');
     err.validationErrors = parsed.error.flatten();
     throw err;

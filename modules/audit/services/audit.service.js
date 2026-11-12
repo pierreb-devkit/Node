@@ -7,8 +7,8 @@ import AuditRepository from '../repositories/audit.repository.js';
 /**
  * @function log
  * @description Record an audit log entry. No-op when audit is disabled.
- * @param {Object} params
- * @param {string} params.action - Action identifier (e.g. 'auth.login', 'billing.subscribe')
+ * @param {Object} [params]
+ * @param {string} [params.action] - Action identifier (no-op when missing) (e.g. 'auth.login', 'billing.subscribe')
  * @param {string} [params.userId] - ID of the acting user
  * @param {string} [params.organizationId] - ID of the organization context
  * @param {string} [params.ip] - IP address of the request
