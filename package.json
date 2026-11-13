@@ -111,7 +111,7 @@
     "semantic-release": "^25.0.9",
     "supertest": "^7.3.2",
     "ts-jest": "^29.4.15",
-    "typescript": "5.9.3"
+    "typescript": "7.0.2"
   },
   "release": {
     "branches": [
