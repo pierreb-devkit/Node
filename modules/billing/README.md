@@ -122,7 +122,7 @@ e.g. `500 * (1 - 80/100) = 99.99999999999997`, silently missing an exact boundar
 comparing the debit's own pre/post balance, and emits `billing.extras.balance_threshold_crossed`
 (`{ organizationId, threshold, remaining, planId }`). `billing.email.js` sends a
 credit-warning (80%) or credit-exhausted (100%) email off of it.
-The subjects use `billing.alerts.balanceUnit` as a plural unit word (default `'credits'`); set it
+The subjects use `billing.alerts.balanceUnit` as the unit word, plural or not (default `'credits'`); set it
 when your templates speak in another unit, so subject and body agree.
 
 - **Stateless — no `alertedAtN` field.** The weekly `alertedAt80`/`alertedAt100` fields

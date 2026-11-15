@@ -123,7 +123,7 @@ export const setupBillingEmails = () => {
           {
             to: email,
             subject: isWarning
-              ? `${appName} — your ${unit} are running low`
+              ? `${appName} — you are running low on ${unit}`
               : `${appName} — you are out of ${unit}`,
             template: isWarning ? 'billing-credit-warning' : 'billing-credit-exhausted',
             params: {
