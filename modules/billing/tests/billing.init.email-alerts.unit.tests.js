@@ -386,7 +386,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
       expect(mockMailer.sendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: 'owner@test.com',
-          subject: expect.stringContaining('credits are running low'),
+          subject: 'MyApp — your credits are running low',
           template: 'billing-credit-warning',
           params: expect.objectContaining({ remaining: 100 }),
         }),
@@ -406,10 +406,26 @@ describe('billing.email setupBillingEmails listeners:', () => {
       expect(mockMailer.sendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: 'owner@test.com',
-          subject: expect.stringContaining('out of credits'),
+          subject: 'MyApp — you are out of credits',
           template: 'billing-credit-exhausted',
           params: expect.objectContaining({ remaining: 0 }),
         }),
+      );
+    });
+
+    test('subjects use billing.alerts.balanceUnit when set', async () => {
+      mockConfig.billing.alerts = { balanceUnit: 'tokens' };
+
+      listeners['billing.extras.balance_threshold_crossed']({ organizationId: orgId, threshold: 80, remaining: 10, planId: 'free' });
+      listeners['billing.extras.balance_threshold_crossed']({ organizationId: orgId, threshold: 100, remaining: 0, planId: 'free' });
+
+      await new Promise((r) => setImmediate(r));
+
+      expect(mockMailer.sendMail).toHaveBeenCalledWith(
+        expect.objectContaining({ subject: 'MyApp — your tokens are running low' }),
+      );
+      expect(mockMailer.sendMail).toHaveBeenCalledWith(
+        expect.objectContaining({ subject: 'MyApp — you are out of tokens' }),
       );
     });
 

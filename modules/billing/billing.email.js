@@ -114,6 +114,7 @@ export const setupBillingEmails = () => {
     const appName = mailer.getBrand().name ?? '';
     const billingUrl = getBillingUrl();
     const isWarning = threshold === 80;
+    const unit = config.billing?.alerts?.balanceUnit || 'credits';
 
     resolveOrgAdminEmails(organizationId).then((emails) => {
       if (!emails.length) return;
@@ -122,8 +123,8 @@ export const setupBillingEmails = () => {
           {
             to: email,
             subject: isWarning
-              ? `${appName} — your credits are running low`
-              : `${appName} — you are out of credits`,
+              ? `${appName} — your ${unit} are running low`
+              : `${appName} — you are out of ${unit}`,
             template: isWarning ? 'billing-credit-warning' : 'billing-credit-exhausted',
             params: {
               remaining: remaining ?? 0,
