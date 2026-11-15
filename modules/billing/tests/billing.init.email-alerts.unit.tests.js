@@ -386,7 +386,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
       expect(mockMailer.sendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: 'owner@test.com',
-          subject: 'MyApp — you are running low on credits',
+          subject: 'MyApp — your credits are running low',
           template: 'billing-credit-warning',
           params: expect.objectContaining({ remaining: 100 }),
         }),
@@ -422,7 +422,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
       await new Promise((r) => setImmediate(r));
 
       expect(mockMailer.sendMail).toHaveBeenCalledWith(
-        expect.objectContaining({ subject: 'MyApp — you are running low on tokens' }),
+        expect.objectContaining({ subject: 'MyApp — your tokens are running low' }),
       );
       expect(mockMailer.sendMail).toHaveBeenCalledWith(
         expect.objectContaining({ subject: 'MyApp — you are out of tokens' }),
