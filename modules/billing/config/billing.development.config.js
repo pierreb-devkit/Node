@@ -137,6 +137,8 @@ const config = {
     },
     alerts: {
       thresholdPercents: [80, 100],
+      // Unit word in the balance-alert mail subjects ("your credits are running low").
+      balanceUnit: 'credits',
     },
     events: {
       extrasExhausted: 'billing.extras_debit.exhausted',
