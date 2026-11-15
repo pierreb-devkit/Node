@@ -137,7 +137,7 @@ const config = {
     },
     alerts: {
       thresholdPercents: [80, 100],
-      // Unit word in the balance-alert mail subjects ("your credits are running low").
+      // Unit word in the balance-alert mail subjects ("you are running low on credits").
       balanceUnit: 'credits',
     },
     events: {
