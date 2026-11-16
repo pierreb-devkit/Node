@@ -47,7 +47,7 @@ export function billingSubjectRegistration({ registerPathSubject }) {
  * Only owners and admins can pay for the organization: start a plan checkout,
  * buy extras, or open the Stripe billing portal.
  * @param {Object} user - The authenticated user
- * @param {Object|null} membership - Optional organization membership
+ * @param {Object|null} membership - Organization membership; its `role` decides the pay rights
  * @param {Object} builder - CASL AbilityBuilder helpers
  * @param {Function} builder.can - Grant an ability
  * @returns {void}
