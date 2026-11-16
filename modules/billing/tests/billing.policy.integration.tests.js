@@ -127,7 +127,8 @@ describe('Billing policy — owner/admin only pay routes:', () => {
       'member is not refused by the policy on GET %s',
       async (route) => {
         const res = await agents.member.get(route);
-        expect(res.status).not.toBe(403);
+        expect(res.status).toBe(200);
+        expect(res.body.type).toBe('success');
       },
     );
   });
