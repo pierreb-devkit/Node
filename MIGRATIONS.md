@@ -4,6 +4,18 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## billing: only organization owners and admins can pay — checkout, extras checkout, Stripe portal (2026-11-16)
+
+#4290: `billingAbilities` now grants `create` on `BillingCheckout`, `BillingPortal` and `BillingExtrasCheckout` only to a membership whose `role` is `owner` or `admin`. A plain `member` gets **403** on `POST /api/billing/checkout`, `POST /api/billing/portal` and `POST /api/billing/extras/checkout`, and those three rules disappear from the abilities sent to the client (signin, signup, token refresh, organization switch). Members keep `read` on `BillingSubscription`, `BillingUsage`, `BillingExtrasBalance` and `BillingExtrasLedger`. Platform admins are unchanged.
+
+### Action for downstream
+
+- **Nothing to do if your billing policy is the stack's.** A solo user is the owner of their own organization and keeps every right.
+- **Your own code or tests that start a checkout or open the portal as a `member`**: run them as an owner or admin instead.
+- **Vue**: ship the matching Vue stack update in the same batch — the organization billing tab now needs `create BillingPortal` and the pricing page hides checkout from members.
+
+---
+
 ## Node 26 required: `.nvmrc` 26, `FROM node:26-slim`, `engines.node` `>=26.0.0` (2026-11-09)
 
 #4263: the stack now declares and builds on Node 26. `.npmrc` carries `engine-strict=true`, so **`npm ci` fails with `EBADENGINE` on Node 24** (or any Node below 26) as soon as this change is merged. `engines.npm` stays `>=11.0.0`. CI needs no change of its own: `actions/setup-node` reads `.nvmrc` via `node-version-file`.
