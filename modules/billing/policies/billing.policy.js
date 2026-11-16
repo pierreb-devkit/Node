@@ -1,6 +1,10 @@
 /**
  * Billing ability definitions for CASL document-level authorization.
  */
+import { MEMBERSHIP_ROLES } from '../../organizations/lib/constants.js';
+
+/** Membership roles allowed to pay for the organization (checkout, extras, Stripe portal). */
+const BILLING_MANAGER_ROLES = [MEMBERSHIP_ROLES.OWNER, MEMBERSHIP_ROLES.ADMIN];
 
 /**
  * Register billing-related subjects for path-level resolution.
@@ -39,9 +43,11 @@ export function billingSubjectRegistration({ registerPathSubject }) {
 
 /**
  * Define billing-related abilities for an authenticated user.
- * Any authenticated user with an organization membership can manage billing.
+ * Every organization member can read the subscription, usage and extras balance/ledger.
+ * Only owners and admins can pay for the organization: start a plan checkout,
+ * buy extras, or open the Stripe billing portal.
  * @param {Object} user - The authenticated user
- * @param {Object|null} membership - Optional organization membership
+ * @param {Object|null} membership - Organization membership; its `role` decides the pay rights
  * @param {Object} builder - CASL AbilityBuilder helpers
  * @param {Function} builder.can - Grant an ability
  * @returns {void}
@@ -54,14 +60,16 @@ export function billingAbilities(user, membership, { can }) {
 
   if (!membership) return;
 
-  can('create', 'BillingCheckout');
-  can('create', 'BillingPortal');
   can('read', 'BillingSubscription');
   can('read', 'BillingUsage');
-  // Extras: members can purchase packs and read their own balance/ledger
-  can('create', 'BillingExtrasCheckout');
   can('read', 'BillingExtrasBalance');
   can('read', 'BillingExtrasLedger');
+
+  if (BILLING_MANAGER_ROLES.includes(membership.role)) {
+    can('create', 'BillingCheckout');
+    can('create', 'BillingPortal');
+    can('create', 'BillingExtrasCheckout');
+  }
 }
 
 /**
