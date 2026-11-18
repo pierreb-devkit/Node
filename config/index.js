@@ -12,6 +12,10 @@ import configHelper from '../lib/helpers/config.js';
 import UNSAFE_KEYS from '../lib/helpers/unsafeKeys.js';
 
 const STANDARD_ENVS = new Set(['development', 'production', 'test']);
+// production.config.js paths applied to every non-standard isProd() env (Layer 2.5).
+// Rate limits are deliberately left out: behind an ingress that hides client addresses,
+// per-IP limits apply to every visitor at once, so the production profile is opt-in.
+const PROD_HARDENING_PATHS = ['cookie.secure', 'trust.proxy'];
 
 /**
  * Validates that a NODE_ENV value is safe for use in glob patterns and file paths.
@@ -104,6 +108,14 @@ const initGlobalConfig = async () => {
     config = deepMerge(config, globalDev);
   }
 
+  // Layer 2.5: secure cookie and trusted proxy hop for every non-standard env where isProd()
+  // is true (a downstream project name). production.config.js only loads for NODE_ENV=production,
+  // so these two values are applied here; the project config and env vars still override.
+  if (!STANDARD_ENVS.has(env) && configHelper.isProd(env)) {
+    const globalProd = await loadConfigFile(path.join(process.cwd(), 'config', 'defaults', 'production.config.js'));
+    config = deepMerge(config, _.pick(globalProd, PROD_HARDENING_PATHS));
+  }
+
   // Layer 3: environment overrides (only if not development)
   if (env !== 'development') {
     // (Module env overrides removed — env overrides are central only)
@@ -131,7 +143,7 @@ const initGlobalConfig = async () => {
       } else if (!hasGlobalEnvConfig) {
         // Warn only when no config exists at all (neither global nor per-module)
         console.warn(
-          chalk.yellow(`+ Warning: NODE_ENV="${env}" but no ${env}.config.js found in config/defaults/ and no *.${env}.config.js in modules/ — using development defaults. Downstream projects should create config files (see README).`),
+          chalk.yellow(`+ Warning: NODE_ENV="${env}" but no ${env}.config.js found in config/defaults/ and no *.${env}.config.js in modules/ — using development defaults plus a secure cookie and one trusted proxy hop (cookie.secure, trust.proxy). Downstream projects should create config files (see README).`),
         );
       }
     }
