@@ -461,6 +461,13 @@ describe('Attribution (signup) unit tests:', () => {
       done();
     });
 
+    test('should drop a client-sent avatar instead of rejecting the signup', (done) => {
+      const result = schema.SignupUser.safeParse({ email: 'a@b.com', avatar: 'someone-else.jpeg' });
+      expect(result.error).toBeFalsy();
+      expect(Object.prototype.hasOwnProperty.call(result.data, 'avatar')).toBe(false);
+      done();
+    });
+
     test('should reject a signup whose attribution carries an unknown key', (done) => {
       const result = schema.SignupUser.safeParse({ email: 'a@b.com', attribution: { evilKey: 'nope' } });
       expect(result.error).toBeDefined();
