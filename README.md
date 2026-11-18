@@ -84,8 +84,8 @@ npm run prod
 ### Testing
 
 ```bash
-npm test                            # Run unit tests (one-shot)
-npm run test:unit                   # Run unit tests once (alias of npm test)
+npm test                            # Run unit tests, then test:project if defined (CI: own step on the unit job)
+npm run test:unit                   # Run unit tests once (npm test without test:project)
 npm run test:integration            # Run integration tests once
 npm run test:e2e                    # Run e2e tests once (pass/fail gate, no coverage)
 npm run test:watch                  # Run tests in watch mode
@@ -100,9 +100,9 @@ Tests are organized per module in `modules/*/tests/`. In CI the test job runs as
 ### Code Quality
 
 ```bash
-npm run lint              # Check code quality (read-only)
+npm run lint              # Check code quality (read-only, CI; then lint:project if defined)
 npm run lint:fix          # Auto-fix code quality issues
-npm run typecheck         # Check JSDoc types with tsc (read-only, CI)
+npm run typecheck         # Check JSDoc types with tsc (read-only, CI; also each tsconfig.check.<project>.json)
 npm run format            # Format code with Prettier
 ```
 

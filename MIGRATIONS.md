@@ -81,6 +81,32 @@ The `User` model's `roles` now carries `enum: config.whitelists.users.roles`, so
 
 ---
 
+## scripts: project hooks for lint, test and typecheck (2026-11-18)
+
+#4301: a downstream can now add its own checks without editing stack files, so `package.json` scripts and `tsconfig.check.json` stop conflicting on each stack update.
+
+- `lint:project` runs at the end of `npm run lint`, locally and in CI (the unit job's Lint step runs `npm run lint`).
+- `test:project` runs at the end of `npm test`, locally. In CI it runs as its own step on the unit job, after the unit tests (CI runs the `test:*:coverage` scripts, not `npm test`).
+- `npm run typecheck` runs `tsc -p tsconfig.check.json` (stack files, unchanged), then `tsc -p` on every `tsconfig.check.<project>.json` at the repo root, locally and in CI (the unit job's Typecheck step runs `npm run typecheck`).
+
+Nothing changes for a downstream that defines none of these: the hooks are skipped.
+
+### Action for downstream
+
+- **Extra lint or test steps you added to `lint` / `test`**: move them to your own `lint:project` / `test:project` scripts, then restore `lint` and `test` to the stack's version.
+- **Your own modules in `tsconfig.check.json`'s `include`**: restore the stack's file and create `tsconfig.check.<project>.json` instead:
+
+  ```json
+  {
+    "extends": "./tsconfig.check.json",
+    "include": ["modules/<your-module>"]
+  }
+  ```
+
+  `include` replaces the stack's list, so this file starts from your folders only; files they import from the stack may still be checked too. Add one module folder at a time, fixing its type errors before adding the next.
+
+---
+
 ## billing: only organization owners and admins can pay — checkout, extras checkout, Stripe portal (2026-11-16)
 
 #4290: `billingAbilities` now grants `create` on `BillingCheckout`, `BillingPortal` and `BillingExtrasCheckout` only to a membership whose `role` is `owner` or `admin`. A plain `member` gets **403** on `POST /api/billing/checkout`, `POST /api/billing/portal` and `POST /api/billing/extras/checkout`, and those three rules disappear from the abilities sent to the client (signin, signup, token refresh, organization switch). Members keep `read` on `BillingSubscription`, `BillingUsage`, `BillingExtrasBalance` and `BillingExtrasLedger`. Platform admins are unchanged.
