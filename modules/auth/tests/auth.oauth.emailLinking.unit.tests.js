@@ -111,8 +111,8 @@ describe('checkOAuthUserProfile — link on verified email depends on the mailer
 
     await expect(AuthController.checkOAuthUserProfile(profil, 'sub', 'google')).rejects.toMatchObject({
       code: 'VALIDATION_ERROR',
-      message: 'oAuth, cannot link to unverified local account',
-      description: 'An account with this email already exists. Sign in with your password.',
+      message: 'oAuth, cannot link by email without a mailer',
+      description: 'An account with this email already exists. Sign in the way you first signed up.',
     });
     expect(mockLink).not.toHaveBeenCalled();
     expect(mockCreate).not.toHaveBeenCalled();

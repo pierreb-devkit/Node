@@ -54,7 +54,7 @@ Both avatar handlers now delete the previous file only when that upload belongs 
 ### Action for downstream
 
 - **Mailer configured**: nothing to do.
-- **No mailer and OAuth on**: users who signed up locally keep signing in with their password; configure a mailer if they must be able to add Google or Apple sign-in by email.
+- **No mailer and OAuth on**: users keep signing in the way they first signed up; configure a mailer if they must be able to add Google or Apple sign-in by email.
 - **Your own tests that link an OAuth sign-in to a local account by email**: make `mailer.isConfigured()` return `true` in them.
 - **Ran without a mailer, then added one**: the check reads the mailer state at sign-in time, so accounts created while no mailer was configured keep their automatic `emailVerified: true` and become linkable by email as soon as a mailer is added. Review the accounts created in that period, or ask them to verify their email again, before relying on OAuth email linking.
 

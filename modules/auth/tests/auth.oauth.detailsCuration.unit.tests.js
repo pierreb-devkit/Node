@@ -441,7 +441,7 @@ describe('checkOAuthUserProfile → oauthCallback → oauthErrorRedirect — the
     expect(payload.details).toEqual({ message: AUTHORED_MESSAGE });
   });
 
-  test('branch 3 without a mailer (existing local account) — the sign-in-with-password notice reaches the client in production', async () => {
+  test('branch 3 without a mailer (existing local account) — the existing-account notice reaches the client in production', async () => {
     const { AuthController, mockPassport } = await loadController({
       findByEmail: jest.fn().mockResolvedValue({ emailVerified: true }),
     });
@@ -453,7 +453,7 @@ describe('checkOAuthUserProfile → oauthCallback → oauthErrorRedirect — the
       'google',
     ]);
 
-    const AUTHORED_MESSAGE = 'An account with this email already exists. Sign in with your password.';
+    const AUTHORED_MESSAGE = 'An account with this email already exists. Sign in the way you first signed up.';
     expect(payload.description).toBe(AUTHORED_MESSAGE);
     expect(payload.details).toEqual({ message: AUTHORED_MESSAGE });
   });

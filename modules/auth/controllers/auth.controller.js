@@ -372,12 +372,12 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
         // local signup passes its own authored copy as an explicit argument to
         // `responses.error`, see `signup` above). `oauthErrorRedirect` reads
         // `err.description` with the same precedence. Without a mailer the
-        // account is not "pending": point the user to their password instead.
-        throw new AppError('oAuth, cannot link to unverified local account', {
+        // account is not "pending": use neutral text, it may have no password.
+        throw new AppError(canLinkByEmail ? 'oAuth, cannot link to unverified local account' : 'oAuth, cannot link by email without a mailer', {
           code: 'VALIDATION_ERROR',
           description: canLinkByEmail
             ? 'A pending account with this email is not verified. Verify the original signup first or contact support.'
-            : 'An account with this email already exists. Sign in with your password.',
+            : 'An account with this email already exists. Sign in the way you first signed up.',
         });
       }
       // If `existing` is emailVerified here, a rare race between the atomic
