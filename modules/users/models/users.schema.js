@@ -156,7 +156,7 @@ const dropClientAvatar = (body) =>
     ? Object.fromEntries(Object.entries(body).filter(([key]) => key !== 'avatar'))
     : body;
 
-const SignupUser = z.preprocess(dropClientAvatar, z.object({
+const SignupUserBase = z.object({
   firstName: User.shape.firstName,
   lastName: User.shape.lastName,
   bio: User.shape.bio,
@@ -178,12 +178,17 @@ const SignupUser = z.preprocess(dropClientAvatar, z.object({
   // time only. The controller decides whether to persist it (analytics enabled)
   // or strip it before create (analytics disabled); see auth.controller.js.
   attribution: User.shape.attribution,
-}).strict());
+}).strict();
+
+// Preprocessed wrapper (a ZodPipe): drops a client-sent `avatar`, then runs the strict base.
+// To extend or pick fields, use `SignupUserBase`.
+const SignupUser = z.preprocess(dropClientAvatar, SignupUserBase);
 
 export default {
   User,
   UserUpdate,
   SignupUser,
+  SignupUserBase,
   Attribution,
   EmailPreferences,
   EmailKind,

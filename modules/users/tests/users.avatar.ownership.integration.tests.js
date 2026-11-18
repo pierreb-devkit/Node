@@ -55,7 +55,7 @@ describe('Users avatar ownership integration tests:', () => {
   });
 
   test('a user cannot point their avatar at another user\'s file through the profile update', async () => {
-    await agentB.put('/api/users').send({ avatar: avatarA });
+    await agentB.put('/api/users').send({ avatar: avatarA }).expect(200);
     const storedB = await UserService.getBrut({ id: userB.id });
     expect(storedB.avatar || '').not.toBe(avatarA);
   });
@@ -78,14 +78,16 @@ describe('Users avatar ownership integration tests:', () => {
   });
 
   test('another user\'s file survives a remove-avatar call', async () => {
-    await agentB.put('/api/users').send({ avatar: avatarA });
-    await agentB.delete('/api/users/avatar');
+    await UserService.update(await UserService.getBrut({ id: userB.id }), { avatar: avatarA });
+    await agentB.delete('/api/users/avatar').expect(200);
     expect(await UploadsService.get(avatarA)).toBeTruthy();
   });
 
   test('another user\'s file survives an update-avatar call', async () => {
-    await agentB.put('/api/users').send({ avatar: avatarA });
-    await agentB.post('/api/users/avatar').attach('avatar', './modules/users/tests/img/default.jpeg');
+    await UserService.update(await UserService.getBrut({ id: userB.id }), { avatar: avatarA });
+    const res = await agentB.post('/api/users/avatar').attach('avatar', './modules/users/tests/img/default.jpeg').expect(200);
+    expect(res.body.data.avatar).toBeTruthy();
+    expect(res.body.data.avatar).not.toBe(avatarA);
     expect(await UploadsService.get(avatarA)).toBeTruthy();
   });
 

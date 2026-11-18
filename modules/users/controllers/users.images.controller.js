@@ -18,7 +18,8 @@ const removeOwnAvatarFile = async (user) => {
   if (!user?.avatar) return;
   const upload = await UploadsService.get(user.avatar);
   if (!upload) return;
-  if (String(upload.metadata?.user) !== String(user._id)) return;
+  if (!upload.metadata?.user) return;
+  if (String(upload.metadata.user) !== String(user._id)) return;
   await UploadsService.remove(upload);
 };
 

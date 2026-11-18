@@ -42,6 +42,7 @@ Both avatar handlers now delete the previous file only when that upload belongs 
 ### Action for downstream
 
 - **Nothing to do if you use the stack's avatar routes.** The Vue stack already does.
+- **`SignupUser` is now a preprocessed schema** (a ZodPipe): `.shape`, `.extend`, `.pick` and `.omit` are gone. Use the exported `SignupUserBase` (the strict inner object) to extend it.
 - **Your own client or tests that set `avatar` through `PUT /api/users` or the signup body**: use `POST /api/users/avatar` instead.
 
 ---
