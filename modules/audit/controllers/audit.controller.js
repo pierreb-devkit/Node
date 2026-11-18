@@ -44,7 +44,7 @@ const stats = async (req, res) => {
     const data = await AuditService.adminStats();
     responses.success(res, 'audit stats')(data);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, 422, 'Unprocessable Entity', 'Unable to compute audit stats')(err);
   }
 };
 

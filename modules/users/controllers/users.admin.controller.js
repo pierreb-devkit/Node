@@ -45,7 +45,7 @@ const stats = async (req, res) => {
     const data = await UserService.adminStats();
     responses.success(res, 'user stats')(data);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, 422, 'Unprocessable Entity', 'Unable to compute user stats')(err);
   }
 };
 

@@ -51,7 +51,9 @@ describe('users admin stats integration tests:', () => {
     expect(res.body.message).toBe('user stats');
     expect(typeof res.body.data.total).toBe('number');
     expect(res.body.data.weeks).toHaveLength(12);
-    expect(res.body.data.weeks[11].count).toBeGreaterThanOrEqual(1);
+    // The signup may land just before a Monday rollover, so accept the last two weeks.
+    const recent = res.body.data.weeks.slice(-2).reduce((sum, w) => sum + w.count, 0);
+    expect(recent).toBeGreaterThanOrEqual(1);
     expect(res.body.data.weeks[0].week).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 

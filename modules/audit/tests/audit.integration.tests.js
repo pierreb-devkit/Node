@@ -150,6 +150,9 @@ describe('Audit integration tests:', () => {
     const counts = data.topActions.map((a) => a.count);
     expect(counts).toEqual([...counts].sort((x, y) => y - x));
     expect(data.activeUsers.periodWeeks).toBe(4);
-    expect(data.activeUsers.current).toBeGreaterThanOrEqual(1);
+    expect(Number.isInteger(data.activeUsers.current)).toBe(true);
+    expect(data.activeUsers.current).toBeGreaterThanOrEqual(0);
+    expect(Number.isInteger(data.activeUsers.previous)).toBe(true);
+    expect(data.activeUsers.previous).toBeGreaterThanOrEqual(0);
   });
 });

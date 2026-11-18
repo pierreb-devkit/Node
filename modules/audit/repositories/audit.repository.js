@@ -82,14 +82,15 @@ const weeklyCount = (start) => getModel().aggregate(weeklyCountPipeline(start)).
 /**
  * @function topActions
  * @description Most frequent actions since `start`.
- * @param {Date} start - window start
+ * @param {Date} start - window start (inclusive)
+ * @param {Date} end - window end (exclusive)
  * @param {number} limit - number of actions to return
  * @returns {Promise<Array<{action: string, count: number}>>} actions, most frequent first
  */
-const topActions = (start, limit) =>
+const topActions = (start, end, limit) =>
   getModel()
     .aggregate([
-      { $match: { createdAt: { $gte: start } } },
+      { $match: { createdAt: { $gte: start, $lt: end } } },
       { $group: { _id: '$action', count: { $sum: 1 } } },
       { $sort: { count: -1, _id: 1 } },
       { $limit: limit },
@@ -99,15 +100,16 @@ const topActions = (start, limit) =>
 
 /**
  * @function activeUsers
- * @description Distinct acting users in [previousStart, currentStart) and since currentStart.
+ * @description Distinct acting users in [previousStart, currentStart) and [currentStart, end).
  * @param {Date} previousStart - start of the previous period
  * @param {Date} currentStart - start of the current period
+ * @param {Date} end - end of the current period (exclusive)
  * @returns {Promise<{current: number, previous: number}>} distinct user counts
  */
-const activeUsers = async (previousStart, currentStart) => {
+const activeUsers = async (previousStart, currentStart, end) => {
   const rows = await getModel()
     .aggregate([
-      { $match: { createdAt: { $gte: previousStart }, userId: { $exists: true, $ne: null } } },
+      { $match: { createdAt: { $gte: previousStart, $lt: end }, userId: { $exists: true, $ne: null } } },
       { $group: { _id: { userId: '$userId', current: { $gte: ['$createdAt', currentStart] } } } },
       { $group: { _id: '$_id.current', count: { $sum: 1 } } },
     ])

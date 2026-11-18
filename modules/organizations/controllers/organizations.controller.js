@@ -162,7 +162,7 @@ const adminStats = async (req, res) => {
     const data = await OrganizationsService.adminStats();
     responses.success(res, 'organization stats')(data);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, 422, 'Unprocessable Entity', 'Unable to compute organization stats')(err);
   }
 };
 

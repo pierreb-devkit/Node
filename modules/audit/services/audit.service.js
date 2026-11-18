@@ -71,18 +71,22 @@ const list = async (filter = {}, page = 1, perPage = 20) => {
  * @function adminStats
  * @description Activity stats for the admin overview: entries per week over the
  *   last DEFAULT_WEEKS weeks, the most frequent actions in that window, and the
- *   distinct acting accounts in the current PERIOD_WEEKS weeks vs the period before.
+ *   distinct acting accounts in the last PERIOD_WEEKS finished weeks vs the PERIOD_WEEKS before
+ *   (the unfinished current week is left out of the KPI).
  *   Entries older than the audit TTL are gone, so the window never reaches past it.
  * @returns {Promise<{total: number, weeks: Array<{week: string, count: number}>, topActions: Array<{action: string, count: number}>, activeUsers: {current: number, previous: number, periodWeeks: number}}>}
  */
 const adminStats = async () => {
   const start = weeklyWindowStart(DEFAULT_WEEKS);
-  const currentStart = new Date(start.getTime() + (DEFAULT_WEEKS - PERIOD_WEEKS) * WEEK_MS);
+  const windowEnd = new Date(start.getTime() + DEFAULT_WEEKS * WEEK_MS);
+  // KPI periods use finished weeks only: the unfinished current week is left out.
+  const finishedEnd = new Date(start.getTime() + (DEFAULT_WEEKS - 1) * WEEK_MS);
+  const currentStart = new Date(finishedEnd.getTime() - PERIOD_WEEKS * WEEK_MS);
   const previousStart = new Date(currentStart.getTime() - PERIOD_WEEKS * WEEK_MS);
   const [rows, topActions, active] = await Promise.all([
     AuditRepository.weeklyCount(start),
-    AuditRepository.topActions(start, TOP_ACTIONS),
-    AuditRepository.activeUsers(previousStart, currentStart),
+    AuditRepository.topActions(start, windowEnd, TOP_ACTIONS),
+    AuditRepository.activeUsers(previousStart, currentStart, finishedEnd),
   ]);
   const weeks = fillWeeks(rows, start, DEFAULT_WEEKS);
   return {
