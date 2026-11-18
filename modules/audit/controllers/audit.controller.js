@@ -32,6 +32,23 @@ const list = async (req, res) => {
   }
 };
 
+/**
+ * @function stats
+ * @description Endpoint returning activity stats for the admin overview (admin only).
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+const stats = async (req, res) => {
+  try {
+    const data = await AuditService.adminStats();
+    responses.success(res, 'audit stats')(data);
+  } catch (err) {
+    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+  }
+};
+
 export default {
   list,
+  stats,
 };

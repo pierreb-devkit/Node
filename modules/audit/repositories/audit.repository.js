@@ -4,6 +4,7 @@
 import mongoose from 'mongoose';
 
 import AuditSchema from '../models/audit.schema.js';
+import { weeklyCountPipeline } from '../../../lib/helpers/weeklyStats.js';
 
 /**
  * Lazy model accessor — avoids MissingSchemaError when audit.repository.js
@@ -70,8 +71,56 @@ const deleteMany = (filter) => {
   return getModel().deleteMany(filter).exec();
 };
 
+/**
+ * @function weeklyCount
+ * @description Count audit entries per week since `start`.
+ * @param {Date} start - window start (Monday 00:00 UTC)
+ * @returns {Promise<Array<{_id: number, count: number}>>} sparse weekly rows
+ */
+const weeklyCount = (start) => getModel().aggregate(weeklyCountPipeline(start)).exec();
+
+/**
+ * @function topActions
+ * @description Most frequent actions since `start`.
+ * @param {Date} start - window start
+ * @param {number} limit - number of actions to return
+ * @returns {Promise<Array<{action: string, count: number}>>} actions, most frequent first
+ */
+const topActions = (start, limit) =>
+  getModel()
+    .aggregate([
+      { $match: { createdAt: { $gte: start } } },
+      { $group: { _id: '$action', count: { $sum: 1 } } },
+      { $sort: { count: -1, _id: 1 } },
+      { $limit: limit },
+      { $project: { _id: 0, action: '$_id', count: 1 } },
+    ])
+    .exec();
+
+/**
+ * @function activeUsers
+ * @description Distinct acting users in [previousStart, currentStart) and since currentStart.
+ * @param {Date} previousStart - start of the previous period
+ * @param {Date} currentStart - start of the current period
+ * @returns {Promise<{current: number, previous: number}>} distinct user counts
+ */
+const activeUsers = async (previousStart, currentStart) => {
+  const rows = await getModel()
+    .aggregate([
+      { $match: { createdAt: { $gte: previousStart }, userId: { $exists: true, $ne: null } } },
+      { $group: { _id: { userId: '$userId', current: { $gte: ['$createdAt', currentStart] } } } },
+      { $group: { _id: '$_id.current', count: { $sum: 1 } } },
+    ])
+    .exec();
+  const byPeriod = new Map(rows.map((r) => [r._id, r.count]));
+  return { current: byPeriod.get(true) || 0, previous: byPeriod.get(false) || 0 };
+};
+
 export default {
   create,
   list,
   deleteMany,
+  weeklyCount,
+  topActions,
+  activeUsers,
 };

@@ -15,6 +15,7 @@ import config from '../../../config/index.js';
 describe('Audit integration tests:', () => {
   let UserService;
   let AuditService;
+  let app;
   let agent;
   let adminAgent;
   let adminUser;
@@ -32,6 +33,7 @@ describe('Audit integration tests:', () => {
       const init = await bootstrap();
       UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
       AuditService = (await import(path.resolve('./modules/audit/services/audit.service.js'))).default;
+      app = init.app;
       agent = request.agent(init.app);
       adminAgent = request.agent(init.app);
 
@@ -122,5 +124,32 @@ describe('Audit integration tests:', () => {
     const result = await adminAgent.get('/api/audit?page=1&perPage=1').expect(200);
     expect(result.body.data.data.length).toBeLessThanOrEqual(1);
     expect(result.body.data.perPage).toBe(1);
+  });
+
+  test('should deny audit stats to non-admin', async () => {
+    await agent.get('/api/audit/stats').expect(403);
+  });
+
+  test('should deny audit stats when not logged in', async () => {
+    await request(app).get('/api/audit/stats').expect(401);
+  });
+
+  test('should return audit stats for admin', async () => {
+    const result = await adminAgent.get('/api/audit/stats').expect(200);
+    const data = result.body.data;
+    expect(data.weeks).toHaveLength(12);
+    expect(data.total).toBe(data.weeks.reduce((sum, w) => sum + w.count, 0));
+    expect(data.total).toBeGreaterThanOrEqual(2);
+    // The test database is shared with other suites, so only the shape is fixed.
+    expect(data.topActions.length).toBeGreaterThanOrEqual(1);
+    expect(data.topActions.length).toBeLessThanOrEqual(5);
+    data.topActions.forEach((a) => {
+      expect(typeof a.action).toBe('string');
+      expect(a.count).toBeGreaterThanOrEqual(1);
+    });
+    const counts = data.topActions.map((a) => a.count);
+    expect(counts).toEqual([...counts].sort((x, y) => y - x));
+    expect(data.activeUsers.periodWeeks).toBe(4);
+    expect(data.activeUsers.current).toBeGreaterThanOrEqual(1);
   });
 });
