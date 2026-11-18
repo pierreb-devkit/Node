@@ -231,7 +231,8 @@ const signup = async (req) => {
   // failure must never mask the original error the caller rethrows), but it is
   // LOGGED with context: a failed remove leaves an orphan account and a failed
   // release leaves the invite held until the sweep — both need a trace.
-  const inviteId = invite?.id ?? invite?._id;
+  const rawInviteId = invite?.id ?? invite?._id;
+  const inviteId = rawInviteId != null ? String(rawInviteId) : undefined;
   /**
    * @desc Release a claimed invite on a failure path; log (never throw) on failure.
    * @param {string} step - the signup step that failed, for the log message
@@ -243,7 +244,7 @@ const signup = async (req) => {
       await eligibility?.release?.();
     } catch (releaseErr) {
       logger.error(`[signup] invite release failed after ${step} failure`, {
-        inviteId: inviteId != null ? String(inviteId) : undefined,
+        inviteId,
         err: releaseErr?.message,
         stack: releaseErr?.stack,
       });
@@ -261,7 +262,7 @@ const signup = async (req) => {
     } catch (cleanupErr) {
       logger.error(`[signup] user rollback failed after ${step} failure (orphan account)`, {
         userId: String(createdUser?.id ?? createdUser?._id),
-        inviteId: inviteId != null ? String(inviteId) : undefined,
+        inviteId,
         err: cleanupErr?.message,
         stack: cleanupErr?.stack,
       });
