@@ -60,6 +60,23 @@ describe('Users avatar ownership integration tests:', () => {
     expect(storedB.avatar || '').not.toBe(avatarA);
   });
 
+  test('a client-sent avatar on signup is dropped, not stored and not rejected', async () => {
+    const email = 'avatar-signup@test.com';
+    const res = await request(app).post('/api/auth/signup')
+      .send({ firstName: 'Sam', lastName: 'Signup', email, password, provider: 'local', avatar: avatarA })
+      .expect(200);
+    try {
+      expect(res.body.user.avatar || '').not.toBe(avatarA);
+      const stored = await UserService.getBrut({ email });
+      expect(stored.avatar || '').not.toBe(avatarA);
+    } finally {
+      try {
+        const stored = await UserService.getBrut({ email });
+        if (stored) await UserService.remove(stored);
+      } catch (_) { /* cleanup – ignore errors */ }
+    }
+  });
+
   test('another user\'s file survives a remove-avatar call', async () => {
     await agentB.put('/api/users').send({ avatar: avatarA });
     await agentB.delete('/api/users/avatar');

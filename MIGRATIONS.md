@@ -6,12 +6,14 @@ Breaking changes and upgrade notes for downstream projects.
 
 ## users: `avatar` is set only by the avatar upload route (2026-11-18)
 
-`PUT /api/users` no longer accepts `avatar`: the `UserUpdate` schema drops it, so a value sent there is ignored (no error). `POST /api/users/avatar` sets it, and `DELETE /api/users/avatar` clears it. Both handlers now delete the previous file only when that upload belongs to the user (`metadata.user`); a file owned by someone else is left in place while the user's `avatar` field is still updated.
+`avatar` is now set only through the avatar upload route: `POST /api/users/avatar` sets it, and `DELETE /api/users/avatar` clears it. `PUT /api/users` and `POST /api/auth/signup` both ignore an `avatar` sent in the body (no error, the value is dropped): the `UserUpdate` schema omits it, and the `SignupUser` schema strips it before its strict check, so a new local account starts with the default (empty) avatar. OAuth signups are unchanged: their avatar is built server-side from the provider profile.
+
+Both avatar handlers now delete the previous file only when that upload belongs to the user (`metadata.user`); a file owned by someone else is left in place while the user's `avatar` field is still updated. This also applies to an older upload stored without an owner: it is no longer removed when the avatar changes or is cleared (the field still updates). Clean such files up separately if you need to.
 
 ### Action for downstream
 
 - **Nothing to do if you use the stack's avatar routes.** The Vue stack already does.
-- **Your own client or tests that set `avatar` through `PUT /api/users`**: use `POST /api/users/avatar` instead.
+- **Your own client or tests that set `avatar` through `PUT /api/users` or the signup body**: use `POST /api/users/avatar` instead.
 
 ---
 
