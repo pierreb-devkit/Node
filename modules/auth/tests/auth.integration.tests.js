@@ -1009,7 +1009,7 @@ describe('Auth integration tests:', () => {
         AuthController.checkOAuthUserProfile(profil, 'sub', 'google'),
       ).rejects.toMatchObject({
         code: 'VALIDATION_ERROR',
-        message: 'oAuth, cannot link to unverified local account',
+        message: 'oAuth, cannot link by email without a mailer',
       });
 
       // The unverified local account must be untouched — no silent annexation.
