@@ -4,6 +4,24 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## ⚠️ Project environments now default to secure cookies and one trusted proxy hop (2026-11-18)
+
+Under `NODE_ENV={project}` (any env other than `development`, `test`, `production` where `isProd()` is true), the loader now takes exactly two values from `production.config.js`, before your project config:
+
+- `cookie.secure`: `false` → `true` — the session cookie is only sent over HTTPS.
+- `trust.proxy`: `false` → `1` — one reverse proxy hop is trusted when resolving the client address.
+
+Your project config, per-module project overrides and `DEVKIT_NODE_*` env vars still win. `development`, `test` and `production` are unchanged. **Rate limits are unchanged**: a project env keeps the development limit values.
+
+### Action for downstream
+
+- **Served over plain `http://`** (local run, e2e): set `DEVKIT_NODE_cookie_secure=false` (or `cookie.secure: false` in that setup), or the browser drops the session cookie.
+- **Behind more than one proxy**: set `trust.proxy` to the hop count in your project config. A value of `true` trusts every hop and lets clients choose their own address — prefer a hop count.
+- **Production limit profile**: opt-in — copy the `rateLimit` profiles you want from `production.config.js` into your project config. Behind an ingress that hides client addresses, every visitor shares one address and per-IP limits apply to everyone at once; keep the defaults until the real client address reaches the app.
+- **Deployed behind HTTPS and one proxy hop**: nothing to do.
+
+---
+
 ## billing: only organization owners and admins can pay — checkout, extras checkout, Stripe portal (2026-11-16)
 
 #4290: `billingAbilities` now grants `create` on `BillingCheckout`, `BillingPortal` and `BillingExtrasCheckout` only to a membership whose `role` is `owner` or `admin`. A plain `member` gets **403** on `POST /api/billing/checkout`, `POST /api/billing/portal` and `POST /api/billing/extras/checkout`, and those three rules disappear from the abilities sent to the client (signin, signup, token refresh, organization switch). Members keep `read` on `BillingSubscription`, `BillingUsage`, `BillingExtrasBalance` and `BillingExtrasLedger`. Platform admins are unchanged.
