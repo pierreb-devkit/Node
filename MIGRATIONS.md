@@ -22,6 +22,17 @@ Your project config, per-module project overrides and `DEVKIT_NODE_*` env vars s
 
 ---
 
+## home: page names are plain names only (2026-11-18)
+
+`GET /api/home/pages/:name` now answers **404** unless `:name` is made of letters, digits, `_` and `-` only, and the page is always read from `config/markdown/`.
+
+### Action for downstream
+
+- **Nothing to do if your files in `config/markdown/` are named like `terms.md` or `legal-notice.md`.**
+- **A page whose file name has a dot, a space or another character**: rename the file (for example `privacy.policy.md` → `privacy-policy.md`) and update the client links to it.
+
+---
+
 ## billing: only organization owners and admins can pay — checkout, extras checkout, Stripe portal (2026-11-16)
 
 #4290: `billingAbilities` now grants `create` on `BillingCheckout`, `BillingPortal` and `BillingExtrasCheckout` only to a membership whose `role` is `owner` or `admin`. A plain `member` gets **403** on `POST /api/billing/checkout`, `POST /api/billing/portal` and `POST /api/billing/extras/checkout`, and those three rules disappear from the abilities sent to the client (signin, signup, token refresh, organization switch). Members keep `read` on `BillingSubscription`, `BillingUsage`, `BillingExtrasBalance` and `BillingExtrasLedger`. Platform admins are unchanged.

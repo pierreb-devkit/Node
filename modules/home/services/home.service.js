@@ -26,8 +26,10 @@ const isSet = (value) => !!(value && typeof value === 'string' && value.trim() !
  * @returns {Promise<Array>} Page content array
  */
 const page = async (name) => {
-  const markdown = await fs.readFile(path.resolve(`./config/markdown/${name}.md`), 'utf8');
-  const test = await fs.stat(path.resolve(`./config/markdown/${name}.md`));
+  // basename keeps the file inside config/markdown whatever the caller passes
+  const file = path.resolve('./config/markdown', `${path.basename(String(name))}.md`);
+  const markdown = await fs.readFile(file, 'utf8');
+  const test = await fs.stat(file);
   return [
     {
       title: _.startCase(name),
