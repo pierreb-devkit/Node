@@ -30,9 +30,8 @@ const forgot = async (req, res) => {
    */
   const uniformSuccess = () => responses.success(res, 'If that email exists, a reset link has been sent.')({ status: true });
 
-  // check input
-  if (!req.body.email) return responses.error(res, 422, 'Unprocessable Entity', 'Mail field must not be blank')();
-  const email = String(req.body.email);
+  // body validated by model.isValid(PasswordForgot)
+  const { email } = req.body;
 
   let user;
   try {
@@ -106,10 +105,8 @@ const validateResetToken = async (req, res) => {
  */
 const reset = async (req, res) => {
   let user;
-  // check input
-  if (!req.body.token || !req.body.newPassword) return responses.error(res, 400, 'Bad Request', 'Password or Token fields must not be blank')();
-  const token = String(req.body.token);
-  const newPassword = String(req.body.newPassword);
+  // body validated by model.isValid(PasswordReset)
+  const { token, newPassword } = req.body;
   // get user by token, update with new password, login again
   try {
     user = await UserService.getBrut({ resetPasswordToken: token });
@@ -150,8 +147,7 @@ const reset = async (req, res) => {
 const updatePassword = async (req, res) => {
   let user;
   let password;
-  // check input
-  if (!req.body.newPassword) return responses.error(res, 400, 'Bad Request', 'Please provide a new password')();
+  // body validated by model.isValid(PasswordUpdate)
   // get user, check password, update user, login again
   try {
     user = await UserService.getBrut({ id: req.user.id });

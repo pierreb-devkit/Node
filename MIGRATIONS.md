@@ -60,6 +60,27 @@ Both avatar handlers now delete the previous file only when that upload belongs 
 
 ---
 
+## validation: PATCH bodies and every write route are checked against a schema (2026-11-18)
+
+#4299: `validation.supportedMethods` is now `['post', 'put', 'patch']`, and a PATCH body keeps only the keys the client sent (same as PUT), so Zod defaults never overwrite stored data. New Zod schemas run through `model.isValid` on:
+
+- `PUT /api/admin/users/:userId` — `UserAdminUpdate`, the `config.whitelists.users.updateAdmin` fields that `User` declares. Unknown keys are stripped; names stay free-form (trimmed, max 50), so a stored name outside the self-update rule can still be saved with a role change; a role outside `config.whitelists.users.roles` → **422** `Schema validation error`, or an empty `roles: []` (it reuses `User.roles` `.min(1)`) → **422** `Schema validation error`.
+- `POST /api/auth/forgot` (`PasswordForgot`), `POST /api/auth/reset` (`PasswordReset`), `POST /api/users/password` (`PasswordUpdate`). A missing or blank field now answers **422** `Schema validation error` instead of **400** `Bad Request` (reset, password) or **422** `Unprocessable Entity` (forgot). Wrong current password, mismatched passwords and a weak password keep their previous answers.
+- `GET /api/organizations/:organizationId/members` parses `page` (0-based), `perPage` and `search` with `MembershipListQuery`; an invalid value → **400** `Invalid query parameters`.
+
+The `User` model's `roles` now carries `enum: config.whitelists.users.roles`, so saving a role outside the whitelist fails. Membership role/status, ledger kind, grant source and invitation status enums now read `MEMBERSHIP_ROLES`, `MEMBERSHIP_STATUSES`, `LEDGER_KINDS`, `GRANT_SOURCES` and `INVITATION_STATUSES`. A 422 from `model.isValid` no longer echoes `password`, `newPassword`, `currentPassword`, `verifyPassword` or `token` from the rejected body.
+
+### Action for downstream
+
+- **You override `validation.supportedMethods`**: add `'patch'`, the array replaces the stack's.
+- **Your PATCH routes using `model.isValid`**: their schema is now enforced, and defaults are no longer injected for absent keys.
+- **You added fields to `updateAdmin`**: declare them on the `User` Zod schema too, or the admin update strips them.
+- **You store roles outside `config.whitelists.users.roles`**: add them to the whitelist before updating, or saves of those users fail.
+- **Your clients or tests matched the old 400 / `Bad Request` on reset or change-password**: expect 422 `Schema validation error`.
+- **Your tests mock `organizations/lib/constants.js`, `billing/lib/billing.constants.js` or `invitations/lib/constants.js` with a partial factory and load a model**: add the new named exports to the mock.
+
+---
+
 ## scripts: project hooks for lint, test and typecheck (2026-11-18)
 
 #4301: a downstream can now add its own checks without editing stack files, so `package.json` scripts and `tsconfig.check.json` stop conflicting on each stack update.

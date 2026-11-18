@@ -34,7 +34,9 @@ export default (app) => {
     .put(model.isValid(usersSchema.UserUpdate), users.update)
     .delete(users.remove);
 
-  app.route('/api/users/password').post(passport.authenticate('jwt', { session: false }), policy.isAllowed, authPassword.updatePassword);
+  app
+    .route('/api/users/password')
+    .post(passport.authenticate('jwt', { session: false }), policy.isAllowed, model.isValid(usersSchema.PasswordUpdate), authPassword.updatePassword);
 
   app
     .route('/api/users/avatar')

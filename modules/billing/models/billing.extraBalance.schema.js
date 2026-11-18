@@ -3,6 +3,8 @@
  */
 import { z } from 'zod';
 
+import { GRANT_SOURCES, LEDGER_KINDS } from '../lib/billing.constants.js';
+
 /**
  * BillingExtraBalance Zod schema — mirrors billing.extraBalance.model.mongoose.js
  */
@@ -12,7 +14,7 @@ const objectIdRegex = /^[a-f\d]{24}$/i;
 /**
  * Ledger entry kinds enum — mirrors the Mongoose enum.
  */
-const LedgerKind = z.enum(['topup', 'debit', 'refund', 'expiration', 'adjustment']);
+const LedgerKind = z.enum(Object.values(LEDGER_KINDS));
 
 /**
  * Allowed grant sources — mirrors the Mongoose enum on LedgerEntrySchema.source.
@@ -26,7 +28,7 @@ const LedgerKind = z.enum(['topup', 'debit', 'refund', 'expiration', 'adjustment
  * creditGrant() and future grant methods. Do not assume kind='adjustment' implies
  * source='adjustment'.
  */
-const GrantSource = z.enum(['signup_grant', 'adjustment', 'referral']);
+const GrantSource = z.enum(Object.values(GRANT_SOURCES));
 
 /**
  * Single ledger entry schema.

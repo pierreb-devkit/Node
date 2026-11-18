@@ -3,8 +3,10 @@
  */
 import passport from 'passport';
 
+import model from '../../../lib/middlewares/model.js';
 import policy from '../../../lib/middlewares/policy.js';
 import admin from '../controllers/users.admin.controller.js';
+import usersSchema from '../models/users.schema.js';
 
 export default (app) => {
   /**
@@ -25,7 +27,7 @@ export default (app) => {
     .route('/api/admin/users/:userId')
     .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
     .get(admin.get)
-    .put(admin.update)
+    .put(model.isValid(usersSchema.UserAdminUpdate), admin.update)
     .delete(admin.remove);
 
   // Bind param middleware
