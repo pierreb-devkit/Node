@@ -155,3 +155,31 @@ describe('HomeService.getReadinessStatus unit tests:', () => {
     });
   });
 });
+
+/**
+ * Unit tests for HomeService.page(): the file read stays inside config/markdown.
+ */
+describe('HomeService.page unit tests:', () => {
+  beforeEach(() => {
+    jest.resetModules();
+    jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
+      default: { isConfigured: jest.fn().mockReturnValue(false) },
+    }));
+    jest.unstable_mockModule('../repositories/home.repository.js', () => ({
+      default: { team: jest.fn().mockResolvedValue([]) },
+    }));
+  });
+
+  test('should read a page from config/markdown', async () => {
+    const { default: HomeService } = await import('../services/home.service.js');
+    const result = await HomeService.page('terms');
+    expect(result[0].title).toBe('Terms');
+    expect(typeof result[0].markdown).toBe('string');
+  });
+
+  test('should not read a file outside config/markdown', async () => {
+    const { default: HomeService } = await import('../services/home.service.js');
+    // README.md exists at the repo root; the name must resolve to config/markdown/README.md instead.
+    await expect(HomeService.page('../../README')).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});
