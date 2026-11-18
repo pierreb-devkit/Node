@@ -109,7 +109,10 @@ const User = z.object({
 // whitelists in config) — defense-in-depth so the PUT /users route schema
 // itself rejects/strips it before the whitelist layer is ever reached, the
 // same belt-and-braces pattern `referredBy` uses above.
-const UserUpdate = User.partial().omit({ attribution: true });
+// `avatar` is EXCLUDED too: it names a stored upload, and only the avatar
+// upload route (`POST /api/users/avatar`) may set it, server-side, to a file
+// the user just uploaded. A client-chosen value is stripped here.
+const UserUpdate = User.partial().omit({ attribution: true, avatar: true });
 
 /**
  * Public signup write surface.
@@ -136,19 +139,29 @@ const UserUpdate = User.partial().omit({ attribution: true });
  * cannot annex an OAuth identity. `roles` is intentionally OMITTED: the controller
  * forces `['user']`.
  *
+ * `avatar` is NOT accepted: it names a stored upload, and only the avatar upload route
+ * (`POST /api/users/avatar`) may set it. A client-sent `avatar` is dropped before
+ * validation (no 422, so existing clients that still send it keep working) and the
+ * account starts with the schema default. The OAuth path builds its avatar server-side
+ * from the provider profile and validates against `User`, so it is unaffected.
+ *
  * `referredBy` is accepted (the invitation P8a test — and real clients on an invite
  * flow — may send it to prove the server ignores it) but DELETED by the controller
  * before UserService.create; the server always sets referredBy via the invite finalize
  * seam (invitations module, not the signup body). Accepting it here prevents a .strict()
  * 422 on invite-path signups while still guaranteeing a client can never self-assign.
  */
-const SignupUser = z.object({
+const dropClientAvatar = (body) =>
+  body && typeof body === 'object' && !Array.isArray(body) && Object.prototype.hasOwnProperty.call(body, 'avatar')
+    ? Object.fromEntries(Object.entries(body).filter(([key]) => key !== 'avatar'))
+    : body;
+
+const SignupUserBase = z.object({
   firstName: User.shape.firstName,
   lastName: User.shape.lastName,
   bio: User.shape.bio,
   position: User.shape.position,
   email: User.shape.email,
-  avatar: User.shape.avatar,
   provider: User.shape.provider,
   password: User.shape.password,
   terms: User.shape.terms,
@@ -166,6 +179,10 @@ const SignupUser = z.object({
   // or strip it before create (analytics disabled); see auth.controller.js.
   attribution: User.shape.attribution,
 }).strict();
+
+// Preprocessed wrapper (a ZodPipe): drops a client-sent `avatar`, then runs the strict base.
+// To extend or pick fields, use `SignupUserBase`.
+const SignupUser = z.preprocess(dropClientAvatar, SignupUserBase);
 
 /**
  * Admin user-update write surface (`PUT /api/admin/users/:userId`): the fields of
@@ -221,6 +238,7 @@ export default {
   PasswordReset,
   PasswordUpdate,
   SignupUser,
+  SignupUserBase,
   Attribution,
   EmailPreferences,
   EmailKind,

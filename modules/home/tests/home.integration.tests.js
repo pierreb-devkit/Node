@@ -114,6 +114,18 @@ describe('Home integration tests:', () => {
       }
     });
 
+    test('should return 404 for a page name that is not a plain name', async () => {
+      // A real file outside config/markdown must stay unreachable.
+      const encoded = await request(app).get('/api/home/pages/..%2F..%2FREADME').expect(404);
+      expect(encoded.body.type).toBe('error');
+      expect(encoded.body.message).toBe('Not Found');
+      expect(encoded.body.description).toBe('No page with that name has been found');
+      await request(app).get('/api/home/pages/..%2Fmarkdown%2Fterms').expect(404);
+      await request(app).get('/api/home/pages/terms.md').expect(404);
+      // A real page still loads.
+      await request(app).get('/api/home/pages/terms').expect(200);
+    });
+
     test('should return minimal health status without auth', async () => {
       const result = await request(app).get('/api/health').expect(200);
       expect(result.body.type).toBe('success');

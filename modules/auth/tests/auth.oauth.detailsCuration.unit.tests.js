@@ -58,9 +58,10 @@ import RealAppError from '../../../lib/helpers/AppError.js';
  * @param {Object} [userServiceOverrides] - per-method jest.fn() overrides merged over safe defaults
  * @param {Object} [signOverrides] - merged over the default `config.sign` ({ up: true, in: true }) —
  *   e.g. `{ up: false }` to exercise branch 4's registration-closed gate
+ * @param {Boolean} [mailerConfigured] - mailer.isConfigured() (branch 3 links by email only when true)
  * @returns {Promise<{AuthController: Object, mockPassport: {authenticate: import('@jest/globals').Mock, _strategy: import('@jest/globals').Mock}}>}
  */
-const loadController = async (userServiceOverrides = {}, signOverrides = {}) => {
+const loadController = async (userServiceOverrides = {}, signOverrides = {}, mailerConfigured = false) => {
   jest.resetModules();
 
   const mockPassport = {
@@ -126,7 +127,7 @@ const loadController = async (userServiceOverrides = {}, signOverrides = {}) => 
   }));
 
   jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
-    default: { isConfigured: jest.fn().mockReturnValue(false), sendMail: jest.fn() },
+    default: { isConfigured: jest.fn().mockReturnValue(mailerConfigured), sendMail: jest.fn() },
   }));
 
   jest.unstable_mockModule('../../../lib/helpers/responses.js', () => ({
@@ -224,7 +225,7 @@ describe('checkOAuthUserProfile — details curation at the four raw-error catch
     const { AuthController } = await loadController({
       search: jest.fn().mockResolvedValue([]),
       linkProviderByEmail: jest.fn().mockRejectedValue(buildRawInternalError()),
-    });
+    }, {}, true);
 
     let caught;
     try {
@@ -426,7 +427,7 @@ describe('checkOAuthUserProfile → oauthCallback → oauthErrorRedirect — the
     const { AuthController, mockPassport } = await loadController({
       linkProviderByEmail: jest.fn().mockResolvedValue(null),
       findByEmail: jest.fn().mockResolvedValue({ emailVerified: false }),
-    });
+    }, {}, true);
 
     process.env.NODE_ENV = 'production';
     const { payload } = await runRealOAuthError(AuthController, mockPassport, [
@@ -436,6 +437,23 @@ describe('checkOAuthUserProfile → oauthCallback → oauthErrorRedirect — the
     ]);
 
     const AUTHORED_MESSAGE = 'A pending account with this email is not verified. Verify the original signup first or contact support.';
+    expect(payload.description).toBe(AUTHORED_MESSAGE);
+    expect(payload.details).toEqual({ message: AUTHORED_MESSAGE });
+  });
+
+  test('branch 3 without a mailer (existing local account) — the existing-account notice reaches the client in production', async () => {
+    const { AuthController, mockPassport } = await loadController({
+      findByEmail: jest.fn().mockResolvedValue({ emailVerified: true }),
+    });
+
+    process.env.NODE_ENV = 'production';
+    const { payload } = await runRealOAuthError(AuthController, mockPassport, [
+      { providerData: { sub: 'p1' }, email: 'user@example.com', emailVerifiedByProvider: true },
+      'sub',
+      'google',
+    ]);
+
+    const AUTHORED_MESSAGE = 'An account with this email already exists. Sign in the way you first signed up.';
     expect(payload.description).toBe(AUTHORED_MESSAGE);
     expect(payload.details).toEqual({ message: AUTHORED_MESSAGE });
   });
@@ -455,7 +473,7 @@ describe('checkOAuthUserProfile → oauthCallback → oauthErrorRedirect — the
     expect(payload.details).toEqual({ message: 'Registration is currently deactivated' });
   });
 
-  test('control — branch 1\'s raw internal DB text still does NOT reach the client in production, proving the description bypass is scoped to these two messages only', async () => {
+  test('control — branch 1\'s raw internal DB text still does NOT reach the client in production, proving the description bypass is scoped to these authored messages only', async () => {
     const rawInternal = Object.assign(new Error(INTERNAL_TEXT), { code: 'ECONNREFUSED', host: '10.0.4.12' });
     const { AuthController, mockPassport } = await loadController({
       search: jest.fn().mockRejectedValue(rawInternal),

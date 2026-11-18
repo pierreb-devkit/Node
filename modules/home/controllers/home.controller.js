@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import fs from 'fs';
+import path from 'path';
 
 import AppError from '../../../lib/helpers/AppError.js';
 import errors from '../../../lib/helpers/errors.js';
@@ -35,6 +36,9 @@ const page = async (req, res) => {
   }
 };
 
+// A page name is a plain file name: letters, digits, `_` and `-` only.
+const PAGE_NAME = /^[a-z0-9_-]+$/i;
+
 /**
  * @desc MiddleWare to ask the service the file for this name
  * @param {Object} req - Express request object
@@ -44,7 +48,7 @@ const page = async (req, res) => {
  */
 const pageByName = async (req, res, next, name) => {
   try {
-    if (!fs.existsSync(`./config/markdown/${name}.md`)) return responses.error(res, 404, 'Not Found', 'No page with that name has been found')();
+    if (!PAGE_NAME.test(name) || !fs.existsSync(path.resolve('./config/markdown', `${name}.md`))) return responses.error(res, 404, 'Not Found', 'No page with that name has been found')();
     const page = await HomeService.page(name);
     req.page = page;
     next();
