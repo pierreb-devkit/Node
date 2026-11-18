@@ -19,6 +19,7 @@ import { jest, describe, test, expect, beforeEach } from '@jest/globals';
  * @param {Array<Array>} searchResults - successive UserService.search() results
  * @param {Object} [options] - optional overrides
  * @param {Object|null} [options.linkProviderByEmailResult] - branch-3 linkProviderByEmail() resolution
+ * @param {Boolean} [options.mailerConfigured] - mailer.isConfigured() (branch 3 links by email only when true)
  * @param {Boolean} [options.signUp] - config.sign.up (false = closed, the eligibility hook runs)
  * @param {Object} [options.eligibility] - assertSignupEligible() resolution
  * @returns {Promise<{AuthController: Object, mockCreate: Function, mockIdentify: Function, mockCapture: Function, mockSearch: Function}>}
@@ -91,7 +92,7 @@ const loadController = async (searchResults, options = {}) => {
   }));
 
   jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
-    default: { isConfigured: jest.fn().mockReturnValue(false), sendMail: jest.fn() },
+    default: { isConfigured: jest.fn().mockReturnValue(options.mailerConfigured ?? false), sendMail: jest.fn() },
   }));
 
   jest.unstable_mockModule('../../../lib/helpers/responses.js', () => ({
@@ -254,7 +255,7 @@ describe('auth.controller checkOAuthUserProfile analytics (#4002/#4003):', () =>
     // returns early — branch 4 (create) must never be reached.
     const { AuthController, mockCreate, mockIdentify, mockCapture } = await loadController(
       [[], []],
-      { linkProviderByEmailResult: linkedAccount },
+      { linkProviderByEmailResult: linkedAccount, mailerConfigured: true },
     );
 
     const profil = {

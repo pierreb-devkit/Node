@@ -4,6 +4,62 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## ⚠️ Project environments now default to secure cookies and one trusted proxy hop (2026-11-18)
+
+Under `NODE_ENV={project}` (any env other than `development`, `test`, `production` where `isProd()` is true), the loader now takes exactly two values from `production.config.js`, before your project config:
+
+- `cookie.secure`: `false` → `true` — the session cookie is only sent over HTTPS.
+- `trust.proxy`: `false` → `1` — one reverse proxy hop is trusted when resolving the client address.
+
+Your project config, per-module project overrides and `DEVKIT_NODE_*` env vars still win. `development`, `test` and `production` are unchanged. **Rate limits are unchanged**: a project env keeps the development limit values.
+
+### Action for downstream
+
+- **Served over plain `http://`** (local run, e2e): set `DEVKIT_NODE_cookie_secure=false` (or `cookie.secure: false` in that setup), or the browser drops the session cookie.
+- **Behind more than one proxy**: set `trust.proxy` to the hop count in your project config. A value of `true` trusts every hop and lets clients choose their own address — prefer a hop count.
+- **Production limit profile**: opt-in — copy the `rateLimit` profiles you want from `production.config.js` into your project config. Behind an ingress that hides client addresses, every visitor shares one address and per-IP limits apply to everyone at once; keep the defaults until the real client address reaches the app.
+- **Deployed behind HTTPS and one proxy hop**: nothing to do.
+
+---
+
+## home: page names are plain names only (2026-11-18)
+
+`GET /api/home/pages/:name` now answers **404** unless `:name` is made of letters, digits, `_` and `-` only, and the page is always read from `config/markdown/`.
+
+### Action for downstream
+
+- **Nothing to do if your files in `config/markdown/` are named like `terms.md` or `legal-notice.md`.**
+- **A page whose file name has a dot, a space or another character**: rename the file (for example `privacy.policy.md` → `privacy-policy.md`) and update the client links to it.
+
+---
+
+## users: `avatar` is set only by the avatar upload route (2026-11-18)
+
+`avatar` is now set only through the avatar upload route: `POST /api/users/avatar` sets it, and `DELETE /api/users/avatar` clears it. `PUT /api/users` and `POST /api/auth/signup` both ignore an `avatar` sent in the body (no error, the value is dropped): the `UserUpdate` schema omits it, and the `SignupUser` schema strips it before its strict check, so a new local account starts with the default (empty) avatar. OAuth signups are unchanged: their avatar is built server-side from the provider profile.
+
+Both avatar handlers now delete the previous file only when that upload belongs to the user (`metadata.user`); a file owned by someone else is left in place while the user's `avatar` field is still updated. This also applies to an older upload stored without an owner: it is no longer removed when the avatar changes or is cleared (the field still updates). Clean such files up separately if you need to.
+
+### Action for downstream
+
+- **Nothing to do if you use the stack's avatar routes.** The Vue stack already does.
+- **`SignupUser` is now a preprocessed schema** (a ZodPipe): `.shape`, `.extend`, `.pick` and `.omit` are gone. Use the exported `SignupUserBase` (the strict inner object) to extend it.
+- **Your own client or tests that set `avatar` through `PUT /api/users` or the signup body**: use `POST /api/users/avatar` instead.
+
+---
+
+## auth: an OAuth sign-in links to an existing local account by email only when a mailer is configured (2026-11-18)
+
+`checkOAuthUserProfile` attaches a provider identity to an existing local account with the same email only when `mailer.isConfigured()` is true. Without a mailer, local signup and email change mark any email as verified, so that flag is not trusted: an OAuth sign-in whose email matches an existing account (local, or created through another provider) is refused with `VALIDATION_ERROR` (internal message "oAuth, cannot link by email without a mailer"), and the user sees "An account with this email already exists. Sign in the way you first signed up." A sign-in whose email matches no account still creates one, and an identity already linked still signs in.
+
+### Action for downstream
+
+- **Mailer configured**: nothing to do.
+- **No mailer and OAuth on**: users keep signing in the way they first signed up; configure a mailer if they must be able to add Google or Apple sign-in by email.
+- **Your own tests that link an OAuth sign-in to a local account by email**: make `mailer.isConfigured()` return `true` in them.
+- **Ran without a mailer, then added one**: the check reads the mailer state at sign-in time, so accounts created while no mailer was configured keep their automatic `emailVerified: true` and become linkable by email as soon as a mailer is added. Review the accounts created in that period, or ask them to verify their email again, before relying on OAuth email linking.
+
+---
+
 ## scripts: project hooks for lint, test and typecheck (2026-11-18)
 
 #4301: a downstream can now add its own checks without editing stack files, so `package.json` scripts and `tsconfig.check.json` stop conflicting on each stack update.
