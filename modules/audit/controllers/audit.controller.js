@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import responses from '../../../lib/helpers/responses.js';
+import logger from '../../../lib/services/logger.js';
 import errors from '../../../lib/helpers/errors.js';
 import AuditService from '../services/audit.service.js';
 import AuditSchema from '../models/audit.schema.js';
@@ -44,6 +45,7 @@ const stats = async (req, res) => {
     const data = await AuditService.adminStats();
     responses.success(res, 'audit stats')(data);
   } catch (err) {
+    logger.error('[stats] audit stats failed', { err });
     responses.error(res, 422, 'Unprocessable Entity', 'Unable to compute audit stats')(err);
   }
 };

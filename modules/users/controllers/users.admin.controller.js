@@ -3,6 +3,7 @@
  */
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
+import logger from '../../../lib/services/logger.js';
 import UserService from '../services/users.service.js';
 import MembershipService from '../../organizations/services/organizations.membership.service.js';
 
@@ -45,6 +46,7 @@ const stats = async (req, res) => {
     const data = await UserService.adminStats();
     responses.success(res, 'user stats')(data);
   } catch (err) {
+    logger.error('[stats] user stats failed', { err });
     responses.error(res, 422, 'Unprocessable Entity', 'Unable to compute user stats')(err);
   }
 };

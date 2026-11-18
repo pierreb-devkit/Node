@@ -73,7 +73,9 @@ const list = async (filter = {}, page = 1, perPage = 20) => {
  *   last DEFAULT_WEEKS weeks, the most frequent actions in that window, and the
  *   distinct acting accounts in the last PERIOD_WEEKS finished weeks vs the PERIOD_WEEKS before
  *   (the unfinished current week is left out of the KPI).
- *   Entries older than the audit TTL are gone, so the window never reaches past it.
+ *   `total` is the number of entries in that window, not all time. Entries older than
+ *   `config.audit.ttlDays` are gone, so with a TTL shorter than the window the oldest
+ *   weeks read 0.
  * @returns {Promise<{total: number, weeks: Array<{week: string, count: number}>, topActions: Array<{action: string, count: number}>, activeUsers: {current: number, previous: number, periodWeeks: number}}>}
  */
 const adminStats = async () => {

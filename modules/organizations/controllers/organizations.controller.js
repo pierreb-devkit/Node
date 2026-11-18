@@ -4,6 +4,7 @@
 import jwt from 'jsonwebtoken';
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
+import logger from '../../../lib/services/logger.js';
 import isGlobalAdmin from '../../../lib/helpers/isGlobalAdmin.js';
 import config from '../../../config/index.js';
 import mailer from '../../../lib/helpers/mailer/index.js';
@@ -162,6 +163,7 @@ const adminStats = async (req, res) => {
     const data = await OrganizationsService.adminStats();
     responses.success(res, 'organization stats')(data);
   } catch (err) {
+    logger.error('[stats] organization stats failed', { err });
     responses.error(res, 422, 'Unprocessable Entity', 'Unable to compute organization stats')(err);
   }
 };
