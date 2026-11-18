@@ -293,24 +293,7 @@ const adminDisputeCredit = async (req, res) => {
   }
 };
 
-/**
- * @desc GET /api/admin/billing/stats
- *       Subscriptions counted by plan and by status (stored docs only, no Stripe call).
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @returns {Promise<void>}
- */
-const adminStats = async (req, res) => {
-  try {
-    const data = await BillingAdminService.getStats();
-    return responses.success(res, 'billing stats')(data);
-  } catch (err) {
-    return responses.error(res, 500, 'Internal Server Error', 'Failed to load billing stats')(err);
-  }
-};
-
 export default {
-  adminStats,
   adminRefundCharge,
   adminBumpPlan,
   adminGetCustomerStatus,

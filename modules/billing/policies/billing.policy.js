@@ -23,7 +23,6 @@ export function billingSubjectRegistration({ registerPathSubject }) {
   registerPathSubject('/api/billing/extras/checkout', 'BillingExtrasCheckout');
   registerPathSubject('/api/billing/extras/balance', 'BillingExtrasBalance');
   registerPathSubject('/api/billing/extras/ledger', 'BillingExtrasLedger');
-  registerPathSubject('/api/admin/billing/stats', 'BillingAdminOps');
   registerPathSubject('/api/admin/billing/refund', 'BillingAdminRefund');
   registerPathSubject('/api/admin/billing/plans/bump', 'BillingAdminPlanBump');
   // Admin toolkit — diagnostic + ops endpoints (all require admin role).

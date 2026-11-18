@@ -520,29 +520,7 @@ const bumpOrgPlan = async (orgId, newPlanId, adminUserId) => {
   return updated;
 };
 
-/**
- * @desc Admin stats: subscriptions counted by plan and by status. Reads stored
- *       subscription docs only (no Stripe call); money amounts are not stored,
- *       so this reports counts, not revenue.
- * @returns {Promise<{total: number, byPlan: Object<string, number>, byStatus: Object<string, number>}>} stats
- */
-const getStats = async () => {
-  const rows = await SubscriptionRepository.countByPlanAndStatus();
-  const byPlan = {};
-  const byStatus = {};
-  let total = 0;
-  for (const { _id, count } of rows) {
-    const plan = _id?.plan || 'unknown';
-    const status = _id?.status || 'unknown';
-    byPlan[plan] = (byPlan[plan] || 0) + count;
-    byStatus[status] = (byStatus[status] || 0) + count;
-    total += count;
-  }
-  return { total, byPlan, byStatus };
-};
-
 export default {
-  getStats,
   getCustomerStatus,
   syncOrgFromStripe,
   replayWebhookEvent,

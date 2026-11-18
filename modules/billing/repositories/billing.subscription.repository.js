@@ -380,13 +380,6 @@ const findPageForReconciliation = (statuses, lastSeenId, limit) => {
     .exec();
 };
 
-/**
- * @desc Count subscriptions grouped by plan and status (admin stats).
- * @returns {Promise<Array<{_id: {plan: string, status: string}, count: number}>>} grouped counts
- */
-const countByPlanAndStatus = () =>
-  Subscription.aggregate([{ $group: { _id: { plan: '$plan', status: '$status' }, count: { $sum: 1 } } }]).exec();
-
 export default {
   list,
   create,
@@ -404,5 +397,4 @@ export default {
   updateIfEventNewer,
   adminUpdatePlanOnly,
   findPageForReconciliation,
-  countByPlanAndStatus,
 };
