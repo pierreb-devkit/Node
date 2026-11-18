@@ -1,6 +1,5 @@
 const config = {
   uploads: {
-    activated: true,
     sharp: {
       // default sharp settings for all uploads
       blur: 8,

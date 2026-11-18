@@ -5,6 +5,7 @@ const config = {
     },
   },
   billing: {
+    activated: true,
     enabled: true,
     // Quotas — downstream projects override these per plan:
     // quotas: {

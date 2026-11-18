@@ -4,6 +4,23 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## ⚠️ Module activation is honest (2026-11-19)
+
+- `organizations`, `invitations` and `uploads` can no longer be switched off: always-on `auth` and `users` import them, so `activated: false` already crashed the boot. They are now core modules and their `activated` keys are gone.
+- `activated: false` now forces `enabled: false` on that module, so a switched-off module is reported off everywhere (`GET /api/auth/config`, the readiness checks).
+- `billing` has an `activated` key. Switched off, its readiness row says "Billing is switched off" and the boot no longer probes Stripe.
+- `GET /api/auth/config` now returns `audit: { enabled }`, so a front can hide its audit views when audit is off.
+- A boot test now switches off each remaining optional module (`audit`, `billing`, `tasks`, `public`) and boots the app.
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the change.
+2. Remove any `organizations.activated`, `invitations.activated` or `uploads.activated` override (config file or `DEVKIT_NODE_*_activated` env var) — it is now ignored. To hide organizations, keep using `organizations.enabled: false` (B2C mode).
+3. If a project module reads `config.{module}.enabled` for a module it switches off, expect `false` now, even if its config says `enabled: true`.
+4. Nothing to do otherwise.
+
+---
+
 ## ⚠️ Project environments now default to secure cookies and one trusted proxy hop (2026-11-18)
 
 Under `NODE_ENV={project}` (any env other than `development`, `test`, `production` where `isProd()` is true), the loader now takes exactly two values from `production.config.js`, before your project config:
@@ -1195,8 +1212,8 @@ Per-module `activated: true/false` config flag. When `activated: false`, the mod
 
 - New `filterByActivation(files, config)` in `lib/helpers/config.js` — filters all globbed file arrays by module activation status
 - `config/index.js` applies filtering after config merge to: routes, policies, models, swagger YAML, preRoutes, configs
-- Core modules (`core`, `auth`, `users`, `home`) are always active regardless of flag
-- New module config files with `activated: true` default: `audit`, `billing`, `organizations`, `uploads`, `tasks`
+- Core modules (`core`, `auth`, `users`, `home`) are always active regardless of flag — since 2026-11-19 `organizations`, `invitations` and `uploads` are core too (see "Module activation is honest" above)
+- New module config files with `activated: true` default: `audit`, `tasks` (and `billing` since 2026-11-19)
 
 ### Action for downstream
 
