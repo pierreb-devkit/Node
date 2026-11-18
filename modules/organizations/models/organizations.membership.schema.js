@@ -31,7 +31,7 @@ const MembershipAdd = z.object({
  */
 const MembershipListQuery = z.object({
   page: z.coerce.number().int().min(0).optional(),
-  perPage: z.coerce.number().int().min(1).optional(),
+  perPage: z.coerce.number().int().min(1).max(100).optional(),
   search: z.string().trim().max(200).optional().transform((value) => value || undefined),
 });
 

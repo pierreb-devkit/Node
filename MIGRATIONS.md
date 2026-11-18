@@ -8,7 +8,7 @@ Breaking changes and upgrade notes for downstream projects.
 
 #4299: `validation.supportedMethods` is now `['post', 'put', 'patch']`, and a PATCH body keeps only the keys the client sent (same as PUT), so Zod defaults never overwrite stored data. New Zod schemas run through `model.isValid` on:
 
-- `PUT /api/admin/users/:userId` — `UserAdminUpdate`, the `config.whitelists.users.updateAdmin` fields that `User` declares. Unknown keys are stripped; a name outside the name rule (e.g. with `_`) or a role outside `config.whitelists.users.roles` → **422** `Schema validation error`, or an empty `roles: []` (it reuses `User.roles` `.min(1)`) → **422** `Schema validation error`.
+- `PUT /api/admin/users/:userId` — `UserAdminUpdate`, the `config.whitelists.users.updateAdmin` fields that `User` declares. Unknown keys are stripped; names stay free-form (trimmed, max 50), so a stored name outside the self-update rule can still be saved with a role change; a role outside `config.whitelists.users.roles` → **422** `Schema validation error`, or an empty `roles: []` (it reuses `User.roles` `.min(1)`) → **422** `Schema validation error`.
 - `POST /api/auth/forgot` (`PasswordForgot`), `POST /api/auth/reset` (`PasswordReset`), `POST /api/users/password` (`PasswordUpdate`). A missing or blank field now answers **422** `Schema validation error` instead of **400** `Bad Request` (reset, password) or **422** `Unprocessable Entity` (forgot). Wrong current password, mismatched passwords and a weak password keep their previous answers.
 - `GET /api/organizations/:organizationId/members` parses `page` (0-based), `perPage` and `search` with `MembershipListQuery`; an invalid value → **400** `Invalid query parameters`.
 

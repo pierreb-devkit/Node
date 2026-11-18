@@ -176,26 +176,31 @@ const UserAdminUpdate = User.pick(
   /** @type {Partial<Record<keyof typeof User.shape, true>>} */ (
     Object.fromEntries(config.whitelists.users.updateAdmin.filter((key) => key in User.shape).map((key) => [key, true]))
   ),
-).partial();
+).partial().extend({
+  // An admin sends the whole stored user back: keep names that predate or bypass the
+  // self-update character rule (OAuth, older users) editable.
+  firstName: z.string().max(50).trim().optional(),
+  lastName: z.string().max(50).trim().optional(),
+});
 
 /**
  * A password field: presence, type and size only. Strength is checked by
  * `AuthService.checkPassword` in the controller, which owns the "Password too weak." error.
  */
-const passwordField = z.string().min(1, 'Password must not be blank').max(config.zxcvbn.maxSize);
+const passwordField = z.string({ error: 'Password must not be blank' }).min(1, 'Password must not be blank').max(config.zxcvbn.maxSize);
 
 /**
  * `POST /api/auth/forgot` body.
  */
 const PasswordForgot = z.object({
-  email: z.string().trim().min(1, 'Mail field must not be blank').max(254),
+  email: z.string({ error: 'Mail field must not be blank' }).trim().min(1, 'Mail field must not be blank').max(254),
 });
 
 /**
  * `POST /api/auth/reset` body.
  */
 const PasswordReset = z.object({
-  token: z.string().min(1, 'Token must not be blank').max(2048),
+  token: z.string({ error: 'Token must not be blank' }).min(1, 'Token must not be blank').max(2048),
   newPassword: passwordField,
 });
 
@@ -203,9 +208,9 @@ const PasswordReset = z.object({
  * `POST /api/users/password` body.
  */
 const PasswordUpdate = z.object({
-  currentPassword: z.string().max(config.zxcvbn.maxSize),
+  currentPassword: z.string({ error: 'Current password must not be blank' }).max(config.zxcvbn.maxSize),
   newPassword: passwordField,
-  verifyPassword: z.string().max(config.zxcvbn.maxSize),
+  verifyPassword: z.string({ error: 'Verify password must not be blank' }).max(config.zxcvbn.maxSize),
 });
 
 export default {
