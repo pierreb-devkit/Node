@@ -68,6 +68,10 @@ jobs:
               ;;
           esac
 
+      - name: Project tests (once on the unit job, if defined)
+        if: matrix.suite == 'unit'
+        run: npm run --if-present test:project
+
       - name: Upload coverage
         if: "!cancelled() && matrix.suite != 'e2e' && env.CODECOV_TOKEN != ''"
         uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe  # v5.5.4

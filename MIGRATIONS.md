@@ -8,9 +8,9 @@ Breaking changes and upgrade notes for downstream projects.
 
 #4301: a downstream can now add its own checks without editing stack files, so `package.json` scripts and `tsconfig.check.json` stop conflicting on each stack update.
 
-- `npm run lint` ends with `npm run --if-present lint:project`.
-- `npm run test` ends with `npm run --if-present test:project`.
-- `npm run typecheck` runs `tsc -p tsconfig.check.json` (stack files, unchanged), then `tsc -p` on every `tsconfig.check.<project>.json` at the repo root. CI's typecheck step runs the same script.
+- `lint:project` runs at the end of `npm run lint`, locally and in CI (the unit job's Lint step runs `npm run lint`).
+- `test:project` runs at the end of `npm test`, locally. In CI it runs as its own step on the unit job, after the unit tests (CI runs the `test:*:coverage` scripts, not `npm test`).
+- `npm run typecheck` runs `tsc -p tsconfig.check.json` (stack files, unchanged), then `tsc -p` on every `tsconfig.check.<project>.json` at the repo root, locally and in CI (the unit job's Typecheck step runs `npm run typecheck`).
 
 Nothing changes for a downstream that defines none of these: the hooks are skipped.
 
