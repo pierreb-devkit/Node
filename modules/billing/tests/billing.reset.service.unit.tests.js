@@ -589,6 +589,23 @@ describe('BillingResetService unit tests:', () => {
       );
     });
 
+    test('logs a throwing rotated listener through the logger and still returns the rotated doc', async () => {
+      mockUsageRepository.findByWeek.mockResolvedValue(makeUsageDoc({ meterUsed: 10 }));
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'starter' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan({ meterQuota: 100000, version: 'v3' }));
+      const rotated = makeUsageDoc({ meterUsed: 0 });
+      mockUsageRepository.rotateWeekSnapshotForPlanChange.mockResolvedValue(rotated);
+      mockEvents.emit.mockImplementation(() => { throw new Error('listener boom'); });
+
+      const result = await BillingResetService.forceRotateForPlanChange(orgId);
+
+      expect(result).toBe(rotated);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining('billing.plan_change.rotated listener error'),
+        expect.objectContaining({ err: 'listener boom' }),
+      );
+    });
+
     test('returns null without fetching plan when no current week doc exists', async () => {
       mockUsageRepository.findByWeek.mockResolvedValue(null);
 
@@ -653,6 +670,10 @@ describe('BillingResetService unit tests:', () => {
       expect(result.errors).toBe(1);
       expect(result.processed).toBe(0);
       expect(mockSubscriptionRepository.updateLastResetAt).not.toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        '[billing.reset] resetWeek failed',
+        expect.objectContaining({ orgId: '507f1f77bcf86cd799439011', err: 'DB error' }),
+      );
     });
 
     test('should pass undefined orgId when sub uses organizationId (wrong field) — regression guard', async () => {

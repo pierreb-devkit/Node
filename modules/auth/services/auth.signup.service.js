@@ -227,19 +227,60 @@ const signup = async (req) => {
       logger.warn('[signup] referral code lookup failed (no attribution)', { err: refErr?.message });
     }
   }
+  // Rollback helpers for the failure paths below. Each step is best-effort (a
+  // failure must never mask the original error the caller rethrows), but it is
+  // LOGGED with context: a failed remove leaves an orphan account and a failed
+  // release leaves the invite held until the sweep — both need a trace.
+  const inviteId = invite?.id ?? invite?._id;
+  /**
+   * @desc Release a claimed invite on a failure path; log (never throw) on failure.
+   * @param {string} step - the signup step that failed, for the log message
+   * @returns {Promise<void>}
+   */
+  const releaseInvite = async (step) => {
+    if (!inviteHonored) return;
+    try {
+      await eligibility?.release?.();
+    } catch (releaseErr) {
+      logger.error(`[signup] invite release failed after ${step} failure`, {
+        inviteId: inviteId != null ? String(inviteId) : undefined,
+        err: releaseErr?.message,
+        stack: releaseErr?.stack,
+      });
+    }
+  };
+  /**
+   * @desc Delete the just-created user on a failure path; log (never throw) on failure.
+   * @param {Object} createdUser - the user returned by UserService.create
+   * @param {string} step - the signup step that failed, for the log message
+   * @returns {Promise<void>}
+   */
+  const removeUser = async (createdUser, step) => {
+    try {
+      await UserService.remove(createdUser);
+    } catch (cleanupErr) {
+      logger.error(`[signup] user rollback failed after ${step} failure (orphan account)`, {
+        userId: String(createdUser?.id ?? createdUser?._id),
+        inviteId: inviteId != null ? String(inviteId) : undefined,
+        err: cleanupErr?.message,
+        stack: cleanupErr?.stack,
+      });
+    }
+  };
+
   // E2: the invite was atomically CLAIMED (consumingAt stamped) before we got here,
   // so a throw FROM create itself must release the claim too — otherwise the invite
   // stays locked until the 15-min sweep. The most realistic throw is an E11000 from
   // the case-insensitive unique-email index (email_ci_unique) when two case-variant signups race the same
-  // invited email (validation/transient errors land here as well). Mirror the three
-  // release sites below + the same `inviteHonored` gating (only a claimed invite —
+  // invited email (validation/transient errors land here as well). Same release helper as
+  // the rollback sites below, with its `inviteHonored` gating (only a claimed invite —
   // closed signup, or userFacing open signup — needs releasing). Best-effort: a
   // release failure must not mask the create error.
   let user;
   try {
     user = await UserService.create(safeBody);
   } catch (createErr) {
-    if (inviteHonored) { try { await eligibility?.release?.(); } catch (_releaseErr) { /* best-effort */ } }
+    await releaseInvite('user create');
     throw createErr;
   }
 
@@ -266,12 +307,12 @@ const signup = async (req) => {
       user.emailVerified = true;
     }
   } catch (verifyErr) {
-    try { await UserService.remove(user); } catch (_cleanupErr) { /* best-effort */ }
+    await removeUser(user, 'email verification');
     // E2: a claimed invite must be released on a pre-response failure so the token
-    // is reusable (it was only claimed, never finalized). Gate the release on
+    // is reusable (it was only claimed, never finalized). releaseInvite gates on
     // `inviteHonored` — only a claimed invite (closed signup, or userFacing open
     // signup) needs releasing.
-    if (inviteHonored) { try { await eligibility?.release?.(); } catch (_releaseErr) { /* best-effort */ } }
+    await releaseInvite('email verification');
     throw verifyErr;
   }
 
@@ -282,14 +323,9 @@ const signup = async (req) => {
     orgResult = await AuthOrganizationService.handleSignupOrganization(user);
   } catch (orgErr) {
     // Manual rollback: delete the user we just created
-    try {
-      await UserService.remove(user);
-    } catch (_cleanupErr) {
-      // Best-effort cleanup; log but don't mask original error
-    }
-    // E2: release the claimed invite on org-provisioning failure so it can retry
-    // (gate on `inviteHonored` — only a claimed invite needs releasing).
-    if (inviteHonored) { try { await eligibility?.release?.(); } catch (_releaseErr) { /* best-effort */ } }
+    await removeUser(user, 'organization provisioning');
+    // E2: release the claimed invite on org-provisioning failure so it can retry.
+    await releaseInvite('organization provisioning');
     throw orgErr;
   }
 

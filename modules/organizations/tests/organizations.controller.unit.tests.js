@@ -8,6 +8,7 @@ const mockCrudSwitchOrganization = jest.fn();
 const mockListByUser = jest.fn();
 const mockLeave = jest.fn();
 const mockAdminStats = jest.fn();
+const mockFindByUserAndOrganization = jest.fn();
 
 jest.unstable_mockModule('../services/organizations.crud.service.js', () => ({
   default: {
@@ -21,6 +22,7 @@ jest.unstable_mockModule('../services/organizations.membership.service.js', () =
   default: {
     listByUser: mockListByUser,
     leave: mockLeave,
+    findByUserAndOrganization: mockFindByUserAndOrganization,
   },
 }));
 
@@ -270,6 +272,31 @@ describe('Organizations controller unit tests:', () => {
       expect(res.json.mock.calls[0][0].description).toBe('Unable to compute organization stats');
       expect(logSpy).toHaveBeenCalledWith('[stats] organization stats failed', expect.objectContaining({ message: 'aggregate failed' }));
       logSpy.mockRestore();
+    });
+  });
+
+  describe('loadMembership', () => {
+    test('should attach the membership and call next() once', async () => {
+      const membership = { role: 'member' };
+      mockFindByUserAndOrganization.mockResolvedValueOnce(membership);
+      const req = mockReq({ membership: undefined });
+      const next = jest.fn();
+      await organizationsController.loadMembership(req, mockRes(), next);
+      expect(mockFindByUserAndOrganization).toHaveBeenCalledWith('u1', 'org1');
+      expect(req.membership).toBe(membership);
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(next).toHaveBeenCalledWith();
+    });
+
+    test('should hand a DB error to next(err) once instead of swallowing it', async () => {
+      const dbErr = new Error('db down');
+      mockFindByUserAndOrganization.mockRejectedValueOnce(dbErr);
+      const req = mockReq({ membership: undefined });
+      const next = jest.fn();
+      await organizationsController.loadMembership(req, mockRes(), next);
+      expect(req.membership).toBeUndefined();
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(next).toHaveBeenCalledWith(dbErr);
     });
   });
 });

@@ -219,7 +219,10 @@ const forceRotateForPlanChange = async (organizationId, options = {}) => {
     });
   } catch (evtErr) {
     // Listener errors must not disrupt plan-change rotation — log for traceability
-    console.error('[billing.reset] billing.plan_change.rotated listener error (non-fatal):', evtErr?.message ?? evtErr);
+    logger.error('[billing.reset] billing.plan_change.rotated listener error (non-fatal)', {
+      err: evtErr?.message ?? String(evtErr),
+      stack: evtErr?.stack,
+    });
   }
 
   return updatedDoc;
@@ -259,7 +262,11 @@ const resetAllDue = async () => {
       processed += 1;
     } catch (err) {
       errors += 1;
-      console.error(`[billing.reset] resetWeek failed for org ${sub.organization}:`, err);
+      logger.error('[billing.reset] resetWeek failed', {
+        orgId: String(sub.organization),
+        err: err?.message,
+        stack: err?.stack,
+      });
     }
   }
 
