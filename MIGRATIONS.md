@@ -47,6 +47,19 @@ Both avatar handlers now delete the previous file only when that upload belongs 
 
 ---
 
+## auth: an OAuth sign-in links to an existing local account by email only when a mailer is configured (2026-11-18)
+
+`checkOAuthUserProfile` attaches a provider identity to an existing local account with the same email only when `mailer.isConfigured()` is true. Without a mailer, local signup and email change mark any email as verified, so that flag is not trusted: an OAuth sign-in whose email matches an existing account (local, or created through another provider) is refused with `VALIDATION_ERROR` (internal message "oAuth, cannot link by email without a mailer"), and the user sees "An account with this email already exists. Sign in the way you first signed up." A sign-in whose email matches no account still creates one, and an identity already linked still signs in.
+
+### Action for downstream
+
+- **Mailer configured**: nothing to do.
+- **No mailer and OAuth on**: users keep signing in the way they first signed up; configure a mailer if they must be able to add Google or Apple sign-in by email.
+- **Your own tests that link an OAuth sign-in to a local account by email**: make `mailer.isConfigured()` return `true` in them.
+- **Ran without a mailer, then added one**: the check reads the mailer state at sign-in time, so accounts created while no mailer was configured keep their automatic `emailVerified: true` and become linkable by email as soon as a mailer is added. Review the accounts created in that period, or ask them to verify their email again, before relying on OAuth email linking.
+
+---
+
 ## billing: only organization owners and admins can pay — checkout, extras checkout, Stripe portal (2026-11-16)
 
 #4290: `billingAbilities` now grants `create` on `BillingCheckout`, `BillingPortal` and `BillingExtrasCheckout` only to a membership whose `role` is `owner` or `admin`. A plain `member` gets **403** on `POST /api/billing/checkout`, `POST /api/billing/portal` and `POST /api/billing/extras/checkout`, and those three rules disappear from the abilities sent to the client (signin, signup, token refresh, organization switch). Members keep `read` on `BillingSubscription`, `BillingUsage`, `BillingExtrasBalance` and `BillingExtrasLedger`. Platform admins are unchanged.
