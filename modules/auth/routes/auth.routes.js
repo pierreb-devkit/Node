@@ -73,9 +73,9 @@ export default (app) => {
   app.route('/api/auth/config').get(authLimiter, optionalJwt, auth.getConfig);
 
   // Setting up the users password api
-  app.route('/api/auth/forgot').post(authLimiter, authPassword.forgot);
+  app.route('/api/auth/forgot').post(authLimiter, model.isValid(UsersSchema.PasswordForgot), authPassword.forgot);
   app.route('/api/auth/reset/:token').get(authLimiter, authPassword.validateResetToken);
-  app.route('/api/auth/reset').post(authLimiter, authPassword.reset);
+  app.route('/api/auth/reset').post(authLimiter, model.isValid(UsersSchema.PasswordReset), authPassword.reset);
 
   // Setting up the users authentication api
   // Validate signup against the restricted, `.strict()` SignupUser schema (NOT the full

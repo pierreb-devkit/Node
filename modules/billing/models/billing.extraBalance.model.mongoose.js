@@ -3,6 +3,8 @@
  */
 import mongoose from 'mongoose';
 
+import { GRANT_SOURCES, LEDGER_KINDS } from '../lib/billing.constants.js';
+
 const Schema = mongoose.Schema;
 
 /**
@@ -25,7 +27,7 @@ const LedgerEntrySchema = new Schema(
   {
     kind: {
       type: String,
-      enum: ['topup', 'debit', 'refund', 'expiration', 'adjustment'],
+      enum: Object.values(LEDGER_KINDS),
       required: true,
     },
     /**
@@ -83,7 +85,7 @@ const LedgerEntrySchema = new Schema(
      */
     source: {
       type: String,
-      enum: ['signup_grant', 'adjustment', 'referral'],
+      enum: Object.values(GRANT_SOURCES),
     },
     at: {
       type: Date,

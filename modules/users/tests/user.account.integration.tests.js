@@ -156,9 +156,9 @@ describe('User integration tests:', () => {
             verifyPassword: '',
             currentPassword: credentials[0].password,
           })
-          .expect(400);
-        expect(result.body.message).toEqual('Bad Request');
-        expect(result.body.description).toBe('Please provide a new password');
+          .expect(422);
+        expect(result.body.message).toEqual('Schema validation error');
+        expect(result.body.description).toBe('Password must not be blank. ');
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();

@@ -60,6 +60,32 @@ describe('Membership controller unit tests:', () => {
     jest.clearAllMocks();
   });
 
+  describe('list', () => {
+    test('parses page, perPage and search from the query', async () => {
+      mockList.mockResolvedValue([]);
+      const req = mockReq({ query: { page: '2', perPage: '10', search: ' ada ' } });
+      const res = mockRes();
+      await membershipController.list(req, res);
+      expect(mockList).toHaveBeenCalledWith('org1', 'ada', 2, 10);
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    test('no query → unpaginated, no search', async () => {
+      mockList.mockResolvedValue([]);
+      const req = mockReq({ query: { search: '' } });
+      await membershipController.list(req, mockRes());
+      expect(mockList).toHaveBeenCalledWith('org1', undefined, undefined, undefined);
+    });
+
+    test.each([[{ page: '-1' }], [{ perPage: 'abc' }], [{ search: ['a', 'b'] }]])('invalid query %j → 400', async (query) => {
+      const req = mockReq({ query });
+      const res = mockRes();
+      await membershipController.list(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(mockList).not.toHaveBeenCalled();
+    });
+  });
+
   describe('updateRole', () => {
     test('should reject when req.membership is missing (fail closed)', async () => {
       const req = mockReq({ membership: undefined });

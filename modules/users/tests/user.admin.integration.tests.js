@@ -480,6 +480,16 @@ describe('User admin integration tests:', () => {
       expect(result.body.description).toBe('DB error.');
     });
 
+    test('should accept an admin update that keeps a stored name outside the self-update rule', async () => {
+      const result = await agent.put(`/api/admin/users/${targetUser._id}`).send({ firstName: 'admin_first', roles: ['user', 'admin'] }).expect(200);
+      expect(result.body.data.firstName).toBe('admin_first');
+    });
+
+    test('should reject an admin update with a role outside the whitelist', async () => {
+      const result = await agent.put(`/api/admin/users/${targetUser._id}`).send({ roles: ['root'] }).expect(422);
+      expect(result.body.message).toBe('Schema validation error');
+    });
+
     test('should return 422 when admin remove fails', async () => {
       jest.spyOn(UserService, 'remove').mockRejectedValueOnce(new Error('DB error'));
       const result = await agent.delete(`/api/admin/users/${targetUser._id}`).expect(422);

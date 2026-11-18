@@ -143,7 +143,7 @@ const config = {
     limit: '500kb',
   },
   validation: {
-    supportedMethods: ['post', 'put'],
+    supportedMethods: ['post', 'put', 'patch'],
   },
   cors: {
     origin: ['http://localhost:8080'],

@@ -3,6 +3,8 @@
  */
 import mongoose from 'mongoose';
 
+import { INVITATION_STATUSES } from '../lib/constants.js';
+
 const Schema = mongoose.Schema;
 
 /**
@@ -38,7 +40,7 @@ const InvitationMongoose = new Schema(
     // E8 soft-delete revoke — preserve invitedBy/acceptedUserId for referral tracking
     // instead of hard-deleting; a revoked invite never re-opens the gate.
     revokedAt: { type: Date, default: null },
-    status: { type: String, enum: ['pending', 'accepted', 'revoked'], default: 'pending' },
+    status: { type: String, enum: Object.values(INVITATION_STATUSES), default: INVITATION_STATUSES.PENDING },
   },
   { timestamps: true },
 );
