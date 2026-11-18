@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import mongoose from 'mongoose';
+import { weeklyCountPipeline } from '../../../lib/helpers/weeklyStats.js';
 
 /**
  * @desc Escape regex-special characters in a user-provided string.
@@ -181,6 +182,13 @@ const remove = async (user) => {
 const stats = () => User.estimatedDocumentCount().exec();
 
 /**
+ * @desc Count users created per week since `start` (admin stats)
+ * @param {Date} start - window start (see lib/helpers/weeklyStats.js)
+ * @returns {Promise<Array<{_id: number, count: number}>>} sparse weekly buckets
+ */
+const weeklyCreated = (start) => User.aggregate(weeklyCountPipeline(start)).exec();
+
+/**
  * @desc Exact document count (countDocuments, not estimated) for cap enforcement
  * @param {Object} [filter] - optional Mongoose filter
  * @returns {Promise<number>} exact matching document count
@@ -326,6 +334,7 @@ const linkProviderByEmail = (email, provider, providerData) => {
 
 export default {
   list,
+  weeklyCreated,
   create,
   get,
   search,

@@ -3,6 +3,7 @@
  */
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
+import logger from '../../../lib/services/logger.js';
 import UserService from '../services/users.service.js';
 import MembershipService from '../../organizations/services/organizations.membership.service.js';
 
@@ -31,6 +32,22 @@ const list = async (req, res) => {
     responses.success(res, 'user list')(enriched);
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+  }
+};
+
+/**
+ * @desc Endpoint returning admin stats: total users + users created per week
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+const stats = async (req, res) => {
+  try {
+    const data = await UserService.adminStats();
+    responses.success(res, 'user stats')(data);
+  } catch (err) {
+    logger.error('[stats] user stats failed', { message: err?.message, stack: err?.stack });
+    responses.error(res, 422, 'Unprocessable Entity', 'Unable to compute user stats')(err);
   }
 };
 
@@ -134,6 +151,7 @@ const userByPage = async (req, res, next, params) => {
 
 export default {
   list,
+  stats,
   get,
   update,
   remove,

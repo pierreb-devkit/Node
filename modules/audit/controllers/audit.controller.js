@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import responses from '../../../lib/helpers/responses.js';
+import logger from '../../../lib/services/logger.js';
 import errors from '../../../lib/helpers/errors.js';
 import AuditService from '../services/audit.service.js';
 import AuditSchema from '../models/audit.schema.js';
@@ -32,6 +33,24 @@ const list = async (req, res) => {
   }
 };
 
+/**
+ * @function stats
+ * @description Endpoint returning activity stats for the admin overview (admin only).
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+const stats = async (req, res) => {
+  try {
+    const data = await AuditService.adminStats();
+    responses.success(res, 'audit stats')(data);
+  } catch (err) {
+    logger.error('[stats] audit stats failed', { message: err?.message, stack: err?.stack });
+    responses.error(res, 422, 'Unprocessable Entity', 'Unable to compute audit stats')(err);
+  }
+};
+
 export default {
   list,
+  stats,
 };

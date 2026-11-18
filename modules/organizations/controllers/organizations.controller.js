@@ -4,6 +4,7 @@
 import jwt from 'jsonwebtoken';
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
+import logger from '../../../lib/services/logger.js';
 import isGlobalAdmin from '../../../lib/helpers/isGlobalAdmin.js';
 import config from '../../../config/index.js';
 import mailer from '../../../lib/helpers/mailer/index.js';
@@ -147,6 +148,23 @@ const adminList = async (req, res) => {
     responses.success(res, 'organization list')(enriched);
   } catch (err) {
     responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+  }
+};
+
+/**
+ * @function adminStats
+ * @description Platform admin endpoint returning total organizations + organizations created per week.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+const adminStats = async (req, res) => {
+  try {
+    const data = await OrganizationsService.adminStats();
+    responses.success(res, 'organization stats')(data);
+  } catch (err) {
+    logger.error('[stats] organization stats failed', { message: err?.message, stack: err?.stack });
+    responses.error(res, 422, 'Unprocessable Entity', 'Unable to compute organization stats')(err);
   }
 };
 
@@ -336,6 +354,7 @@ export default {
   leave,
   search,
   adminList,
+  adminStats,
   organizationByID,
   organizationByPage,
   loadMembership,

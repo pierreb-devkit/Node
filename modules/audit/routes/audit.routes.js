@@ -17,4 +17,10 @@ export default (app) => {
     .route('/api/audit')
     .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
     .get(audit.list);
+
+  // Activity stats for the admin overview — admin only
+  app
+    .route('/api/audit/stats')
+    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
+    .get(audit.stats);
 };

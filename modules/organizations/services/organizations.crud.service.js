@@ -5,6 +5,7 @@ import AppError from '../../../lib/helpers/AppError.js';
 import { assertEmailVerified } from '../../../lib/helpers/emailVerification.js';
 import config from '../../../config/index.js';
 import logger from '../../../lib/services/logger.js';
+import { weeklyWindowStart, fillWeeks } from '../../../lib/helpers/weeklyStats.js';
 
 /**
  * @desc Escape regex-special characters in a user-provided string.
@@ -346,8 +347,19 @@ const searchByDomain = async (userEmail) => {
  */
 const removeById = (id) => OrganizationsRepository.remove({ _id: id });
 
+/**
+ * @desc Admin stats: total organizations + organizations created per week over the last weeks
+ * @returns {Promise<{total: number, weeks: Array<{week: string, count: number}>}>} stats
+ */
+const adminStats = async () => {
+  const start = weeklyWindowStart();
+  const [total, rows] = await Promise.all([OrganizationsRepository.count(), OrganizationsRepository.weeklyCreated(start)]);
+  return { total, weeks: fillWeeks(rows, start) };
+};
+
 export default {
   list,
+  adminStats,
   listByUser,
   create,
   get,

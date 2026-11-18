@@ -10,6 +10,7 @@ import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
 import getApiBaseUrl from '../../../lib/helpers/getApiBaseUrl.js';
 import mailer from '../../../lib/helpers/mailer/index.js';
 import passwordHelper from '../../../lib/helpers/password.js';
+import { weeklyWindowStart, fillWeeks } from '../../../lib/helpers/weeklyStats.js';
 import UserRepository from '../repositories/users.repository.js';
 import MembershipService from '../../organizations/services/organizations.membership.service.js';
 import MembershipRepository from '../../organizations/repositories/organizations.membership.repository.js';
@@ -444,6 +445,16 @@ const stats = async () => {
 };
 
 /**
+ * @desc Admin stats: total users + users created per week over the last weeks
+ * @returns {Promise<{total: number, weeks: Array<{week: string, count: number}>}>} stats
+ */
+const adminStats = async () => {
+  const start = weeklyWindowStart();
+  const [total, rows] = await Promise.all([UserRepository.count(), UserRepository.weeklyCreated(start)]);
+  return { total, weeks: fillWeeks(rows, start) };
+};
+
+/**
  * @desc Exact user count (delegates to repository.count)
  * @param {Object} [filter] - optional Mongoose filter
  * @returns {Promise<number>} exact matching user count
@@ -509,6 +520,7 @@ export { walkSendProductMail };
 
 export default {
   list,
+  adminStats,
   create,
   search,
   get,

@@ -3,6 +3,13 @@
  */
 import config from '../../../config/index.js';
 import AuditRepository from '../repositories/audit.repository.js';
+import { DEFAULT_WEEKS, WEEK_MS, weeklyWindowStart, fillWeeks } from '../../../lib/helpers/weeklyStats.js';
+
+/** Weeks in the current period the activity KPIs compare (the previous period has the same length). */
+const PERIOD_WEEKS = 4;
+
+/** Number of actions listed in the stats. */
+const TOP_ACTIONS = 5;
 
 /**
  * @function log
@@ -60,7 +67,40 @@ const list = async (filter = {}, page = 1, perPage = 20) => {
   return AuditRepository.list(cleanFilter, page, perPage);
 };
 
+/**
+ * @function adminStats
+ * @description Activity stats for the admin overview: entries per week over the
+ *   last DEFAULT_WEEKS weeks, the most frequent actions in that window, and the
+ *   distinct acting accounts in the last PERIOD_WEEKS finished weeks vs the PERIOD_WEEKS before
+ *   (the unfinished current week is left out of the KPI).
+ *   `total` is the number of entries in that window, not all time. Entries older than
+ *   `config.audit.ttlDays` are gone, so with a TTL shorter than the window the oldest
+ *   weeks read 0.
+ * @returns {Promise<{total: number, weeks: Array<{week: string, count: number}>, topActions: Array<{action: string, count: number}>, activeUsers: {current: number, previous: number, periodWeeks: number}}>}
+ */
+const adminStats = async () => {
+  const start = weeklyWindowStart(DEFAULT_WEEKS);
+  const windowEnd = new Date(start.getTime() + DEFAULT_WEEKS * WEEK_MS);
+  // KPI periods use finished weeks only: the unfinished current week is left out.
+  const finishedEnd = new Date(start.getTime() + (DEFAULT_WEEKS - 1) * WEEK_MS);
+  const currentStart = new Date(finishedEnd.getTime() - PERIOD_WEEKS * WEEK_MS);
+  const previousStart = new Date(currentStart.getTime() - PERIOD_WEEKS * WEEK_MS);
+  const [rows, topActions, active] = await Promise.all([
+    AuditRepository.weeklyCount(start),
+    AuditRepository.topActions(start, windowEnd, TOP_ACTIONS),
+    AuditRepository.activeUsers(previousStart, currentStart, finishedEnd),
+  ]);
+  const weeks = fillWeeks(rows, start, DEFAULT_WEEKS);
+  return {
+    total: weeks.reduce((sum, w) => sum + w.count, 0),
+    weeks,
+    topActions,
+    activeUsers: { ...active, periodWeeks: PERIOD_WEEKS },
+  };
+};
+
 export default {
   log,
   list,
+  adminStats,
 };
