@@ -4,6 +4,17 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## users: `avatar` is set only by the avatar upload route (2026-11-18)
+
+`PUT /api/users` no longer accepts `avatar`: the `UserUpdate` schema drops it, so a value sent there is ignored (no error). `POST /api/users/avatar` sets it, and `DELETE /api/users/avatar` clears it. Both handlers now delete the previous file only when that upload belongs to the user (`metadata.user`); a file owned by someone else is left in place while the user's `avatar` field is still updated.
+
+### Action for downstream
+
+- **Nothing to do if you use the stack's avatar routes.** The Vue stack already does.
+- **Your own client or tests that set `avatar` through `PUT /api/users`**: use `POST /api/users/avatar` instead.
+
+---
+
 ## billing: only organization owners and admins can pay — checkout, extras checkout, Stripe portal (2026-11-16)
 
 #4290: `billingAbilities` now grants `create` on `BillingCheckout`, `BillingPortal` and `BillingExtrasCheckout` only to a membership whose `role` is `owner` or `admin`. A plain `member` gets **403** on `POST /api/billing/checkout`, `POST /api/billing/portal` and `POST /api/billing/extras/checkout`, and those three rules disappear from the abilities sent to the client (signin, signup, token refresh, organization switch). Members keep `read` on `BillingSubscription`, `BillingUsage`, `BillingExtrasBalance` and `BillingExtrasLedger`. Platform admins are unchanged.

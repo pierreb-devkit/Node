@@ -109,7 +109,10 @@ const User = z.object({
 // whitelists in config) — defense-in-depth so the PUT /users route schema
 // itself rejects/strips it before the whitelist layer is ever reached, the
 // same belt-and-braces pattern `referredBy` uses above.
-const UserUpdate = User.partial().omit({ attribution: true });
+// `avatar` is EXCLUDED too: it names a stored upload, and only the avatar
+// upload route (`POST /api/users/avatar`) may set it, server-side, to a file
+// the user just uploaded. A client-chosen value is stripped here.
+const UserUpdate = User.partial().omit({ attribution: true, avatar: true });
 
 /**
  * Public signup write surface.
