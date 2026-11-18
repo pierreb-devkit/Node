@@ -4,6 +4,32 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## scripts: project hooks for lint, test and typecheck (2026-11-18)
+
+#4301: a downstream can now add its own checks without editing stack files, so `package.json` scripts and `tsconfig.check.json` stop conflicting on each stack update.
+
+- `npm run lint` ends with `npm run --if-present lint:project`.
+- `npm run test` ends with `npm run --if-present test:project`.
+- `npm run typecheck` runs `tsc -p tsconfig.check.json` (stack files, unchanged), then `tsc -p` on every `tsconfig.check.<project>.json` at the repo root. CI's typecheck step runs the same script.
+
+Nothing changes for a downstream that defines none of these: the hooks are skipped.
+
+### Action for downstream
+
+- **Extra lint or test steps you added to `lint` / `test`**: move them to your own `lint:project` / `test:project` scripts, then restore `lint` and `test` to the stack's version.
+- **Your own modules in `tsconfig.check.json`'s `include`**: restore the stack's file and create `tsconfig.check.<project>.json` instead:
+
+  ```json
+  {
+    "extends": "./tsconfig.check.json",
+    "include": ["modules/<your-module>"]
+  }
+  ```
+
+  `include` replaces the stack's list, so this file checks only your folders. Add one module folder at a time, fixing its type errors before adding the next.
+
+---
+
 ## billing: only organization owners and admins can pay — checkout, extras checkout, Stripe portal (2026-11-16)
 
 #4290: `billingAbilities` now grants `create` on `BillingCheckout`, `BillingPortal` and `BillingExtrasCheckout` only to a membership whose `role` is `owner` or `admin`. A plain `member` gets **403** on `POST /api/billing/checkout`, `POST /api/billing/portal` and `POST /api/billing/extras/checkout`, and those three rules disappear from the abilities sent to the client (signin, signup, token refresh, organization switch). Members keep `read` on `BillingSubscription`, `BillingUsage`, `BillingExtrasBalance` and `BillingExtrasLedger`. Platform admins are unchanged.
