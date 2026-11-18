@@ -14,6 +14,9 @@ export default (app) => {
   // List all users
   app.route('/api/admin/users').get(passport.authenticate('jwt', { session: false }), policy.isAllowed, admin.list);
 
+  // Stats (registered before :userId so 'stats' is never read as an id)
+  app.route('/api/admin/users/stats').get(passport.authenticate('jwt', { session: false }), policy.isAllowed, admin.stats);
+
   // Users page
   app.route('/api/admin/users/page/:userPage').get(passport.authenticate('jwt', { session: false }), policy.isAllowed, admin.list);
 

@@ -35,6 +35,21 @@ const list = async (req, res) => {
 };
 
 /**
+ * @desc Endpoint returning admin stats: total users + users created per week
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+const stats = async (req, res) => {
+  try {
+    const data = await UserService.adminStats();
+    responses.success(res, 'user stats')(data);
+  } catch (err) {
+    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+  }
+};
+
+/**
  * @desc Endpoint to get the current user in req
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
@@ -134,6 +149,7 @@ const userByPage = async (req, res, next, params) => {
 
 export default {
   list,
+  stats,
   get,
   update,
   remove,

@@ -20,6 +20,11 @@ import {
  */
 export default (app) => {
   app
+    .route('/api/admin/billing/stats')
+    .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
+    .get(billingAdmin.adminStats);
+
+  app
     .route('/api/admin/billing/refund')
     .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
     .post(model.isValid(AdminRefundRequest), billingAdmin.adminRefundCharge);

@@ -19,6 +19,8 @@ export default (app) => {
     .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
     .get(organizations.adminList);
 
+  app.route('/api/admin/organizations/stats').get(passport.authenticate('jwt', { session: false }), policy.isAllowed, organizations.adminStats);
+
   app.route('/api/admin/organizations/page/:orgPage').get(passport.authenticate('jwt', { session: false }), policy.isAllowed, organizations.adminList);
 
   // Bind param middleware

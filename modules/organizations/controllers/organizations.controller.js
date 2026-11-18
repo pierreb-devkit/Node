@@ -151,6 +151,22 @@ const adminList = async (req, res) => {
 };
 
 /**
+ * @function adminStats
+ * @description Platform admin endpoint returning total organizations + organizations created per week.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+const adminStats = async (req, res) => {
+  try {
+    const data = await OrganizationsService.adminStats();
+    responses.success(res, 'organization stats')(data);
+  } catch (err) {
+    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+  }
+};
+
+/**
  * @function organizationByPage
  * @description Middleware to parse pagination params for admin org listing.
  */
@@ -336,6 +352,7 @@ export default {
   leave,
   search,
   adminList,
+  adminStats,
   organizationByID,
   organizationByPage,
   loadMembership,

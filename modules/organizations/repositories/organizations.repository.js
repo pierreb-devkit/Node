@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import mongoose from 'mongoose';
+import { weeklyCountPipeline } from '../../../lib/helpers/weeklyStats.js';
 
 /** @type {import('mongoose').Model<Record<string, unknown>>} */
 const Organization = mongoose.model('Organization');
@@ -97,6 +98,21 @@ const findOne = (filter) => Organization.findOne(filter).exec();
 const exists = (filter) => Organization.exists(filter);
 
 /**
+ * @function count
+ * @description Exact count of organizations (admin stats).
+ * @returns {Promise<number>} number of organizations
+ */
+const count = () => Organization.countDocuments({}).exec();
+
+/**
+ * @function weeklyCreated
+ * @description Count organizations created per week since `start` (admin stats).
+ * @param {Date} start - window start (see lib/helpers/weeklyStats.js)
+ * @returns {Promise<Array<{_id: number, count: number}>>} sparse weekly buckets
+ */
+const weeklyCreated = (start) => Organization.aggregate(weeklyCountPipeline(start)).exec();
+
+/**
  * @function setPlan
  * @description Atomically update the plan field of a single organization.
  *              Used by billing crons to keep Organization.plan in sync after
@@ -120,4 +136,6 @@ export default {
   findOne,
   exists,
   setPlan,
+  count,
+  weeklyCreated,
 };
