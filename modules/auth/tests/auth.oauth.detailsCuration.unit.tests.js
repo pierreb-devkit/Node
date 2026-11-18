@@ -58,9 +58,10 @@ import RealAppError from '../../../lib/helpers/AppError.js';
  * @param {Object} [userServiceOverrides] - per-method jest.fn() overrides merged over safe defaults
  * @param {Object} [signOverrides] - merged over the default `config.sign` ({ up: true, in: true }) —
  *   e.g. `{ up: false }` to exercise branch 4's registration-closed gate
+ * @param {Boolean} [mailerConfigured] - mailer.isConfigured() (branch 3 links by email only when true)
  * @returns {Promise<{AuthController: Object, mockPassport: {authenticate: import('@jest/globals').Mock, _strategy: import('@jest/globals').Mock}}>}
  */
-const loadController = async (userServiceOverrides = {}, signOverrides = {}) => {
+const loadController = async (userServiceOverrides = {}, signOverrides = {}, mailerConfigured = false) => {
   jest.resetModules();
 
   const mockPassport = {
@@ -126,7 +127,7 @@ const loadController = async (userServiceOverrides = {}, signOverrides = {}) => 
   }));
 
   jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({
-    default: { isConfigured: jest.fn().mockReturnValue(false), sendMail: jest.fn() },
+    default: { isConfigured: jest.fn().mockReturnValue(mailerConfigured), sendMail: jest.fn() },
   }));
 
   jest.unstable_mockModule('../../../lib/helpers/responses.js', () => ({
@@ -224,7 +225,7 @@ describe('checkOAuthUserProfile — details curation at the four raw-error catch
     const { AuthController } = await loadController({
       search: jest.fn().mockResolvedValue([]),
       linkProviderByEmail: jest.fn().mockRejectedValue(buildRawInternalError()),
-    });
+    }, {}, true);
 
     let caught;
     try {

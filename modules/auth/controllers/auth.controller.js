@@ -352,16 +352,20 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
   //    by a later OAuth signin (issue #3504). If a matching email exists but is
   //    not locally verified, we reject with VALIDATION_ERROR rather than fall
   //    through to branch 4 (which would later fail on the unique-email index).
+  //    Without a mailer, local signup and email change set emailVerified: true
+  //    for any typed email, so the local flag proves nothing: never link by
+  //    email then, and treat any existing local account as unverified.
   if (profil.email && profil.emailVerifiedByProvider) {
     try {
-      const linked = await UserService.linkProviderByEmail(profil.email, provider, profil.providerData);
+      const canLinkByEmail = isMailerConfigured();
+      const linked = canLinkByEmail ? await UserService.linkProviderByEmail(profil.email, provider, profil.providerData) : null;
       if (linked) return linked;
       // Link returned null → either no local user with this email, or the local
       // user exists but is not emailVerified. Disambiguate so we can reject the
       // squatter case explicitly instead of falling through to branch 4 (which
       // would later fail on the unique-email index with a less actionable error).
       const existing = await UserService.findByEmail(profil.email);
-      if (existing && !existing.emailVerified) {
+      if (existing && (!canLinkByEmail || !existing.emailVerified)) {
         // Deliberately-authored, user-facing text (issue #4059 review item 1) —
         // passed via `description`, NOT smuggled through `details.message`, so it
         // is never subject to `getDescription`'s production gate (mirrors how

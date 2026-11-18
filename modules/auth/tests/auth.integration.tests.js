@@ -17,6 +17,7 @@ import logger from '../../../lib/services/logger.js';
  */
 describe('Auth integration tests:', () => {
   let UserService = null;
+  let mails = null;
   let AuthService = null;
   let app; // Express app instance for fresh agents inside Signout block (#3502)
   let agent;
@@ -32,6 +33,7 @@ describe('Auth integration tests:', () => {
       const init = await bootstrap();
       UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
       AuthService = (await import(path.resolve('./modules/auth/services/auth.service.js'))).default;
+      mails = (await import(path.resolve('./lib/helpers/mailer/index.js'))).default;
       app = init.app;
       agent = request.agent(app);
     } catch (err) {
@@ -951,7 +953,14 @@ describe('Auth integration tests:', () => {
         providerData: { sub: 'google-link-sub-12345', email_verified: true },
         emailVerifiedByProvider: true,
       };
-      const linked = await AuthController.checkOAuthUserProfile(profil, 'sub', 'google');
+      // Linking by email requires a configured mailer (emailVerified proves nothing without one).
+      const mailerSpy = jest.spyOn(mails, 'isConfigured').mockReturnValue(true);
+      let linked;
+      try {
+        linked = await AuthController.checkOAuthUserProfile(profil, 'sub', 'google');
+      } finally {
+        mailerSpy.mockRestore();
+      }
 
       expect(linked).toBeDefined();
       expect(linked.id).toBe(localUser.id);
@@ -1240,7 +1249,14 @@ describe('Auth integration tests:', () => {
           providerData: { sub: 'google-gated-b3-sub', email_verified: true },
           emailVerifiedByProvider: true,
         };
-        const linked = await AuthController.checkOAuthUserProfile(profil, 'sub', 'google');
+        // Linking by email requires a configured mailer (emailVerified proves nothing without one).
+        const mailerSpy = jest.spyOn(mails, 'isConfigured').mockReturnValue(true);
+        let linked;
+        try {
+          linked = await AuthController.checkOAuthUserProfile(profil, 'sub', 'google');
+        } finally {
+          mailerSpy.mockRestore();
+        }
         expect(linked).toBeDefined();
         expect(linked.id).toBe(localUser.id);
         const brutLinked = await UserService.getBrut({ id: linked.id });
