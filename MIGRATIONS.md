@@ -6,13 +6,14 @@ Breaking changes and upgrade notes for downstream projects.
 
 ## auth: an OAuth sign-in links to an existing local account by email only when a mailer is configured (2026-11-18)
 
-`checkOAuthUserProfile` attaches a provider identity to an existing local account with the same email only when `mailer.isConfigured()` is true. Without a mailer, local signup and email change mark any email as verified, so that flag is not trusted: an OAuth sign-in whose email matches an existing local account is refused with the same `VALIDATION_ERROR` as an unverified local account. A sign-in whose email matches no account still creates one, and an identity already linked still signs in.
+`checkOAuthUserProfile` attaches a provider identity to an existing local account with the same email only when `mailer.isConfigured()` is true. Without a mailer, local signup and email change mark any email as verified, so that flag is not trusted: an OAuth sign-in whose email matches an existing local account is refused with the same `VALIDATION_ERROR` as an unverified local account, with the message "An account with this email already exists. Sign in with your password." A sign-in whose email matches no account still creates one, and an identity already linked still signs in.
 
 ### Action for downstream
 
 - **Mailer configured**: nothing to do.
 - **No mailer and OAuth on**: users who signed up locally keep signing in with their password; configure a mailer if they must be able to add Google or Apple sign-in by email.
 - **Your own tests that link an OAuth sign-in to a local account by email**: make `mailer.isConfigured()` return `true` in them.
+- **Ran without a mailer, then added one**: the check reads the mailer state at sign-in time, so accounts created while no mailer was configured keep their automatic `emailVerified: true` and become linkable by email as soon as a mailer is added. Review the accounts created in that period, or ask them to verify their email again, before relying on OAuth email linking.
 
 ---
 

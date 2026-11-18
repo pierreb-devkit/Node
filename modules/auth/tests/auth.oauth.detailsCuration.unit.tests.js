@@ -427,7 +427,7 @@ describe('checkOAuthUserProfile → oauthCallback → oauthErrorRedirect — the
     const { AuthController, mockPassport } = await loadController({
       linkProviderByEmail: jest.fn().mockResolvedValue(null),
       findByEmail: jest.fn().mockResolvedValue({ emailVerified: false }),
-    });
+    }, {}, true);
 
     process.env.NODE_ENV = 'production';
     const { payload } = await runRealOAuthError(AuthController, mockPassport, [
@@ -437,6 +437,23 @@ describe('checkOAuthUserProfile → oauthCallback → oauthErrorRedirect — the
     ]);
 
     const AUTHORED_MESSAGE = 'A pending account with this email is not verified. Verify the original signup first or contact support.';
+    expect(payload.description).toBe(AUTHORED_MESSAGE);
+    expect(payload.details).toEqual({ message: AUTHORED_MESSAGE });
+  });
+
+  test('branch 3 without a mailer (existing local account) — the sign-in-with-password notice reaches the client in production', async () => {
+    const { AuthController, mockPassport } = await loadController({
+      findByEmail: jest.fn().mockResolvedValue({ emailVerified: true }),
+    });
+
+    process.env.NODE_ENV = 'production';
+    const { payload } = await runRealOAuthError(AuthController, mockPassport, [
+      { providerData: { sub: 'p1' }, email: 'user@example.com', emailVerifiedByProvider: true },
+      'sub',
+      'google',
+    ]);
+
+    const AUTHORED_MESSAGE = 'An account with this email already exists. Sign in with your password.';
     expect(payload.description).toBe(AUTHORED_MESSAGE);
     expect(payload.details).toEqual({ message: AUTHORED_MESSAGE });
   });
@@ -456,7 +473,7 @@ describe('checkOAuthUserProfile → oauthCallback → oauthErrorRedirect — the
     expect(payload.details).toEqual({ message: 'Registration is currently deactivated' });
   });
 
-  test('control — branch 1\'s raw internal DB text still does NOT reach the client in production, proving the description bypass is scoped to these two messages only', async () => {
+  test('control — branch 1\'s raw internal DB text still does NOT reach the client in production, proving the description bypass is scoped to these authored messages only', async () => {
     const rawInternal = Object.assign(new Error(INTERNAL_TEXT), { code: 'ECONNREFUSED', host: '10.0.4.12' });
     const { AuthController, mockPassport } = await loadController({
       search: jest.fn().mockRejectedValue(rawInternal),
