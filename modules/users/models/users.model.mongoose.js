@@ -3,6 +3,8 @@
  */
 import mongoose from 'mongoose';
 
+import config from '../../../config/index.js';
+
 const Schema = mongoose.Schema;
 mongoose.Promise = Promise;
 
@@ -25,7 +27,7 @@ const UserMongoose = new Schema(
       lowercase: true,
     },
     avatar: String,
-    roles: [String],
+    roles: [{ type: String, enum: /** @type {string[]} */ (config.whitelists.users.roles) }],
     /* Provider */
     provider: String,
     providerData: {},

@@ -167,9 +167,54 @@ const SignupUser = z.object({
   attribution: User.shape.attribution,
 }).strict();
 
+/**
+ * Admin user-update write surface (`PUT /api/admin/users/:userId`): the fields of
+ * `config.whitelists.users.updateAdmin` that `User` declares, all optional. Unknown
+ * keys are stripped (not rejected) so a client sending a whole user object keeps working.
+ */
+const UserAdminUpdate = User.pick(
+  /** @type {Partial<Record<keyof typeof User.shape, true>>} */ (
+    Object.fromEntries(config.whitelists.users.updateAdmin.filter((key) => key in User.shape).map((key) => [key, true]))
+  ),
+).partial();
+
+/**
+ * A password field: presence, type and size only. Strength is checked by
+ * `AuthService.checkPassword` in the controller, which owns the "Password too weak." error.
+ */
+const passwordField = z.string().min(1, 'Password must not be blank').max(config.zxcvbn.maxSize);
+
+/**
+ * `POST /api/auth/forgot` body.
+ */
+const PasswordForgot = z.object({
+  email: z.string().trim().min(1, 'Mail field must not be blank').max(254),
+});
+
+/**
+ * `POST /api/auth/reset` body.
+ */
+const PasswordReset = z.object({
+  token: z.string().min(1, 'Token must not be blank').max(2048),
+  newPassword: passwordField,
+});
+
+/**
+ * `POST /api/users/password` body.
+ */
+const PasswordUpdate = z.object({
+  currentPassword: z.string().max(config.zxcvbn.maxSize),
+  newPassword: passwordField,
+  verifyPassword: z.string().max(config.zxcvbn.maxSize),
+});
+
 export default {
   User,
   UserUpdate,
+  UserAdminUpdate,
+  PasswordForgot,
+  PasswordReset,
+  PasswordUpdate,
   SignupUser,
   Attribution,
   EmailPreferences,

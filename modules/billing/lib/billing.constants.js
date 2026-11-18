@@ -14,6 +14,26 @@ import config from '../../../config/index.js';
  */
 export const SENTINEL_PENDING = '__pending__';
 
+/**
+ * Extra-balance ledger entry kinds (balance mutation type).
+ */
+export const LEDGER_KINDS = {
+  TOPUP: 'topup',
+  DEBIT: 'debit',
+  REFUND: 'refund',
+  EXPIRATION: 'expiration',
+  ADJUSTMENT: 'adjustment',
+};
+
+/**
+ * Extra-balance grant sources (provenance of a topup), distinct from LEDGER_KINDS.
+ */
+export const GRANT_SOURCES = {
+  SIGNUP_GRANT: 'signup_grant',
+  ADJUSTMENT: 'adjustment',
+  REFERRAL: 'referral',
+};
+
 export const DEFAULT_METER_RUN_BASE = 1;
 export const DEFAULT_CRON_JITTER_MAX_MS = 60_000;
 export const DEFAULT_PLAN_CHANGE_PRESERVE_USAGE = true;

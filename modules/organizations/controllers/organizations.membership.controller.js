@@ -5,6 +5,7 @@ import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
 import isGlobalAdmin from '../../../lib/helpers/isGlobalAdmin.js';
 import MembershipService from '../services/organizations.membership.service.js';
+import MembershipSchema from '../models/organizations.membership.schema.js';
 import { MEMBERSHIP_ROLES } from '../lib/constants.js';
 
 /**
@@ -16,9 +17,11 @@ import { MEMBERSHIP_ROLES } from '../lib/constants.js';
  */
 const list = async (req, res) => {
   try {
-    const page = req.query.page != null ? Number(req.query.page) : undefined;
-    const perPage = req.query.perPage != null ? Number(req.query.perPage) : undefined;
-    const search = req.query.search || undefined;
+    const parsed = MembershipSchema.MembershipListQuery.safeParse(req.query);
+    if (!parsed.success) {
+      return responses.error(res, 400, 'Bad Request', 'Invalid query parameters')(parsed.error);
+    }
+    const { page, perPage, search } = parsed.data;
     const members = await MembershipService.list(req.organization._id, search, page, perPage);
     responses.success(res, 'membership list')(members);
   } catch (err) {

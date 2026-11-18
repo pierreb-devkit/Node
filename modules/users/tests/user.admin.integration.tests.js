@@ -275,8 +275,8 @@ describe('User admin integration tests:', () => {
 
       try {
         const userUpdate = {
-          firstName: 'admin_update_first',
-          lastName: 'admin_update_last',
+          firstName: 'AdminUpdateFirst',
+          lastName: 'AdminUpdateLast',
           roles: ['admin'],
         };
 
@@ -284,8 +284,8 @@ describe('User admin integration tests:', () => {
         expect(result.body.type).toBe('success');
         expect(result.body.message).toBe('user updated');
         expect(result.body.data).toBeInstanceOf(Object);
-        expect(result.body.data.firstName).toBe('admin_update_first');
-        expect(result.body.data.lastName).toBe('admin_update_last');
+        expect(result.body.data.firstName).toBe('AdminUpdateFirst');
+        expect(result.body.data.lastName).toBe('AdminUpdateLast');
         expect(result.body.data.roles).toBeInstanceOf(Array);
         expect(result.body.data.roles).toHaveLength(1);
         expect(result.body.data.roles).toEqual(expect.arrayContaining(['admin']));
@@ -317,11 +317,11 @@ describe('User admin integration tests:', () => {
 
       try {
         const userUpdate = {
-          firstName: 'admin_ref_first',
+          firstName: 'AdminRefFirst',
           referredBy: '64b2f0000000000000000def', // attacker-supplied referrer id
         };
         const result = await agent.put(`/api/admin/users/${userEdited._id}`).send(userUpdate).expect(200);
-        expect(result.body.data.firstName).toBe('admin_ref_first');
+        expect(result.body.data.firstName).toBe('AdminRefFirst');
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -330,7 +330,7 @@ describe('User admin integration tests:', () => {
       try {
         // Raw read — the whitelisted firstName landed, referredBy did NOT.
         const result = await UserService.getBrut({ id: userEdited._id });
-        expect(result.firstName).toBe('admin_ref_first');
+        expect(result.firstName).toBe('AdminRefFirst');
         expect(result.referredBy == null).toBe(true);
       } catch (err) {
         console.log(err);
@@ -478,6 +478,11 @@ describe('User admin integration tests:', () => {
       expect(result.body.type).toBe('error');
       expect(result.body.message).toBe('Unprocessable Entity');
       expect(result.body.description).toBe('DB error.');
+    });
+
+    test('should reject an admin update with a role outside the whitelist', async () => {
+      const result = await agent.put(`/api/admin/users/${targetUser._id}`).send({ roles: ['root'] }).expect(422);
+      expect(result.body.message).toBe('Schema validation error');
     });
 
     test('should return 422 when admin remove fails', async () => {

@@ -2,7 +2,7 @@
  * Module dependencies
  */
 import mongoose from 'mongoose';
-import { MEMBERSHIP_STATUSES, PENDING_SOURCES } from '../lib/constants.js';
+import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES, PENDING_SOURCES } from '../lib/constants.js';
 
 const Schema = mongoose.Schema;
 
@@ -23,13 +23,13 @@ const MembershipMongoose = new Schema(
     },
     role: {
       type: String,
-      enum: ['owner', 'admin', 'member'],
-      default: 'member',
+      enum: Object.values(MEMBERSHIP_ROLES),
+      default: MEMBERSHIP_ROLES.MEMBER,
     },
     status: {
       type: String,
-      enum: ['active', 'pending'],
-      default: 'active',
+      enum: Object.values(MEMBERSHIP_STATUSES),
+      default: MEMBERSHIP_STATUSES.ACTIVE,
     },
     // Consent discriminator for PENDING memberships. Intentionally NO default:
     // a forgotten `source` on a PENDING row must FAIL (pre-validate guard below),

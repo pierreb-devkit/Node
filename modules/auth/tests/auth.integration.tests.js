@@ -379,8 +379,8 @@ describe('Auth integration tests:', () => {
             email: '',
           })
           .expect(422);
-        expect(result.body.message).toEqual('Unprocessable Entity');
-        expect(result.body.description).toBe('Mail field must not be blank');
+        expect(result.body.message).toEqual('Schema validation error');
+        expect(result.body.description).toBe('Mail field must not be blank. ');
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -1319,11 +1319,12 @@ describe('Auth integration tests:', () => {
       }
     });
 
-    test('should return 400 when token or password fields are missing', async () => {
+    test('should return 422 when token or password fields are missing', async () => {
       try {
-        const result = await agent.post('/api/auth/reset').send({ newPassword: 'NewP@ss123' }).expect(400);
-        expect(result.body.message).toBe('Bad Request');
-        expect(result.body.description).toBe('Password or Token fields must not be blank');
+        const result = await agent.post('/api/auth/reset').send({ newPassword: 'NewP@ss123' }).expect(422);
+        expect(result.body.message).toBe('Schema validation error');
+        // the rejected body is never echoed back with its secrets
+        expect(result.body.error).not.toContain('NewP@ss123');
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
