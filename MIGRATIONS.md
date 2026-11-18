@@ -26,7 +26,7 @@ Nothing changes for a downstream that defines none of these: the hooks are skipp
   }
   ```
 
-  `include` replaces the stack's list, so this file checks only your folders. Add one module folder at a time, fixing its type errors before adding the next.
+  `include` replaces the stack's list, so this file starts from your folders only; files they import from the stack may still be checked too. Add one module folder at a time, fixing its type errors before adding the next.
 
 ---
 
