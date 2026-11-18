@@ -49,7 +49,7 @@ Both avatar handlers now delete the previous file only when that upload belongs 
 
 ## auth: an OAuth sign-in links to an existing local account by email only when a mailer is configured (2026-11-18)
 
-`checkOAuthUserProfile` attaches a provider identity to an existing local account with the same email only when `mailer.isConfigured()` is true. Without a mailer, local signup and email change mark any email as verified, so that flag is not trusted: an OAuth sign-in whose email matches an existing local account is refused with the same `VALIDATION_ERROR` as an unverified local account, with the message "An account with this email already exists. Sign in with your password." A sign-in whose email matches no account still creates one, and an identity already linked still signs in.
+`checkOAuthUserProfile` attaches a provider identity to an existing local account with the same email only when `mailer.isConfigured()` is true. Without a mailer, local signup and email change mark any email as verified, so that flag is not trusted: an OAuth sign-in whose email matches an existing account (local, or created through another provider) is refused with `VALIDATION_ERROR` (internal message "oAuth, cannot link by email without a mailer"), and the user sees "An account with this email already exists. Sign in the way you first signed up." A sign-in whose email matches no account still creates one, and an identity already linked still signs in.
 
 ### Action for downstream
 
