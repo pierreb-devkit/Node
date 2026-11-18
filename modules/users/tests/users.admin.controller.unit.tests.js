@@ -17,6 +17,7 @@ jest.unstable_mockModule('../services/users.service.js', () => ({
     getBrut: jest.fn(),
     update: jest.fn(),
     remove: jest.fn(),
+    adminStats: jest.fn(),
     removeSensitive: mockRemoveSensitive,
   },
 }));
@@ -52,6 +53,8 @@ jest.unstable_mockModule('../../../lib/helpers/responses.js', () => ({
 
 // ── lazy import after mocks are registered ────────────────────────────────────
 const { default: controller } = await import('../controllers/users.admin.controller.js');
+const { default: UserService } = await import('../services/users.service.js');
+const { default: logger } = await import('../../../lib/services/logger.js');
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 const buildMockUser = () => ({
@@ -144,6 +147,20 @@ describe('users.admin.controller unit tests:', () => {
       await controller.get(req, res);
       const responseUser = res.json.mock.calls[0][0].data;
       expect(responseUser).toEqual({ memberships: [] });
+    });
+  });
+
+  describe('stats', () => {
+    test('should answer 422 and log the cause when the stats read fails', async () => {
+      const logSpy = jest.spyOn(logger, 'error').mockImplementation(() => {});
+      UserService.adminStats.mockRejectedValueOnce(new Error('aggregate failed'));
+      const res = { status: jest.fn(), json: jest.fn() };
+      res.status.mockReturnValue(res);
+      await controller.stats({}, res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith({ message: 'Unable to compute user stats' });
+      expect(logSpy).toHaveBeenCalledWith('[stats] user stats failed', expect.objectContaining({ message: 'aggregate failed' }));
+      logSpy.mockRestore();
     });
   });
 });

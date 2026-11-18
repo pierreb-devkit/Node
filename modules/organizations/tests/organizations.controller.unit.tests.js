@@ -7,11 +7,13 @@ const mockCrudRemove = jest.fn();
 const mockCrudSwitchOrganization = jest.fn();
 const mockListByUser = jest.fn();
 const mockLeave = jest.fn();
+const mockAdminStats = jest.fn();
 
 jest.unstable_mockModule('../services/organizations.crud.service.js', () => ({
   default: {
     remove: mockCrudRemove,
     switchOrganization: mockCrudSwitchOrganization,
+    adminStats: mockAdminStats,
   },
 }));
 
@@ -42,6 +44,7 @@ jest.unstable_mockModule('../../users/services/users.service.js', () => ({
 }));
 
 const { default: organizationsController } = await import('../controllers/organizations.controller.js');
+const { default: logger } = await import('../../../lib/services/logger.js');
 
 /**
  * Unit tests for the organizations controller remove handler.
@@ -254,6 +257,19 @@ describe('Organizations controller unit tests:', () => {
 
       expect(mockLeave).toHaveBeenCalledTimes(1);
       expect(res.status).toHaveBeenCalledWith(422);
+    });
+  });
+
+  describe('adminStats', () => {
+    test('should answer 422 and log the cause when the stats read fails', async () => {
+      const logSpy = jest.spyOn(logger, 'error').mockImplementation(() => {});
+      mockAdminStats.mockRejectedValueOnce(new Error('aggregate failed'));
+      const res = mockRes();
+      await organizationsController.adminStats(mockReq(), res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json.mock.calls[0][0].description).toBe('Unable to compute organization stats');
+      expect(logSpy).toHaveBeenCalledWith('[stats] organization stats failed', expect.objectContaining({ message: 'aggregate failed' }));
+      logSpy.mockRestore();
     });
   });
 });
