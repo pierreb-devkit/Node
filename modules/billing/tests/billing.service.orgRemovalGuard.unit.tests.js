@@ -48,6 +48,24 @@ describe('BillingService.assertNoLiveSubscription (#4321):', () => {
     await expect(BillingService.assertNoLiveSubscription(orgId)).resolves.toBeUndefined();
   });
 
+  test.each(['active', 'trialing', 'past_due'])('allows removal of a %s subscription cancelled at a set date (cancelAt, portal cancel) with cancelAtPeriodEnd false', async (status) => {
+    mockFindByOrganization.mockResolvedValue({
+      plan: 'pro',
+      status,
+      stripeSubscriptionId: 'sub_123',
+      cancelAtPeriodEnd: false,
+      cancelAt: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+    });
+
+    await expect(BillingService.assertNoLiveSubscription(orgId)).resolves.toBeUndefined();
+  });
+
+  test('still refuses when cancelAt is null and cancelAtPeriodEnd false', async () => {
+    mockFindByOrganization.mockResolvedValue({ plan: 'pro', status: 'active', stripeSubscriptionId: 'sub_123', cancelAtPeriodEnd: false, cancelAt: null });
+
+    await expect(BillingService.assertNoLiveSubscription(orgId)).rejects.toMatchObject({ status: 409 });
+  });
+
   test('still refuses when cancelAtPeriodEnd is explicitly false', async () => {
     mockFindByOrganization.mockResolvedValue({ plan: 'pro', status: 'active', stripeSubscriptionId: 'sub_123', cancelAtPeriodEnd: false });
 

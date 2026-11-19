@@ -12,7 +12,7 @@ import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.
 import { isObjectId } from '../../../lib/helpers/zod.js';
 import { isDuplicateKeyError } from '../lib/billing.errors.js';
 import { SENTINEL_PENDING } from '../lib/billing.constants.js';
-import { effectivePlanOf, hasLiveSubscription } from '../lib/billing.statuses.js';
+import { effectivePlanOf, hasLiveSubscription, isSetToEnd } from '../lib/billing.statuses.js';
 
 /**
  * Validate that a redirect URL is safe for the current environment.
@@ -410,7 +410,8 @@ const getExtrasBalance = (organizationId) => BillingExtraBalanceRepository.getBa
  *       is never left charged for an organization that no longer exists. Local DB only —
  *       no provider call, nothing is cancelled. "Live" is the shared hasLiveSubscription
  *       rule (also used by the checkout block). A subscription already set to end
- *       (`cancelAtPeriodEnd`) counts as cancelled: the owner did what the refusal asks,
+ *       (the shared isSetToEnd rule: `cancelAtPeriodEnd`, or a `cancelAt` date as a
+ *       portal cancel writes) counts as cancelled: the owner did what the refusal asks,
  *       so the removal is allowed.
  * @param {String} organizationId - The organization ID
  * @param {{ name?: string }} [organization] - The organization being removed; its name goes in the refusal.
@@ -419,7 +420,7 @@ const getExtrasBalance = (organizationId) => BillingExtraBalanceRepository.getBa
  */
 const assertNoLiveSubscription = async (organizationId, organization) => {
   const sub = await getLocalSubscription(String(organizationId));
-  if (!hasLiveSubscription(sub) || sub.cancelAtPeriodEnd === true) return;
+  if (!hasLiveSubscription(sub) || isSetToEnd(sub)) return;
   const message = organization?.name
     ? `Cancel the subscription of "${organization.name}" before removing it.`
     : "Cancel the organization's subscription before removing it.";

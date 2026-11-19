@@ -23,6 +23,16 @@ export const hasLiveSubscription = (subscription) =>
   Boolean(subscription?.stripeSubscriptionId && liveStatuses.includes(subscription.status));
 
 /**
+ * The one rule for "this subscription is already set to end": the provider will stop
+ * charging on its own. Stripe records a cancellation two ways and the webhook stores
+ * both: at period end (`cancelAtPeriodEnd: true`) or at a set date (`cancelAt`, what a
+ * customer-portal cancel writes, with `cancelAtPeriodEnd` left false).
+ * @param {{ cancelAtPeriodEnd?: boolean, cancelAt?: Date|string|null }|null|undefined} subscription - Local subscription document.
+ * @returns {boolean} true when a cancellation is scheduled.
+ */
+export const isSetToEnd = (subscription) => Boolean(subscription?.cancelAtPeriodEnd === true || subscription?.cancelAt);
+
+/**
  * The one rule for the plan an organization is entitled to: the subscription's plan
  * while its status is active or trialing, 'free' otherwise (no subscription, no plan,
  * or any other status).

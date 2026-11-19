@@ -60,4 +60,4 @@ Registered by the stack today:
 
 | Module | Guard |
 | --- | --- |
-| `billing` | refuses with **409** `ORGANIZATION_HAS_LIVE_SUBSCRIPTION` while the organization's paid subscription is `active`, `trialing` or `past_due` — description `Cancel the subscription of "<organization name>" before removing it.` A free organization, a canceled subscription, or one already set to end at period end (`cancelAtPeriodEnd`) is not refused. |
+| `billing` | refuses with **409** `ORGANIZATION_HAS_LIVE_SUBSCRIPTION` while the organization's paid subscription is `active`, `trialing` or `past_due` — description `Cancel the subscription of "<organization name>" before removing it.` A free organization, a canceled subscription, or one already set to end (`cancelAtPeriodEnd`, or a `cancelAt` date as a customer-portal cancel writes) is not refused. |
