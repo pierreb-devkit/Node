@@ -143,7 +143,6 @@ const findByStripeSubscriptionId = (stripeSubscriptionId) => {
  * @param {String} organizationId - The organization ID.
  * @returns {Promise<{plan: string, status: string}|null>|null} A lean plain object, or null (also returned synchronously for an invalid id).
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const findPlan = (organizationId) => {
   if (!mongoose.Types.ObjectId.isValid(organizationId)) return null;
   return Subscription.findOne({ organization: organizationId }, { plan: 1, status: 1 }).lean().exec();
@@ -159,7 +158,6 @@ const findPlan = (organizationId) => {
  * @returns {PromiseLike<Array<{organization: import('mongoose').Types.ObjectId, currentPeriodStart: Date, lastResetAt: Date|null}>>}
  *          A thenable lean query (awaited by the caller).
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const findAllDueForResetByLastReset = (now) => {
   if (!(now instanceof Date)) throw new TypeError('now must be a Date instance');
   const threshold = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -184,7 +182,6 @@ const findAllDueForResetByLastReset = (now) => {
  * @param {Date} date - The timestamp to persist.
  * @returns {Promise<Object|null>} The updated subscription document, or null if the id is invalid.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const updateLastResetAt = (organizationId, date) => {
   if (!mongoose.Types.ObjectId.isValid(organizationId)) return null;
   if (!(date instanceof Date)) throw new TypeError('date must be a Date instance');
@@ -206,7 +203,6 @@ const updateLastResetAt = (organizationId, date) => {
  * @returns {PromiseLike<Array<{_id: import('mongoose').Types.ObjectId, organization: import('mongoose').Types.ObjectId}>>}
  *          A thenable lean query (awaited by the caller).
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const findStaleDunning = (threshold) => {
   if (!(threshold instanceof Date)) throw new TypeError('threshold must be a Date instance');
   return Subscription.find(
@@ -228,7 +224,6 @@ const findStaleDunning = (threshold) => {
  * @param {Date} threshold - Only mark unpaid when pastDueSince <= threshold.
  * @returns {Promise<Object|null>} The updated subscription document, null if id is invalid or condition unmet.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const markUnpaid = (id, threshold) => {
   if (!id || !mongoose.Types.ObjectId.isValid(id)) return null;
   if (!(threshold instanceof Date)) throw new TypeError('threshold must be a Date instance');
@@ -269,7 +264,6 @@ const markUnpaid = (id, threshold) => {
  * @returns {Promise<Object|null>} Updated doc, or null if id invalid, event is stale, or
  *              `extraMatch` no longer matches.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const updateIfEventNewer = (id, eventCreatedAt, eventId, fields, family = 'subscription', extraMatch = {}) => {
   if (!id || !mongoose.Types.ObjectId.isValid(id)) return null;
 
@@ -330,7 +324,6 @@ const updateIfEventNewer = (id, eventCreatedAt, eventId, fields, family = 'subsc
  * @param {string} adminUserId - The admin user ObjectId (string) who triggered the bump (for audit).
  * @returns {Promise<Object|null>} Updated subscription doc, or null if id is invalid.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const adminUpdatePlanOnly = (id, planId, adminUserId) => {
   if (!id || !mongoose.Types.ObjectId.isValid(id)) return null;
   // Validate adminUserId before persisting to adminUpdatedBy (ObjectId field).
@@ -363,7 +356,6 @@ const adminUpdatePlanOnly = (id, planId, adminUserId) => {
  * @param {number} limit - Page size.
  * @returns {Promise<Object[]>} Lean subscription documents.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const findPageForReconciliation = (statuses, lastSeenId, limit) => {
   const filter = {
     status: { $in: statuses },

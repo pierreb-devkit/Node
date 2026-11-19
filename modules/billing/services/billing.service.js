@@ -42,7 +42,6 @@ const isAllowedUrl = (url) => {
  * @param {Object} organization - Organization document.
  * @returns {Promise<Object>} Subscription document with stripeCustomerId.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const _ensureStripeCustomer = async (stripe, organization) => {
   let subscription = await SubscriptionRepository.findByOrganization(organization._id);
   if (subscription?.stripeCustomerId) return subscription;
@@ -244,7 +243,6 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
  *        Max 180 chars (Stripe idempotency key limit is 255; prefix consumes ~64 chars).
  * @returns {Promise<{url: String}>} Object with the Checkout session URL
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const createExtrasCheckout = async (organization, packId, successUrl, cancelUrl, intentId) => {
   const stripe = getStripe();
   if (!stripe) throw new Error('Stripe is not configured');
@@ -325,7 +323,6 @@ const createExtrasCheckout = async (organization, packId, successUrl, cancelUrl,
  * @param {String|null} stripeSubscriptionId - Stripe subscription ID (sub_xxx)
  * @returns {Promise<Object|null>} Live fields or null when id is absent / Stripe not configured
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const fetchSubscriptionDetails = async (stripeSubscriptionId) => {
   if (!stripeSubscriptionId) return null;
   const stripe = getStripe();
@@ -353,7 +350,6 @@ const fetchSubscriptionDetails = async (stripeSubscriptionId) => {
  * @param {String} organizationId - The organization ID
  * @returns {Promise<Object|null>} Local subscription document or null
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const getLocalSubscription = (organizationId) => SubscriptionRepository.findByOrganization(organizationId);
 
 /**
@@ -363,7 +359,6 @@ const getLocalSubscription = (organizationId) => SubscriptionRepository.findByOr
  * @param {String} organizationId - The organization ID
  * @returns {Promise<Object|null>} Merged subscription object or null
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const getSubscription = async (organizationId) => {
   const sub = await SubscriptionRepository.findByOrganization(organizationId);
   if (!sub) return null;

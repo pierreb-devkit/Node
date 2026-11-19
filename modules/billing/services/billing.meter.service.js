@@ -37,7 +37,6 @@ import {
  * @param {string} ratioVersion - Specific plan version for the ratio lookup.
  * @returns {{totalUnits: number, breakdown: Object}} Computed units and per-feature breakdown.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const unitsFromCosts = (costs, planId, ratioVersion) => {
   if (costs == null || typeof costs !== 'object') {
     return { totalUnits: getMeterRunBase(), breakdown: {} };
@@ -170,7 +169,6 @@ const capBreakdown = (breakdown, cappedUnits, originalTotal) => {
  * @returns {Promise<{applied: boolean, meterUsed: number, extrasConsumed: number, reason?: string}>}
  * @throws {Error} If stepKey is non-null/undefined and does not match the expected format.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const attribute = async (history, organizationId, options = {}) => {
   // Fast-path: when metering is disabled, skip all validation and return immediately.
   if (!config?.billing?.meterMode) {

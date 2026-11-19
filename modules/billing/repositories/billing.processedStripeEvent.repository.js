@@ -9,7 +9,6 @@ import { isDuplicateKeyError } from '../lib/billing.errors.js';
  * Deferred to keep unit tests importable before model registration.
  * @returns {import('mongoose').Model} The registered ProcessedStripeEvent model.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const ProcessedStripeEvent = () => mongoose.model('ProcessedStripeEvent');
 
 /**
@@ -33,7 +32,6 @@ const ProcessedStripeEvent = () => mongoose.model('ProcessedStripeEvent');
  * @param {string} type - Stripe event type (e.g. 'checkout.session.completed').
  * @returns {Promise<{recorded: boolean, retry?: boolean, reason?: string}>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const tryRecord = async (eventId, type) => {
   if (typeof eventId !== 'string' || eventId.trim() === '') {
     throw new Error('invalid argument: eventId must be a non-empty string');
@@ -75,7 +73,6 @@ const tryRecord = async (eventId, type) => {
  * @param {string} eventId - Stripe event ID to look up.
  * @returns {Promise<boolean>} True if the event was already recorded, false otherwise.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const wasProcessed = async (eventId) => {
   if (typeof eventId !== 'string' || eventId.trim() === '') return false;
   const doc = await ProcessedStripeEvent().findOne({ eventId }).lean();
@@ -91,7 +88,6 @@ const wasProcessed = async (eventId) => {
  * @param {string} eventId - Stripe event ID to remove.
  * @returns {Promise<{deleted: boolean}>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const deleteByEventId = async (eventId) => {
   if (typeof eventId !== 'string' || eventId.trim() === '') {
     throw new Error('invalid argument: eventId must be a non-empty string');
@@ -112,7 +108,6 @@ const deleteByEventId = async (eventId) => {
  *   the string value is stored as-is.
  * @returns {Promise<Object|null>} Updated document or null if not found.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const incrementAttempts = async (eventId, errorOrMessage) => {
   if (typeof eventId !== 'string' || eventId.trim() === '') {
     throw new Error('invalid argument: eventId must be a non-empty string');
@@ -147,7 +142,6 @@ const incrementAttempts = async (eventId, errorOrMessage) => {
  * @param {string} eventId - Stripe event ID.
  * @returns {Promise<Object|null>} Updated document or null if not found.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const markDeadLetter = async (eventId) => {
   if (typeof eventId !== 'string' || eventId.trim() === '') {
     throw new Error('invalid argument: eventId must be a non-empty string');
@@ -168,7 +162,6 @@ const markDeadLetter = async (eventId) => {
  * @param {number} [opts.limit=20] - Items per page (max 100).
  * @returns {Promise<{items: Array, total: number, page: number, limit: number}>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const listDeadLetters = async ({ page = 1, limit = 20 } = {}) => {
   const parsedPage = Math.floor(Number(page));
   const parsedLimit = Math.floor(Number(limit));
@@ -199,7 +192,6 @@ const listDeadLetters = async ({ page = 1, limit = 20 } = {}) => {
  * @param {string} eventId - Stripe event ID to purge.
  * @returns {Promise<{purged: boolean}>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const purgeDeadLetterByEventId = async (eventId) => {
   if (typeof eventId !== 'string' || eventId.trim() === '') {
     throw new Error('invalid argument: eventId must be a non-empty string');

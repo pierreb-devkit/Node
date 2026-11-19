@@ -12,7 +12,6 @@ import { computeExpiryRemovals } from '../lib/billing.packExpiry.js';
  * @param {string} orgId - The organization id to validate.
  * @returns {boolean}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const isValidOrgId = (orgId) => mongoose.Types.ObjectId.isValid(orgId);
 
 /**
@@ -21,7 +20,6 @@ const isValidOrgId = (orgId) => mongoose.Types.ObjectId.isValid(orgId);
  *              Deferred to keep unit tests importable before model registration.
  * @returns {import('mongoose').Model} The registered BillingExtraBalance model.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const BillingExtraBalance = () => mongoose.model('BillingExtraBalance');
 
 /**
@@ -32,7 +30,6 @@ const BillingExtraBalance = () => mongoose.model('BillingExtraBalance');
  * @param {string} orgId - The organization ObjectId (string).
  * @returns {Promise<Object>} The ExtraBalance document.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const getOrCreate = (orgId) => {
   if (!isValidOrgId(orgId)) return Promise.resolve(null);
   return BillingExtraBalance().findOneAndUpdate(
@@ -57,7 +54,6 @@ const getOrCreate = (orgId) => {
  * @param {Date|null} [expiresAt=null] - Optional expiry date for the topup entry.
  * @returns {Promise<{doc: Object|null, applied: boolean, reason?: string}>} Updated doc and whether the credit was applied.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const creditPack = async (orgId, amount, stripeSessionId, expiresAt = null) => {
   if (!isValidOrgId(orgId)) return { doc: null, applied: false };
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('invalid argument: amount must be a positive finite number');
@@ -106,7 +102,6 @@ const creditPack = async (orgId, amount, stripeSessionId, expiresAt = null) => {
  * @param {string} refId - Unique reference for this debit (idempotency key).
  * @returns {Promise<{doc: Object|null, applied: boolean, reason?: string}>} Updated doc and whether debit was applied.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const debit = async (orgId, amount, refId) => {
   if (!isValidOrgId(orgId)) return { doc: null, applied: false };
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('invalid argument: amount must be a positive finite number');
@@ -187,7 +182,6 @@ const debit = async (orgId, amount, refId) => {
  * @param {Date|null} [options.expiresAt=null] - Optional expiry date for the grant entry.
  * @returns {Promise<{doc: Object|null, applied: boolean, reason?: string}>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const creditGrant = async (orgId, amount, source, { refId = null, expiresAt = null } = {}) => {
   if (!isValidOrgId(orgId)) return { doc: null, applied: false };
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('invalid argument: amount must be a positive finite number');
@@ -249,7 +243,6 @@ const creditGrant = async (orgId, amount, source, { refId = null, expiresAt = nu
  * @param {string} [memo] - Optional human-readable memo stored in the ledger entry.
  * @returns {Promise<{doc: Object|null, applied: boolean, reason?: string}>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const creditCompensation = async (orgId, amount, refId, memo = '') => {
   if (!isValidOrgId(orgId)) return { doc: null, applied: false };
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('invalid argument: amount must be a positive finite number');
@@ -312,7 +305,6 @@ const EXPIRY_MAX_ATTEMPTS = 5;
  * @param {Date} now - The current timestamp used as the expiry cutoff.
  * @returns {Promise<number>} Number of expiration entries added (zero markers included).
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const addExpirationEntries = async (orgId, now) => {
   if (!isValidOrgId(orgId)) return 0;
 
@@ -363,7 +355,6 @@ const addExpirationEntries = async (orgId, now) => {
  * @param {string} refId - Unique idempotency key for this refund (e.g. `refund-<sessionId>-<cents>`).
  * @returns {Promise<{doc: Object|null, applied: boolean}>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const refundPartial = async (orgId, stripeSessionId, refundUnits, refId) => {
   if (!isValidOrgId(orgId)) return { doc: null, applied: false };
   if (!Number.isFinite(refundUnits) || refundUnits <= 0) throw new Error('invalid argument: refundUnits must be a positive finite number');
@@ -400,7 +391,6 @@ const refundPartial = async (orgId, stripeSessionId, refundUnits, refId) => {
  * @param {string} orgId - The organization ObjectId (string).
  * @returns {Promise<number>} The cached balance, or 0 if no document exists.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const getBalance = async (orgId) => {
   if (!isValidOrgId(orgId)) return 0;
   const doc = await BillingExtraBalance().findOne({ organization: orgId }, { cachedBalance: 1 }).lean();
@@ -428,7 +418,6 @@ const getBalance = async (orgId) => {
  * @param {string} orgId - The organization ObjectId (string).
  * @returns {Promise<{cachedBalance: number, nonSettleableDebt: number}>} Zeros when no document exists.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const getSettlementBasis = async (orgId) => {
   if (!isValidOrgId(orgId)) return { cachedBalance: 0, nonSettleableDebt: 0 };
   const doc = await BillingExtraBalance().findOne(
@@ -465,7 +454,6 @@ const getSettlementBasis = async (orgId) => {
  * @param {string} refId - The ledger entry idempotency key.
  * @returns {Promise<Object|null>} The ledger entry, or null when absent.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const findLedgerEntryByRefId = async (orgId, refId) => {
   if (!isValidOrgId(orgId) || typeof refId !== 'string' || refId === '') return null;
   const doc = await BillingExtraBalance().findOne(
@@ -503,7 +491,6 @@ const findLedgerEntryByRefId = async (orgId, refId) => {
  * @returns {Promise<{ledgerPage: Object[], total: number, cachedBalance: number}|null>}
  *   null when the org has no ExtraBalance document.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const listLedgerPage = async (orgId, skip, limit) => {
   if (!isValidOrgId(orgId)) return null;
   if (!Number.isFinite(skip) || skip < 0) throw new TypeError('skip must be a non-negative number');
@@ -581,7 +568,6 @@ const listLedgerPage = async (orgId, skip, limit) => {
  * @param {Date} now - Cutoff timestamp. Topups with expiresAt strictly before this are candidates.
  * @returns {Promise<string[]>} Array of distinct organizationId strings.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const findOrgsWithExpiringTopups = async (now) => {
   if (!(now instanceof Date)) throw new TypeError('now must be a Date instance');
   // Pull only the ledger field (projection) to keep the payload small.
@@ -622,7 +608,6 @@ const findOrgsWithExpiringTopups = async (now) => {
  * @param {string} orgId - Organization ObjectId (string).
  * @returns {Promise<Object[]|null>} Ledger entries array or null.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const findLedgerByOrg = async (orgId) => {
   if (!isValidOrgId(orgId)) return null;
   const doc = await BillingExtraBalance().findOne(
@@ -643,7 +628,6 @@ const findLedgerByOrg = async (orgId) => {
  * @param {string[]} refIds - Candidate idempotency keys to look up.
  * @returns {Promise<string[]>} The refIds already present in any ledger.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const findExistingRefIds = async (refIds) => {
   if (!Array.isArray(refIds) || refIds.length === 0) return [];
   const rows = await BillingExtraBalance().aggregate([
@@ -674,7 +658,6 @@ const findExistingRefIds = async (refIds) => {
  * @param {string} referrerId - The referrer user ObjectId (24-hex string).
  * @returns {Promise<number>} Number of link referrer grants for that referrer (0 for an invalid id).
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const countLinkReferrerGrants = async (referrerId) => {
   if (!/^[0-9a-f]{24}$/i.test(String(referrerId))) return 0;
   const pattern = new RegExp(`^referral:link:[^:]+:referrer:${String(referrerId)}$`);
@@ -698,7 +681,6 @@ const countLinkReferrerGrants = async (referrerId) => {
  * @param {Date} windowEnd - Exclusive upper bound (entries with at < windowEnd).
  * @returns {Promise<number>} Sum of absolute debit amounts in the window, or 0.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const sumDebitsByWindow = async (orgId, windowStart, windowEnd) => {
   if (!isValidOrgId(orgId)) return 0;
 

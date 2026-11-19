@@ -26,7 +26,6 @@ import BillingPlanService from './billing.plan.service.js';
  *   default fresh-signup plan — non-free signups don't flow through createOrganizationForUser).
  * @returns {Promise<Object|null>} Repository result or null (no-op / error swallowed).
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const grantOnSignup = async ({ orgId, planId = 'free' }) => {
   try {
     const plan = BillingPlanService.getActivePlan(planId);

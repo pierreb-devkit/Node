@@ -20,7 +20,6 @@ import { retryWithBackoff } from '../lib/billing.retry.js';
  * @param {string} stripeSessionId - Stripe checkout session ID (idempotency key).
  * @returns {Promise<{doc: Object, applied: boolean}>} Updated doc and whether the credit was applied.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const creditPack = async (orgId, packId, stripeSessionId) => {
   const packs = config?.billing?.packs ?? [];
   const pack = packs.find((p) => p.packId === packId);
@@ -56,7 +55,6 @@ const creditPack = async (orgId, packId, stripeSessionId) => {
  * @returns {Promise<{doc: Object|null, applied: boolean, reason?: string}>} Updated doc and whether debit was applied
  *          (`reason: 'duplicate_step'` on a refId replay).
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const debit = (orgId, units, refId) =>
   retryWithBackoff(() => BillingExtraBalanceRepository.debit(orgId, units, refId), {
     shouldRetry: /** @param {Error & {code?: string}} err - error thrown by the repository debit */ (err) =>
@@ -70,7 +68,6 @@ const debit = (orgId, units, refId) =>
  * @param {string} orgId - The organization ObjectId (string).
  * @returns {Promise<number>} Current cached extras balance.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const getOrgBalanceContext = (orgId) =>
   BillingExtraBalanceRepository.getBalance(orgId);
 
@@ -83,7 +80,6 @@ const getOrgBalanceContext = (orgId) =>
  * @param {string} orgId - The organization ObjectId (string).
  * @returns {Promise<number>} Number of expiration entries added.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const expireOldEntries = (orgId) =>
   BillingExtraBalanceRepository.addExpirationEntries(orgId, new Date());
 
@@ -110,7 +106,6 @@ const expireOldEntries = (orgId) =>
  *          `reason` is present only when `applied === false`: 'meter_mode_disabled' | 'sentinel_unresolved' |
  *          'invalid_org' | 'pack_not_found' | 'ambiguous_pack_match'.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const refundPartial = async (orgId, stripeSessionId, amountRefundedCents, packId, stripeRefundId) => {
   if (!config?.billing?.meterMode) {
     return { doc: null, applied: false, reason: 'meter_mode_disabled', refundUnits: 0 };
@@ -237,7 +232,6 @@ const refundPartial = async (orgId, stripeSessionId, amountRefundedCents, packId
  * @param {number} [options.limit=20] - Entries per page.
  * @returns {Promise<{entries: Object[], total: number, balance: number}>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const listLedger = async (orgId, { page = 1, limit = 20 } = {}) => {
   const safePage = Math.max(1, Math.floor(Number(page)) || 1);
   const safeLimit = Math.max(1, Math.floor(Number(limit)) || 20);

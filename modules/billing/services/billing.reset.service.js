@@ -22,7 +22,6 @@ import { isDuplicateKeyError } from '../lib/billing.errors.js';
  * @param {number} meterUsed - Units already charged to that week.
  * @returns {Promise<number>} Units to settle, in [0, weekQuota - meterUsed].
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const computeOverflowSettlement = async (orgId, weekQuota, meterUsed) => {
   const headroom = weekQuota - meterUsed;
   if (!(weekQuota > 0) || !(headroom > 0)) return 0;
@@ -81,7 +80,6 @@ const computeOverflowSettlement = async (orgId, weekQuota, meterUsed) => {
  *              before deriving newWeekKey, resetAt and month, so a past value never targets a past week.
  * @returns {Promise<Object|null>} The usage document for the new week, or null when meter mode is off.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const resetWeek = async (orgId, periodStart) => {
   if (!config?.billing?.meterMode) return null;
 
@@ -180,7 +178,6 @@ const resetWeek = async (orgId, periodStart) => {
  * @param {boolean} [options.preserveUsage] - Keep meterUsed and breakdown when true; defaults to config billing.planChange.preserveUsageDefault.
  * @returns {Promise<Object|null>} The updated current week usage document, or null when no current doc exists.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const forceRotateForPlanChange = async (organizationId, options = {}) => {
   if (!config?.billing?.meterMode) return null;
 
@@ -236,7 +233,6 @@ const forceRotateForPlanChange = async (organizationId, options = {}) => {
  *
  * @returns {Promise<{processed: number, errors: number}>} Summary of the sweep.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const resetAllDue = async () => {
   if (!config?.billing?.meterMode) return { processed: 0, errors: 0 };
 

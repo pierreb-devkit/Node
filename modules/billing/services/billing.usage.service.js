@@ -107,7 +107,6 @@ const reset = (organizationId) => UsageRepository.reset(organizationId, currentM
  *   `alertCrossed` is the last threshold emitted this call (lowest value when multiple thresholds crossed in one jump,
  *   e.g. 0%→150% emits both 80 and 100 — alertCrossed='80'). Informational only; events are the authoritative signal.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) => {
   if (!config?.billing?.meterMode) {
     return { applied: false, meterUsed: 0, meterQuota: 0, extrasConsumed: 0, alertCrossed: null };
@@ -335,7 +334,6 @@ const incrementMeter = async (organizationId, units, breakdown, idempotencyKey) 
  * @param {string} organizationId - The organization ObjectId (string).
  * @returns {Promise<Object|null>} The usage document with meter fields, or null.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const getMeter = async (organizationId) => {
   if (!config?.billing?.meterMode) return null;
   const weekKey = currentWeekKey();
