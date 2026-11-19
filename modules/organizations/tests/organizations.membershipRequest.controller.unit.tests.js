@@ -3,7 +3,7 @@
  */
 import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 
-import { MEMBERSHIP_STATUSES, PENDING_SOURCES } from '../lib/constants.js';
+import { MEMBERSHIP_STATUSES, PENDING_SOURCES } from '../lib/organizations.constants.js';
 
 /**
  * Unit tests for the membershipRequest controller — consent-critical surfaces (P5a, #3813):

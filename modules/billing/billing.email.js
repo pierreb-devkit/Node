@@ -3,11 +3,11 @@
  */
 import config from '../../config/index.js';
 import logger from '../../lib/services/logger.js';
-import billingEvents from './lib/events.js';
+import billingEvents from './lib/billing.events.js';
 import mailer from '../../lib/helpers/mailer/index.js';
 import getBaseUrl from '../../lib/helpers/getBaseUrl.js';
 import MembershipService from '../organizations/services/organizations.membership.service.js';
-import { MEMBERSHIP_ROLES } from '../organizations/lib/constants.js';
+import { MEMBERSHIP_ROLES } from '../organizations/lib/organizations.constants.js';
 
 /**
  * Resolve owner/admin emails for an organization.

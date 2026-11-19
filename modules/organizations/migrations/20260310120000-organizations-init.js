@@ -3,7 +3,7 @@
  */
 import mongoose from 'mongoose';
 
-import { generateOrganizationSlug } from '../helpers/organizations.slug.js';
+import { generateOrganizationSlug } from '../lib/organizations.slug.js';
 
 /**
  * Fields this migration reads/writes on each collection (see each module's model).

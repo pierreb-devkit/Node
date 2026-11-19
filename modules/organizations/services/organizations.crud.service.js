@@ -18,11 +18,11 @@ const normalizeDomain = (value = '') => value.trim().toLowerCase();
 import OrganizationsRepository from '../repositories/organizations.repository.js';
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
 import UserService from '../../users/services/users.service.js';
-import organizationEvents from '../lib/events.js';
-import { slugify } from '../helpers/organizations.slug.js';
+import organizationEvents from '../lib/organizations.events.js';
+import { slugify } from '../lib/organizations.slug.js';
 import { uniqueSlug } from '../../../lib/helpers/slug.js';
-import { MEMBERSHIP_STATUSES, MEMBERSHIP_ROLES } from '../lib/constants.js';
-import { runOrganizationRemovedHandlers } from '../lib/orgRemoval.registry.js';
+import { MEMBERSHIP_STATUSES, MEMBERSHIP_ROLES } from '../lib/organizations.constants.js';
+import { runOrganizationRemovedHandlers } from '../lib/organizations.removal.registry.js';
 
 /**
  * @function list
@@ -118,7 +118,7 @@ const create = async (body, user) => {
   // else a fresh org on a plan that defines one starts at 0 balance. Emitted outside the
   // rollback try/catch so a billing failure never rolls back the org; the listener owns its
   // idempotence (refId signup_grant-<orgId>) and never throws. Fire-and-forget, synchronous
-  // emit — the try/catch here only guards a SYNCHRONOUS listener throw (see ../lib/events.js).
+  // emit — the try/catch here only guards a SYNCHRONOUS listener throw (see ../lib/organizations.events.js).
   try {
     // planId is a literal 'free' (not `result.plan`), matching organizations.service.js::
     // createOrganizationForUser exactly — `plan: 'free'` is set unconditionally a few lines

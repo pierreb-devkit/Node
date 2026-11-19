@@ -82,7 +82,7 @@ try {
       const [{ walkSendProductMail }, { EmailKind }, { stepCreatedAtRange, buildStepFilter }, { default: mailer }] = await Promise.all([
         import('../services/users.service.js'),
         import('../models/users.emailPreferences.schema.js'),
-        import('../utils/emailSequencesCron.js'),
+        import('../lib/users.emailSequencesCron.js'),
         import('../../../lib/helpers/mailer/index.js'),
       ]);
 

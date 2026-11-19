@@ -79,7 +79,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
       default: mockGetBaseUrl,
     }));
 
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: mockBillingEvents,
     }));
 
@@ -88,7 +88,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
       default: mockMembershipService,
     }));
 
-    jest.unstable_mockModule('../../organizations/lib/constants.js', () => ({
+    jest.unstable_mockModule('../../organizations/lib/organizations.constants.js', () => ({
       MEMBERSHIP_ROLES: { OWNER: 'owner', ADMIN: 'admin', MEMBER: 'member' },
       MEMBERSHIP_STATUSES: { ACTIVE: 'active', PENDING: 'pending' },
     }));

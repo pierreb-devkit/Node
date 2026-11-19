@@ -13,9 +13,9 @@ import passwordHelper from '../../../lib/helpers/password.js';
 import { weeklyWindowStart, fillWeeks } from '../../../lib/helpers/weeklyStats.js';
 import UserRepository from '../repositories/users.repository.js';
 import MembershipService from '../../organizations/services/organizations.membership.service.js';
-import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../../organizations/lib/constants.js';
-import { removeSensitive } from '../utils/sanitizeUser.js';
-import { createUnsubscribeToken } from '../utils/unsubscribeToken.js';
+import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../../organizations/lib/organizations.constants.js';
+import { removeSensitive } from '../lib/users.sanitizeUser.js';
+import { createUnsubscribeToken } from '../lib/users.unsubscribeToken.js';
 // `EmailKind` only — NOT `users.schema.js`, which reads `config.whitelists.users.roles`
 // at module-evaluation time (see users.emailPreferences.schema.js's doc comment).
 import { EmailKind } from '../models/users.emailPreferences.schema.js';

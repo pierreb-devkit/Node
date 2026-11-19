@@ -38,7 +38,7 @@ jest.unstable_mockModule('../../../lib/services/analytics.js', () => ({
 // asserting a mock got called. Mocking the module at all is required because
 // users.service.js -> users.repository.js does `mongoose.model('User')` at
 // import time, which throws outside a bootstrapped app (see ERRORS.md 2026-06-04).
-const { removeSensitive } = await import('../../users/utils/sanitizeUser.js');
+const { removeSensitive } = await import('../../users/lib/users.sanitizeUser.js');
 jest.unstable_mockModule('../../users/services/users.service.js', () => ({
   default: {
     removeSensitive,

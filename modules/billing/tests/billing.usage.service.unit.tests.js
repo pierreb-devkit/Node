@@ -86,7 +86,7 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
     };
 
     mockBillingEventsEmit = jest.fn();
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: { emit: mockBillingEventsEmit, on: jest.fn(), off: jest.fn() },
     }));
 
@@ -274,7 +274,7 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
         makePlan({ planId, meterQuota: planId === 'free' ? 0 : 500000 }));
       mockUsageRepository.incrementMeter.mockResolvedValue(makeUsageDoc({ meterUsed: 1, meterQuota: 0 }));
 
-      const { failClosedStatuses } = await import('../lib/constants.js');
+      const { failClosedStatuses } = await import('../lib/billing.statuses.js');
       expect(failClosedStatuses.length).toBeGreaterThan(0);
 
       for (const status of failClosedStatuses) {

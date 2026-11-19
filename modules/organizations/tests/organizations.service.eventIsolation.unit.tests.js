@@ -5,20 +5,20 @@ import { jest, describe, test, expect, beforeEach, afterEach } from '@jest/globa
 import mongoose from 'mongoose';
 
 /**
- * Unit tests proving the org-creation seam (`../lib/events.js`, the generic
+ * Unit tests proving the org-creation seam (`../lib/organizations.events.js`, the generic
  * organizationEvents singleton) stays isolated from whatever a consumer
  * registers on it (rule 2, Node#4020/#4138).
  *
  * Every other test file covering this seam (organizations.emailVerification,
  * organizations.service.signup, organizations.service.silent.catch) mocks
- * `../lib/events.js` as a bare double (`{ emit: jest.fn(), on: jest.fn() }`) —
+ * `../lib/organizations.events.js` as a bare double (`{ emit: jest.fn(), on: jest.fn() }`) —
  * a spy that never runs a registered listener. That is the right choice for
  * those files (they isolate the seam FROM their own assertions), but it also
  * means nothing today exercises the REAL EventEmitter, so nothing proves that
  * a hook a consumer actually registers — generically, via `.on()`, never a
  * consumer module imported by name — leaves the outcome of the two
  * org-creation call sites unchanged. This file uses the real singleton
- * (deliberately does NOT mock `../lib/events.js`) to close that gap, mirroring
+ * (deliberately does NOT mock `../lib/organizations.events.js`) to close that gap, mirroring
  * the same real-EventEmitter pattern already used by billing.events.unit.tests.js.
  */
 describe('organizations event-seam isolation (extra registered hook):', () => {
@@ -62,7 +62,7 @@ describe('organizations event-seam isolation (extra registered hook):', () => {
       default: jest.fn().mockReturnValue([]),
     }));
 
-    jest.unstable_mockModule('../helpers/organizations.slug.js', () => ({
+    jest.unstable_mockModule('../lib/organizations.slug.js', () => ({
       slugify: (str) => str.toLowerCase().replace(/\s+/g, '-'),
       generateOrganizationSlug: jest.fn().mockResolvedValue('test-slug'),
     }));
@@ -92,10 +92,10 @@ describe('organizations event-seam isolation (extra registered hook):', () => {
       },
     }));
 
-    // Deliberately NOT mocking ../lib/events.js — see file docblock.
+    // Deliberately NOT mocking ../lib/organizations.events.js — see file docblock.
     ({ default: OrganizationsService } = await import('../services/organizations.service.js'));
     ({ default: OrganizationsCrudService } = await import('../services/organizations.crud.service.js'));
-    ({ default: organizationEvents } = await import('../lib/events.js'));
+    ({ default: organizationEvents } = await import('../lib/organizations.events.js'));
   });
 
   afterEach(() => {

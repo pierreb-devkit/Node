@@ -79,11 +79,11 @@ describe('Billing webhook checkout unit tests:', () => {
       default: mockResetService,
     }));
 
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: { emit: jest.fn() },
     }));
 
-    jest.unstable_mockModule('../lib/stripe.js', () => ({
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({
       default: jest.fn(() => mockStripeInstance),
     }));
 
@@ -489,7 +489,7 @@ describe('Billing webhook checkout unit tests:', () => {
       // The billing.webhook.checkout.unit.tests.js mocks stripe.js at module level.
       // To test the getStripe()=null branch, we reload the module with a null-returning mock.
       jest.resetModules();
-      jest.unstable_mockModule('../lib/stripe.js', () => ({ default: jest.fn(() => null) }));
+      jest.unstable_mockModule('../lib/billing.stripe.js', () => ({ default: jest.fn(() => null) }));
       jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
         default: mockSubscriptionRepository,
       }));
@@ -505,7 +505,7 @@ describe('Billing webhook checkout unit tests:', () => {
       jest.unstable_mockModule('../services/billing.reset.service.js', () => ({
         default: { resetWeek: jest.fn() },
       }));
-      jest.unstable_mockModule('../lib/events.js', () => ({ default: { emit: jest.fn() } }));
+      jest.unstable_mockModule('../lib/billing.events.js', () => ({ default: { emit: jest.fn() } }));
       jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
         default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
       }));

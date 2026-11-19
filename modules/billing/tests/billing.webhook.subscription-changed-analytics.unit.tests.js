@@ -108,11 +108,11 @@ describe('billing.webhook.service — subscription_changed analytics emit:', () 
       default: mockResetService,
     }));
 
-    jest.unstable_mockModule('../lib/stripe.js', () => ({
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({
       default: jest.fn(() => mockStripe),
     }));
 
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: mockEvents,
     }));
 

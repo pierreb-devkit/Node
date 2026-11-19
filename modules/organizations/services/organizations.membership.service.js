@@ -9,7 +9,7 @@ import isGlobalAdmin from '../../../lib/helpers/isGlobalAdmin.js';
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
 import OrganizationRepository from '../repositories/organizations.repository.js';
 import UserService from '../../users/services/users.service.js';
-import { MEMBERSHIP_STATUSES, MEMBERSHIP_ROLES, PENDING_SOURCES } from '../lib/constants.js';
+import { MEMBERSHIP_STATUSES, MEMBERSHIP_ROLES, PENDING_SOURCES } from '../lib/organizations.constants.js';
 
 /**
  * E17 — migration-ordering defensive read.
@@ -25,7 +25,7 @@ import { MEMBERSHIP_STATUSES, MEMBERSHIP_ROLES, PENDING_SOURCES } from '../lib/c
  * confirmed run everywhere (follow-up — see MIGRATIONS.md). After that, every
  * PENDING row has an explicit source (enforced by the model pre-validate guard).
  *
- * DOC-LEVEL TWIN: `isOwnerApprovable(source)` (organizations/lib/constants.js) is
+ * DOC-LEVEL TWIN: `isOwnerApprovable(source)` (organizations/lib/organizations.constants.js) is
  * the document-level expression of the SAME consent invariant — a PENDING row is
  * owner-approvable iff it is NOT an owner_add (join_request + legacy no-source).
  * A Mongo filter can't reuse a predicate, so this `$or` stays; keep the two in

@@ -4,7 +4,7 @@
 import passport from 'passport';
 import { Strategy } from 'passport-jwt';
 
-import UserService from '../../../users/services/users.service.js';
+import UserService from '../../users/services/users.service.js';
 
 const cookieExtractor = (req) => {
   let token = null;

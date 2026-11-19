@@ -6,7 +6,7 @@ import responses from '../../../lib/helpers/responses.js';
 import isGlobalAdmin from '../../../lib/helpers/isGlobalAdmin.js';
 import MembershipService from '../services/organizations.membership.service.js';
 import MembershipSchema from '../models/organizations.membership.schema.js';
-import { MEMBERSHIP_ROLES } from '../lib/constants.js';
+import { MEMBERSHIP_ROLES } from '../lib/organizations.constants.js';
 
 /**
  * @function list

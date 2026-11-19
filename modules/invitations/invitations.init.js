@@ -3,7 +3,7 @@
  */
 import { registerSignupEligibility } from '../auth/services/auth.eligibility.js';
 import InvitationsService from './services/invitations.service.js';
-import invitationEvents from './lib/events.js';
+import invitationEvents from './lib/invitations.events.js';
 import logger from '../../lib/services/logger.js';
 import config from '../../config/index.js';
 

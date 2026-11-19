@@ -3,7 +3,7 @@
  */
 import config from '../../../config/index.js';
 import logger from '../../../lib/services/logger.js';
-import billingEvents from '../lib/events.js';
+import billingEvents from '../lib/billing.events.js';
 import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
 import { SENTINEL_PENDING } from '../lib/billing.constants.js';
 import { retryWithBackoff } from '../lib/billing.retry.js';

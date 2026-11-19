@@ -3,7 +3,7 @@
  */
 import mongoose from 'mongoose';
 
-import { MEMBERSHIP_STATUSES, PENDING_SOURCES } from '../lib/constants.js';
+import { MEMBERSHIP_STATUSES, PENDING_SOURCES } from '../lib/organizations.constants.js';
 
 /**
  * Migration: backfill `source` on existing PENDING memberships.

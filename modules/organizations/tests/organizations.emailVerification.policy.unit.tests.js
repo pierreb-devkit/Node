@@ -83,7 +83,7 @@ jest.unstable_mockModule('../../../lib/helpers/abilities.js', () => ({
   default: jest.fn().mockReturnValue([]),
 }));
 
-jest.unstable_mockModule('../helpers/organizations.slug.js', () => ({
+jest.unstable_mockModule('../lib/organizations.slug.js', () => ({
   slugify: (str) => str.toLowerCase().replace(/\s+/g, '-'),
   generateOrganizationSlug: jest.fn().mockResolvedValue('test-slug'),
 }));

@@ -1,7 +1,7 @@
 /**
  * Module dependencies
  */
-import getStripe from '../lib/stripe.js';
+import getStripe from '../lib/billing.stripe.js';
 import logger from '../../../lib/services/logger.js';
 import { isObjectId } from '../../../lib/helpers/zod.js';
 import { bumpEventMarkers } from '../lib/billing.markerBump.js';

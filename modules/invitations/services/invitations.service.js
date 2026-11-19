@@ -4,9 +4,9 @@
 import crypto from 'crypto';
 
 import InvitationRepository from '../repositories/invitations.repository.js';
-import { DEFAULT_INVITE_EXPIRES_IN_DAYS, STALE_CLAIM_MINUTES } from '../lib/constants.js';
+import { DEFAULT_INVITE_EXPIRES_IN_DAYS, STALE_CLAIM_MINUTES } from '../lib/invitations.constants.js';
 import UserService from '../../users/services/users.service.js';
-import invitationEvents from '../lib/events.js';
+import invitationEvents from '../lib/invitations.events.js';
 import config from '../../../config/index.js';
 import mails from '../../../lib/helpers/mailer/index.js';
 import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';

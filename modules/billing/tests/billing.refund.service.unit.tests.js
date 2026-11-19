@@ -41,7 +41,7 @@ describe('Admin refund controller unit tests:', () => {
       error: jest.fn(() => jest.fn()),
     };
 
-    jest.unstable_mockModule('../lib/stripe.js', () => ({
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({
       default: mockGetStripe,
     }));
 
@@ -323,7 +323,7 @@ describe('adminBumpPlan controller unit tests:', () => {
     }));
 
     // Stripe imported at module level but not used by adminBumpPlan anymore
-    jest.unstable_mockModule('../lib/stripe.js', () => ({ default: jest.fn(() => null) }));
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({ default: jest.fn(() => null) }));
 
     // AdminDeadLettersQuery imported at module level
     jest.unstable_mockModule('../models/billing.subscription.schema.js', () => ({

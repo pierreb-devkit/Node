@@ -2,7 +2,7 @@
  * Module dependencies
  */
 import mongoose from 'mongoose';
-import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES, PENDING_SOURCES } from '../lib/constants.js';
+import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES, PENDING_SOURCES } from '../lib/organizations.constants.js';
 
 const Schema = mongoose.Schema;
 
@@ -34,7 +34,7 @@ const MembershipMongoose = new Schema(
     // Consent discriminator for PENDING memberships. Intentionally NO default:
     // a forgotten `source` on a PENDING row must FAIL (pre-validate guard below),
     // never silently default to 'join_request' (which an owner could approve →
-    // consent bypass). See PENDING_SOURCES in lib/constants.js.
+    // consent bypass). See PENDING_SOURCES in lib/organizations.constants.js.
     source: {
       type: String,
       enum: Object.values(PENDING_SOURCES),

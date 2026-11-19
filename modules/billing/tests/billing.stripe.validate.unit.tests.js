@@ -28,7 +28,7 @@ describe('validateStripeKey', () => {
   beforeAll(async () => {
     mockConfig = { stripe: { secretKey: 'sk_test_123' } };
     jest.unstable_mockModule('../../../config/index.js', () => ({ default: mockConfig }));
-    ({ validateStripeKey } = await import('../lib/stripe.js'));
+    ({ validateStripeKey } = await import('../lib/billing.stripe.js'));
   });
 
   beforeEach(() => {

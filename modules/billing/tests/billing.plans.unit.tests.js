@@ -59,7 +59,7 @@ describe('Billing plans service unit tests:', () => {
     }));
 
     // Mock events to avoid real EventEmitter side effects
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: { emit: jest.fn(), on: jest.fn(), off: jest.fn() },
     }));
   });
@@ -369,7 +369,7 @@ describe('Billing plans service unit tests:', () => {
     BillingPlansService = mod.default;
 
     // Get the mock emit function from the mocked events module
-    const eventsMod = await import('../lib/events.js');
+    const eventsMod = await import('../lib/billing.events.js');
     const mockBillingEventsEmit = eventsMod.default.emit;
 
     // First call succeeds — populates stale snapshot

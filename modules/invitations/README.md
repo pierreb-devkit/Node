@@ -25,7 +25,7 @@ the OAuth path (shared `accept(invite, userId)`):
    raw repository path only). This is the durable referral edge — it supports
    *compute-on-read* forever, even if an event was missed.
 2. **`invitation.accepted` event** — emitted by this module's singleton
-   (`lib/events.js`):
+   (`lib/invitations.events.js`):
 
    ```js
    invitationEvents.emit('invitation.accepted', {
@@ -78,7 +78,7 @@ The listener delegates to `modules/billing/services/billing.referral.service.js`
   email verification, AFTER the event), the side is left to the reconcile cron;
 - is **self-guarded**: the listener wraps everything in try/catch + `logger.error` — an
   async rejection must never escape (`EventEmitter.emit` is synchronous; the emit-site
-  try/catch only covers sync throws, see `lib/events.js`).
+  try/catch only covers sync throws, see `lib/invitations.events.js`).
 
 Rules that make this production-grade (both shipped):
 
@@ -103,7 +103,7 @@ ships its OWN module — glob discovery means zero stack edits:
 
 ```js
 // modules/{project}-rewards/{project}-rewards.init.js   (downstream-only module)
-import invitationEvents from '../invitations/lib/events.js';
+import invitationEvents from '../invitations/lib/invitations.events.js';
 
 export default async () => {
   invitationEvents.on('invitation.accepted', async (payload) => {

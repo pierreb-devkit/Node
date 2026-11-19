@@ -71,12 +71,12 @@ jest.unstable_mockModule('../../organizations/repositories/organizations.members
   },
 }));
 
-jest.unstable_mockModule('../../organizations/lib/constants.js', () => ({
+jest.unstable_mockModule('../../organizations/lib/organizations.constants.js', () => ({
   MEMBERSHIP_ROLES: { OWNER: 'owner', MEMBER: 'member' },
   MEMBERSHIP_STATUSES: { ACTIVE: 'active', PENDING: 'pending' },
 }));
 
-jest.unstable_mockModule('../utils/sanitizeUser.js', () => ({
+jest.unstable_mockModule('../lib/users.sanitizeUser.js', () => ({
   removeSensitive: jest.fn((u) => u),
 }));
 

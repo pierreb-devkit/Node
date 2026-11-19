@@ -2,7 +2,7 @@
  * Module dependencies
  */
 import mongoose from 'mongoose';
-import { MEMBERSHIP_STATUSES } from '../lib/constants.js';
+import { MEMBERSHIP_STATUSES } from '../lib/organizations.constants.js';
 
 /** @type {import('mongoose').Model<Record<string, unknown>>} */
 const Membership = mongoose.model('Membership');

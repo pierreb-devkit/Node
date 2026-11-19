@@ -6,7 +6,7 @@
  *   when an organization is removed.
  */
 import TasksService from './services/tasks.service.js';
-import { onOrganizationRemoved } from '../organizations/lib/orgRemoval.registry.js';
+import { onOrganizationRemoved } from '../organizations/lib/organizations.removal.registry.js';
 
 /**
  * Tasks module initialisation.

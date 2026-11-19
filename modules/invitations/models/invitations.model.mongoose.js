@@ -3,7 +3,7 @@
  */
 import mongoose from 'mongoose';
 
-import { INVITATION_STATUSES } from '../lib/constants.js';
+import { INVITATION_STATUSES } from '../lib/invitations.constants.js';
 
 const Schema = mongoose.Schema;
 

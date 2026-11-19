@@ -13,7 +13,7 @@ import AuthOrganizationService from '../../organizations/services/organizations.
 import AnalyticsService from '../../../lib/services/analytics.js';
 import logger from '../../../lib/services/logger.js';
 import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
-import { decodeReferralCode } from '../../users/utils/referralCode.js';
+import { decodeReferralCode } from '../../users/lib/users.referralCode.js';
 
 /**
  * @desc Check whether the mailer is configured with a real sender address.

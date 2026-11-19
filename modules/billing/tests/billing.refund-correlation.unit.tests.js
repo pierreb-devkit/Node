@@ -59,7 +59,7 @@ describe('checkout.session.completed — metadata backfill retry:', () => {
       record: jest.fn().mockResolvedValue({}),
     };
 
-    jest.unstable_mockModule('../lib/stripe.js', () => ({
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({
       default: jest.fn(() => mockStripeInstance),
     }));
 
@@ -95,7 +95,7 @@ describe('checkout.session.completed — metadata backfill retry:', () => {
       default: { resetWeek: jest.fn(), forceRotateForPlanChange: jest.fn() },
     }));
 
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: { emit: jest.fn() },
     }));
 

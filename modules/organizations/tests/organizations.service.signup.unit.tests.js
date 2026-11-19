@@ -66,7 +66,7 @@ jest.unstable_mockModule('../../../lib/helpers/abilities.js', () => ({
   default: mockSerializeAbilities,
 }));
 
-jest.unstable_mockModule('../helpers/organizations.slug.js', () => ({
+jest.unstable_mockModule('../lib/organizations.slug.js', () => ({
   slugify: (str) => str.toLowerCase().replace(/\s+/g, '-'),
   generateOrganizationSlug: jest.fn().mockResolvedValue('alice-org'),
 }));
@@ -78,7 +78,7 @@ jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
 // #3844/#3952: capture organization.provisioned + organization.created emits — the singleton
 // is config-free, stub it so assertions see the emits without wiring real listeners.
 const mockOrgEventsEmit = jest.fn();
-jest.unstable_mockModule('../lib/events.js', () => ({
+jest.unstable_mockModule('../lib/organizations.events.js', () => ({
   default: { emit: mockOrgEventsEmit, on: jest.fn() },
 }));
 

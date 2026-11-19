@@ -71,7 +71,7 @@ jest.unstable_mockModule('../../../config/index.js', () => ({
   default: { organizations: { enabled: true } },
 }));
 
-jest.unstable_mockModule('../utils/sanitizeUser.js', () => ({
+jest.unstable_mockModule('../lib/users.sanitizeUser.js', () => ({
   removeSensitive: jest.fn((u) => u),
 }));
 

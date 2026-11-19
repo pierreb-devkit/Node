@@ -3,7 +3,7 @@
  */
 import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 
-import { effectivePlanOf } from '../lib/constants.js';
+import { effectivePlanOf } from '../lib/billing.statuses.js';
 
 /**
  * Unit tests for the billing reads other modules call (effective plan, subscription
@@ -20,7 +20,7 @@ jest.unstable_mockModule('../repositories/billing.extraBalance.repository.js', (
   default: { getBalance: mockGetBalance },
 }));
 
-jest.unstable_mockModule('../lib/stripe.js', () => ({ default: jest.fn(() => null) }));
+jest.unstable_mockModule('../lib/billing.stripe.js', () => ({ default: jest.fn(() => null) }));
 jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
   default: { warn: jest.fn(), error: jest.fn(), info: jest.fn() },
 }));

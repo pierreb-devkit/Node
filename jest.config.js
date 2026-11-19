@@ -32,10 +32,10 @@ export default {
     '!<rootDir>/server.js',
     // Exclude OAuth strategy configs — no business logic, just passport.use() calls;
     // real OAuth credentials required to test, which are not available in CI
-    '!<rootDir>/modules/auth/strategies/local/apple.js',
-    '!<rootDir>/modules/auth/strategies/local/google.js',
+    '!<rootDir>/modules/auth/strategies/auth.apple.strategy.js',
+    '!<rootDir>/modules/auth/strategies/auth.google.strategy.js',
     // Exclude Clerk strategy placeholder — no-op stub, no logic to test
-    '!<rootDir>/modules/auth/strategies/clerk/**',
+    '!<rootDir>/modules/auth/strategies/auth.clerk.strategy.js',
     // Exclude passport init glue — just serializeUser/deserializeUser + strategy loader
     '!<rootDir>/modules/auth/auth.init.js',
     // Exclude audit init glue — just logs activation status

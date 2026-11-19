@@ -108,7 +108,7 @@ describe('BillingResetService unit tests:', () => {
       default: mockPlanService,
     }));
 
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: mockEvents,
     }));
 

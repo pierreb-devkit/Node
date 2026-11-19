@@ -56,7 +56,7 @@ jest.unstable_mockModule('../../../lib/services/analytics.js', () => ({
 const InvitationRepository = (await import('../repositories/invitations.repository.js')).default;
 const InvitationService = (await import('../services/invitations.service.js')).default;
 // Real events singleton — the service emits on it; we spy to assert the payload.
-const invitationEvents = (await import('../lib/events.js')).default;
+const invitationEvents = (await import('../lib/invitations.events.js')).default;
 // Mocked config singleton — mutated per-test for the #3986 lifetime-cap describe block
 // (mirrors how integration tests flip config.sign.up/cap, kept + restored per test).
 const config = (await import('../../../config/index.js')).default;

@@ -3,13 +3,13 @@
  */
 import config from '../../../config/index.js';
 import logger from '../../../lib/services/logger.js';
-import getStripe from '../lib/stripe.js';
+import getStripe from '../lib/billing.stripe.js';
 import BillingPlansService from './billing.plans.service.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
 import { isDuplicateKeyError } from '../lib/billing.errors.js';
 import { SENTINEL_PENDING } from '../lib/billing.constants.js';
-import { effectivePlanOf } from '../lib/constants.js';
+import { effectivePlanOf } from '../lib/billing.statuses.js';
 
 /**
  * Validate that a redirect URL is safe for the current environment.

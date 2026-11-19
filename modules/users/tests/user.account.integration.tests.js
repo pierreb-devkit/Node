@@ -199,7 +199,7 @@ describe('User integration tests:', () => {
     });
 
     // #3963: providerData holds OAuth access+refresh tokens (see
-    // auth/strategies/local/{google,apple}.js). A local-signup user's providerData
+    // auth/strategies/auth.{google,apple}.strategy.js). A local-signup user's providerData
     // is an empty object, which would trivially pass a naive "is it falsy" check —
     // simulate a linked OAuth account (real tokens) to prove the leak is actually
     // closed, not just absent because this fixture never had anything to leak.

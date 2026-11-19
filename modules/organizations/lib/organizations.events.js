@@ -40,7 +40,7 @@ import { EventEmitter } from 'events';
  *
  * This file ships ONLY the singleton; the mandatory 'error' listener is registered in
  * organizations.init.js after config is ready, so this file stays config-free and
- * importable without ordering hazards (mirrors invitations/lib/events.js).
+ * importable without ordering hazards (mirrors invitations/lib/invitations.events.js).
  */
 const organizationEvents = new EventEmitter();
 

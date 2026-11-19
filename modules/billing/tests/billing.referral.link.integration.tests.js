@@ -8,7 +8,7 @@ import { beforeAll, afterAll, beforeEach, afterEach, describe, test, expect } fr
 
 import { bootstrap } from '../../../lib/app.js';
 import config from '../../../config/index.js';
-import { encodeReferralCode } from '../../users/utils/referralCode.js';
+import { encodeReferralCode } from '../../users/lib/users.referralCode.js';
 
 /**
  * Read an org's extras ledger straight from the model (null when the org has no doc yet).

@@ -60,14 +60,14 @@ describe('billing.init unit tests:', () => {
       default: mockLogger,
     }));
 
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: { on: jest.fn(), emit: jest.fn() },
     }));
 
     // P8a: billing is an optional consumer of the invitations `invitation.accepted`
     // event — stub the singleton so the unit test asserts the listener wiring in isolation.
     mockInvitationEvents = { on: jest.fn(), emit: jest.fn() };
-    jest.unstable_mockModule('../../invitations/lib/events.js', () => ({
+    jest.unstable_mockModule('../../invitations/lib/invitations.events.js', () => ({
       default: mockInvitationEvents,
     }));
 
@@ -80,7 +80,7 @@ describe('billing.init unit tests:', () => {
 
     // #3844: the organizations `organization.provisioned` singleton — stub like invitationEvents.
     mockOrganizationEvents = { on: jest.fn(), emit: jest.fn() };
-    jest.unstable_mockModule('../../organizations/lib/events.js', () => ({
+    jest.unstable_mockModule('../../organizations/lib/organizations.events.js', () => ({
       default: mockOrganizationEvents,
     }));
 

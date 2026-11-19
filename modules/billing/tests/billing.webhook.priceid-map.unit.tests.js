@@ -54,8 +54,8 @@ const makeBaseSetup = (configOverride = {}) => {
   jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({ default: mockOrganizationsService }));
   jest.unstable_mockModule('../services/billing.extra.service.js', () => ({ default: { creditPack: jest.fn(), refundPartial: jest.fn() } }));
   jest.unstable_mockModule('../services/billing.reset.service.js', () => ({ default: mockResetService }));
-  jest.unstable_mockModule('../lib/stripe.js', () => ({ default: jest.fn(() => mockStripe) }));
-  jest.unstable_mockModule('../lib/events.js', () => ({ default: mockEvents }));
+  jest.unstable_mockModule('../lib/billing.stripe.js', () => ({ default: jest.fn(() => mockStripe) }));
+  jest.unstable_mockModule('../lib/billing.events.js', () => ({ default: mockEvents }));
   jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
     default: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() },
   }));

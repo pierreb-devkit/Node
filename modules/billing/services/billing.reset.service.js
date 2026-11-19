@@ -7,7 +7,7 @@ import BillingUsageRepository from '../repositories/billing.usage.repository.js'
 import BillingSubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
 import BillingPlanService from './billing.plan.service.js';
-import billingEvents from '../lib/events.js';
+import billingEvents from '../lib/billing.events.js';
 import { isoWeekKey } from '../lib/billing.isoWeek.js';
 import { getPlanChangePreserveUsageDefault, getDefaultPlanId } from '../lib/billing.constants.js';
 import { isDuplicateKeyError } from '../lib/billing.errors.js';

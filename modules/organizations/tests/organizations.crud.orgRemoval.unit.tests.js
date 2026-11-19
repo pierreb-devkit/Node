@@ -43,7 +43,7 @@ jest.unstable_mockModule('../../users/services/users.service.js', () => ({
 }));
 
 const { default: OrgCrudService } = await import('../services/organizations.crud.service.js');
-const { onOrganizationRemoved, _reset } = await import('../lib/orgRemoval.registry.js');
+const { onOrganizationRemoved, _reset } = await import('../lib/organizations.removal.registry.js');
 
 describe('OrgCrudService.remove() — org-removal registry', () => {
   const organization = { _id: 'org-1' };

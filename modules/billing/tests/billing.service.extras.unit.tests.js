@@ -72,7 +72,7 @@ describe('BillingService.createExtrasCheckout unit tests:', () => {
     }));
 
     // Mock events to avoid real EventEmitter side effects
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: { emit: jest.fn(), on: jest.fn(), off: jest.fn() },
     }));
   });

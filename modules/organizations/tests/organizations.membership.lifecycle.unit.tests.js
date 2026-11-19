@@ -3,7 +3,7 @@
  */
 import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 
-import { MEMBERSHIP_STATUSES, MEMBERSHIP_ROLES, PENDING_SOURCES } from '../lib/constants.js';
+import { MEMBERSHIP_STATUSES, MEMBERSHIP_ROLES, PENDING_SOURCES } from '../lib/organizations.constants.js';
 
 /**
  * Lifecycle unit tests for the pending owner_add membership (#3831).

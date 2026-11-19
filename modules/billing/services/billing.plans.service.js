@@ -1,9 +1,9 @@
 /**
  * Module dependencies
  */
-import getStripe from '../lib/stripe.js';
+import getStripe from '../lib/billing.stripe.js';
 import logger from '../../../lib/services/logger.js';
-import billingEvents from '../lib/events.js';
+import billingEvents from '../lib/billing.events.js';
 
 /**
  * Cache TTLs (ms)

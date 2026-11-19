@@ -261,7 +261,7 @@ const ALLOWED_PROVIDER_KEYS = new Set(['sub', 'id', 'email']);
 /**
  * @desc Check whether `:strategy` (from `req.params.strategy`) is both an allowlisted
  * provider AND actually registered with passport at boot time. A provider in
- * ALLOWED_PROVIDERS is only registered (modules/auth/strategies/local/{provider}.js)
+ * ALLOWED_PROVIDERS is only registered (modules/auth/strategies/auth.{provider}.strategy.js)
  * when its config carries valid credentials — otherwise passport never sees it.
  * Guards the `/api/auth/:strategy` and `/api/auth/:strategy/callback` routes so an
  * unknown or disabled strategy name is rejected with a clean 404 before it can reach
@@ -270,7 +270,7 @@ const ALLOWED_PROVIDER_KEYS = new Set(['sub', 'id', 'email']);
  * `passport._strategy` is documented `@api private` in passport's own source, but it
  * is the single source of truth for "is this strategy registered" — asking config
  * directly would mean duplicating each provider's own credential-presence check here
- * and risking drift from modules/auth/strategies/local/*.js over time.
+ * and risking drift from modules/auth/strategies/auth.*.strategy.js over time.
  * @param {string} strategy - strategy name from req.params.strategy
  * @returns {boolean} true when strategy is both allowlisted and registered with passport
  */

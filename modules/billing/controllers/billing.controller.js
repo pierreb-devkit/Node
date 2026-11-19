@@ -1,7 +1,7 @@
 /**
  * Module dependencies
  */
-import { effectivePlanOf } from '../lib/constants.js';
+import { effectivePlanOf } from '../lib/billing.statuses.js';
 import config from '../../../config/index.js';
 import responses from '../../../lib/helpers/responses.js';
 import logger from '../../../lib/services/logger.js';

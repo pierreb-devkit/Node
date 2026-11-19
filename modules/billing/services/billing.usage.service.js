@@ -7,10 +7,10 @@ import UsageRepository from '../repositories/billing.usage.repository.js';
 import BillingSubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import BillingPlanService from './billing.plan.service.js';
 import BillingExtraService from './billing.extra.service.js';
-import billingEvents from '../lib/events.js';
+import billingEvents from '../lib/billing.events.js';
 import { currentWeekKey } from '../lib/billing.isoWeek.js';
 import { getAlertThresholdPercents, getDefaultPlanId } from '../lib/billing.constants.js';
-import { failClosedStatuses } from '../lib/constants.js';
+import { failClosedStatuses } from '../lib/billing.statuses.js';
 
 /**
  * Compute the current month string in YYYY-MM format.

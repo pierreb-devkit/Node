@@ -4,7 +4,7 @@
 import config from '../../../config/index.js';
 import logger from '../../../lib/services/logger.js';
 import responses from '../../../lib/helpers/responses.js';
-import getStripe from '../lib/stripe.js';
+import getStripe from '../lib/billing.stripe.js';
 import BillingWebhookService from '../services/billing.webhook.service.js';
 
 /**

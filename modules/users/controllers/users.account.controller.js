@@ -5,8 +5,8 @@ import config from '../../../config/index.js';
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
 import UserService from '../services/users.service.js';
-import { verifyUnsubscribeToken } from '../utils/unsubscribeToken.js';
-import { encodeReferralCode } from '../utils/referralCode.js';
+import { verifyUnsubscribeToken } from '../lib/users.unsubscribeToken.js';
+import { encodeReferralCode } from '../lib/users.referralCode.js';
 
 /**
  * @desc Endpoint to ask the service to update a user
@@ -48,7 +48,7 @@ const remove = async (req, res) => {
 const me = (req, res) => {
   // Sanitize the user - short term solution. Copied from core.controller.js
   // TODO create proper passport mock: See https://gist.github.com/mweibel/5219403
-  // providerData (OAuth access+refresh tokens, see auth/strategies/local/{google,apple}.js)
+  // providerData (OAuth access+refresh tokens, see auth/strategies/auth.{google,apple}.strategy.js)
   // is intentionally NOT whitelisted here — never forward it to the client (#3963).
   /** @type {{id: string, provider: string, roles: string[], avatar: string, email: string, lastName: string, firstName: string, complementary: Object, emailPreferences: Object, bio?: string, position?: string, terms?: Date, referralCode?: string}|null} */
   let user = null;

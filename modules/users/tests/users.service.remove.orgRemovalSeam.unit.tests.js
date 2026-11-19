@@ -83,7 +83,7 @@ jest.unstable_mockModule('../../../config/index.js', () => ({
   default: { organizations: { enabled: true } },
 }));
 
-jest.unstable_mockModule('../utils/sanitizeUser.js', () => ({
+jest.unstable_mockModule('../lib/users.sanitizeUser.js', () => ({
   removeSensitive: jest.fn((u) => u),
 }));
 
@@ -92,7 +92,7 @@ jest.unstable_mockModule('lodash', () => ({
 }));
 
 const { default: UsersService } = await import('../services/users.service.js');
-const { onOrganizationRemoved, _reset } = await import('../../organizations/lib/orgRemoval.registry.js');
+const { onOrganizationRemoved, _reset } = await import('../../organizations/lib/organizations.removal.registry.js');
 
 describe('users.service.remove — sole-owner org deletion routes through the org-removal seam (#3965):', () => {
   const orgId = 'orgX';

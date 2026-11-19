@@ -38,7 +38,7 @@ describe('BillingUsage credit-balance alert integration tests:', () => {
     await Subscription.syncIndexes();
 
     BillingUsageService = (await import('../services/billing.usage.service.js')).default;
-    billingEvents = (await import('../lib/events.js')).default;
+    billingEvents = (await import('../lib/billing.events.js')).default;
   });
 
   beforeEach(async () => {

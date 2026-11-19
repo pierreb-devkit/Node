@@ -53,7 +53,7 @@ describe('Billing webhook service unit tests:', () => {
       default: { resetWeek: jest.fn(), resetAllDue: jest.fn(), forceRotateForPlanChange: jest.fn().mockResolvedValue({}) },
     }));
 
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: { emit: jest.fn() },
     }));
 
@@ -74,7 +74,7 @@ describe('Billing webhook service unit tests:', () => {
 
     // Mock Stripe so handleCheckoutCompleted can call stripe.subscriptions.retrieve.
     // Returns 'active' by default; override per-test as needed.
-    jest.unstable_mockModule('../lib/stripe.js', () => ({
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({
       default: jest.fn(() => ({
         subscriptions: {
           retrieve: jest.fn().mockResolvedValue({ status: 'active' }),

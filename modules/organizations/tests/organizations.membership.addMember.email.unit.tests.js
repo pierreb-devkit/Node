@@ -3,7 +3,7 @@
  */
 import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 
-import { MEMBERSHIP_ROLES } from '../lib/constants.js';
+import { MEMBERSHIP_ROLES } from '../lib/organizations.constants.js';
 
 /**
  * Unit tests — addMember invitation email (#3832).

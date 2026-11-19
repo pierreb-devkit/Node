@@ -15,7 +15,7 @@ beforeAll(async () => {
   jest.unstable_mockModule('../../../config/index.js', () => ({
     default: { jwt: { secret: 'test-unsubscribe-secret' } },
   }));
-  ({ createUnsubscribeToken, verifyUnsubscribeToken } = await import('../utils/unsubscribeToken.js'));
+  ({ createUnsubscribeToken, verifyUnsubscribeToken } = await import('../lib/users.unsubscribeToken.js'));
 });
 
 describe('unsubscribeToken', () => {

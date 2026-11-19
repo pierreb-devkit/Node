@@ -2,7 +2,7 @@
  * Module dependencies
  */
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
-import { effectivePlanOf } from '../lib/constants.js';
+import { effectivePlanOf } from '../lib/billing.statuses.js';
 
 /**
  * Returns Express middleware that gates access based on subscription plan AND status.

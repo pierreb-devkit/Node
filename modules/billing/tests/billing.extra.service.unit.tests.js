@@ -62,7 +62,7 @@ describe('BillingExtraService unit tests:', () => {
     }));
 
 
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: { emit: jest.fn() },
     }));
 
@@ -550,7 +550,7 @@ describe('BillingExtraService refundPartial — sentinel listener-error swallow:
       },
     }));
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mockLogger }));
-    jest.unstable_mockModule('../lib/events.js', () => ({ default: mockEvents }));
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({ default: mockEvents }));
 
     const mod = await import('../services/billing.extra.service.js');
     BillingExtraService = mod.default;

@@ -4,7 +4,7 @@
 import { z } from 'zod';
 import { pageQuery } from '../../../lib/helpers/zod.js';
 
-import { MEMBERSHIP_ROLES } from '../lib/constants.js';
+import { MEMBERSHIP_ROLES } from '../lib/organizations.constants.js';
 
 const MembershipRole = z.enum(Object.values(MEMBERSHIP_ROLES));
 

@@ -39,7 +39,7 @@ const loadGuideEntries = jest.fn();
 const buildDocsTree = jest.fn();
 const resolveGuideEntries = jest.fn();
 
-jest.unstable_mockModule('../helpers/public.docs.tree.js', () => ({
+jest.unstable_mockModule('../lib/public.docs.tree.js', () => ({
   default: { loadGuideEntries, buildDocsTree, resolveGuideEntries },
 }));
 

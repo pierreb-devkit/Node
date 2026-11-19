@@ -71,7 +71,7 @@ describe('Billing webhook idempotency unit tests:', () => {
       default: { resetWeek: jest.fn() },
     }));
 
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: { emit: jest.fn() },
     }));
 

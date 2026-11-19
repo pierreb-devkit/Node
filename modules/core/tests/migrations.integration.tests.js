@@ -10,7 +10,7 @@ import mongoose from 'mongoose';
 import mongooseService from '../../../lib/services/mongoose.js';
 import { bootstrap } from '../../../lib/app.js';
 import migrations from '../../../lib/services/migrations.js';
-import migrationRepository from '../repositories/migration.repository.js';
+import migrationRepository from '../repositories/core.migration.repository.js';
 import logger from '../../../lib/services/logger.js';
 
 /**

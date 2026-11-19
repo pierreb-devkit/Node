@@ -70,11 +70,11 @@ describe('Billing webhook subscription unit tests:', () => {
       subscriptions: { retrieve: jest.fn() },
     };
 
-    jest.unstable_mockModule('../lib/stripe.js', () => ({
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({
       default: jest.fn(() => mockStripe),
     }));
 
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: mockEvents,
     }));
 

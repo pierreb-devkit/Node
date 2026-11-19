@@ -2,13 +2,13 @@
  * Module dependencies
  */
 import logger from '../../lib/services/logger.js';
-import organizationEvents from './lib/events.js';
+import organizationEvents from './lib/organizations.events.js';
 
 /**
  * Organizations module initialisation.
  *
  * Nothing to boot today beyond event hygiene: the `organization.provisioned`
- * singleton (lib/events.js) stays config-free / import-safe, so the mandatory
+ * singleton (lib/organizations.events.js) stays config-free / import-safe, so the mandatory
  * 'error' listener is registered HERE, after config is ready (an unhandled
  * 'error' emit would crash the process — Node default behaviour; mirrors
  * invitations.init.js / billing.init.js).

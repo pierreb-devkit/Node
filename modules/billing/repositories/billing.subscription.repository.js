@@ -107,7 +107,7 @@ const findByStripeSubscriptionId = (stripeSubscriptionId) => {
  *              organization. Used on hot paths (meter attribution, weekly reset) where
  *              only these two fields are needed — avoids the full populate overhead of
  *              findByOrganization. `status` lets callers detect a fail-closed
- *              subscription (see `failClosedStatuses` in `../lib/constants.js`) without
+ *              subscription (see `failClosedStatuses` in `../lib/billing.statuses.js`) without
  *              a second query (#4151).
  * @param {String} organizationId - The organization ID.
  * @returns {Promise<{plan: string, status: string}|null>|null} A lean plain object, or null (also returned synchronously for an invalid id).
