@@ -14,7 +14,7 @@ describe('billing.webhook.service — subscription_changed analytics emit:', () 
   let mockAnalyticsCapture;
   let mockAnalyticsIsConfigured;
   let mockSubscriptionRepository;
-  let mockOrganizationRepository;
+  let mockOrganizationsService;
   let mockResetService;
   let mockEvents;
   let mockStripe;
@@ -63,7 +63,7 @@ describe('billing.webhook.service — subscription_changed analytics emit:', () 
       updateIfEventNewer: jest.fn().mockResolvedValue({ _id: subId }),
     };
 
-    mockOrganizationRepository = {
+    mockOrganizationsService = {
       setPlan: jest.fn().mockResolvedValue({}),
     };
 
@@ -96,8 +96,8 @@ describe('billing.webhook.service — subscription_changed analytics emit:', () 
       },
     }));
 
-    jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
-      default: mockOrganizationRepository,
+    jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({
+      default: mockOrganizationsService,
     }));
 
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({

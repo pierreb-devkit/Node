@@ -67,17 +67,17 @@ try {
       const [
         { default: BillingReferralService },
         { default: BillingExtraBalanceRepository },
-        { default: InvitationRepository },
+        { default: InvitationsService },
         { default: UserService },
       ] = await Promise.all([
         import('../services/billing.referral.service.js'),
         import('../repositories/billing.extraBalance.repository.js'),
-        import('../../invitations/repositories/invitations.repository.js'),
+        import('../../invitations/services/invitations.service.js'),
         import('../../users/services/users.service.js'),
       ]);
 
       const cfg = config.billing.referral;
-      const accepted = await InvitationRepository.findAccepted();
+      const accepted = await InvitationsService.findAccepted();
 
       // Expected keys per invitation — derived from the service's expectedGrantKeys
       // (the SINGLE rule source shared with grantForInvitation): the cron never

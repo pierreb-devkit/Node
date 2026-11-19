@@ -12,7 +12,7 @@ describe('BillingAdminService unit tests:', () => {
   let BillingAdminService;
   let mockSubscriptionRepository;
   let mockProcessedStripeEventRepository;
-  let mockOrganizationRepository;
+  let mockOrganizationsService;
   let mockExtraBalanceRepository;
   let mockWebhookService;
   let mockStripeInstance;
@@ -70,7 +70,7 @@ describe('BillingAdminService unit tests:', () => {
       deleteByEventId: jest.fn().mockResolvedValue({ deleted: true }),
     };
 
-    mockOrganizationRepository = {
+    mockOrganizationsService = {
       exists: jest.fn().mockResolvedValue({ _id: orgId }),
       setPlan: jest.fn().mockResolvedValue({}),
     };
@@ -147,8 +147,8 @@ describe('BillingAdminService unit tests:', () => {
     jest.unstable_mockModule('../repositories/billing.processedStripeEvent.repository.js', () => ({
       default: mockProcessedStripeEventRepository,
     }));
-    jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
-      default: mockOrganizationRepository,
+    jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({
+      default: mockOrganizationsService,
     }));
     jest.unstable_mockModule('../repositories/billing.extraBalance.repository.js', () => ({
       default: mockExtraBalanceRepository,
@@ -224,7 +224,7 @@ describe('BillingAdminService unit tests:', () => {
 
       expect(mockStripeInstance.subscriptions.retrieve).toHaveBeenCalledWith(stripeSubId);
       expect(mockSubscriptionRepository.update).toHaveBeenCalled();
-      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
+      expect(mockOrganizationsService.setPlan).toHaveBeenCalledWith(orgId, 'pro');
       expect(result).toHaveProperty('previous');
       expect(result).toHaveProperty('updated');
     });
@@ -244,7 +244,7 @@ describe('BillingAdminService unit tests:', () => {
       const updateCall = mockSubscriptionRepository.update.mock.calls[0][0];
       expect(updateCall.plan).toBe('starter');
       expect(updateCall.plan).not.toBe('free');
-      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'starter');
+      expect(mockOrganizationsService.setPlan).toHaveBeenCalledWith(orgId, 'starter');
     });
 
     test('#3964: ABORTS the sync (no DB write) when the Stripe price is unresolvable — never downgrades to free', async () => {
@@ -261,7 +261,7 @@ describe('BillingAdminService unit tests:', () => {
 
       // Critical: no partial/incorrect write — the org's plan must be left untouched.
       expect(mockSubscriptionRepository.update).not.toHaveBeenCalled();
-      expect(mockOrganizationRepository.setPlan).not.toHaveBeenCalled();
+      expect(mockOrganizationsService.setPlan).not.toHaveBeenCalled();
     });
 
     test('throws 404 when no subscription exists', async () => {
@@ -473,7 +473,7 @@ describe('BillingAdminService unit tests:', () => {
       expect(mockSubscriptionRepository.update).toHaveBeenCalledWith(
         expect.objectContaining({ plan: 'free', status: 'canceled', cancelAtPeriodEnd: false, cancelAt: null }),
       );
-      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'free');
+      expect(mockOrganizationsService.setPlan).toHaveBeenCalledWith(orgId, 'free');
       expect(result.stripeStatus).toBe('canceled');
       expect(result.previous.plan).toBe('pro');
     });
@@ -651,7 +651,7 @@ describe('BillingAdminService unit tests:', () => {
     });
 
     test('throws 422 when org does not exist in DB (ghost org guard)', async () => {
-      mockOrganizationRepository.exists.mockResolvedValueOnce(null);
+      mockOrganizationsService.exists.mockResolvedValueOnce(null);
       await expect(
         BillingAdminService.creditDisputeReinstated(chargeId, amountCents, reason, refundRequestId, orgId, adminUserId),
       ).rejects.toMatchObject({ status: 422 });
@@ -702,7 +702,7 @@ describe('BillingAdminService unit tests:', () => {
 
       expect(mockSubscriptionRepository.findByOrganization).toHaveBeenCalledWith(orgId);
       expect(mockSubscriptionRepository.adminUpdatePlanOnly).toHaveBeenCalledWith(subId, planId, adminUserId);
-      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, planId);
+      expect(mockOrganizationsService.setPlan).toHaveBeenCalledWith(orgId, planId);
       expect(result.plan).toBe(planId);
       expect(mockLogger.info).toHaveBeenCalledWith(
         '[billing.admin] plan bumped manually',
@@ -725,11 +725,11 @@ describe('BillingAdminService unit tests:', () => {
       await expect(BillingAdminService.bumpOrgPlan(orgId, planId, null)).rejects.toMatchObject({ status: 422 });
     });
 
-    test('does not call OrganizationRepository.setPlan when adminUpdatePlanOnly fails', async () => {
+    test('does not call OrganizationsService.setPlan when adminUpdatePlanOnly fails', async () => {
       mockSubscriptionRepository.adminUpdatePlanOnly.mockRejectedValue(new Error('DB write failed'));
 
       await expect(BillingAdminService.bumpOrgPlan(orgId, planId, adminUserId)).rejects.toThrow('DB write failed');
-      expect(mockOrganizationRepository.setPlan).not.toHaveBeenCalled();
+      expect(mockOrganizationsService.setPlan).not.toHaveBeenCalled();
     });
   });
 

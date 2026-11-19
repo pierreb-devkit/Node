@@ -37,6 +37,18 @@ const creditPack = async (orgId, packId, stripeSessionId) => {
 };
 
 /**
+ * @function organizationExists
+ * @description Org-exists check handed to the repository debit (asked only when the org has
+ *              no balance doc yet). Lazy import keeps the organizations graph off billing's boot.
+ * @param {string} orgId - The organization ObjectId (string).
+ * @returns {Promise<boolean>} True when the organization exists.
+ */
+const organizationExists = async (orgId) => {
+  const { default: OrganizationsService } = await import('../../organizations/services/organizations.crud.service.js');
+  return OrganizationsService.exists(orgId);
+};
+
+/**
  * @function debit
  * @description Debit meter units from the extra balance.
  *              Returns applied=false if balance is insufficient or refId already used.
@@ -56,7 +68,7 @@ const creditPack = async (orgId, packId, stripeSessionId) => {
  *          (`reason: 'duplicate_step'` on a refId replay).
  */
 const debit = (orgId, units, refId) =>
-  retryWithBackoff(() => BillingExtraBalanceRepository.debit(orgId, units, refId), {
+  retryWithBackoff(() => BillingExtraBalanceRepository.debit(orgId, units, refId, { organizationExists }), {
     shouldRetry: /** @param {Error & {code?: string}} err - error thrown by the repository debit */ (err) =>
       !(typeof err?.message === 'string' && err.message.startsWith('invalid argument'))
       && err?.code !== 'ORGANIZATION_NOT_FOUND',

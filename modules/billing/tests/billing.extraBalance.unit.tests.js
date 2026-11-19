@@ -308,9 +308,6 @@ describe('BillingExtraBalance unit tests:', () => {
             }
           },
         }));
-        jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
-          default: { exists: jest.fn().mockResolvedValue({ _id: orgId }) },
-        }));
         const freshMod = await import('../repositories/billing.extraBalance.repository.js');
         const FreshRepo = freshMod.default;
 
@@ -325,7 +322,7 @@ describe('BillingExtraBalance unit tests:', () => {
           return Promise.resolve(updatedDoc);
         });
 
-        await FreshRepo.debit(orgId, 50, 'ref_fresh');
+        await FreshRepo.debit(orgId, 50, 'ref_fresh', { organizationExists: jest.fn().mockResolvedValue(true) });
 
         expect(step1Options?.upsert).toBe(true);
         expect(step1Update.$setOnInsert).toMatchObject({ organization: orgId, ledger: [], cachedBalance: 0 });
@@ -741,10 +738,6 @@ describe('BillingExtraBalance unit tests:', () => {
             }
           },
         }));
-        jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
-          default: mockOrgRepository,
-        }));
-
         const mod = await import('../repositories/billing.extraBalance.repository.js');
         BillingExtraBalanceRepositoryWithOrg = mod.default;
       });
@@ -764,10 +757,10 @@ describe('BillingExtraBalance unit tests:', () => {
           .mockResolvedValueOnce(null) // upsert
           .mockResolvedValueOnce(updatedDoc); // debit
 
-        const result = await BillingExtraBalanceRepositoryWithOrg.debit(orgId, 100, 'ref_new_org');
+        const result = await BillingExtraBalanceRepositoryWithOrg.debit(orgId, 100, 'ref_new_org', { organizationExists: mockOrgRepository.exists });
 
         expect(result.applied).toBe(true);
-        expect(mockOrgRepository.exists).toHaveBeenCalledWith({ _id: orgId });
+        expect(mockOrgRepository.exists).toHaveBeenCalledWith(orgId);
       });
 
       test('debit for valid org with existing doc — skips org check', async () => {
@@ -785,7 +778,7 @@ describe('BillingExtraBalance unit tests:', () => {
           .mockResolvedValueOnce(null) // upsert (no-op)
           .mockResolvedValueOnce(updatedDoc); // debit
 
-        const result = await BillingExtraBalanceRepositoryWithOrg.debit(orgId, 100, 'ref_existing_org');
+        const result = await BillingExtraBalanceRepositoryWithOrg.debit(orgId, 100, 'ref_existing_org', { organizationExists: mockOrgRepository.exists });
 
         expect(result.applied).toBe(true);
         // Org check must NOT be called when doc already exists
@@ -800,7 +793,7 @@ describe('BillingExtraBalance unit tests:', () => {
         mockOrgRepository.exists.mockResolvedValue(null); // org not found
 
         await expect(
-          BillingExtraBalanceRepositoryWithOrg.debit(orgId, 100, 'ref_ghost_org'),
+          BillingExtraBalanceRepositoryWithOrg.debit(orgId, 100, 'ref_ghost_org', { organizationExists: mockOrgRepository.exists }),
         ).rejects.toMatchObject({ status: 404 });
 
         // No doc should be created
@@ -825,7 +818,7 @@ describe('BillingExtraBalance unit tests:', () => {
           .mockResolvedValueOnce(null)
           .mockResolvedValueOnce(updatedDoc);
 
-        const result = await BillingExtraBalanceRepositoryWithOrg.debit(orgId, 100, 'ref_sub_only_org');
+        const result = await BillingExtraBalanceRepositoryWithOrg.debit(orgId, 100, 'ref_sub_only_org', { organizationExists: mockOrgRepository.exists });
         expect(result.applied).toBe(true);
       });
     });

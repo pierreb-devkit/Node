@@ -114,8 +114,8 @@ export default async (app) => {
       const { default: UserService } = await import('../users/services/users.service.js');
       const user = await UserService.getBrut({ id: userId });
       if (!user?.referredBy) return; // not an invited signup — nothing to grant
-      const { default: InvitationRepository } = await import('../invitations/repositories/invitations.repository.js');
-      const invitation = await InvitationRepository.findByAcceptedUserId(userId);
+      const { default: InvitationsService } = await import('../invitations/services/invitations.service.js');
+      const invitation = await InvitationsService.findByAcceptedUserId(userId);
       const { default: BillingReferralService } = await import('./services/billing.referral.service.js');
       if (!invitation) {
         // referredBy without a finalized invite = a link signup (#4214): grantForLink is a

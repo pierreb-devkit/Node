@@ -6,7 +6,7 @@ import logger from '../../../lib/services/logger.js';
 import { bumpEventMarkers } from '../lib/billing.markerBump.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import ProcessedStripeEventRepository from '../repositories/billing.processedStripeEvent.repository.js';
-import OrganizationRepository from '../../organizations/repositories/organizations.repository.js';
+import OrganizationsService from '../../organizations/services/organizations.crud.service.js';
 import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
 import BillingWebhookService from './billing.webhook.service.js';
 import { getDollarsToUnitRatio } from '../lib/billing.constants.js';
@@ -137,7 +137,7 @@ const syncOrgFromStripe = async (orgId) => {
   });
 
   // Sync org plan field so quotas + access control reflect the new plan immediately.
-  await OrganizationRepository.setPlan(orgId, newPlan);
+  await OrganizationsService.setPlan(orgId, newPlan);
 
   logger.info('[billing.admin] syncOrgFromStripe — synced', {
     orgId,
@@ -303,7 +303,7 @@ const cancelSubscription = async (orgId) => {
     ...bumpEventMarkers('subscription', 'admin-cancel'),
   });
 
-  await OrganizationRepository.setPlan(orgId, 'free');
+  await OrganizationsService.setPlan(orgId, 'free');
 
   logger.info('[billing.admin] cancelSubscription — canceled', {
     orgId,
@@ -356,8 +356,8 @@ const creditDisputeReinstated = async (chargeId, amountCents, reason, refundRequ
 
   // Guard: reject credits for non-existent orgs — mirrors the debit existence guard.
   // A 24-hex match that references a ghost org would silently create a ledger doc for nobody.
-  // OrganizationRepository.exists() uses Mongoose .exists() — lighter than a full findOne+populate.
-  const orgExists = await OrganizationRepository.exists({ _id: orgId });
+  // OrganizationsService.exists() uses Mongoose .exists() — lighter than a full findOne+populate.
+  const orgExists = await OrganizationsService.exists(orgId);
   if (!orgExists) {
     throw Object.assign(new Error(`organization not found: ${orgId}`), { status: 422 });
   }
@@ -497,7 +497,7 @@ const bumpOrgPlan = async (orgId, newPlanId, adminUserId) => {
   // Sync org plan so meter quotas / feature flags / access control reflect the bump immediately.
   // Without this the new plan only applies to the subscription doc, but the organization's plan
   // field — read by requirePlan / requireQuota — stays stale until the next Stripe webhook.
-  await OrganizationRepository.setPlan(orgId, newPlanId);
+  await OrganizationsService.setPlan(orgId, newPlanId);
 
   logger.info('[billing.admin] plan bumped manually', {
     orgId,

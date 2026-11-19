@@ -100,9 +100,13 @@ const creditPack = async (orgId, amount, stripeSessionId, expiresAt = null) => {
  * @param {string} orgId - The organization ObjectId (string).
  * @param {number} amount - Meter units to debit (must be > 0).
  * @param {string} refId - Unique reference for this debit (idempotency key).
+ * @param {Object} [options]
+ * @param {(orgId: string) => Promise<boolean>} [options.organizationExists] - Whether the
+ *   organization exists. Passed by the service (the organizations module owns that read, a
+ *   repository never reaches into another module). Without it only a Subscription proves the org.
  * @returns {Promise<{doc: Object|null, applied: boolean, reason?: string}>} Updated doc and whether debit was applied.
  */
-const debit = async (orgId, amount, refId) => {
+const debit = async (orgId, amount, refId, { organizationExists } = {}) => {
   if (!isValidOrgId(orgId)) return { doc: null, applied: false };
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('invalid argument: amount must be a positive finite number');
   if (typeof refId !== 'string' || refId.trim() === '') throw new Error('invalid argument: refId must be a non-empty string');
@@ -121,8 +125,7 @@ const debit = async (orgId, amount, refId) => {
   // before the full Organization doc, e.g. in CLI tools or integration tests).
   const existing = await BillingExtraBalance().exists({ organization: orgId });
   if (!existing) {
-    const { default: OrganizationRepository } = await import('../../organizations/repositories/organizations.repository.js');
-    const orgExists = await OrganizationRepository.exists({ _id: orgId });
+    const orgExists = organizationExists ? await organizationExists(orgId) : false;
     if (!orgExists) {
       const Subscription = mongoose.model('Subscription');
       const subExists = await Subscription.exists({ organization: orgId });

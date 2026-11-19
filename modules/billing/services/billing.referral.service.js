@@ -127,15 +127,9 @@ const resolveGrantOrganization = async (userId) => {
     return String(user.currentOrganization._id || user.currentOrganization);
   }
   // Fallback: the user's active membership (e.g. currentOrganization unset edge cases).
-  const [{ default: MembershipRepository }, { MEMBERSHIP_STATUSES }] = await Promise.all([
-    import('../../organizations/repositories/organizations.membership.repository.js'),
-    import('../../organizations/lib/constants.js'),
-  ]);
   // Oldest membership wins (createdAt asc) — deterministic + auditable when a user has several.
-  const membership = await MembershipRepository.findOne(
-    { userId: String(userId), status: MEMBERSHIP_STATUSES.ACTIVE },
-    { sort: { createdAt: 1 } },
-  );
+  const { default: MembershipService } = await import('../../organizations/services/organizations.membership.service.js');
+  const membership = await MembershipService.findFirstActiveByUser(String(userId));
   if (!membership?.organizationId) return null;
   return String(membership.organizationId._id || membership.organizationId);
 };
@@ -358,8 +352,8 @@ const grantForLink = async ({ userId, referredBy, invitation } = {}) => {
   }
   let accepted = invitation;
   if (accepted === undefined) {
-    const { default: InvitationRepository } = await import('../../invitations/repositories/invitations.repository.js');
-    accepted = await InvitationRepository.findByAcceptedUserId(String(userId));
+    const { default: InvitationsService } = await import('../../invitations/services/invitations.service.js');
+    accepted = await InvitationsService.findByAcceptedUserId(String(userId));
   }
   if (accepted) return { skipped: 'invited' };
   const budget = await linkBudget(String(referredBy), cap);

@@ -26,7 +26,7 @@ const makeBaseSetup = (configOverride = {}) => {
     updateIfEventNewer: jest.fn().mockResolvedValue({ _id: subId }),
   };
 
-  const mockOrganizationRepository = { setPlan: jest.fn().mockResolvedValue({}) };
+  const mockOrganizationsService = { setPlan: jest.fn().mockResolvedValue({}) };
   const mockResetService = {
     resetWeek: jest.fn().mockResolvedValue({}),
     forceRotateForPlanChange: jest.fn().mockResolvedValue({}),
@@ -51,7 +51,7 @@ const makeBaseSetup = (configOverride = {}) => {
   jest.unstable_mockModule('../repositories/billing.processedStripeEvent.repository.js', () => ({
     default: { wasProcessed: jest.fn().mockResolvedValue(false), tryRecord: jest.fn().mockResolvedValue({ recorded: true }) },
   }));
-  jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({ default: mockOrganizationRepository }));
+  jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({ default: mockOrganizationsService }));
   jest.unstable_mockModule('../services/billing.extra.service.js', () => ({ default: { creditPack: jest.fn(), refundPartial: jest.fn() } }));
   jest.unstable_mockModule('../services/billing.reset.service.js', () => ({ default: mockResetService }));
   jest.unstable_mockModule('../lib/stripe.js', () => ({ default: jest.fn(() => mockStripe) }));
@@ -75,7 +75,7 @@ const makeBaseSetup = (configOverride = {}) => {
     default: { record: jest.fn().mockResolvedValue({}) },
   }));
 
-  return { orgId, subId, mockSubscriptionRepository, mockOrganizationRepository, mockResetService, mockEvents, mockStripe };
+  return { orgId, subId, mockSubscriptionRepository, mockOrganizationsService, mockResetService, mockEvents, mockStripe };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -115,7 +115,7 @@ describe('resolvePlan via priceId map (P0 fix — price.metadata.planId is empty
       expect.objectContaining({ plan: 'pro' }),
       'subscription',
     );
-    expect(mocks.mockOrganizationRepository.setPlan).toHaveBeenCalledWith(mocks.orgId, 'pro');
+    expect(mocks.mockOrganizationsService.setPlan).toHaveBeenCalledWith(mocks.orgId, 'pro');
   });
 
   test('resolves annual priceId to correct plan', async () => {
@@ -161,7 +161,7 @@ describe('resolvePlan via priceId map (P0 fix — price.metadata.planId is empty
       expect.objectContaining({ plan: 'pro' }),
       'subscription',
     );
-    expect(mocks.mockOrganizationRepository.setPlan).toHaveBeenCalledWith(mocks.orgId, 'pro');
+    expect(mocks.mockOrganizationsService.setPlan).toHaveBeenCalledWith(mocks.orgId, 'pro');
     expect(mocks.mockEvents.emit).toHaveBeenCalledWith(
       'billing.webhook.plan_unresolved',
       expect.objectContaining({ organizationId: mocks.orgId, retainedPlan: 'pro', hadKnownPlan: true }),
@@ -415,7 +415,7 @@ describe('handleSubscriptionCreated — safety-net handler:', () => {
 
     await BillingWebhookService.handleSubscriptionCreated(makeSubscription(), makeEvent());
 
-    expect(mocks.mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
+    expect(mocks.mockOrganizationsService.setPlan).toHaveBeenCalledWith(orgId, 'pro');
   });
 
   test('existing doc: forceRotateForPlanChange called (preserveUsage: true) after successful update', async () => {
@@ -437,7 +437,7 @@ describe('handleSubscriptionCreated — safety-net handler:', () => {
     await expect(
       BillingWebhookService.handleSubscriptionCreated(makeSubscription(), makeEvent()),
     ).resolves.not.toThrow();
-    expect(mocks.mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
+    expect(mocks.mockOrganizationsService.setPlan).toHaveBeenCalledWith(orgId, 'pro');
     expect(mockLogger.warn).toHaveBeenCalledWith(
       '[billing.webhook] forceRotateForPlanChange failed after subscription.created (existing row)',
       expect.objectContaining({ organizationId: orgId }),
@@ -451,7 +451,7 @@ describe('handleSubscriptionCreated — safety-net handler:', () => {
 
     await BillingWebhookService.handleSubscriptionCreated(makeSubscription(), makeEvent());
 
-    expect(mocks.mockOrganizationRepository.setPlan).not.toHaveBeenCalled();
+    expect(mocks.mockOrganizationsService.setPlan).not.toHaveBeenCalled();
   });
 
   test('#3970: existing doc — retains current plan (does NOT force free) + emits alert on unresolvable price', async () => {
@@ -470,7 +470,7 @@ describe('handleSubscriptionCreated — safety-net handler:', () => {
       expect.objectContaining({ plan: 'enterprise' }),
       'subscription',
     );
-    expect(mocks.mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'enterprise');
+    expect(mocks.mockOrganizationsService.setPlan).toHaveBeenCalledWith(orgId, 'enterprise');
     expect(mocks.mockEvents.emit).toHaveBeenCalledWith(
       'billing.webhook.plan_unresolved',
       expect.objectContaining({ organizationId: orgId, retainedPlan: 'enterprise', hadKnownPlan: true }),
@@ -493,7 +493,7 @@ describe('handleSubscriptionCreated — safety-net handler:', () => {
         status: 'active',
       }),
     );
-    expect(mocks.mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
+    expect(mocks.mockOrganizationsService.setPlan).toHaveBeenCalledWith(orgId, 'pro');
   });
 
   test('Dashboard subscription: create succeeds — forceRotateForPlanChange called (preserveUsage: true)', async () => {
@@ -526,7 +526,7 @@ describe('handleSubscriptionCreated — safety-net handler:', () => {
     ).resolves.not.toThrow();
     // Row creation + plan sync already committed before the rotation call — a rotation
     // failure must not roll those back or propagate.
-    expect(mocks.mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
+    expect(mocks.mockOrganizationsService.setPlan).toHaveBeenCalledWith(orgId, 'pro');
     expect(mockLogger.warn).toHaveBeenCalledWith(
       '[billing.webhook] forceRotateForPlanChange failed after subscription.created (new row)',
       expect.objectContaining({ organizationId: orgId }),
@@ -564,7 +564,7 @@ describe('handleSubscriptionCreated — safety-net handler:', () => {
     expect(mocks.mockSubscriptionRepository.create).toHaveBeenCalledWith(
       expect.objectContaining({ plan: 'pro' }),
     );
-    expect(mocks.mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
+    expect(mocks.mockOrganizationsService.setPlan).toHaveBeenCalledWith(orgId, 'pro');
     expect(mocks.mockEvents.emit).toHaveBeenCalledWith(
       'billing.webhook.plan_unresolved',
       expect.objectContaining({ organizationId: orgId, retainedPlan: 'pro', hadKnownPlan: true }),

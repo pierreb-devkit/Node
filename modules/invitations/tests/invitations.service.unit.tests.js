@@ -14,6 +14,8 @@ jest.unstable_mockModule('../repositories/invitations.repository.js', () => ({
     remove: jest.fn(),
     revoke: jest.fn(),
     get: jest.fn(),
+    findAccepted: jest.fn(),
+    findByAcceptedUserId: jest.fn(),
   },
 }));
 
@@ -558,5 +560,19 @@ describe('InvitationService.resend', () => {
     InvitationRepository.get.mockResolvedValue(pending);
     mockMailer.sendMail.mockRejectedValue(transportError);
     await expect(InvitationService.resend('i1')).rejects.toThrow('SMTP timeout');
+  });
+});
+
+describe('InvitationService public reads (billing referral)', () => {
+  test('findAccepted delegates to the repository', async () => {
+    const rows = [{ _id: 'i1', invitedBy: 'u1', acceptedUserId: 'u2' }];
+    InvitationRepository.findAccepted.mockResolvedValue(rows);
+    await expect(InvitationService.findAccepted()).resolves.toBe(rows);
+  });
+
+  test('findByAcceptedUserId delegates to the repository', async () => {
+    InvitationRepository.findByAcceptedUserId.mockResolvedValue(null);
+    await expect(InvitationService.findByAcceptedUserId('u2')).resolves.toBeNull();
+    expect(InvitationRepository.findByAcceptedUserId).toHaveBeenCalledWith('u2');
   });
 });

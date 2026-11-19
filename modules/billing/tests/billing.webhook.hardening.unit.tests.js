@@ -77,7 +77,7 @@ describe('handleSubscriptionUpdated — period fields from items.data[0]:', () =
     jest.unstable_mockModule('../repositories/billing.processedStripeEvent.repository.js', () => ({
       default: { tryRecord: jest.fn().mockResolvedValue({ recorded: true }), incrementAttempts: jest.fn(), markDeadLetter: jest.fn(), deleteByEventId: jest.fn() },
     }));
-    jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
+    jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({
       default: { setPlan: jest.fn().mockResolvedValue({}) },
     }));
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({ default: { creditPack: jest.fn(), refundPartial: jest.fn() } }));
@@ -925,7 +925,7 @@ describe('handleSubscriptionUpdated — plan.changed listener error swallow:', (
     jest.unstable_mockModule('../repositories/billing.processedStripeEvent.repository.js', () => ({
       default: { tryRecord: jest.fn().mockResolvedValue({ recorded: true }), incrementAttempts: jest.fn(), markDeadLetter: jest.fn(), deleteByEventId: jest.fn() },
     }));
-    jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
+    jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({
       default: { setPlan: jest.fn().mockResolvedValue({}) },
     }));
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({ default: { creditPack: jest.fn(), refundPartial: jest.fn() } }));
@@ -1068,7 +1068,7 @@ describe('handleChargeRefunded — billing.refund.unresolved listener error swal
 describe('handleCustomerDeleted — null out stripeCustomerId / subscription:', () => {
   let BillingWebhookService;
   let mockSubscriptionRepository;
-  let mockOrganizationRepository;
+  let mockOrganizationsService;
   let mockResetService;
   let mockLogger;
   let mockProcessedStripeEventRepository;
@@ -1096,7 +1096,7 @@ describe('handleCustomerDeleted — null out stripeCustomerId / subscription:', 
       update: jest.fn(),
       updateIfEventNewer: jest.fn(),
     };
-    mockOrganizationRepository = { setPlan: jest.fn().mockResolvedValue() };
+    mockOrganizationsService = { setPlan: jest.fn().mockResolvedValue() };
     mockResetService = {
       resetWeek: jest.fn(),
       forceRotateForPlanChange: jest.fn().mockResolvedValue(),
@@ -1113,8 +1113,8 @@ describe('handleCustomerDeleted — null out stripeCustomerId / subscription:', 
     jest.unstable_mockModule('../repositories/billing.processedStripeEvent.repository.js', () => ({
       default: mockProcessedStripeEventRepository,
     }));
-    jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
-      default: mockOrganizationRepository,
+    jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({
+      default: mockOrganizationsService,
     }));
     jest.unstable_mockModule('../lib/events.js', () => ({ default: { emit: jest.fn() } }));
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mockLogger }));
@@ -1164,7 +1164,7 @@ describe('handleCustomerDeleted — null out stripeCustomerId / subscription:', 
       }),
       'subscription',
     );
-    expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'free');
+    expect(mockOrganizationsService.setPlan).toHaveBeenCalledWith(orgId, 'free');
     expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledWith(orgId, { preserveUsage: false });
   });
 
@@ -1177,7 +1177,7 @@ describe('handleCustomerDeleted — null out stripeCustomerId / subscription:', 
     );
 
     expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();
-    expect(mockOrganizationRepository.setPlan).not.toHaveBeenCalled();
+    expect(mockOrganizationsService.setPlan).not.toHaveBeenCalled();
     expect(mockResetService.forceRotateForPlanChange).not.toHaveBeenCalled();
   });
 
@@ -1196,7 +1196,7 @@ describe('handleCustomerDeleted — null out stripeCustomerId / subscription:', 
       '[billing.webhook] skipped stale event',
       expect.objectContaining({ eventId: 'evt_cd_stale' }),
     );
-    expect(mockOrganizationRepository.setPlan).not.toHaveBeenCalled();
+    expect(mockOrganizationsService.setPlan).not.toHaveBeenCalled();
     expect(mockResetService.forceRotateForPlanChange).not.toHaveBeenCalled();
   });
 

@@ -6,8 +6,8 @@ import logger from '../../lib/services/logger.js';
 import billingEvents from './lib/events.js';
 import mailer from '../../lib/helpers/mailer/index.js';
 import getBaseUrl from '../../lib/helpers/getBaseUrl.js';
-import MembershipRepository from '../organizations/repositories/organizations.membership.repository.js';
-import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../organizations/lib/constants.js';
+import MembershipService from '../organizations/services/organizations.membership.service.js';
+import { MEMBERSHIP_ROLES } from '../organizations/lib/constants.js';
 
 /**
  * Resolve owner/admin emails for an organization.
@@ -17,11 +17,7 @@ import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../organizations/lib/cons
  */
 export const resolveOrgAdminEmails = async (organizationId) => {
   try {
-    const memberships = await MembershipRepository.list({
-      organizationId,
-      role: { $in: [MEMBERSHIP_ROLES.OWNER, MEMBERSHIP_ROLES.ADMIN] },
-      status: MEMBERSHIP_STATUSES.ACTIVE,
-    });
+    const memberships = await MembershipService.listActiveByRoles(organizationId, [MEMBERSHIP_ROLES.OWNER, MEMBERSHIP_ROLES.ADMIN]);
     return memberships.map((m) => m.userId?.email).filter(Boolean);
   } catch (err) {
     logger.warn('[billing.email] resolveOrgAdminEmails failed (non-fatal)', {

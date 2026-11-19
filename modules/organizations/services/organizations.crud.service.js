@@ -349,6 +349,25 @@ const adminStats = async () => {
   return { total, weeks: fillWeeks(rows, start) };
 };
 
+/**
+ * @function exists
+ * @description Public read for other modules: whether an organization exists.
+ * @param {String} orgId - The organization ID.
+ * @returns {Promise<boolean>} True when the organization exists.
+ */
+const exists = async (orgId) => Boolean(await OrganizationsRepository.exists({ _id: orgId }));
+
+/**
+ * @function setPlan
+ * @description Public write for the billing module: keep `Organization.plan` in sync
+ *   with the subscription. The only path that writes `plan` (the settings update
+ *   allow-list never includes it).
+ * @param {String} orgId - The organization ID.
+ * @param {String} plan - The plan to set (e.g. 'free').
+ * @returns {Promise<Object|null>} The updated organization, or null when orgId is invalid.
+ */
+const setPlan = (orgId, plan) => OrganizationsRepository.setPlan(orgId, plan);
+
 export default {
   list,
   adminStats,
@@ -360,4 +379,6 @@ export default {
   switchOrganization,
   autoSetCurrentOrganization,
   searchByDomain,
+  exists,
+  setPlan,
 };

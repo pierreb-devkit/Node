@@ -12,7 +12,7 @@ import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globa
 describe('Billing webhook checkout unit tests:', () => {
   let BillingWebhookService;
   let mockSubscriptionRepository;
-  let mockOrganizationRepository;
+  let mockOrganizationsService;
   let mockExtraService;
   let mockResetService;
   let mockStripeInstance;
@@ -33,7 +33,7 @@ describe('Billing webhook checkout unit tests:', () => {
       updateIfEventNewer: jest.fn().mockResolvedValue({ _id: subId }),
     };
 
-    mockOrganizationRepository = {
+    mockOrganizationsService = {
       setPlan: jest.fn().mockResolvedValue({}),
     };
 
@@ -63,8 +63,8 @@ describe('Billing webhook checkout unit tests:', () => {
       },
     }));
 
-    jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
-      default: mockOrganizationRepository,
+    jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({
+      default: mockOrganizationsService,
     }));
 
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
@@ -496,8 +496,8 @@ describe('Billing webhook checkout unit tests:', () => {
       jest.unstable_mockModule('../repositories/billing.processedStripeEvent.repository.js', () => ({
         default: { wasProcessed: jest.fn().mockResolvedValue(false), tryRecord: jest.fn().mockResolvedValue({ recorded: true }) },
       }));
-      jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
-        default: mockOrganizationRepository,
+      jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({
+        default: mockOrganizationsService,
       }));
       jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
         default: { creditPack: jest.fn(), refundPartial: jest.fn() },
@@ -549,7 +549,7 @@ describe('Billing webhook checkout unit tests:', () => {
       );
 
       // Event was stale — org plan should not be synced
-      expect(mockOrganizationRepository.setPlan).not.toHaveBeenCalled();
+      expect(mockOrganizationsService.setPlan).not.toHaveBeenCalled();
     });
   });
 });

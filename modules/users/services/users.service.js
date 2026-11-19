@@ -13,7 +13,6 @@ import passwordHelper from '../../../lib/helpers/password.js';
 import { weeklyWindowStart, fillWeeks } from '../../../lib/helpers/weeklyStats.js';
 import UserRepository from '../repositories/users.repository.js';
 import MembershipService from '../../organizations/services/organizations.membership.service.js';
-import MembershipRepository from '../../organizations/repositories/organizations.membership.repository.js';
 import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../../organizations/lib/constants.js';
 import { removeSensitive } from '../utils/sanitizeUser.js';
 import { createUnsubscribeToken } from '../utils/unsubscribeToken.js';
@@ -418,7 +417,7 @@ const remove = async (user) => {
   // loop above iterates listByUser, which is ACTIVE-only — without this sweep a
   // deleted user's pending invitations / join requests would survive as orphans
   // pointing at a dead userId (and keep occupying the (user, org) unique slot).
-  await MembershipRepository.deleteMany({ userId, status: MEMBERSHIP_STATUSES.PENDING });
+  await MembershipService.deleteMany({ userId, status: MEMBERSHIP_STATUSES.PENDING });
 
   const result = await UserRepository.remove(user);
   return result;

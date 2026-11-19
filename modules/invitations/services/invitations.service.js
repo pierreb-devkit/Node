@@ -398,6 +398,21 @@ const list = (user) => {
 const get = (id) => InvitationRepository.get(id);
 
 /**
+ * @desc Public read for other modules (billing referral): every accepted invitation,
+ * lean, `{ _id, invitedBy, acceptedUserId }` only.
+ * @returns {Promise<Array<Object>>}
+ */
+const findAccepted = () => InvitationRepository.findAccepted();
+
+/**
+ * @desc Public read for other modules (billing referral): the accepted invitation a
+ * user consumed, lean, `{ _id, invitedBy, acceptedUserId }` only.
+ * @param {String} userId - the accepted (invited) user's id
+ * @returns {Promise<Object|null>}
+ */
+const findByAcceptedUserId = (userId) => InvitationRepository.findByAcceptedUserId(userId);
+
+/**
  * @desc E8 — soft-delete (revoke) an invitation by id (status:'revoked' + revokedAt,
  * NOT a hard delete), preserving invitedBy/acceptedUserId for the referral phase.
  * @param {String} id
@@ -456,4 +471,6 @@ export default {
   get,
   revoke,
   resend,
+  findAccepted,
+  findByAcceptedUserId,
 };

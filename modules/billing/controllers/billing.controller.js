@@ -1,7 +1,7 @@
 /**
  * Module dependencies
  */
-import { activeStatuses } from '../lib/constants.js';
+import { effectivePlanOf } from '../lib/constants.js';
 import config from '../../../config/index.js';
 import responses from '../../../lib/helpers/responses.js';
 import logger from '../../../lib/services/logger.js';
@@ -86,7 +86,7 @@ const getUsage = async (req, res) => {
   try {
     // Local DB read only — no Stripe fetch needed for plan/status on the usage page.
     const subscription = await BillingService.getLocalSubscription(req.organization._id);
-    const plan = (!subscription || !activeStatuses.includes(subscription.status)) ? 'free' : (subscription.plan || 'free');
+    const plan = effectivePlanOf(subscription);
 
     if (config.billing?.meterMode) {
       // Meter mode — return compute fields
