@@ -190,4 +190,28 @@ describe('users.service.remove — sole-owner org deletion routes through the or
     expect(mockOrgRepositoryRemove).not.toHaveBeenCalled();
     expect(mockUserRepositoryRemove).not.toHaveBeenCalled();
   });
+
+  test('multi-org pre-flight: org A passes, org B refuses — org A is NOT deleted and the user stays (#4321)', async () => {
+    const refusal = Object.assign(new Error('Cancel the subscription first'), { status: 409, code: 'ORGANIZATION_HAS_LIVE_SUBSCRIPTION' });
+    // Org A listed FIRST: without the pre-flight it would be removed before org B refuses.
+    mockMembershipServiceListByUser.mockResolvedValue([
+      { _id: 'mA', role: 'owner', organizationId: { _id: 'orgA', name: 'Org A' }, status: 'active' },
+      { _id: 'mB', role: 'owner', organizationId: { _id: 'orgB', name: 'Org B' }, status: 'active' },
+    ]);
+    const guard = jest.fn(async ({ organizationId }) => {
+      if (String(organizationId) === 'orgB') throw refusal;
+    });
+    onBeforeOrganizationRemoved(guard);
+
+    await expect(UsersService.remove(ownerUser)).rejects.toBe(refusal);
+
+    expect(guard).toHaveBeenCalledTimes(2);
+    // The guard receives the populated organization, so it can name it in the refusal.
+    expect(guard).toHaveBeenNthCalledWith(1, { organizationId: 'orgA', organization: { _id: 'orgA', name: 'Org A' } });
+    expect(guard).toHaveBeenNthCalledWith(2, { organizationId: 'orgB', organization: { _id: 'orgB', name: 'Org B' } });
+    expect(mockOrgRepositoryRemove).not.toHaveBeenCalled();
+    expect(mockMembershipRepositoryDeleteMany).not.toHaveBeenCalled();
+    expect(mockMembershipServiceDeleteMany).not.toHaveBeenCalled();
+    expect(mockUserRepositoryRemove).not.toHaveBeenCalled();
+  });
 });

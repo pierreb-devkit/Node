@@ -228,7 +228,8 @@ const forceRotateForPlanChange = async (organizationId, options = {}) => {
 /**
  * @function resetAllDue
  * @description Iterate active subscriptions where current_period_start has crossed
- *              a weekly boundary and call resetWeek for each.
+ *              a weekly boundary and call resetWeek for each. A subscription whose
+ *              organization no longer exists (anonymized on org removal) is skipped.
  *              Only runs when meterMode is enabled.
  *
  * @returns {Promise<{processed: number, errors: number}>} Summary of the sweep.
@@ -242,8 +243,15 @@ const resetAllDue = async () => {
   let processed = 0;
   let errors = 0;
 
+  // Lazy: keeps the organizations graph off billing's boot (same as billing.extra.service).
+  const { default: OrganizationsService } = await import('../../organizations/services/organizations.crud.service.js');
+
   for (const sub of subs) {
     try {
+      // A removed organization's subscription is kept under a tombstone id (org-removal
+      // cleanup): no organization exists for it, so it gets no new week and no settlement
+      // credit — its usage stays deleted and its ledger is never credited again (only expiry rows may still be added).
+      if (!(await OrganizationsService.exists(String(sub.organization)))) continue;
       // Derive the week anchor from lastResetAt + 7d (or now when no prior reset exists).
       // Using currentPeriodStart would derive the same weekKey every run within the same
       // monthly/annual Stripe cycle → reset would be a no-op for weeks 2/3/4.

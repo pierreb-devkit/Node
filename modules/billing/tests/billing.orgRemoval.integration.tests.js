@@ -1,113 +1,105 @@
 /**
  * Module dependencies.
  */
-import request from 'supertest';
 import path from 'path';
 import mongoose from 'mongoose';
 import { beforeAll, afterAll, describe, test, expect } from '@jest/globals';
 
 import { bootstrap } from '../../../lib/app.js';
-import config from '../../../config/index.js';
+import mongooseService from '../../../lib/services/mongoose.js';
 
 /**
- * Organization removal with a live paid subscription (#4321), through the real Express
- * app + Mongo: billing's before-removal guard refuses with 409 while the subscription is
- * active, trialing or past_due — for the owner's DELETE /api/organizations/:id and for
- * the account deletion cascade (DELETE /api/users) — and nothing is deleted. Once the
- * subscription is canceled, the removal goes through.
+ * Org removal cleans the removed organization's billing data (#4306): the billing
+ * org-removal handler (registered by billing.init at boot) keeps its subscription and
+ * extras balance, anonymized under one tombstone id (ledger unchanged), deletes its usage,
+ * and leaves another organization's rows intact.
  */
-describe('Billing org-removal guard (#4321):', () => {
-  let agent;
-  let UserService;
-  let Subscription;
+describe('Billing org-removal cleanup integration tests:', () => {
+  let OrganizationsService;
   let Organization;
-  let Membership;
-  let user;
-  let personalOrgId;
-  let paidOrgId;
-  let originalOrganizations;
+  let Subscription;
+  let BillingUsage;
+  let BillingExtraBalance;
 
-  const email = 'billing-org-removal-guard@test.com';
+  const removedId = new mongoose.Types.ObjectId();
+  const keptId = new mongoose.Types.ObjectId();
+  const orgIds = [removedId, keptId];
+  const seeded = { subscriptions: [], balances: [] };
+
+  /**
+   * Seed an organization with one row in every org-scoped billing collection.
+   * @param {import('mongoose').Types.ObjectId} orgId - the organization id
+   * @param {string} slug - unique slug
+   * @returns {Promise<void>}
+   */
+  const seed = async (orgId, slug) => {
+    await Organization.create({ _id: orgId, name: slug, slug, plan: 'free' });
+    const sub = await Subscription.create({ organization: orgId, plan: 'pro', status: 'active', stripeCustomerId: `cus_${slug}` });
+    await BillingUsage.create({ organizationId: orgId, month: '2026-11', legacyPeriod: true });
+    const balance = await BillingExtraBalance.create({
+      organization: orgId,
+      ledger: [{ kind: 'topup', source: 'referral', amount: 100, refId: `referral:${slug}:referrer`, at: new Date() }],
+      cachedBalance: 100,
+    });
+    seeded.subscriptions.push(sub._id);
+    seeded.balances.push(balance._id);
+  };
+
+  const counts = async (orgId) => ({
+    subscriptions: await Subscription.countDocuments({ organization: orgId }),
+    usage: await BillingUsage.countDocuments({ organizationId: orgId }),
+    extraBalances: await BillingExtraBalance.countDocuments({ organization: orgId }),
+  });
 
   const cleanup = async () => {
-    try {
-      const existing = await UserService.getBrut({ email });
-      if (existing) {
-        const memberships = await Membership.find({ userId: existing._id }).lean();
-        const orgIds = memberships.map((m) => m.organizationId);
-        await Subscription.deleteMany({ organization: { $in: orgIds } });
-        await Membership.deleteMany({ organizationId: { $in: orgIds } });
-        await Organization.deleteMany({ _id: { $in: orgIds } });
-        await UserService.remove(existing);
-      }
-    } catch (_) { /* cleanup — ignore errors */ }
+    await Promise.all([
+      Organization.deleteMany({ _id: { $in: orgIds } }),
+      Subscription.deleteMany({ $or: [{ organization: { $in: orgIds } }, { _id: { $in: seeded.subscriptions } }] }),
+      BillingUsage.deleteMany({ organizationId: { $in: orgIds } }),
+      BillingExtraBalance.deleteMany({ $or: [{ organization: { $in: orgIds } }, { _id: { $in: seeded.balances } }] }),
+    ]);
   };
 
   beforeAll(async () => {
-    const init = await bootstrap();
-    agent = request.agent(init.app);
-    UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
-    Subscription = mongoose.model('Subscription');
+    await bootstrap();
+    OrganizationsService = (await import(path.resolve('./modules/organizations/services/organizations.crud.service.js'))).default;
     Organization = mongoose.model('Organization');
-    Membership = mongoose.model('Membership');
-    originalOrganizations = config.organizations;
-    config.organizations = { ...originalOrganizations, enabled: true, domainMatching: false };
+    Subscription = mongoose.model('Subscription');
+    BillingUsage = mongoose.model('BillingUsage');
+    BillingExtraBalance = mongoose.model('BillingExtraBalance');
     await cleanup();
-
-    const signup = await agent.post('/api/auth/signup').send({
-      firstName: 'Guard', lastName: 'Owner', email, password: 'W@os.jsI$Aw3$0m3', provider: 'local',
-    }).expect(200);
-    user = signup.body.user;
-    const brut = await UserService.getBrut({ email });
-    personalOrgId = String(brut.currentOrganization?._id || brut.currentOrganization);
-
-    // A second organization, so the "last organization" protection does not answer first.
-    const created = await agent.post('/api/organizations').send({ name: 'Paid workspace' }).expect(200);
-    paidOrgId = String(created.body.data._id || created.body.data.id);
-    await Subscription.create({
-      organization: paidOrgId,
-      stripeCustomerId: 'cus_org_removal_guard',
-      stripeSubscriptionId: 'sub_org_removal_guard',
-      plan: config.billing.plans.find((p) => p !== 'free') ?? 'free',
-      status: 'active',
-    });
+    await seed(removedId, 'billing-org-removal-gone');
+    await seed(keptId, 'billing-org-removal-kept');
   });
 
   afterAll(async () => {
     await cleanup();
-    config.organizations = originalOrganizations;
+    await mongooseService.disconnect();
   });
 
-  test('DELETE /api/organizations/:id answers 409 while the paid subscription is live, and deletes nothing', async () => {
-    for (const status of ['active', 'trialing', 'past_due']) {
-      await Subscription.updateOne({ organization: paidOrgId }, { $set: { status } });
+  test('removing an organization anonymizes its billing records, deletes its usage, leaves others intact', async () => {
+    const organization = await Organization.findById(removedId);
+    await OrganizationsService.remove(organization);
 
-      const res = await agent.delete(`/api/organizations/${paidOrgId}`).expect(409);
+    // Nothing is left under the removed organization id.
+    expect(await counts(removedId)).toEqual({ subscriptions: 0, usage: 0, extraBalances: 0 });
 
-      expect(res.body.errorCode).toBe('ORGANIZATION_HAS_LIVE_SUBSCRIPTION');
-      expect(res.body.description).toBe("Cancel the organization's subscription before removing it.");
-      expect(await Organization.exists({ _id: paidOrgId })).toBeTruthy();
-      expect(await Membership.countDocuments({ organizationId: paidOrgId })).toBe(1);
-    }
-  });
+    // Subscription and extras balance are kept under one shared tombstone id.
+    const sub = await Subscription.findById(seeded.subscriptions[0]).lean();
+    const balance = await BillingExtraBalance.findById(seeded.balances[0]).lean();
+    expect(sub).not.toBeNull();
+    expect(balance).not.toBeNull();
+    expect(String(sub.organization)).not.toBe(String(removedId));
+    expect(String(balance.organization)).toBe(String(sub.organization));
+    expect(await Organization.exists({ _id: sub.organization })).toBeNull();
 
-  test('DELETE /api/users answers 409 when a solely-owned organization has a live paid subscription, and deletes nothing', async () => {
-    await Subscription.updateOne({ organization: paidOrgId }, { $set: { status: 'active' } });
+    // Nothing else of the financial record changed.
+    expect(sub).toMatchObject({ plan: 'pro', status: 'active', stripeCustomerId: 'cus_billing-org-removal-gone' });
+    expect(balance.cachedBalance).toBe(100);
+    expect(balance.ledger).toHaveLength(1);
+    expect(balance.ledger[0]).toMatchObject({ kind: 'topup', source: 'referral', amount: 100, refId: 'referral:billing-org-removal-gone:referrer' });
 
-    const res = await agent.delete('/api/users').expect(409);
-
-    expect(res.body.errorCode).toBe('ORGANIZATION_HAS_LIVE_SUBSCRIPTION');
-    expect(await UserService.getBrut({ email })).toBeTruthy();
-    expect(await Organization.exists({ _id: personalOrgId })).toBeTruthy();
-    expect(await Organization.exists({ _id: paidOrgId })).toBeTruthy();
-    expect(await Membership.countDocuments({ userId: user._id || user.id })).toBe(2);
-  });
-
-  test('once the subscription is canceled, DELETE /api/organizations/:id removes the organization', async () => {
-    await Subscription.updateOne({ organization: paidOrgId }, { $set: { status: 'canceled' } });
-
-    await agent.delete(`/api/organizations/${paidOrgId}`).expect(200);
-
-    expect(await Organization.exists({ _id: paidOrgId })).toBeFalsy();
+    // The other organization is untouched.
+    expect(await counts(keptId)).toEqual({ subscriptions: 1, usage: 1, extraBalances: 1 });
   });
 });

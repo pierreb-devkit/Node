@@ -61,6 +61,7 @@ This is consistent with the ToS (Section CGU — Extras packs). No proration or 
 - `BillingSubscription`, `BillingExtraBalance`, `BillingUsage`, `ProcessedStripeEvent` collections have no TTL on production data.
 - The `processedStripeEvents` TTL index (`expireAfterSeconds: 2592000` = 30 days) applies only to non-dead-letter events — processed events are safe to expire (the authoritative record is in Stripe). The ledger (`BillingExtraBalance`) is permanent.
 - On account deletion: **anonymize, do not delete** billing records. Replace `organizationId` reference with a tombstone ID, remove PII from the org record, retain the financial ledger for 5 years.
+- Organization removal does this through the billing org-removal hook (`billing.init.js`, see `modules/organizations/README.md`): the subscription and the extras balance (ledger included) get one fresh tombstone id per removal; usage documents are deleted. Stripe is not called: an organization whose paid subscription is still live cannot be removed (409 `ORGANIZATION_HAS_LIVE_SUBSCRIPTION`) until the subscription is cancelled or set to end at period end.
 - Stripe customer data: use `stripe.customers.del()` to delete the Stripe customer on account deletion. This satisfies RGPD right-to-erasure for Stripe-side PII. The local ledger rows (amount, date, plan) are not PII and must be retained.
 
 ---

@@ -8,8 +8,7 @@ import logger from '../../lib/services/logger.js';
 import billingEvents from './lib/billing.events.js';
 import invitationEvents from '../invitations/lib/invitations.events.js';
 import organizationEvents from '../organizations/lib/organizations.events.js';
-import { onBeforeOrganizationRemoved } from '../organizations/lib/organizations.removal.registry.js';
-import BillingService from './services/billing.service.js';
+import { onBeforeOrganizationRemoved, onOrganizationRemoved } from '../organizations/lib/organizations.removal.registry.js';
 import BillingUsageRepository from './repositories/billing.usage.repository.js';
 import BillingSignupGrantService from './services/billing.signupGrant.service.js';
 import { getAlertThresholdPercents } from './lib/billing.constants.js';
@@ -50,9 +49,14 @@ export default async (app) => {
   setupBillingEmails();
 
   // Refuse an organization removal while its paid subscription is live (#4321): the
-  // provider would keep charging for an organization that no longer exists. With billing
-  // switched off this never registers, so removal is never refused.
-  onBeforeOrganizationRemoved(({ organizationId }) => BillingService.assertNoLiveSubscription(organizationId));
+  // provider would keep charging for an organization that no longer exists. Runs BEFORE
+  // anything is deleted; a throw stops the removal. With billing switched off this never
+  // registers, so removal is never refused. Lazy import keeps billing.service (Stripe
+  // client, plans) off the boot graph, like the cleanup handler below.
+  onBeforeOrganizationRemoved(async ({ organizationId, organization }) => {
+    const { default: BillingService } = await import('./services/billing.service.js');
+    await BillingService.assertNoLiveSubscription(organizationId, organization);
+  });
 
   // Referral grant (#3842, ex TODO(#5)) — billing is an OPTIONAL consumer of the
   // invitations fire-and-forget `invitation.accepted` event (dependency direction
@@ -257,6 +261,16 @@ export default async (app) => {
       hadKnownPlan,
       ntfyPriority: 4,
     });
+  });
+
+  // Org-removal cleanup — anonymize the removed organization's subscription and extras balance
+  // (ledger kept, organization reference replaced with one tombstone id) and delete its usage.
+  // Runs AFTER the org is gone; a throw is isolated and logged by the registry's caller
+  // (organizations.crud.service.js#remove). Lazy import keeps billing.service (Stripe client,
+  // plans) off the boot graph, like the referral listener.
+  onOrganizationRemoved(async ({ organizationId }) => {
+    const { default: BillingService } = await import('./services/billing.service.js');
+    await BillingService.cleanupOrganizationData(organizationId);
   });
 
   // Prevent accidental crash if any future code emits 'error' with no listener

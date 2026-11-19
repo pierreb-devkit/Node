@@ -1,6 +1,7 @@
 /**
  * Module dependencies
  */
+import mongoose from 'mongoose';
 import config from '../../../config/index.js';
 import AppError from '../../../lib/helpers/AppError.js';
 import logger from '../../../lib/services/logger.js';
@@ -8,9 +9,10 @@ import getStripe from '../lib/billing.stripe.js';
 import BillingPlansService from './billing.plans.service.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
+import { isObjectId } from '../../../lib/helpers/zod.js';
 import { isDuplicateKeyError } from '../lib/billing.errors.js';
 import { SENTINEL_PENDING } from '../lib/billing.constants.js';
-import { effectivePlanOf, liveStatuses } from '../lib/billing.statuses.js';
+import { effectivePlanOf, hasLiveSubscription } from '../lib/billing.statuses.js';
 
 /**
  * Validate that a redirect URL is safe for the current environment.
@@ -148,8 +150,7 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
 
   // Block checkout when an active subscription already exists — direct to portal for changes
   const existingForBlock = await SubscriptionRepository.findByOrganization(organization._id);
-  const blockStatuses = ['active', 'trialing', 'past_due'];
-  if (existingForBlock?.stripeSubscriptionId && blockStatuses.includes(existingForBlock.status)) {
+  if (hasLiveSubscription(existingForBlock)) {
     const portalUrl = await createPortalSession(organization);
     /** @type {Error & {statusCode?: number, code?: string, portalUrl?: string}} */
     const err = new Error('Subscription already active');
@@ -407,18 +408,72 @@ const getExtrasBalance = (organizationId) => BillingExtraBalanceRepository.getBa
  * @desc Organization-removal guard (registered in billing.init.js): refuse to remove an
  *       organization while its paid subscription is live at the provider, so the customer
  *       is never left charged for an organization that no longer exists. Local DB only —
- *       no provider call, nothing is cancelled. "Paid" = a provider subscription id is
- *       stored: the shell row created for a free org that only opened checkout carries the
- *       default 'active' status but no subscription id, and must not block its removal.
+ *       no provider call, nothing is cancelled. "Live" is the shared hasLiveSubscription
+ *       rule (also used by the checkout block). A subscription already set to end
+ *       (`cancelAtPeriodEnd`) counts as cancelled: the owner did what the refusal asks,
+ *       so the removal is allowed.
  * @param {String} organizationId - The organization ID
+ * @param {{ name?: string }} [organization] - The organization being removed; its name goes in the refusal.
  * @returns {Promise<void>} resolves when the organization may be removed
- * @throws {AppError} 409 ORGANIZATION_HAS_LIVE_SUBSCRIPTION while the subscription is active, trialing or past_due
+ * @throws {AppError} 409 ORGANIZATION_HAS_LIVE_SUBSCRIPTION while the subscription is active, trialing or past_due and not set to end
  */
-const assertNoLiveSubscription = async (organizationId) => {
+const assertNoLiveSubscription = async (organizationId, organization) => {
   const sub = await getLocalSubscription(String(organizationId));
-  if (!sub?.stripeSubscriptionId || !liveStatuses.includes(sub.status)) return;
-  const message = "Cancel the organization's subscription before removing it.";
+  if (!hasLiveSubscription(sub) || sub.cancelAtPeriodEnd === true) return;
+  const message = organization?.name
+    ? `Cancel the subscription of "${organization.name}" before removing it.`
+    : "Cancel the organization's subscription before removing it.";
   throw new AppError(message, { status: 409, code: 'ORGANIZATION_HAS_LIVE_SUBSCRIPTION', description: message });
+};
+
+/**
+ * @function cleanupOrganizationData
+ * @description Org-removal cleanup of the billing records of one organization. Its
+ *              subscription and its extras balance (the ledger, referral entries included)
+ *              are kept and anonymized: their organization reference is replaced with ONE
+ *              fresh tombstone id, shared by both so the removed organization's records stay
+ *              grouped; nothing else of the financial ledger changes. Its usage documents are
+ *              deleted. Records of other organizations are never touched — a referral grant
+ *              credited to the other party's organization stays there. Called by the
+ *              org-removal handler registered in billing.init.js. The three writes run
+ *              independently: one failing never skips the others, and every failure is
+ *              re-raised together afterwards. Local data only — Stripe is not called; a
+ *              live subscription never gets here, the removal guard (assertNoLiveSubscription)
+ *              refuses it first.
+ * @param {string} organizationId - The removed organization's ObjectId (string).
+ * @returns {Promise<{tombstoneId: string, subscriptions: number, extraBalances: number, usage: number}>}
+ *          The tombstone id, the anonymized counts and the deleted usage count.
+ * @throws {AppError} When organizationId is not a valid ObjectId (nothing is written).
+ * @throws {AggregateError} When one or more writes failed.
+ */
+const cleanupOrganizationData = async (organizationId) => {
+  if (!isObjectId(organizationId)) {
+    throw new AppError('Billing: invalid organization id for removal cleanup', { code: 'SERVICE_ERROR' });
+  }
+  const orgId = String(organizationId);
+  const tombstoneId = new mongoose.Types.ObjectId().toString();
+  // Lazy: the usage repository resolves its model at import time, which would break every
+  // unit test of this service that runs without registered models.
+  const { default: BillingUsageRepository } = await import('../repositories/billing.usage.repository.js');
+  const results = await Promise.allSettled([
+    SubscriptionRepository.tombstoneByOrganization(orgId, tombstoneId),
+    BillingExtraBalanceRepository.tombstoneByOrganization(orgId, tombstoneId),
+    BillingUsageRepository.deleteByOrganization(orgId),
+  ]);
+  const writes = ['subscription', 'extraBalance', 'usage'];
+  const failed = results.flatMap((r, i) => (r.status === 'rejected' ? [{ write: writes[i], reason: r.reason }] : []));
+  if (failed.length > 0) {
+    const causes = failed.map(({ write, reason }) => `${write}: ${reason?.message ?? reason}`).join('; ');
+    throw new AggregateError(
+      failed.map(({ reason }) => reason),
+      `billing: org-removal write(s) failed for ${orgId} (tombstone ${tombstoneId}) — ${causes}`,
+    );
+  }
+  const count = (r, key) => (r.status === 'fulfilled' ? (r.value?.[key] ?? 0) : 0);
+  const subscriptions = count(results[0], 'modifiedCount');
+  const extraBalances = count(results[1], 'modifiedCount');
+  const usage = count(results[2], 'deletedCount');
+  return { tombstoneId, subscriptions, extraBalances, usage };
 };
 
 export default {
@@ -432,4 +487,5 @@ export default {
   fetchSubscriptionDetails,
   getLocalSubscription,
   getSubscription,
+  cleanupOrganizationData,
 };

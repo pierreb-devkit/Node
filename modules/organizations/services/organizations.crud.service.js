@@ -180,7 +180,7 @@ const update = async (organization, body) => {
 
 /**
  * @function assertRemovable
- * @description Run the before-removal guards registered by optional modules (e.g. billing
+ * @description Run the before-removal guards registered by optional modules (e.g. one
  *   refusing while a paid subscription is live). Deletes nothing. Lets a caller that removes
  *   several organizations (users.service.js#remove) check them all before deleting anything.
  * @param {Object} organization - The organization to check (only `_id`/`id` is required).

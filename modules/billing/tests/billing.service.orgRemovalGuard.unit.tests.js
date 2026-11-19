@@ -32,6 +32,28 @@ describe('BillingService.assertNoLiveSubscription (#4321):', () => {
     expect(mockFindByOrganization).toHaveBeenCalledWith(orgId);
   });
 
+  test('names the organization in the refusal when its name is known', async () => {
+    mockFindByOrganization.mockResolvedValue({ plan: 'pro', status: 'active', stripeSubscriptionId: 'sub_123' });
+
+    await expect(BillingService.assertNoLiveSubscription(orgId, { _id: orgId, name: 'Acme' })).rejects.toMatchObject({
+      status: 409,
+      code: 'ORGANIZATION_HAS_LIVE_SUBSCRIPTION',
+      description: 'Cancel the subscription of "Acme" before removing it.',
+    });
+  });
+
+  test.each(['active', 'trialing', 'past_due'])('allows removal of a %s subscription already set to end at period end (counts as cancelled)', async (status) => {
+    mockFindByOrganization.mockResolvedValue({ plan: 'pro', status, stripeSubscriptionId: 'sub_123', cancelAtPeriodEnd: true });
+
+    await expect(BillingService.assertNoLiveSubscription(orgId)).resolves.toBeUndefined();
+  });
+
+  test('still refuses when cancelAtPeriodEnd is explicitly false', async () => {
+    mockFindByOrganization.mockResolvedValue({ plan: 'pro', status: 'active', stripeSubscriptionId: 'sub_123', cancelAtPeriodEnd: false });
+
+    await expect(BillingService.assertNoLiveSubscription(orgId)).rejects.toMatchObject({ status: 409 });
+  });
+
   test.each(['canceled', 'incomplete_expired', 'unpaid', 'paused'])('allows removal once the subscription is %s', async (status) => {
     mockFindByOrganization.mockResolvedValue({ plan: 'pro', status, stripeSubscriptionId: 'sub_123' });
 

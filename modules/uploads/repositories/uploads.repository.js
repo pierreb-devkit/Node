@@ -312,9 +312,53 @@ const purgeUnreferenced = async (kind, collection, paths, graceMs) => {
   return { scanned, referenced: referencedCount, orphaned, deleted, deleteFailed, skippedTooYoung };
 };
 
+/**
+ * @desc Delete every GridFS file (metadata record + chunks) scoped to one
+ * organization — org-removal cleanup. Matches `metadata.organizationId`
+ * stored either as an ObjectId or as its hex string: writers hand metadata
+ * to GridFS as-is (no Mongoose cast), so both shapes exist. The lookup goes
+ * through the native bucket (no cast) and each file is removed with
+ * `bucket.delete(_id)`, which drops its chunks too. A file already gone is
+ * counted as deleted (same no-op rule as remove()); any other failure is
+ * collected and re-raised once every file was tried.
+ * @param {String} organizationId - the removed organization's ObjectId (24-hex string)
+ * @returns {Promise<{deleted: Number}>} number of files removed
+ * @throws {AggregateError} when one or more files could not be deleted
+ */
+const removeByOrganization = async (organizationId) => {
+  const orgId = String(organizationId);
+  const cursor = bucket.find(
+    { 'metadata.organizationId': { $in: [new mongoose.Types.ObjectId(orgId), orgId] } },
+    { projection: { _id: 1 } },
+  );
+  let deleted = 0;
+  const failures = [];
+  for await (const file of cursor) {
+    try {
+      await bucket.delete(file._id);
+      deleted += 1;
+    } catch (err) {
+      if (isFileNotFound(err)) {
+        deleted += 1;
+      } else {
+        failures.push({ fileId: String(file._id), err });
+      }
+    }
+  }
+  if (failures.length > 0) {
+    const causes = failures.map(({ fileId, err }) => `${fileId}: ${err?.message ?? err}`).join('; ');
+    throw new AggregateError(
+      failures.map(({ err }) => err),
+      `Upload: ${failures.length} org-scoped file(s) could not be deleted — ${causes}`,
+    );
+  }
+  return { deleted };
+};
+
 export default {
   get,
   getStream,
   remove,
   purgeUnreferenced,
+  removeByOrganization,
 };

@@ -16,7 +16,7 @@
  *
  *   Guards (`onBeforeOrganizationRemoved`) are the other half: they run BEFORE anything
  *   is deleted and may REFUSE the removal by throwing (an AppError with a 4xx status,
- *   e.g. billing refusing while a paid subscription is live). Unlike handlers they are
+ *   e.g. an optional module refusing while a paid subscription is live). Unlike handlers they are
  *   not isolated: the first throw stops the run and propagates unchanged to the caller.
  */
 

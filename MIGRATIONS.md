@@ -6,9 +6,9 @@ Breaking changes and upgrade notes for downstream projects.
 
 ## Organization removal refused while a paid subscription is live (2026-11-19)
 
-- Removing an organization whose paid subscription is still `active`, `trialing` or `past_due` now answers **409** with `errorCode: ORGANIZATION_HAS_LIVE_SUBSCRIPTION` and the description "Cancel the organization's subscription before removing it." Nothing is deleted and nothing is cancelled at the provider. A free organization (no provider subscription) and a canceled subscription are not affected.
+- Removing an organization whose paid subscription is still `active`, `trialing` or `past_due` now answers **409** with `errorCode: ORGANIZATION_HAS_LIVE_SUBSCRIPTION` and the description `Cancel the subscription of "<organization name>" before removing it.` Nothing is deleted and nothing is cancelled at the provider. A free organization (no provider subscription), a canceled subscription and a subscription already set to end at period end (`cancelAtPeriodEnd`) are not affected.
 - The same rule covers every removal path: `DELETE /api/organizations/:id` (owner or platform admin) and account deletion (`DELETE /api/users`, `DELETE /api/admin/users/:userId`), which removes the organizations the user solely owns. The account deletion checks all of them first and deletes nothing if one is refused.
-- New in the organization-removal registry: `onBeforeOrganizationRemoved(fn)` registers a guard run before anything is deleted; a guard refuses by throwing (an `AppError` with a 4xx status). `OrganizationsService.assertRemovable(organization)` runs the guards without deleting. Billing registers its guard in `billing.init.js`, so with billing switched off removal is never refused.
+- New in the organization-removal registry: `onBeforeOrganizationRemoved(fn)` registers a guard run before anything is deleted; a guard refuses by throwing (an `AppError` with a 4xx status). `OrganizationsService.assertRemovable(organization)` runs the guards without deleting. Billing registers its guard in `billing.init.js`, so with billing switched off removal is never refused. See `modules/organizations/README.md`.
 
 ### Action for downstream
 
@@ -28,6 +28,20 @@ Breaking changes and upgrade notes for downstream projects.
 1. Run `/update-stack` to pull the change.
 2. Remove any skip of `config.activationBoot.integration.tests.js` added for always-on project modules.
 3. A project module meant to be switchable: declare `activated: true` in its config so the boot test checks it switches off cleanly. A module that is always on (for example one other project modules depend on): remove its `activated` key, including an `activated: true` added on the advice of the older entry below, or it stays in the boot test and fails it.
+
+---
+
+## Organization removal cleans billing and uploads (2026-11-19)
+
+Removing an organization now also cleans its billing and uploads data. Before, it stayed behind under the removed organization id.
+
+- **Billing records are kept, anonymized** (`modules/billing/STRIPE_SETUP.md` §4): the subscription and the extras balance (ledger included: packs, grants, referral entries) keep every field, but their organization reference is replaced with one fresh tombstone id per removal, shared by both. Usage documents are deleted.
+- **Uploads are deleted**: the organization's uploads, files included.
+- The org-removal hook is the documented extension point: a module that owns organization-scoped data registers `onOrganizationRemoved(fn)` (`modules/organizations/lib/organizations.removal.registry.js`) in its own `*.init.js`. Payload: `{ organizationId, organization }`. See `modules/organizations/README.md`.
+- **Action for downstream:** a project module with org-scoped data registers its cleanup the same way. Remove any cleanup patched into `organizations.crud.service.js` or a stack module.
+- The stack does not call Stripe on removal. A live paid subscription refuses the removal instead (409 `ORGANIZATION_HAS_LIVE_SUBSCRIPTION`, entry above).
+- New service methods: `BillingService.cleanupOrganizationData(orgId)`, `UploadsService.removeByOrganization(orgId)`.
+- Ownership rule written in `CLAUDE.md` (§ Stack vs downstream ownership); `/update-stack` step 3ter now **warns** on a downstream file inside a stack folder without the project name, and on a file the stack deleted.
 
 ---
 

@@ -70,6 +70,11 @@ describe('UploadRepository unit tests:', () => {
         model: jest.fn(() => mockUploadsModel),
         connection: { db: mockDb },
         mongo: { GridFSBucket: jest.fn(() => mockBucket) },
+        Types: {
+          ObjectId: class {
+            constructor(hex) { this.hex = hex; }
+          },
+        },
       },
     }));
 
@@ -406,6 +411,45 @@ describe('UploadRepository unit tests:', () => {
       // preserved dev-side (see the call site's own comment on `details: {
       // message: err?.message }`).
       expect(JSON.stringify(devBlob)).toContain('mongo replset primary unreachable');
+    });
+  });
+
+  describe('removeByOrganization', () => {
+    const orgId = '507f1f77bcf86cd799439011';
+
+    test('deletes every file of the organization, matching an ObjectId or a string id', async () => {
+      mockBucket.find = jest.fn(() => asCursor([{ _id: 'f1' }, { _id: 'f2' }]));
+
+      const result = await UploadRepository.removeByOrganization(orgId);
+
+      const [filter, options] = mockBucket.find.mock.calls[0];
+      const values = filter['metadata.organizationId'].$in;
+      expect(values).toHaveLength(2);
+      expect(values[0].hex).toBe(orgId);
+      expect(values[1]).toBe(orgId);
+      expect(options).toEqual({ projection: { _id: 1 } });
+      expect(mockBucket.delete).toHaveBeenCalledWith('f1');
+      expect(mockBucket.delete).toHaveBeenCalledWith('f2');
+      expect(result).toEqual({ deleted: 2 });
+    });
+
+    test('counts a file already gone as deleted', async () => {
+      mockBucket.find = jest.fn(() => asCursor([{ _id: 'f1' }]));
+      mockBucket.delete.mockRejectedValueOnce(new MongoRuntimeError('File not found for id f1'));
+
+      await expect(UploadRepository.removeByOrganization(orgId)).resolves.toEqual({ deleted: 1 });
+    });
+
+    test('tries every file, then re-raises the failures together', async () => {
+      mockBucket.find = jest.fn(() => asCursor([{ _id: 'f1' }, { _id: 'f2' }]));
+      mockBucket.delete.mockRejectedValueOnce(new Error('bucket down'));
+
+      const err = await UploadRepository.removeByOrganization(orgId).catch((e) => e);
+
+      expect(err).toBeInstanceOf(AggregateError);
+      expect(err.errors).toHaveLength(1);
+      expect(err.message).toContain('f1: bucket down');
+      expect(mockBucket.delete).toHaveBeenCalledTimes(2);
     });
   });
 });

@@ -372,8 +372,8 @@ const setEmailPreference = async (userId, kind, value) => {
 /**
  * @desc Function to remove a user from db and clean up associated memberships/orgs.
  *   Organizations the user solely owns are removed with them — but first every one of
- *   them goes through the org-removal guards (e.g. billing refusing a live paid
- *   subscription): a refusal aborts the whole deletion before anything is deleted.
+ *   them goes through the org-removal guards (e.g. an optional module refusing a live
+ *   paid subscription): a refusal aborts the whole deletion before anything is deleted.
  * @param {Object} user - user document with _id or id field
  * @returns {Promise<Object>} deletion result
  * @throws {AppError} A guard refusal (e.g. 409 ORGANIZATION_HAS_LIVE_SUBSCRIPTION).
@@ -383,12 +383,16 @@ const remove = async (user) => {
 
   // Classify memberships first: sole-owner orgs are removed with the user, the rest only lose the membership.
   const memberships = await MembershipService.listByUser(userId);
-  const soleOwnedOrgIds = new Set();
+  // orgId (string) -> organization (the populated doc when available, so a guard can name it).
+  const soleOwnedOrgs = new Map();
   for (const membership of memberships) {
     if (membership.role !== MEMBERSHIP_ROLES.OWNER) continue;
     const orgId = membership.organizationId._id || membership.organizationId;
     const ownerCount = await MembershipService.count({ organizationId: orgId, role: MEMBERSHIP_ROLES.OWNER, status: MEMBERSHIP_STATUSES.ACTIVE });
-    if (ownerCount <= 1) soleOwnedOrgIds.add(String(orgId));
+    if (ownerCount <= 1) {
+      const name = membership.organizationId?.name;
+      soleOwnedOrgs.set(String(orgId), name ? { _id: orgId, name } : { _id: orgId });
+    }
   }
 
   // Lazy import: organizations.crud.service.js statically imports this module
@@ -396,19 +400,19 @@ const remove = async (user) => {
   // lazy-import pattern already used for the same reason in billing.init.js /
   // billing.referral.service.js.
   let OrganizationsCrudService;
-  if (soleOwnedOrgIds.size > 0) {
+  if (soleOwnedOrgs.size > 0) {
     ({ default: OrganizationsCrudService } = await import('../../organizations/services/organizations.crud.service.js'));
   }
 
   // Pre-flight: every sole-owned org must pass the removal guards BEFORE anything is
   // deleted, so a refusal on one org never leaves another already gone.
-  for (const orgId of soleOwnedOrgIds) {
-    await OrganizationsCrudService.assertRemovable({ _id: orgId });
+  for (const organization of soleOwnedOrgs.values()) {
+    await OrganizationsCrudService.assertRemovable(organization);
   }
 
   for (const membership of memberships) {
     const orgId = membership.organizationId._id || membership.organizationId;
-    if (soleOwnedOrgIds.has(String(orgId))) {
+    if (soleOwnedOrgs.has(String(orgId))) {
       // Sole owner — delete the org through the canonical removal seam rather than
       // duplicating its cascade here. organizations.crud.service.js#remove() owns the
       // full contract: guards, membership cleanup, co-member currentOrganization

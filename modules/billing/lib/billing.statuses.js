@@ -11,6 +11,18 @@ export const activeStatuses = ['active', 'trialing'];
 export const liveStatuses = ['active', 'trialing', 'past_due'];
 
 /**
+ * The one rule for "this organization has a live paid subscription": a provider
+ * subscription id is stored AND its status is live. The shell row created for a free
+ * organization that only opened checkout carries the default 'active' status but no
+ * subscription id, so it is not live. Shared by the checkout block (no second
+ * subscription) and the organization-removal guard.
+ * @param {{ status?: string, stripeSubscriptionId?: string|null }|null|undefined} subscription - Local subscription document.
+ * @returns {boolean} true while the provider is (or may be) charging.
+ */
+export const hasLiveSubscription = (subscription) =>
+  Boolean(subscription?.stripeSubscriptionId && liveStatuses.includes(subscription.status));
+
+/**
  * The one rule for the plan an organization is entitled to: the subscription's plan
  * while its status is active or trialing, 'free' otherwise (no subscription, no plan,
  * or any other status).

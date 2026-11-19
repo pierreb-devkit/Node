@@ -94,6 +94,9 @@ describe('billing.weeklyReset cron — BillingResetService.resetAllDue:', () => 
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
       default: { error: jest.fn(), warn: jest.fn(), info: jest.fn() },
     }));
+    jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({
+      default: { exists: jest.fn().mockResolvedValue(true) },
+    }));
 
     const mod = await import('../services/billing.reset.service.js');
     BillingResetService = mod.default;
