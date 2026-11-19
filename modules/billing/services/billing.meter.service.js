@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import config from '../../../config/index.js';
+import logger from '../../../lib/services/logger.js';
 import BillingPlanService from './billing.plan.service.js';
 import BillingUsageService from './billing.usage.service.js';
 import {
@@ -56,7 +57,7 @@ const unitsFromCosts = (costs, planId, ratioVersion) => {
     if (config?.billing?.meterMode) {
       throw new Error(message);
     }
-    console.warn(message);
+    logger.warn(message);
   }
 
   // Fetch the frozen plan snapshot for the given version (config-static, no await needed)
@@ -70,7 +71,7 @@ const unitsFromCosts = (costs, planId, ratioVersion) => {
     if (ratioVersion) {
       // Charges will use ratio=1 (flat) for all features. Align meter.ratioVersion + planDefinitions[].version
       // + downstream cost-config emitted version to resolve. See billing README — Version Namespace Contract.
-      console.warn(
+      logger.warn(
         `[billing.meter] getPlanByVersion(${planId}, ${ratioVersion}) returned null — ratio=1 fallback applied. Check version namespace alignment.`,
       );
     }
@@ -212,7 +213,7 @@ const attribute = async (history, organizationId, options = {}) => {
   const isCapped = cappedUnits < totalUnits;
   const cappedBreakdown = isCapped ? capBreakdown(breakdown, cappedUnits, totalUnits) : breakdown;
   if (isCapped) {
-    console.warn(
+    logger.warn(
       `[billing.meter] units capped: requested ${totalUnits}, cap ${maxUnits}, applied ${cappedUnits}`,
     );
   }

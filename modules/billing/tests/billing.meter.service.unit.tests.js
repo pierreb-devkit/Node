@@ -11,6 +11,7 @@ describe('BillingMeterService unit tests:', () => {
   let mockBillingPlanService;
   let mockConfig;
   let mockBillingUsageService;
+  let mockLogger;
 
   const orgId = '507f1f77bcf86cd799439011';
 
@@ -61,6 +62,11 @@ describe('BillingMeterService unit tests:', () => {
 
     jest.unstable_mockModule('../services/billing.usage.service.js', () => ({
       default: mockBillingUsageService,
+    }));
+
+    mockLogger = { warn: jest.fn(), error: jest.fn(), info: jest.fn() };
+    jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
+      default: mockLogger,
     }));
 
     const mod = await import('../services/billing.meter.service.js');
@@ -169,7 +175,7 @@ describe('BillingMeterService unit tests:', () => {
     });
 
     test('warns and uses ratio=1 when positive costs have no ratioVersion outside meterMode', () => {
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const warnSpy = mockLogger.warn;
       mockConfig.billing.meterMode = false;
 
       const result = BillingMeterService.unitsFromCosts({ scrap: 0.002 }, 'pro', null);
@@ -192,7 +198,7 @@ describe('BillingMeterService unit tests:', () => {
     });
 
     test('should use ratio=1 when plan not found and meterMode is disabled', () => {
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const warnSpy = mockLogger.warn;
       mockConfig.billing.meterMode = false;
       mockBillingPlanService.getPlanByVersion.mockReturnValue(null);
 
@@ -329,7 +335,7 @@ describe('BillingMeterService unit tests:', () => {
 
   describe('attribute — maxUnitsPerOperation cap', () => {
     test('caps metered units when computed units exceed config cap', async () => {
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const warnSpy = mockLogger.warn;
       mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { scrap: 1 } }));
       mockBillingUsageService.incrementMeter.mockResolvedValue({
         applied: true,
@@ -360,7 +366,7 @@ describe('BillingMeterService unit tests:', () => {
     });
 
     test('does not clamp when units are within the configured cap', async () => {
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const warnSpy = mockLogger.warn;
       mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { scrap: 1 } }));
       mockBillingUsageService.incrementMeter.mockResolvedValue({
         applied: true,
@@ -388,7 +394,7 @@ describe('BillingMeterService unit tests:', () => {
     });
 
     test('does not clamp when maxUnitsPerOperation is undefined', async () => {
-      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const warnSpy = mockLogger.warn;
       delete mockConfig.billing.meter.maxUnitsPerOperation;
       mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { scrap: 1 } }));
       mockBillingUsageService.incrementMeter.mockResolvedValue({

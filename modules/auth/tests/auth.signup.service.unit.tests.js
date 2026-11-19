@@ -36,7 +36,7 @@ import { jest, describe, test, expect } from '@jest/globals';
  * @param {Function} [args.count] - UserService.count mock implementation
  * @param {Function} [args.handleSignupOrganization] - AuthOrganizationService.handleSignupOrganization mock implementation
  * @param {boolean} [args.mailerConfigured=false] - mails.isConfigured() return value
- * @returns {void}
+ * @returns {{ logger: Object }} the mocked logger, to assert on rollback logs
  */
 function mockSignupServiceDeps({
   config,
@@ -51,9 +51,8 @@ function mockSignupServiceDeps({
 }) {
   jest.resetModules();
 
-  jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
-    default: { warn: jest.fn(), error: jest.fn(), info: jest.fn() },
-  }));
+  const logger = { warn: jest.fn(), error: jest.fn(), info: jest.fn() };
+  jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: logger }));
 
   jest.unstable_mockModule('../../../config/index.js', () => ({ default: config }));
 
@@ -101,6 +100,8 @@ function mockSignupServiceDeps({
   jest.unstable_mockModule('../../../lib/helpers/getBaseUrl.js', () => ({
     default: jest.fn().mockReturnValue('http://localhost:3000'),
   }));
+
+  return { logger };
 }
 
 /**
@@ -404,5 +405,74 @@ describe('auth.signup.service — invite finalize ordering (#3995)', () => {
     // The response block reads the organization result — not just {user, invite}.
     expect(orgResult.organization).toEqual({ id: 'org1' });
     expect(user.id).toBe('u1');
+  });
+});
+
+describe('auth.signup.service — rollback failures are logged, never swallowed (#4303)', () => {
+  const req = () => ({ body: { email: 'invitee@test.com', firstName: 'A', lastName: 'B', password: 'P@ss1234!' }, query: { inviteToken: 'tok' } });
+
+  test('a failed invite release after a user create failure is logged with the invite id, and the create error propagates', async () => {
+    const createErr = new Error('E11000 duplicate key');
+    const { eligibility, release } = mockEligibilityWithInvite();
+    release.mockRejectedValueOnce(new Error('release failed'));
+    const { logger } = mockSignupServiceDeps({
+      config: baseConfig({ sign: { up: false } }),
+      eligibility,
+      create: jest.fn().mockRejectedValue(createErr),
+    });
+
+    const { default: SignupService } = await import('../services/auth.signup.service.js');
+    await expect(SignupService.signup(req())).rejects.toBe(createErr);
+
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalledWith(
+      '[signup] invite release failed after user create failure',
+      expect.objectContaining({ inviteId: 'inv1', err: 'release failed' }),
+    );
+  });
+
+  test('a failed user remove and invite release after a verification failure are both logged with context, and the verification error propagates', async () => {
+    const verifyErr = new Error('token write failed');
+    const { eligibility, release } = mockEligibilityWithInvite();
+    release.mockRejectedValueOnce(new Error('release failed'));
+    const { logger } = mockSignupServiceDeps({
+      config: baseConfig({ sign: { up: false } }),
+      eligibility,
+      create: jest.fn().mockResolvedValue({ id: 'u-verify-1', email: 'invitee@test.com' }),
+      update: jest.fn().mockRejectedValue(verifyErr),
+      remove: jest.fn().mockRejectedValue(new Error('remove failed')),
+      mailerConfigured: true,
+    });
+
+    const { default: SignupService } = await import('../services/auth.signup.service.js');
+    await expect(SignupService.signup(req())).rejects.toBe(verifyErr);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      '[signup] user rollback failed after email verification failure (orphan account)',
+      expect.objectContaining({ userId: 'u-verify-1', inviteId: 'inv1', err: 'remove failed' }),
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      '[signup] invite release failed after email verification failure',
+      expect.objectContaining({ inviteId: 'inv1', err: 'release failed' }),
+    );
+  });
+
+  test('a failed user remove after an organization provisioning failure is logged with the user id, and the org error propagates', async () => {
+    const orgErr = new Error('org provisioning DB error');
+    const { logger } = mockSignupServiceDeps({
+      config: baseConfig({ sign: { up: true } }),
+      create: jest.fn().mockResolvedValue({ id: 'u-org-1', email: 'new@test.com' }),
+      remove: jest.fn().mockRejectedValue(new Error('remove failed')),
+      handleSignupOrganization: jest.fn().mockRejectedValue(orgErr),
+    });
+
+    const { default: SignupService } = await import('../services/auth.signup.service.js');
+    await expect(SignupService.signup({ body: { email: 'new@test.com', firstName: 'A', lastName: 'B', password: 'P@ss1234!' }, query: {} })).rejects.toBe(orgErr);
+
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalledWith(
+      '[signup] user rollback failed after organization provisioning failure (orphan account)',
+      expect.objectContaining({ userId: 'u-org-1', err: 'remove failed' }),
+    );
   });
 });

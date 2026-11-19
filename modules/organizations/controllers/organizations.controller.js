@@ -340,7 +340,11 @@ const loadMembership = async (req, res, next) => {
         req.user._id || req.user.id,
         req.organization._id || req.organization.id,
       );
-    } catch (_) { /* ignore — isAllowed will handle the missing membership */ }
+    } catch (err) {
+      // A DB failure is a server error, not a missing membership: hand it to the
+      // error handler (500) instead of letting the policy answer 403.
+      return next(err);
+    }
   }
   next();
 };

@@ -367,7 +367,17 @@ const getLocalSubscription = (organizationId) => SubscriptionRepository.findByOr
 const getSubscription = async (organizationId) => {
   const sub = await SubscriptionRepository.findByOrganization(organizationId);
   if (!sub) return null;
-  const details = await fetchSubscriptionDetails(sub.stripeSubscriptionId).catch(() => null);
+  // A Stripe failure falls back to the cached local fields, but is logged so an
+  // outage serving stale period/status data leaves a trace.
+  const details = await fetchSubscriptionDetails(sub.stripeSubscriptionId).catch((err) => {
+    logger.error('[billing.service] stripe.subscriptions.retrieve failed, serving cached subscription', {
+      error: err?.message ?? String(err),
+      stack: err?.stack,
+      organizationId: String(organizationId),
+      stripeSubscriptionId: sub.stripeSubscriptionId,
+    });
+    return null;
+  });
   if (!details) return sub;
   return { ...sub.toJSON?.() ?? sub, ...details };
 };

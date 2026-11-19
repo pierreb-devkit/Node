@@ -837,6 +837,32 @@ describe('Billing service unit tests:', () => {
 
       expect(result).toEqual(mockSub);
     });
+
+    test('should log the Stripe fetch failure before falling back to the cached sub', async () => {
+      const mockLogger = { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() };
+      jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mockLogger }));
+      jest.unstable_mockModule('../../../config/index.js', () => ({
+        default: { stripe: { secretKey: 'sk_test_sub_fallback_log' } },
+      }));
+
+      mockStripeInstance.subscriptions = {
+        retrieve: jest.fn().mockRejectedValue(new Error('Stripe unreachable')),
+      };
+
+      const mockSub = { organization: orgId, plan: 'pro', stripeSubscriptionId: 'sub_790' };
+      mockSubscriptionRepository.findByOrganization.mockResolvedValue(mockSub);
+
+      const mod = await import('../services/billing.service.js');
+      BillingService = mod.default;
+
+      const result = await BillingService.getSubscription(orgId);
+
+      expect(result).toEqual(mockSub);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining('stripe.subscriptions.retrieve failed'),
+        expect.objectContaining({ organizationId: orgId, stripeSubscriptionId: 'sub_790', error: 'Stripe unreachable' }),
+      );
+    });
   });
 
   describe('getLocalSubscription', () => {
