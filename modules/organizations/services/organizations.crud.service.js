@@ -73,7 +73,7 @@ const create = async (body, user) => {
 
   // Auto-generate slug from name if not provided
   const base = slugify(body.name);
-  const slug = await uniqueSlug(base, (candidate) => OrganizationsRepository.findOne({ slug: candidate }), body.slug || base);
+  const slug = await uniqueSlug(base, (candidate) => OrganizationsRepository.exists({ slug: candidate }), body.slug || base);
 
   const domain = normalizeDomain(body.domain);
 
