@@ -19,7 +19,7 @@ What a downstream must do:
   }
   ```
 
-  Drop any hand-rolled `err.status ?? 500` + title ternary: `responses.error` picks the status and its title. Keep an explicit `responses.error(res, 422, ...)` for a real validation failure you detect yourself.
+  Drop any hand-rolled `err.status ?? 500` + title ternary in ordinary controller catches: `responses.error` picks the status and its title. Keep the explicit `err.status ?? 500` in catches that wrap a Stripe call (billing): a raw Stripe error carries Stripe's own `statusCode` (401 = our API key), which must not become the client-facing status. Keep an explicit `responses.error(res, 422, ...)` for a real validation failure you detect yourself.
 - Update tests that assert 422 for errors that are now 403, 404, 409 or 500.
 
 ---

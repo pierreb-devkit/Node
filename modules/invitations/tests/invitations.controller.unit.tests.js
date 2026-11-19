@@ -42,14 +42,18 @@ describe('invitations.controller.create', () => {
     expect(successInner).toHaveBeenCalledWith({ id: 'i1', email: 'a@b.co' });
   });
   test('passes a thrown error through so responses.error resolves its status (500 when it has none)', async () => {
-    mockService.create.mockRejectedValue(new Error('boom'));
+    const caughtError = new Error('boom');
+    mockService.create.mockRejectedValue(caughtError);
     await controller.create({ body: { email: 'a@b.co' }, user: {} }, makeRes());
     expect(error).toHaveBeenCalledWith(expect.anything(), undefined, undefined, 'boom');
+    expect(errorInner).toHaveBeenCalledWith(caughtError);
   });
   test('passes a service 409 (duplicate pending) through to responses.error', async () => {
-    mockService.create.mockRejectedValue(Object.assign(new Error('A pending invitation already exists for this email'), { status: 409 }));
+    const caughtError = Object.assign(new Error('A pending invitation already exists for this email'), { status: 409 });
+    mockService.create.mockRejectedValue(caughtError);
     await controller.create({ body: { email: 'a@b.co' }, user: {} }, makeRes());
     expect(error).toHaveBeenCalledWith(expect.anything(), undefined, undefined, 'A pending invitation already exists for this email');
+    expect(errorInner).toHaveBeenCalledWith(caughtError);
   });
 });
 
