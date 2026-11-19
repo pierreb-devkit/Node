@@ -49,7 +49,7 @@ const get = async (req, res) => {
       // post-header errors destroy the socket so Express surfaces them via
       // its default error handler instead of double-sending.
       if (!res.headersSent) {
-        responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+        responses.error(res, undefined, undefined, errors.getMessage(err))(err);
       } else {
         logger.error('uploads.get - stream error after headers sent', err);
         res.destroy(err);
@@ -63,7 +63,7 @@ const get = async (req, res) => {
     if (req.upload.length) res.set('Content-Length', req.upload.length);
     stream.pipe(res);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -85,7 +85,7 @@ const getSharp = async (req, res) => {
     // attempting a second write that would throw ERR_HTTP_HEADERS_SENT.
     const onStreamError = (label) => (err) => {
       if (!res.headersSent) {
-        responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+        responses.error(res, undefined, undefined, errors.getMessage(err))(err);
       } else {
         logger.error(`uploads.getSharp - ${label} error after headers sent`, err);
         res.destroy(err);
@@ -116,7 +116,7 @@ const getSharp = async (req, res) => {
     };
     stream.pipe(buildTransform()).pipe(res);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -130,7 +130,7 @@ const remove = async (req, res) => {
     await UploadsService.remove({ _id: req.upload._id });
     responses.success(res, 'upload deleted')();
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 

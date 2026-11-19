@@ -88,9 +88,7 @@ const adminBumpPlan = async (req, res) => {
     const result = await BillingAdminService.bumpOrgPlan(orgId, planId, adminUserId);
     return responses.success(res, 'subscription plan bumped')(result);
   } catch (err) {
-    const status = err.status ?? (err?.name === 'ValidationError' ? 422 : 500);
-    const title = status === 404 ? 'Not Found' : status === 422 ? 'Unprocessable Entity' : 'Internal Server Error';
-    return responses.error(res, status, title, 'Failed to bump plan')(err);
+    return responses.error(res, undefined, undefined, 'Failed to bump plan')(err);
   }
 };
 
@@ -111,9 +109,9 @@ const adminGetCustomerStatus = async (req, res) => {
     const result = await BillingAdminService.getCustomerStatus(orgId);
     return responses.success(res, 'customer status')(result);
   } catch (err) {
-    const status = err.status ?? 500;
-    const title = status === 404 ? 'Not Found' : status === 422 ? 'Unprocessable Entity' : status === 502 ? 'Bad Gateway' : 'Internal Server Error';
-    return responses.error(res, status, title, 'Failed to fetch customer status')(err);
+    // A raw Stripe error carries Stripe's own `statusCode` (401 = our API key),
+    // which must not reach the client as if it were this request's status.
+    return responses.error(res, err.status ?? 500, undefined, 'Failed to fetch customer status')(err);
   }
 };
 
@@ -134,13 +132,9 @@ const adminSyncFromStripe = async (req, res) => {
     const result = await BillingAdminService.syncOrgFromStripe(orgId);
     return responses.success(res, 'subscription synced from Stripe')(result);
   } catch (err) {
-    const status = err.status ?? 500;
-    const title = status === 404 ? 'Not Found'
-      : status === 422 ? 'Unprocessable Entity'
-      : status === 409 ? 'Conflict'
-      : status === 502 ? 'Bad Gateway'
-      : 'Internal Server Error';
-    return responses.error(res, status, title, 'Failed to sync from Stripe')(err);
+    // A raw Stripe error carries Stripe's own `statusCode` (401 = our API key),
+    // which must not reach the client as if it were this request's status.
+    return responses.error(res, err.status ?? 500, undefined, 'Failed to sync from Stripe')(err);
   }
 };
 
@@ -157,9 +151,9 @@ const adminReplayWebhook = async (req, res) => {
     const result = await BillingAdminService.replayWebhookEvent(eventId);
     return responses.success(res, 'webhook event replayed')(result);
   } catch (err) {
-    const status = err.status ?? 500;
-    const title = status === 404 ? 'Not Found' : status === 422 ? 'Unprocessable Entity' : status === 502 ? 'Bad Gateway' : 'Internal Server Error';
-    return responses.error(res, status, title, 'Failed to replay webhook event')(err);
+    // A raw Stripe error carries Stripe's own `statusCode` (401 = our API key),
+    // which must not reach the client as if it were this request's status.
+    return responses.error(res, err.status ?? 500, undefined, 'Failed to replay webhook event')(err);
   }
 };
 
@@ -203,9 +197,7 @@ const adminPurgeDeadLetter = async (req, res) => {
     const result = await BillingAdminService.purgeDeadLetter(eventId);
     return responses.success(res, 'dead letter purged')(result);
   } catch (err) {
-    const status = err.status ?? 500;
-    const title = status === 404 ? 'Not Found' : status === 422 ? 'Unprocessable Entity' : 'Internal Server Error';
-    return responses.error(res, status, title, 'Failed to purge dead letter')(err);
+    return responses.error(res, undefined, undefined, 'Failed to purge dead letter')(err);
   }
 };
 
@@ -227,9 +219,9 @@ const adminCancelSubscription = async (req, res) => {
     const result = await BillingAdminService.cancelSubscription(orgId);
     return responses.success(res, 'subscription canceled')(result);
   } catch (err) {
-    const status = err.status ?? 500;
-    const title = status === 404 ? 'Not Found' : status === 422 ? 'Unprocessable Entity' : status === 502 ? 'Bad Gateway' : 'Internal Server Error';
-    return responses.error(res, status, title, 'Failed to cancel subscription')(err);
+    // A raw Stripe error carries Stripe's own `statusCode` (401 = our API key),
+    // which must not reach the client as if it were this request's status.
+    return responses.error(res, err.status ?? 500, undefined, 'Failed to cancel subscription')(err);
   }
 };
 
@@ -278,9 +270,7 @@ const adminDisputeCredit = async (req, res) => {
 
     return responses.success(res, 'dispute credit applied')(result);
   } catch (err) {
-    const status = err.status ?? 500;
-    const title = status === 404 ? 'Not Found' : status === 422 ? 'Unprocessable Entity' : 'Internal Server Error';
-    return responses.error(res, status, title, 'Failed to apply dispute credit')(err);
+    return responses.error(res, undefined, undefined, 'Failed to apply dispute credit')(err);
   }
 };
 

@@ -805,7 +805,7 @@ describe('auth.controller resendVerification mail-transport failure hardening (#
 
     await AuthController.resendVerification(req, res);
 
-    expect(error).toHaveBeenCalledWith(res, 422, 'Unprocessable Entity', 'Failed to send the email, please try again.');
+    expect(error).toHaveBeenCalledWith(res, 500, undefined, 'Failed to send the email, please try again.');
     const clientMessage = error.mock.calls[0][3];
     expect(clientMessage).not.toContain('sk_live_abc123');
     expect(clientMessage).not.toContain('Resend API error');

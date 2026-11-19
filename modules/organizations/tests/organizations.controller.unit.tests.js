@@ -239,36 +239,36 @@ describe('Organizations controller unit tests:', () => {
       expect(res.status).not.toHaveBeenCalledWith(422);
     });
 
-    test('should return 422 when the last owner tries to leave', async () => {
-      mockLeave.mockRejectedValue(new Error('Cannot remove the last owner'));
+    test('should return 409 when the last owner tries to leave', async () => {
+      mockLeave.mockRejectedValue(Object.assign(new Error('Organization must have at least one active owner'), { status: 409 }));
       const req = mockReq();
       const res = mockRes();
 
       await organizationsController.leave(req, res);
 
       expect(mockLeave).toHaveBeenCalledTimes(1);
-      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.status).toHaveBeenCalledWith(409);
     });
 
-    test('should return 422 when the user is not a member', async () => {
-      mockLeave.mockRejectedValue(new Error('You are not a member of this organization'));
+    test('should return 403 when the user is not a member', async () => {
+      mockLeave.mockRejectedValue(Object.assign(new Error('You are not a member of this organization'), { status: 403 }));
       const req = mockReq();
       const res = mockRes();
 
       await organizationsController.leave(req, res);
 
       expect(mockLeave).toHaveBeenCalledTimes(1);
-      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.status).toHaveBeenCalledWith(403);
     });
   });
 
   describe('adminStats', () => {
-    test('should answer 422 and log the cause when the stats read fails', async () => {
+    test('should answer 500 and log the cause when the stats read fails', async () => {
       const logSpy = jest.spyOn(logger, 'error').mockImplementation(() => {});
       mockAdminStats.mockRejectedValueOnce(new Error('aggregate failed'));
       const res = mockRes();
       await organizationsController.adminStats(mockReq(), res);
-      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json.mock.calls[0][0].description).toBe('Unable to compute organization stats');
       expect(logSpy).toHaveBeenCalledWith('[stats] organization stats failed', expect.objectContaining({ message: 'aggregate failed' }));
       logSpy.mockRestore();

@@ -49,7 +49,7 @@ const updateAvatar = async (req, res) => {
       return responses.success(res, 'profile avatar updated')(user);
     });
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -72,7 +72,7 @@ const removeAvatar = async (req, res) => {
       return responses.success(res, 'profile avatar updated')(user);
     });
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 

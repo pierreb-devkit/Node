@@ -103,7 +103,7 @@ describe('Membership consent service unit tests:', () => {
     test('rejects when the user is already an ACTIVE member', async () => {
       mockFindOne.mockResolvedValue({ _id: 'm1', status: MEMBERSHIP_STATUSES.ACTIVE });
       await expect(MembershipService.addMember(ORG, USER, MEMBERSHIP_ROLES.MEMBER, OWNER))
-        .rejects.toThrow('already a member');
+        .rejects.toMatchObject({ message: expect.stringContaining('already a member'), status: 409 });
       expect(mockCreate).not.toHaveBeenCalled();
     });
 
@@ -132,7 +132,7 @@ describe('Membership consent service unit tests:', () => {
     test('rejects when the target user does not exist', async () => {
       mockGetBrut.mockResolvedValue(null);
       await expect(MembershipService.addMember(ORG, USER, MEMBERSHIP_ROLES.MEMBER, OWNER))
-        .rejects.toThrow('User not found');
+        .rejects.toMatchObject({ message: 'User not found', status: 404 });
       expect(mockCreate).not.toHaveBeenCalled();
     });
   });

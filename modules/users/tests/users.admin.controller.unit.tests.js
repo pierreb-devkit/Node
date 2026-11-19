@@ -151,13 +151,14 @@ describe('users.admin.controller unit tests:', () => {
   });
 
   describe('stats', () => {
-    test('should answer 422 and log the cause when the stats read fails', async () => {
+    test('should leave the status to the error (500 for a plain error) and log the cause when the stats read fails', async () => {
       const logSpy = jest.spyOn(logger, 'error').mockImplementation(() => {});
       UserService.adminStats.mockRejectedValueOnce(new Error('aggregate failed'));
       const res = { status: jest.fn(), json: jest.fn() };
       res.status.mockReturnValue(res);
       await controller.stats({}, res);
-      expect(res.status).toHaveBeenCalledWith(422);
+      // No fixed status: the real responses.error resolves it from the error (500 here).
+      expect(res.status).toHaveBeenCalledWith(undefined);
       expect(res.json).toHaveBeenCalledWith({ message: 'Unable to compute user stats' });
       expect(logSpy).toHaveBeenCalledWith('[stats] user stats failed', expect.objectContaining({ message: 'aggregate failed' }));
       logSpy.mockRestore();

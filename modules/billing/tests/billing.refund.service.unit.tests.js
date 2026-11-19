@@ -344,7 +344,7 @@ describe('adminBumpPlan controller unit tests:', () => {
     jest.restoreAllMocks();
   });
 
-  test('returns 422 when req.user._id is missing (service throws 422)', async () => {
+  test('hands a service 422 (missing req.user._id) to responses.error with no fixed status', async () => {
     mockBillingAdminService.bumpOrgPlan.mockRejectedValue(
       Object.assign(new Error('invalid argument: authenticated user id is missing'), { status: 422 }),
     );
@@ -353,10 +353,10 @@ describe('adminBumpPlan controller unit tests:', () => {
 
     await adminBumpPlan(req, res);
 
-    expect(mockResponses.error).toHaveBeenCalledWith(res, 422, 'Unprocessable Entity', 'Failed to bump plan');
+    expect(mockResponses.error).toHaveBeenCalledWith(res, undefined, undefined, 'Failed to bump plan');
   });
 
-  test('returns 404 when no subscription found for org (service throws 404)', async () => {
+  test('hands a service 404 (no subscription) to responses.error with no fixed status', async () => {
     mockBillingAdminService.bumpOrgPlan.mockRejectedValue(
       Object.assign(new Error(`subscription not found for orgId=${orgId}`), { status: 404 }),
     );
@@ -365,7 +365,7 @@ describe('adminBumpPlan controller unit tests:', () => {
 
     await adminBumpPlan(req, res);
 
-    expect(mockResponses.error).toHaveBeenCalledWith(res, 404, 'Not Found', 'Failed to bump plan');
+    expect(mockResponses.error).toHaveBeenCalledWith(res, undefined, undefined, 'Failed to bump plan');
   });
 
   test('returns 200 on happy path — delegates to BillingAdminService.bumpOrgPlan', async () => {
@@ -378,7 +378,7 @@ describe('adminBumpPlan controller unit tests:', () => {
     expect(mockResponses.success).toHaveBeenCalledWith(res, 'subscription plan bumped');
   });
 
-  test('returns 422 on Mongoose ValidationError from service', async () => {
+  test('hands a Mongoose ValidationError to responses.error (it resolves 422)', async () => {
     const validationErr = new Error('plan is invalid');
     validationErr.name = 'ValidationError';
     mockBillingAdminService.bumpOrgPlan.mockRejectedValue(validationErr);
@@ -387,16 +387,16 @@ describe('adminBumpPlan controller unit tests:', () => {
 
     await adminBumpPlan(req, res);
 
-    expect(mockResponses.error).toHaveBeenCalledWith(res, 422, 'Unprocessable Entity', 'Failed to bump plan');
+    expect(mockResponses.error).toHaveBeenCalledWith(res, undefined, undefined, 'Failed to bump plan');
   });
 
-  test('returns 500 on unexpected error from service', async () => {
+  test('hands an unexpected error to responses.error (it resolves 500)', async () => {
     mockBillingAdminService.bumpOrgPlan.mockRejectedValue(new Error('db timeout'));
     const req = { body: { orgId, planId: 'pro' }, user: { _id: adminId } };
     const res = makeRes();
 
     await adminBumpPlan(req, res);
 
-    expect(mockResponses.error).toHaveBeenCalledWith(res, 500, 'Internal Server Error', 'Failed to bump plan');
+    expect(mockResponses.error).toHaveBeenCalledWith(res, undefined, undefined, 'Failed to bump plan');
   });
 });

@@ -85,7 +85,7 @@ describe('Uploads controller unit tests:', () => {
       },
     };
 
-    test('responds 422 when stream errors BEFORE headers are sent', async () => {
+    test('responds 500 when stream errors BEFORE headers are sent', async () => {
       const { listeners } = installStream();
       const res = buildRes();
 
@@ -95,7 +95,7 @@ describe('Uploads controller unit tests:', () => {
       const err = new Error('gridfs chunk missing');
       listeners.error(err);
 
-      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.status).toHaveBeenCalledWith(500);
       expect(res.destroy).not.toHaveBeenCalled();
     });
 
@@ -132,7 +132,7 @@ describe('Uploads controller unit tests:', () => {
       sharpOption: null,
     };
 
-    test('responds 422 when stream errors BEFORE headers are sent', async () => {
+    test('responds 500 when stream errors BEFORE headers are sent', async () => {
       const { listeners } = installStream();
       const res = buildRes();
 
@@ -144,7 +144,7 @@ describe('Uploads controller unit tests:', () => {
       res.headersSent = false;
       listeners.error(new Error('early gridfs failure'));
 
-      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.status).toHaveBeenCalledWith(500);
       expect(res.destroy).not.toHaveBeenCalled();
     });
 

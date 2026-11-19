@@ -79,7 +79,7 @@ const signup = async (req, res) => {
     if (err?.code === 'SIGNUP_DISABLED') {
       return responses.error(res, 404, 'Signup error', 'Registration is currently deactivated')();
     }
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -749,7 +749,7 @@ const getConfig = async (req, res) => {
 
     responses.success(res, 'Auth config')(data);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -785,7 +785,7 @@ const verifyEmail = async (req, res) => {
 
     return responses.success(res, 'Email verified successfully')({ emailVerified: true });
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -822,7 +822,7 @@ const resendVerification = async (req, res) => {
       message: err?.message,
       stack: err?.stack,
     });
-    responses.error(res, 422, 'Unprocessable Entity', 'Failed to send the email, please try again.')(err);
+    responses.error(res, 500, undefined, 'Failed to send the email, please try again.')(err);
   }
 };
 

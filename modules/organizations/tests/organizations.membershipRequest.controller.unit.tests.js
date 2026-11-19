@@ -172,14 +172,14 @@ describe('membershipRequest controller — consent surfaces:', () => {
       expect(mockDeclineMembership).toHaveBeenCalledWith('m2', 'invitee2');
     });
 
-    test('service throws → 422 Unprocessable Entity', async () => {
+    test('service throws a plain error → 500', async () => {
       mockDeclineMembership.mockRejectedValue(new Error('db error'));
       const req = { params: { membershipId: 'm1' }, user: { _id: 'u1' } };
       const res = mockRes();
 
       await controller.decline(req, res);
 
-      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.status).toHaveBeenCalledWith(500);
     });
   });
 });

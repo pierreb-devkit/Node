@@ -1,5 +1,5 @@
 /**
- * Unit tests — audit stats controller error path: a failed read answers 422 with a
+ * Unit tests — audit stats controller error path: a failed read answers 500 with a
  * fixed message and logs the cause.
  */
 import { jest, describe, test, expect } from '@jest/globals';
@@ -24,11 +24,11 @@ const buildRes = () => {
 };
 
 describe('audit stats controller', () => {
-  test('should answer 422 and log the cause when the stats read fails', async () => {
+  test('should answer 500 and log the cause when the stats read fails', async () => {
     mockAdminStats.mockRejectedValueOnce(new Error('aggregate failed'));
     const res = buildRes();
     await controller.stats({}, res);
-    expect(res.status).toHaveBeenCalledWith(422);
+    expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json.mock.calls[0][0].description).toBe('Unable to compute audit stats');
     expect(mockLoggerError).toHaveBeenCalledWith('[stats] audit stats failed', expect.objectContaining({ message: 'aggregate failed' }));
   });

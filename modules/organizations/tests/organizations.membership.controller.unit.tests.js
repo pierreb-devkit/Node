@@ -335,14 +335,14 @@ describe('Membership controller unit tests:', () => {
       expect(res.status).not.toHaveBeenCalledWith(403);
     });
 
-    test('a service rejection surfaces as 422', async () => {
-      mockAddMember.mockRejectedValue(new Error('User is already a member of this organization'));
+    test('a service rejection keeps its own status (409 duplicate)', async () => {
+      mockAddMember.mockRejectedValue(Object.assign(new Error('User is already a member of this organization'), { status: 409 }));
       const req = mockReq({ membership: { role: MEMBERSHIP_ROLES.OWNER }, body: { userId: 'u9' } });
       const res = mockRes();
 
       await membershipController.addMember(req, res);
 
-      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.status).toHaveBeenCalledWith(409);
     });
   });
 

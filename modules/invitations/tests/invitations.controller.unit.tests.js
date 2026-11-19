@@ -41,15 +41,15 @@ describe('invitations.controller.create', () => {
     expect(success).toHaveBeenCalled();
     expect(successInner).toHaveBeenCalledWith({ id: 'i1', email: 'a@b.co' });
   });
-  test('maps a thrown error to 422', async () => {
+  test('passes a thrown error through so responses.error resolves its status (500 when it has none)', async () => {
     mockService.create.mockRejectedValue(new Error('boom'));
     await controller.create({ body: { email: 'a@b.co' }, user: {} }, makeRes());
-    expect(error).toHaveBeenCalledWith(expect.anything(), 422, 'Unprocessable Entity', 'boom');
+    expect(error).toHaveBeenCalledWith(expect.anything(), undefined, undefined, 'boom');
   });
-  test('threads a service 409 (duplicate pending) through as Conflict', async () => {
+  test('passes a service 409 (duplicate pending) through to responses.error', async () => {
     mockService.create.mockRejectedValue(Object.assign(new Error('A pending invitation already exists for this email'), { status: 409 }));
     await controller.create({ body: { email: 'a@b.co' }, user: {} }, makeRes());
-    expect(error).toHaveBeenCalledWith(expect.anything(), 409, 'Conflict', 'A pending invitation already exists for this email');
+    expect(error).toHaveBeenCalledWith(expect.anything(), undefined, undefined, 'A pending invitation already exists for this email');
   });
 });
 
@@ -88,15 +88,15 @@ describe('invitations.controller.resend', () => {
     expect(success).toHaveBeenCalledWith(expect.anything(), 'invitation resent');
     expect(successInner).toHaveBeenCalledWith({ id: 'i1', status: 'pending' });
   });
-  test('threads a 409 (non-pending) as Conflict', async () => {
+  test('passes a 409 (non-pending) through to responses.error', async () => {
     mockService.resend.mockRejectedValue(Object.assign(new Error('Only pending invitations can be resent'), { status: 409 }));
     await controller.resend({ invitation: { id: 'i1' }, user: admin }, makeRes());
-    expect(error).toHaveBeenCalledWith(expect.anything(), 409, 'Conflict', expect.any(String));
+    expect(error).toHaveBeenCalledWith(expect.anything(), undefined, undefined, expect.any(String));
   });
-  test('maps a 422 (mailer unconfigured) as Unprocessable Entity', async () => {
+  test('passes a 422 (mailer unconfigured) through to responses.error', async () => {
     mockService.resend.mockRejectedValue(Object.assign(new Error('mailer is not configured'), { status: 422 }));
     await controller.resend({ invitation: { id: 'i1' }, user: admin }, makeRes());
-    expect(error).toHaveBeenCalledWith(expect.anything(), 422, 'Unprocessable Entity', expect.any(String));
+    expect(error).toHaveBeenCalledWith(expect.anything(), undefined, undefined, expect.any(String));
   });
   // #3966 hardening: a bare transport rejection (no `.status`, unlike the
   // deliberate AppErrors above) must not leak the raw provider/SMTP error
@@ -107,7 +107,7 @@ describe('invitations.controller.resend', () => {
     mockService.resend.mockRejectedValue(providerError);
     await controller.resend({ invitation: { id: 'i1' }, user: admin }, makeRes());
 
-    expect(error).toHaveBeenCalledWith(expect.anything(), 422, 'Unprocessable Entity', expect.any(String));
+    expect(error).toHaveBeenCalledWith(expect.anything(), 500, undefined, expect.any(String));
     const clientMessage = error.mock.calls[0][3];
     expect(clientMessage).not.toContain('sk_live_abc123');
     expect(clientMessage).not.toContain('Resend API error');
