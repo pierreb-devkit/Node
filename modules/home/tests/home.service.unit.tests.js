@@ -54,6 +54,28 @@ describe('HomeService.getReadinessStatus unit tests:', () => {
     expect(categories).not.toContain('monitoring');
   });
 
+  describe('billing row', () => {
+    test('warning when Stripe is not configured', async () => {
+      const HomeService = await withConfig({});
+      const row = HomeService.getReadinessStatus().find((c) => c.category === 'billing');
+      expect(row).toEqual({ category: 'billing', status: 'warning', message: 'Stripe not configured' });
+    });
+
+    test('ok when Stripe is configured and billing is on', async () => {
+      const HomeService = await withConfig({ stripe: { secretKey: 'sk_test_123' }, billing: { enabled: true } });
+      const row = HomeService.getReadinessStatus().find((c) => c.category === 'billing');
+      expect(row.status).toBe('ok');
+      expect(row.message).toBe('Stripe configured');
+    });
+
+    test('never ok when billing is switched off, even with a Stripe key (no Stripe probe at boot)', async () => {
+      const HomeService = await withConfig({ stripe: { secretKey: 'sk_test_123' }, billing: { activated: false, enabled: false } });
+      const row = HomeService.getReadinessStatus().find((c) => c.category === 'billing');
+      expect(row.status).toBe('warning');
+      expect(row.message).toBe('Billing is switched off');
+    });
+  });
+
   describe('mail row', () => {
     test('warning message states the consequence when no mail provider is configured', async () => {
       const HomeService = await withConfig({});
