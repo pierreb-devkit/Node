@@ -4,6 +4,20 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Module activation: boot test and migrations follow `activated` (2026-11-19)
+
+- The module activation boot test (`lib/helpers/tests/config.activationBoot.integration.tests.js`) now covers only the modules outside `CORE_MODULES` whose config declares an `activated` key. Declaring it is the module's promise that it can be switched off. A module that never declares it is never switched off, so it is always on and out of the test.
+- A module that wants to be switchable declares `activated` in its config (e.g. `myModule: { activated: true }` in `modules/myModule/config/myModule.development.config.js`). The stack `public` module now declares it.
+- Migrations of a module switched off with `activated: false` are skipped at boot. A skipped migration is not recorded, so it runs at the next boot where the module is on (migrations must stay idempotent).
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the change.
+2. Remove any skip of `config.activationBoot.integration.tests.js` added for always-on project modules.
+3. A project module meant to be switchable: declare `activated: true` in its config so the boot test checks it switches off cleanly. Leave it out for a module that is always on.
+
+---
+
 ## ⚠️ Module boundaries, shared helpers and file names (2026-11-19)
 
 Modules now read each other through services, never through another module's repository.
