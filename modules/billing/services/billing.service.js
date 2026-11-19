@@ -447,8 +447,10 @@ const cleanupOrganizationData = async (organizationId) => {
       `billing: org-removal write(s) failed for ${orgId} (tombstone ${tombstoneId}) — ${causes}`,
     );
   }
-  const [subscriptions, extraBalances] = results.slice(0, 2).map((r) => r.value?.modifiedCount ?? 0);
-  const usage = results[2].value?.deletedCount ?? 0;
+  const count = (r, key) => (r.status === 'fulfilled' ? (r.value?.[key] ?? 0) : 0);
+  const subscriptions = count(results[0], 'modifiedCount');
+  const extraBalances = count(results[1], 'modifiedCount');
+  const usage = count(results[2], 'deletedCount');
   return { tombstoneId, subscriptions, extraBalances, usage };
 };
 
