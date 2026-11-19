@@ -177,4 +177,19 @@ describe('verifyEmail — org provisioning after email verification (non-fatal):
 
     expect(mockOrganizationsService.handleSignupOrganization).not.toHaveBeenCalled();
   });
+
+  test('a token-consume failure goes to responses.error with no fixed status (#4304: the error decides)', async () => {
+    const dbErr = new Error('db down');
+    mockUserService.consumeEmailVerificationToken.mockRejectedValue(dbErr);
+    const req = makeReq();
+    const res = makeRes();
+
+    await verifyEmail(req, res);
+
+    const { default: responses } = await import('../../../lib/helpers/responses.js');
+    expect(responses.error).toHaveBeenCalledWith(res, undefined, undefined, 'db down');
+    expect(responses.error.mock.results[0].value).toHaveBeenCalledWith(dbErr);
+    expect(responses.success).not.toHaveBeenCalled();
+    expect(mockOrganizationsService.handleSignupOrganization).not.toHaveBeenCalled();
+  });
 });

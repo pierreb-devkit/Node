@@ -17,6 +17,10 @@ const mockAcceptMembership = jest.fn();
 const mockDeclineMembership = jest.fn();
 const mockListPendingOwnerAddsByUser = jest.fn();
 const mockListPendingByUser = jest.fn();
+const mockListPending = jest.fn();
+const mockCreateJoinRequest = jest.fn();
+const mockApproveRequest = jest.fn();
+const mockRejectRequest = jest.fn();
 
 jest.unstable_mockModule('../services/organizations.membership.service.js', () => ({
   default: {
@@ -25,14 +29,15 @@ jest.unstable_mockModule('../services/organizations.membership.service.js', () =
     declineMembership: mockDeclineMembership,
     listPendingOwnerAddsByUser: mockListPendingOwnerAddsByUser,
     listPendingByUser: mockListPendingByUser,
-    listPending: jest.fn(),
-    createJoinRequest: jest.fn(),
-    approveRequest: jest.fn(),
-    rejectRequest: jest.fn(),
+    listPending: mockListPending,
+    createJoinRequest: mockCreateJoinRequest,
+    approveRequest: mockApproveRequest,
+    rejectRequest: mockRejectRequest,
   },
 }));
 
 const { default: controller } = await import('../controllers/organizations.membershipRequest.controller.js');
+const { default: AppError } = await import('../../../lib/helpers/AppError.js');
 
 /**
  * @desc Minimal Express-like res with spies.
@@ -180,6 +185,62 @@ describe('membershipRequest controller — consent surfaces:', () => {
       await controller.decline(req, res);
 
       expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  describe('error status (#4304): a failed service call answers the HTTP status the error carries', () => {
+    const owner = { role: 'owner' };
+
+    test('create: a duplicate pending request (AppError 409) answers 409 Conflict', async () => {
+      mockCreateJoinRequest.mockRejectedValueOnce(new AppError('A pending request already exists', { status: 409, code: 'CONFLICT' }));
+      const res = mockRes();
+      await controller.create({ user: { _id: 'u1' }, organization: { _id: 'org1' } }, res);
+      expect(mockCreateJoinRequest).toHaveBeenCalledWith('u1', 'org1');
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json.mock.calls[0][0]).toMatchObject({ message: 'Conflict', errorCode: 'CONFLICT' });
+    });
+
+    test('listPending: an unexpected error answers 500', async () => {
+      mockListPending.mockRejectedValueOnce(new Error('db down'));
+      const res = mockRes();
+      await controller.listPending({ membership: owner, organization: { _id: 'org1' } }, res);
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+
+    test('approve: an AppError 403 answers 403 Forbidden', async () => {
+      mockApproveRequest.mockRejectedValueOnce(new AppError('Forbidden', { status: 403, code: 'FORBIDDEN' }));
+      const res = mockRes();
+      await controller.approve({ membershipRequest: { _id: 'm1' } }, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+    });
+
+    test('reject: an AppError 404 answers 404 Not Found', async () => {
+      mockRejectRequest.mockRejectedValueOnce(new AppError('Membership not found', { status: 404, code: 'NOT_FOUND' }));
+      const res = mockRes();
+      await controller.reject({ membershipRequest: { _id: 'm1' } }, res);
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json.mock.calls[0][0]).toMatchObject({ message: 'Not Found', errorCode: 'NOT_FOUND' });
+    });
+
+    test('listMine: an unexpected error answers 500', async () => {
+      mockListPendingByUser.mockRejectedValueOnce(new Error('db down'));
+      const res = mockRes();
+      await controller.listMine({ user: { _id: 'u1' } }, res);
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+
+    test('listMinePending: an unexpected error answers 500', async () => {
+      mockListPendingOwnerAddsByUser.mockRejectedValueOnce(new Error('db down'));
+      const res = mockRes();
+      await controller.listMinePending({ user: { _id: 'u1' } }, res);
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+
+    test('accept: an AppError 409 answers 409 Conflict', async () => {
+      mockAcceptMembership.mockRejectedValueOnce(new AppError('Already a member', { status: 409, code: 'CONFLICT' }));
+      const res = mockRes();
+      await controller.accept({ params: { membershipId: 'm1' }, user: { _id: 'u1' } }, res);
+      expect(res.status).toHaveBeenCalledWith(409);
     });
   });
 });

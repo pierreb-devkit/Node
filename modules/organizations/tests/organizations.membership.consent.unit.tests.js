@@ -287,6 +287,29 @@ describe('Membership consent service unit tests:', () => {
       await expect(MembershipService.createJoinRequest(USER, ORG)).rejects.toThrow('pending invitation');
       expect(mockCreate).not.toHaveBeenCalled();
     });
+
+    test('a pending JOIN REQUEST for the SAME org rejects with a 409 CONFLICT AppError (#4304)', async () => {
+      mockGetBrut.mockResolvedValue({ _id: USER, email: 'u@x.com', emailVerified: true });
+      mockFindOne.mockResolvedValueOnce({ _id: 'jr', status: MEMBERSHIP_STATUSES.PENDING, source: PENDING_SOURCES.JOIN_REQUEST });
+      await expect(MembershipService.createJoinRequest(USER, ORG)).rejects.toMatchObject({
+        message: 'A pending request already exists',
+        status: 409,
+        code: 'CONFLICT',
+      });
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('leave', () => {
+    test('a user with no ACTIVE membership in the org rejects with a 403 FORBIDDEN AppError (#4304)', async () => {
+      mockFindOne.mockResolvedValueOnce(null);
+      await expect(MembershipService.leave(USER, ORG)).rejects.toMatchObject({
+        message: 'You are not a member of this organization',
+        status: 403,
+        code: 'FORBIDDEN',
+      });
+      expect(mockFindOne).toHaveBeenCalledWith({ userId: USER, organizationId: ORG, status: MEMBERSHIP_STATUSES.ACTIVE });
+    });
   });
 
   describe('source-scoped pending listings (E16 / invariant #1)', () => {

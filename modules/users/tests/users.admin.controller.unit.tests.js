@@ -148,6 +148,14 @@ describe('users.admin.controller unit tests:', () => {
       const responseUser = res.json.mock.calls[0][0].data;
       expect(responseUser).toEqual({ memberships: [] });
     });
+
+    test('should leave the status to the error (#4304) when the memberships read fails', async () => {
+      mockListByUser.mockRejectedValueOnce(new Error('db down'));
+      await controller.get(req, res);
+      // No fixed status: the real responses.error resolves it from the error (500 here).
+      expect(res.status).toHaveBeenCalledWith(undefined);
+      expect(res.json).toHaveBeenCalledWith({ message: 'db down' });
+    });
   });
 
   describe('stats', () => {

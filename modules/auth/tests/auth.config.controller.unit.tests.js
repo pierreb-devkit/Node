@@ -224,4 +224,21 @@ describe('auth.controller getConfig:', () => {
     const [data] = mockResponses.successCb.mock.calls[0];
     expect(data.billing.equivalences).toEqual(equivalences);
   });
+
+  test('a signup-capacity count failure goes to responses.error with no fixed status (#4304: the error decides)', async () => {
+    mockConfig.sign.cap = 10;
+    const countErr = new Error('count failed');
+    const { default: UserService } = await import('../../../modules/users/services/users.service.js');
+    UserService.count.mockRejectedValueOnce(countErr);
+
+    const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
+    const { default: responses } = await import('../../../lib/helpers/responses.js');
+
+    const res = {};
+    await AuthController.getConfig({}, res);
+
+    expect(responses.error).toHaveBeenCalledWith(res, undefined, undefined, 'error');
+    expect(mockResponses.errorCb).toHaveBeenCalledWith(countErr);
+    expect(responses.success).not.toHaveBeenCalled();
+  });
 });

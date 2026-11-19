@@ -65,6 +65,14 @@ describe('invitations.controller.list', () => {
     expect(mockService.list).toHaveBeenCalledWith({ id: 'u1', roles: ['user'] });
     expect(successInner).toHaveBeenCalledWith([{ id: 'i1' }]);
   });
+  test('passes a thrown error through with no hard-coded status, so responses.error answers its own (403)', async () => {
+    const caughtError = Object.assign(new Error('Forbidden'), { status: 403 });
+    mockService.list.mockRejectedValue(caughtError);
+    await controller.list({ user: { id: 'u1' } }, makeRes());
+    expect(error).toHaveBeenCalledWith(expect.anything(), undefined, undefined, 'Forbidden');
+    expect(errorInner).toHaveBeenCalledWith(caughtError);
+    expect(success).not.toHaveBeenCalled();
+  });
 });
 
 describe('invitations.controller.remove', () => {
@@ -79,6 +87,13 @@ describe('invitations.controller.remove', () => {
     await controller.remove({ invitation: { id: 'i9' } }, makeRes());
     expect(error).toHaveBeenCalledWith(expect.anything(), 409, 'Conflict', 'Only pending invitations can be revoked');
     expect(success).not.toHaveBeenCalled();
+  });
+  test('passes a thrown error through with no hard-coded status (500 when it has none)', async () => {
+    const caughtError = new Error('db down');
+    mockService.revoke.mockRejectedValue(caughtError);
+    await controller.remove({ invitation: { id: 'i9' } }, makeRes());
+    expect(error).toHaveBeenCalledWith(expect.anything(), undefined, undefined, 'db down');
+    expect(errorInner).toHaveBeenCalledWith(caughtError);
   });
 });
 
@@ -157,6 +172,13 @@ describe('invitations.controller.verify', () => {
     mockService.findValid.mockResolvedValue(null);
     await controller.verify({ params: { token: 'nope' } }, makeRes());
     expect(successInner).toHaveBeenCalledWith({ valid: false, email: null });
+  });
+  test('passes a thrown error through with no hard-coded status (500 when it has none)', async () => {
+    const caughtError = new Error('db down');
+    mockService.findValid.mockRejectedValue(caughtError);
+    await controller.verify({ params: { token: 'tok' } }, makeRes());
+    expect(error).toHaveBeenCalledWith(expect.anything(), undefined, undefined, 'db down');
+    expect(errorInner).toHaveBeenCalledWith(caughtError);
   });
 });
 
