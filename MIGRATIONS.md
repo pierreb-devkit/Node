@@ -4,6 +4,26 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## ⚠️ API errors answer with their real HTTP status (2026-11-19)
+
+Controller errors no longer always answer 422. `responses.error` now takes the status from the error: an `AppError`'s `status`, then a driver error's own status. Duplicate keys, Mongoose validation / cast errors and Zod errors still answer 422. Any other error with no status answers **500** (it was 422). A MongoDB numeric `code` is never read as an HTTP status.
+
+What a downstream must do:
+
+- Give every `AppError` you throw for a client mistake an explicit status (`new AppError('Not found', { status: 404, code: ... })`). Without one it now answers 500.
+- Update your controllers' catch to the template shape (`modules/tasks/controllers/tasks.controller.js`):
+
+  ```js
+  } catch (err) {
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
+  }
+  ```
+
+  Drop any hand-rolled `err.status ?? 500` + title ternary: `responses.error` picks the status and its title. Keep an explicit `responses.error(res, 422, ...)` for a real validation failure you detect yourself.
+- Update tests that assert 422 for errors that are now 403, 404, 409 or 500.
+
+---
+
 ## ⚠️ Module boundaries, shared helpers and file names (2026-11-19)
 
 Modules now read each other through services, never through another module's repository.
