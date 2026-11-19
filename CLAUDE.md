@@ -85,6 +85,18 @@ This repository is open source. **Never reference downstream consumers** — pro
 - After user correction, evaluate if the pattern belongs in `ERRORS.md`
 - **No optional module names in core module code.** Core modules (`core`, `auth`, `users`, `home`) must not reference optional module names anywhere in their code — not in imports, not in string maps, not in config keys, not in comments used as logic. Optional modules self-register their own behaviour (config, mappings, handlers) and core modules read from config or a registry.
 
+## Stack vs downstream ownership
+
+A downstream project never edits a stack file. Inside stack folders (`lib/`, `config/`, every stack module) it adds only its own modules and files that carry its project name: `*.<project>.*` overrides, `config/defaults/<project>.config.js`, `config/templates/<project>/`. Any other downstream file found there:
+
+- generic → upstream it to the stack;
+- project-only → move it to the project's own module;
+- a dead copy of a file the stack deleted → delete it at the next stack update.
+
+Existing migration files never move — they are recorded by path, a moved one re-runs. In `/update-stack`, editing a stack file blocks as drift; step 3ter warns on downstream files added to stack folders under `modules/`, `lib/`, `config/` without the project name, and on copies of files the stack deleted.
+
+A downstream module that owns organization-scoped data cleans it through the org-removal hook (`onOrganizationRemoved`, see `modules/organizations/README.md`), registered from its own `*.init.js` — never by editing `organizations.crud.service.js`.
+
 ## Workflow rules
 
 - **Never push directly to master/main.** Always create a branch, push, create a PR, wait for CI green + review, then merge.

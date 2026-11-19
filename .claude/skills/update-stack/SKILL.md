@@ -38,7 +38,7 @@ git merge devkit-node/master
 | `ERRORS.md` | Merge stack entries + project entries — never drop lines |
 | `MIGRATIONS.md` (if present) | Read it (needed for Phase 2), then `git checkout --theirs MIGRATIONS.md` |
 | `package.json` | `git checkout --ours package.json` then merge upstream version bumps |
-| Downstream-only new files (new modules, helpers, lib additions, scripts) | Never delete — these do not exist in the stack, `git checkout --ours <file>` if flagged |
+| Downstream-only new files (new modules, helpers, lib additions, scripts) | Never delete — these do not exist in the stack, `git checkout --ours <file>` if flagged. Step 3ter warns on the ones that break the ownership rule; only a dead copy of a file the stack deleted gets removed |
 
 After resolving `package.json`:
 
@@ -95,6 +95,39 @@ After `/verify` passes, run a final diff sweep before starting Phase 2. Any shar
 ```bash
 git fetch devkit-node master --quiet
 
+# Project names = config/defaults/<name>.config.js files the stack does not ship.
+projects=$(for c in config/defaults/*.config.js; do
+  git cat-file -e "devkit-node/master:$c" 2>/dev/null || basename "$c" .config.js
+done)
+stack_modules=$(git ls-tree --name-only devkit-node/master modules/ | sed 's#^modules/##')
+
+# True when the path carries a project name the way the ownership rule allows.
+carries_project() {
+  local f="$1" p
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    case "$f" in
+      *."$p".*|config/defaults/"$p".config.js|config/templates/"$p"/*) return 0 ;;
+    esac
+  done <<EOF_PROJECTS
+$(printf '%s\n' "$projects")
+EOF_PROJECTS
+  return 1
+}
+
+# True when the stack loads the path by glob or runs it by path (config/assets.js
+# globs, config/index.js module configs, mail templates and env configs loaded by
+# name, the migration runner, CronJobs) — such a file is live without any import.
+glob_registered() {
+  case "$1" in
+    modules/*/routes/*.js|modules/*/models/*.mongoose.js|modules/*/*.init.js|\
+    modules/*/policies/*.js|modules/*/doc/*.yml|modules/*/doc/guides/*.md|\
+    modules/*/crons/*.js|modules/*/migrations/*.js|modules/*/config/*.config.js|\
+    config/templates/*|config/defaults/*) return 0 ;;
+  esac
+  return 1
+}
+
 drift_found=0
 while IFS= read -r f; do
   # Both sides exist + differ → drift
@@ -109,9 +142,35 @@ while IFS= read -r f; do
     echo "BLOCK: missing locally (was on upstream): $f"
     echo "  Fix — restore: git checkout devkit-node/master -- $f"
     drift_found=1
+  # Downstream-only file → WARN (never blocks) on the two ownership-rule breaks
+  else
+    # (b) a file the stack deleted, still here
+    if [ -n "$(git log devkit-node/master --diff-filter=D --format=%h -1 -- "$f")" ]; then
+      if case "$f" in */migrations/*) true ;; *) false ;; esac; then
+        echo "WARN: stack deleted $f — never move or delete — migrations are recorded by path"
+      elif glob_registered "$f"; then
+        echo "WARN: stack deleted $f but it is registered by glob — move it to the project's own module"
+      elif git grep -q -F -e "/$(basename "$f")" -- modules lib config server.js ':!*/tests/*' ":!$f"; then
+        echo "WARN: stack deleted $f but something still imports it — move it to the project's own module"
+      else
+        echo "WARN: stack deleted $f and nothing imports it — dead copy, delete it"
+      fi
+    # (a) a new file inside lib/, config/ or a stack module folder without the project name
+    else
+      module=$(echo "$f" | sed -n 's#^modules/\([^/]*\)/.*#\1#p')
+      in_stack_folder=0
+      case "$f" in lib/*|config/*) in_stack_folder=1 ;; esac
+      [ -n "$module" ] && echo "$stack_modules" | grep -qx "$module" && in_stack_folder=1
+      if [ "$in_stack_folder" -eq 1 ] && ! carries_project "$f"; then
+        echo "WARN: downstream file inside a stack folder without the project name: $f"
+        case "$f" in
+          */migrations/*) echo "  never move or delete — migrations are recorded by path" ;;
+          *) echo "  generic → upstream it to the stack · project-only → move it to the project's own module" ;;
+        esac
+      fi
+    fi
   fi
-  # Downstream-only file (not in upstream) → skip silently
-done < <(git diff --name-only devkit-node/master HEAD -- modules lib config 2>/dev/null \
+done < <(git diff --no-renames --name-only devkit-node/master HEAD -- modules lib config 2>/dev/null \
   | grep -vE "/(tests|__tests__)/" | grep -vE "\.(test|spec)\.(js|jsx|ts|tsx)$")
 
 [ "$drift_found" -eq 1 ] && exit 1
@@ -122,6 +181,7 @@ echo "3ter: no drift — OK"
 - Block on ANY shared-file divergence. No "declare and skip" path — the `DOWNSTREAM_PATCHES.md` ledger model was abandoned 2026-06-02 (memory `feedback_no_dev_in_shared_modules`).
 - Scan source is `git diff --name-only devkit-node/master HEAD` (bidirectional) — catches both files that differ AND files present upstream but missing locally (deleted downstream). The previous `git ls-files` approach only saw locally-present files.
 - Test files (paths containing `/tests/` or `/__tests__/`, or filenames ending `.test.{js,jsx,ts,tsx}` / `.spec.{js,jsx,ts,tsx}`) are excluded — downstream test adaptations are acceptable.
+- Downstream-only files never block; they **warn** when they break the ownership rule (see `CLAUDE.md` § Stack vs downstream ownership): (a) a file in `lib/`, `config/` or a stack module folder that does not carry the project name; (b) a file the stack deleted. List every warning in the report. Act only on a dead copy (stack deleted it, nothing imports it, and no glob in `config/assets.js` or `config/index.js`, the migration runner or a CronJob loads it): delete it. A file loaded by glob (routes, preroutes, `*.mongoose.js` models, `*.init.js`, policies, doc yml, crons, module config files, mail templates and env configs loaded by name) is live with no import — move it, never delete it. Never delete a file something imports, never a module a downstream router or `*.init.js` registers, and never move a migration file (migrations are recorded by path — a moved one re-runs).
 - This gate runs **after** `/verify` (never blocks on transient verify failures) and **before** Phase 2 (failure is recoverable — no merge commit yet).
 
 ---

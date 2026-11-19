@@ -8,6 +8,7 @@ import logger from '../../lib/services/logger.js';
 import billingEvents from './lib/billing.events.js';
 import invitationEvents from '../invitations/lib/invitations.events.js';
 import organizationEvents from '../organizations/lib/organizations.events.js';
+import { onOrganizationRemoved } from '../organizations/lib/organizations.removal.registry.js';
 import BillingUsageRepository from './repositories/billing.usage.repository.js';
 import BillingSignupGrantService from './services/billing.signupGrant.service.js';
 import { getAlertThresholdPercents } from './lib/billing.constants.js';
@@ -250,6 +251,16 @@ export default async (app) => {
       hadKnownPlan,
       ntfyPriority: 4,
     });
+  });
+
+  // Org-removal cleanup — anonymize the removed organization's subscription and extras balance
+  // (ledger kept, organization reference replaced with one tombstone id) and delete its usage.
+  // Runs AFTER the org is gone; a throw is isolated and logged by the registry's caller
+  // (organizations.crud.service.js#remove). Lazy import keeps billing.service (Stripe client,
+  // plans) off the boot graph, like the referral listener.
+  onOrganizationRemoved(async ({ organizationId }) => {
+    const { default: BillingService } = await import('./services/billing.service.js');
+    await BillingService.cleanupOrganizationData(organizationId);
   });
 
   // Prevent accidental crash if any future code emits 'error' with no listener

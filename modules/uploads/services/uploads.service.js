@@ -5,6 +5,7 @@ import crypto from 'crypto';
 
 import config from '../../../config/index.js';
 import AppError from '../../../lib/helpers/AppError.js';
+import { isObjectId } from '../../../lib/helpers/zod.js';
 import gridfs from '../repositories/uploads.gridfs.repository.js';
 import UploadRepository from '../repositories/uploads.repository.js';
 
@@ -76,9 +77,26 @@ const createFromBuffer = async (buffer, contentType, kind, metadata = {}) => {
   return result;
 };
 
+/**
+ * @desc Delete every upload scoped to one organization, stored files included
+ * (org-removal cleanup). Uploads with no organization (e.g. user avatars) are
+ * never touched: an invalid id throws before any lookup, so a missing id can
+ * never widen the match.
+ * @param {String} organizationId - the removed organization's ObjectId
+ * @return {Promise<{deleted: Number}>} number of files removed
+ * @throws {AppError} when organizationId is not a valid ObjectId
+ */
+const removeByOrganization = async (organizationId) => {
+  if (!isObjectId(organizationId)) {
+    throw new AppError('Upload: invalid organization id for removal cleanup', { code: 'SERVICE_ERROR' });
+  }
+  return UploadRepository.removeByOrganization(String(organizationId));
+};
+
 export default {
   get,
   getStream,
   remove,
   createFromBuffer,
+  removeByOrganization,
 };

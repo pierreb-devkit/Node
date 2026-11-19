@@ -16,6 +16,7 @@ describe('BillingResetService unit tests:', () => {
   let mockEvents;
   let mockExtraBalanceRepository;
   let mockLogger;
+  let mockOrganizationsService;
 
   const orgId = '507f1f77bcf86cd799439011';
 
@@ -119,6 +120,12 @@ describe('BillingResetService unit tests:', () => {
     mockLogger = { error: jest.fn(), warn: jest.fn(), info: jest.fn() };
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
       default: mockLogger,
+    }));
+
+    // resetAllDue skips subscriptions whose organization was removed (tombstoned) — #4306.
+    mockOrganizationsService = { exists: jest.fn().mockResolvedValue(true) };
+    jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({
+      default: mockOrganizationsService,
     }));
 
     const mod = await import('../services/billing.reset.service.js');
@@ -654,6 +661,29 @@ describe('BillingResetService unit tests:', () => {
         '507f1f77bcf86cd799439022',
         now,
       );
+    });
+
+    test('skips a subscription whose organization was removed (tombstoned) — no new week, no settlement (#4306)', async () => {
+      const periodStart = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+      mockSubscriptionRepository.findAllDueForResetByLastReset.mockResolvedValue([
+        { organization: '507f1f77bcf86cd799439011', currentPeriodStart: periodStart },
+        { organization: '507f1f77bcf86cd799439022', currentPeriodStart: periodStart },
+      ]);
+      mockOrganizationsService.exists.mockImplementation(async (id) => id === '507f1f77bcf86cd799439022');
+      mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'pro' });
+      mockPlanService.getActivePlan.mockReturnValue(makePlan());
+      mockUsageRepository.findByWeek.mockResolvedValue(null);
+      mockUsageRepository.upsertWeekSnapshot.mockResolvedValue(makeUsageDoc());
+
+      const result = await BillingResetService.resetAllDue();
+
+      expect(result).toEqual({ processed: 1, errors: 0 });
+      expect(mockOrganizationsService.exists).toHaveBeenCalledWith('507f1f77bcf86cd799439011');
+      expect(mockUsageRepository.upsertWeekSnapshot).toHaveBeenCalledTimes(1);
+      expect(mockUsageRepository.upsertWeekSnapshot).toHaveBeenCalledWith('507f1f77bcf86cd799439022', expect.any(String), expect.any(Object));
+      expect(mockExtraBalanceRepository.creditCompensation).not.toHaveBeenCalledWith('507f1f77bcf86cd799439011', expect.anything(), expect.anything(), expect.anything());
+      expect(mockSubscriptionRepository.updateLastResetAt).toHaveBeenCalledTimes(1);
+      expect(mockSubscriptionRepository.updateLastResetAt).toHaveBeenCalledWith('507f1f77bcf86cd799439022', expect.any(Date));
     });
 
     test('should count errors when resetWeek fails for a subscription', async () => {

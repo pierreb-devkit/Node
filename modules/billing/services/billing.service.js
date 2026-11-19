@@ -1,12 +1,15 @@
 /**
  * Module dependencies
  */
+import mongoose from 'mongoose';
 import config from '../../../config/index.js';
 import logger from '../../../lib/services/logger.js';
 import getStripe from '../lib/billing.stripe.js';
 import BillingPlansService from './billing.plans.service.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
+import AppError from '../../../lib/helpers/AppError.js';
+import { isObjectId } from '../../../lib/helpers/zod.js';
 import { isDuplicateKeyError } from '../lib/billing.errors.js';
 import { SENTINEL_PENDING } from '../lib/billing.constants.js';
 import { effectivePlanOf } from '../lib/billing.statuses.js';
@@ -402,6 +405,55 @@ const getSubscriptionStatus = async (organizationId) => (await getLocalSubscript
  */
 const getExtrasBalance = (organizationId) => BillingExtraBalanceRepository.getBalance(String(organizationId));
 
+/**
+ * @function cleanupOrganizationData
+ * @description Org-removal cleanup of the billing records of one organization. Its
+ *              subscription and its extras balance (the ledger, referral entries included)
+ *              are kept and anonymized: their organization reference is replaced with ONE
+ *              fresh tombstone id, shared by both so the removed organization's records stay
+ *              grouped; nothing else of the financial ledger changes. Its usage documents are
+ *              deleted. Records of other organizations are never touched — a referral grant
+ *              credited to the other party's organization stays there. Called by the
+ *              org-removal handler registered in billing.init.js. The three writes run
+ *              independently: one failing never skips the others, and every failure is
+ *              re-raised together afterwards. Local data only — Stripe is not called, so a
+ *              live Stripe subscription is not cancelled here.
+ * @param {string} organizationId - The removed organization's ObjectId (string).
+ * @returns {Promise<{tombstoneId: string, subscriptions: number, extraBalances: number, usage: number}>}
+ *          The tombstone id, the anonymized counts and the deleted usage count.
+ * @throws {AppError} When organizationId is not a valid ObjectId (nothing is written).
+ * @throws {AggregateError} When one or more writes failed.
+ */
+const cleanupOrganizationData = async (organizationId) => {
+  if (!isObjectId(organizationId)) {
+    throw new AppError('Billing: invalid organization id for removal cleanup', { code: 'SERVICE_ERROR' });
+  }
+  const orgId = String(organizationId);
+  const tombstoneId = new mongoose.Types.ObjectId().toString();
+  // Lazy: the usage repository resolves its model at import time, which would break every
+  // unit test of this service that runs without registered models.
+  const { default: BillingUsageRepository } = await import('../repositories/billing.usage.repository.js');
+  const results = await Promise.allSettled([
+    SubscriptionRepository.tombstoneByOrganization(orgId, tombstoneId),
+    BillingExtraBalanceRepository.tombstoneByOrganization(orgId, tombstoneId),
+    BillingUsageRepository.deleteByOrganization(orgId),
+  ]);
+  const writes = ['subscription', 'extraBalance', 'usage'];
+  const failed = results.flatMap((r, i) => (r.status === 'rejected' ? [{ write: writes[i], reason: r.reason }] : []));
+  if (failed.length > 0) {
+    const causes = failed.map(({ write, reason }) => `${write}: ${reason?.message ?? reason}`).join('; ');
+    throw new AggregateError(
+      failed.map(({ reason }) => reason),
+      `billing: org-removal write(s) failed for ${orgId} (tombstone ${tombstoneId}) — ${causes}`,
+    );
+  }
+  const count = (r, key) => (r.status === 'fulfilled' ? (r.value?.[key] ?? 0) : 0);
+  const subscriptions = count(results[0], 'modifiedCount');
+  const extraBalances = count(results[1], 'modifiedCount');
+  const usage = count(results[2], 'deletedCount');
+  return { tombstoneId, subscriptions, extraBalances, usage };
+};
+
 export default {
   getEffectivePlan,
   getSubscriptionStatus,
@@ -412,4 +464,5 @@ export default {
   fetchSubscriptionDetails,
   getLocalSubscription,
   getSubscription,
+  cleanupOrganizationData,
 };
