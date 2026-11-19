@@ -92,7 +92,7 @@ jest.unstable_mockModule('lodash', () => ({
 }));
 
 const { default: UsersService } = await import('../services/users.service.js');
-const { onOrganizationRemoved, _reset } = await import('../../organizations/lib/organizations.removal.registry.js');
+const { onBeforeOrganizationRemoved, onOrganizationRemoved, _reset } = await import('../../organizations/lib/organizations.removal.registry.js');
 
 describe('users.service.remove — sole-owner org deletion routes through the org-removal seam (#3965):', () => {
   const orgId = 'orgX';
@@ -166,6 +166,27 @@ describe('users.service.remove — sole-owner org deletion routes through the or
 
     await expect(UsersService.remove(ownerUser)).rejects.toThrow('membership wipe failed');
 
+    expect(mockOrgRepositoryRemove).not.toHaveBeenCalled();
+    expect(mockUserRepositoryRemove).not.toHaveBeenCalled();
+  });
+
+  test('a removal guard refusing a sole-owned org aborts the whole deletion before anything is deleted (#4321)', async () => {
+    const refusal = Object.assign(new Error('Cancel the subscription first'), { status: 409, code: 'ORGANIZATION_HAS_LIVE_SUBSCRIPTION' });
+    // Plain membership listed FIRST: without the pre-flight it would be deleted before the refusal.
+    mockMembershipServiceListByUser.mockResolvedValue([
+      { _id: 'm0', role: 'member', organizationId: { _id: 'orgY' }, status: 'active' },
+      { _id: 'm1', role: 'owner', organizationId: { _id: orgId }, status: 'active' },
+    ]);
+    const guard = jest.fn(async ({ organizationId }) => {
+      if (String(organizationId) === orgId) throw refusal;
+    });
+    onBeforeOrganizationRemoved(guard);
+
+    await expect(UsersService.remove(ownerUser)).rejects.toBe(refusal);
+
+    expect(guard).toHaveBeenCalledWith({ organizationId: orgId, organization: { _id: orgId } });
+    expect(mockMembershipServiceDeleteMany).not.toHaveBeenCalled();
+    expect(mockMembershipRepositoryDeleteMany).not.toHaveBeenCalled();
     expect(mockOrgRepositoryRemove).not.toHaveBeenCalled();
     expect(mockUserRepositoryRemove).not.toHaveBeenCalled();
   });

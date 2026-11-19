@@ -22,7 +22,7 @@ import organizationEvents from '../lib/organizations.events.js';
 import { slugify } from '../lib/organizations.slug.js';
 import { uniqueSlug } from '../../../lib/helpers/slug.js';
 import { MEMBERSHIP_STATUSES, MEMBERSHIP_ROLES } from '../lib/organizations.constants.js';
-import { runOrganizationRemovedHandlers } from '../lib/organizations.removal.registry.js';
+import { runBeforeOrganizationRemovedGuards, runOrganizationRemovedHandlers } from '../lib/organizations.removal.registry.js';
 
 /**
  * @function list
@@ -179,8 +179,24 @@ const update = async (organization, body) => {
 };
 
 /**
+ * @function assertRemovable
+ * @description Run the before-removal guards registered by optional modules (e.g. billing
+ *   refusing while a paid subscription is live). Deletes nothing. Lets a caller that removes
+ *   several organizations (users.service.js#remove) check them all before deleting anything.
+ * @param {Object} organization - The organization to check (only `_id`/`id` is required).
+ * @returns {Promise<void>}
+ * @throws {AppError} The first guard refusal, unchanged (e.g. 409 ORGANIZATION_HAS_LIVE_SUBSCRIPTION).
+ */
+const assertRemovable = (organization) => {
+  const orgId = organization._id || organization.id;
+  return runBeforeOrganizationRemovedGuards({ organizationId: orgId, organization });
+};
+
+/**
  * @function remove
- * @description Service to delete an organization and all its memberships. Removal is
+ * @description Service to delete an organization and all its memberships. First the
+ *   before-removal guards run (see assertRemovable): a guard refusal propagates and
+ *   nothing is deleted. Removal is
  *   atomic-by-ordering: membership cleanup, affected-user reassignment, and the org
  *   repository delete itself all happen BEFORE any onOrganizationRemoved handler runs —
  *   once removal starts, the org always ends fully removed (no zombie org doc, no
@@ -201,6 +217,9 @@ const update = async (organization, body) => {
  */
 const remove = async (organization) => {
   const orgId = organization._id || organization.id;
+
+  // Guards first, outside any try/catch: a refusal must stop the removal before anything is deleted.
+  await assertRemovable(organization);
 
   // Find all users whose currentOrganization points to this org
   const affectedUsers = await UserService.findWithFilter({ currentOrganization: orgId }, '_id');
@@ -366,6 +385,7 @@ export default {
   create,
   get,
   update,
+  assertRemovable,
   remove,
   switchOrganization,
   autoSetCurrentOrganization,

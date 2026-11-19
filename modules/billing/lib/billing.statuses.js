@@ -5,6 +5,12 @@
 export const activeStatuses = ['active', 'trialing'];
 
 /**
+ * Stripe subscription statuses under which the provider is still charging (or retrying
+ * a charge): an organization in one of them cannot be removed until it cancels (#4321).
+ */
+export const liveStatuses = ['active', 'trialing', 'past_due'];
+
+/**
  * The one rule for the plan an organization is entitled to: the subscription's plan
  * while its status is active or trialing, 'free' otherwise (no subscription, no plan,
  * or any other status).

@@ -43,7 +43,7 @@ jest.unstable_mockModule('../../users/services/users.service.js', () => ({
 }));
 
 const { default: OrgCrudService } = await import('../services/organizations.crud.service.js');
-const { onOrganizationRemoved, _reset } = await import('../lib/organizations.removal.registry.js');
+const { onBeforeOrganizationRemoved, onOrganizationRemoved, _reset } = await import('../lib/organizations.removal.registry.js');
 
 describe('OrgCrudService.remove() — org-removal registry', () => {
   const organization = { _id: 'org-1' };
@@ -162,5 +162,44 @@ describe('OrgCrudService.remove() — org-removal registry', () => {
 
     await expect(OrgCrudService.remove(organization)).resolves.toEqual({ acknowledged: true });
     expect(mockUpdateById).toHaveBeenCalledWith('coUid', { currentOrganization: 'orgZ' });
+  });
+
+  describe('before-removal guards (#4321)', () => {
+    test('a guard refusal stops the removal: nothing is deleted, no handler runs, the error is not swallowed', async () => {
+      const refusal = Object.assign(new Error('Cancel the subscription first'), { status: 409, code: 'ORGANIZATION_HAS_LIVE_SUBSCRIPTION' });
+      const guard = jest.fn().mockRejectedValue(refusal);
+      const handler = jest.fn();
+      onBeforeOrganizationRemoved(guard);
+      onOrganizationRemoved(handler);
+
+      await expect(OrgCrudService.remove(organization)).rejects.toBe(refusal);
+
+      expect(guard).toHaveBeenCalledWith({ organizationId: 'org-1', organization });
+      expect(mockFindWithFilter).not.toHaveBeenCalled();
+      expect(mockMembershipDeleteMany).not.toHaveBeenCalled();
+      expect(mockUpdateById).not.toHaveBeenCalled();
+      expect(mockOrgRemove).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+      expect(mockLoggerError).not.toHaveBeenCalled();
+    });
+
+    test('a passing guard lets the removal go on', async () => {
+      onBeforeOrganizationRemoved(jest.fn().mockResolvedValue(undefined));
+
+      await OrgCrudService.remove(organization);
+
+      expect(mockOrgRemove).toHaveBeenCalledWith(organization);
+    });
+
+    test('assertRemovable runs the guards and deletes nothing', async () => {
+      const guard = jest.fn().mockResolvedValue(undefined);
+      onBeforeOrganizationRemoved(guard);
+
+      await OrgCrudService.assertRemovable({ id: 'org-2' });
+
+      expect(guard).toHaveBeenCalledWith({ organizationId: 'org-2', organization: { id: 'org-2' } });
+      expect(mockMembershipDeleteMany).not.toHaveBeenCalled();
+      expect(mockOrgRemove).not.toHaveBeenCalled();
+    });
   });
 });

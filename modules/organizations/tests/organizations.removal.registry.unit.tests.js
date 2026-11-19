@@ -3,7 +3,13 @@
  */
 import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 
-import { onOrganizationRemoved, runOrganizationRemovedHandlers, _reset } from '../lib/organizations.removal.registry.js';
+import {
+  onBeforeOrganizationRemoved,
+  runBeforeOrganizationRemovedGuards,
+  onOrganizationRemoved,
+  runOrganizationRemovedHandlers,
+  _reset,
+} from '../lib/organizations.removal.registry.js';
 
 describe('organizations.removal.registry', () => {
   beforeEach(() => {
@@ -82,5 +88,55 @@ describe('organizations.removal.registry', () => {
     await runOrganizationRemovedHandlers({ organizationId: 'org-1' });
 
     expect(handler).not.toHaveBeenCalled();
+  });
+
+  describe('before-removal guards (#4321)', () => {
+    test('runs every guard with the payload when none refuses', async () => {
+      const a = jest.fn().mockResolvedValue(undefined);
+      const b = jest.fn().mockResolvedValue(undefined);
+      onBeforeOrganizationRemoved(a);
+      onBeforeOrganizationRemoved(b);
+      const payload = { organizationId: 'org-1', organization: { _id: 'org-1' } };
+
+      await expect(runBeforeOrganizationRemovedGuards(payload)).resolves.toBeUndefined();
+
+      expect(a).toHaveBeenCalledWith(payload);
+      expect(b).toHaveBeenCalledWith(payload);
+    });
+
+    test('propagates the first refusal unchanged (not wrapped) and stops the run', async () => {
+      const refusal = Object.assign(new Error('refused'), { status: 409, code: 'REFUSED' });
+      const after = jest.fn();
+      onBeforeOrganizationRemoved(async () => {
+        throw refusal;
+      });
+      onBeforeOrganizationRemoved(after);
+
+      await expect(runBeforeOrganizationRemovedGuards({ organizationId: 'org-1' })).rejects.toBe(refusal);
+      expect(after).not.toHaveBeenCalled();
+    });
+
+    test('guards and handlers are separate: a guard never runs as a removal handler', async () => {
+      const guard = jest.fn();
+      onBeforeOrganizationRemoved(guard);
+
+      await runOrganizationRemovedHandlers({ organizationId: 'org-1' });
+
+      expect(guard).not.toHaveBeenCalled();
+    });
+
+    test('rejects a non-function guard registration', () => {
+      expect(() => onBeforeOrganizationRemoved(null)).toThrow(TypeError);
+    });
+
+    test('_reset clears registered guards', async () => {
+      const guard = jest.fn();
+      onBeforeOrganizationRemoved(guard);
+      _reset();
+
+      await runBeforeOrganizationRemovedGuards({ organizationId: 'org-1' });
+
+      expect(guard).not.toHaveBeenCalled();
+    });
   });
 });

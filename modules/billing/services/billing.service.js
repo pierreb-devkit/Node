@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import config from '../../../config/index.js';
+import AppError from '../../../lib/helpers/AppError.js';
 import logger from '../../../lib/services/logger.js';
 import getStripe from '../lib/billing.stripe.js';
 import BillingPlansService from './billing.plans.service.js';
@@ -9,7 +10,7 @@ import SubscriptionRepository from '../repositories/billing.subscription.reposit
 import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
 import { isDuplicateKeyError } from '../lib/billing.errors.js';
 import { SENTINEL_PENDING } from '../lib/billing.constants.js';
-import { effectivePlanOf } from '../lib/billing.statuses.js';
+import { effectivePlanOf, liveStatuses } from '../lib/billing.statuses.js';
 
 /**
  * Validate that a redirect URL is safe for the current environment.
@@ -402,7 +403,26 @@ const getSubscriptionStatus = async (organizationId) => (await getLocalSubscript
  */
 const getExtrasBalance = (organizationId) => BillingExtraBalanceRepository.getBalance(String(organizationId));
 
+/**
+ * @desc Organization-removal guard (registered in billing.init.js): refuse to remove an
+ *       organization while its paid subscription is live at the provider, so the customer
+ *       is never left charged for an organization that no longer exists. Local DB only —
+ *       no provider call, nothing is cancelled. "Paid" = a provider subscription id is
+ *       stored: the shell row created for a free org that only opened checkout carries the
+ *       default 'active' status but no subscription id, and must not block its removal.
+ * @param {String} organizationId - The organization ID
+ * @returns {Promise<void>} resolves when the organization may be removed
+ * @throws {AppError} 409 ORGANIZATION_HAS_LIVE_SUBSCRIPTION while the subscription is active, trialing or past_due
+ */
+const assertNoLiveSubscription = async (organizationId) => {
+  const sub = await getLocalSubscription(String(organizationId));
+  if (!sub?.stripeSubscriptionId || !liveStatuses.includes(sub.status)) return;
+  const message = "Cancel the organization's subscription before removing it.";
+  throw new AppError(message, { status: 409, code: 'ORGANIZATION_HAS_LIVE_SUBSCRIPTION', description: message });
+};
+
 export default {
+  assertNoLiveSubscription,
   getEffectivePlan,
   getSubscriptionStatus,
   getExtrasBalance,

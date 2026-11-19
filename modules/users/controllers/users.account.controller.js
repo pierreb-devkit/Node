@@ -36,7 +36,9 @@ const remove = async (req, res) => {
     const result = await UserService.remove(req.user);
     responses.success(res, 'user deleted')({ id: req.user.id, ...result });
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    // A removal guard refusal (e.g. 409 live subscription, #4321) keeps its own 4xx status.
+    const status = err?.status >= 400 && err.status < 500 ? err.status : 422;
+    responses.error(res, status, undefined, errors.getMessage(err))(err);
   }
 };
 

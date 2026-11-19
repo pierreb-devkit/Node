@@ -370,44 +370,60 @@ const setEmailPreference = async (userId, kind, value) => {
 };
 
 /**
- * @desc Function to remove a user from db and clean up associated memberships/orgs
+ * @desc Function to remove a user from db and clean up associated memberships/orgs.
+ *   Organizations the user solely owns are removed with them — but first every one of
+ *   them goes through the org-removal guards (e.g. billing refusing a live paid
+ *   subscription): a refusal aborts the whole deletion before anything is deleted.
  * @param {Object} user - user document with _id or id field
  * @returns {Promise<Object>} deletion result
+ * @throws {AppError} A guard refusal (e.g. 409 ORGANIZATION_HAS_LIVE_SUBSCRIPTION).
  */
 const remove = async (user) => {
   const userId = user._id || user.id;
 
-  // Clean up memberships and handle orphaned orgs before deleting the user
+  // Classify memberships first: sole-owner orgs are removed with the user, the rest only lose the membership.
   const memberships = await MembershipService.listByUser(userId);
+  const soleOwnedOrgIds = new Set();
+  for (const membership of memberships) {
+    if (membership.role !== MEMBERSHIP_ROLES.OWNER) continue;
+    const orgId = membership.organizationId._id || membership.organizationId;
+    const ownerCount = await MembershipService.count({ organizationId: orgId, role: MEMBERSHIP_ROLES.OWNER, status: MEMBERSHIP_STATUSES.ACTIVE });
+    if (ownerCount <= 1) soleOwnedOrgIds.add(String(orgId));
+  }
+
+  // Lazy import: organizations.crud.service.js statically imports this module
+  // (UserService), so a static import here would create a cycle. Matches the
+  // lazy-import pattern already used for the same reason in billing.init.js /
+  // billing.referral.service.js.
+  let OrganizationsCrudService;
+  if (soleOwnedOrgIds.size > 0) {
+    ({ default: OrganizationsCrudService } = await import('../../organizations/services/organizations.crud.service.js'));
+  }
+
+  // Pre-flight: every sole-owned org must pass the removal guards BEFORE anything is
+  // deleted, so a refusal on one org never leaves another already gone.
+  for (const orgId of soleOwnedOrgIds) {
+    await OrganizationsCrudService.assertRemovable({ _id: orgId });
+  }
+
   for (const membership of memberships) {
     const orgId = membership.organizationId._id || membership.organizationId;
-    if (membership.role === MEMBERSHIP_ROLES.OWNER) {
-      // Check if this user is the only owner of the org
-      const ownerCount = await MembershipService.count({ organizationId: orgId, role: MEMBERSHIP_ROLES.OWNER, status: MEMBERSHIP_STATUSES.ACTIVE });
-      if (ownerCount <= 1) {
-        // Sole owner — delete the org through the canonical removal seam rather than
-        // duplicating its cascade here. organizations.crud.service.js#remove() owns the
-        // full contract: membership cleanup, co-member currentOrganization reassignment,
-        // and the org repository delete ALL happen first (atomic-by-ordering — the org
-        // is never left half-removed), and only THEN do registered onOrganizationRemoved
-        // handlers (e.g. task cleanup) run, best-effort — a handler failure is caught and
-        // logged inside that service, never re-thrown (#3965).
-        //
-        // No try/catch here on purpose: because handler failures are already swallowed
-        // (logged) inside the seam, anything that DOES escape this call is a STRUCTURAL
-        // failure (membership wipe / reassignment / the org repository delete itself
-        // throwing) — and that must propagate and abort this entire user deletion, same
-        // as the pre-#3965 behavior, so a user is never deleted on top of an org whose
-        // teardown genuinely broke.
-        //
-        // Lazy import: organizations.crud.service.js statically imports this module
-        // (UserService), so a static import here would create a cycle. Matches the
-        // lazy-import pattern already used for the same reason in billing.init.js /
-        // billing.referral.service.js.
-        const { default: OrganizationsCrudService } = await import('../../organizations/services/organizations.crud.service.js');
-        await OrganizationsCrudService.remove({ _id: orgId });
-        continue; // memberships for this org already cleaned up by the removal seam above
-      }
+    if (soleOwnedOrgIds.has(String(orgId))) {
+      // Sole owner — delete the org through the canonical removal seam rather than
+      // duplicating its cascade here. organizations.crud.service.js#remove() owns the
+      // full contract: guards, membership cleanup, co-member currentOrganization
+      // reassignment, and the org repository delete ALL happen first (atomic-by-ordering —
+      // the org is never left half-removed), and only THEN do registered
+      // onOrganizationRemoved handlers (e.g. task cleanup) run, best-effort — a handler
+      // failure is caught and logged inside that service, never re-thrown (#3965).
+      //
+      // No try/catch here on purpose: guards already passed above and handler failures
+      // are swallowed (logged) inside the seam, so anything that DOES escape this call is
+      // a STRUCTURAL failure (membership wipe / reassignment / the org repository delete
+      // itself throwing) — and that must propagate and abort this entire user deletion,
+      // so a user is never deleted on top of an org whose teardown genuinely broke.
+      await OrganizationsCrudService.remove({ _id: orgId });
+      continue; // memberships for this org already cleaned up by the removal seam above
     }
     // Delete this user's membership
     await MembershipService.deleteMany({ _id: membership._id });

@@ -13,9 +13,42 @@
  *   unrelated caller's own work (#3965) — see that function's docblock. Config-free,
  *   import-safe leaf — it must not import organization/tasks services (avoids an
  *   import cycle).
+ *
+ *   Guards (`onBeforeOrganizationRemoved`) are the other half: they run BEFORE anything
+ *   is deleted and may REFUSE the removal by throwing (an AppError with a 4xx status,
+ *   e.g. billing refusing while a paid subscription is live). Unlike handlers they are
+ *   not isolated: the first throw stops the run and propagates unchanged to the caller.
  */
 
+const guards = new Set();
 const handlers = new Set();
+
+/**
+ * @function onBeforeOrganizationRemoved
+ * @description Register a guard run before an organization is removed. A guard refuses
+ *   the removal by throwing (an AppError with a 4xx status and a stable code is what a
+ *   client can show); resolving lets the removal go on. De-duped like handlers.
+ * @param {Function} fn - async (payload) => void; payload is { organizationId, organization }.
+ * @returns {void}
+ */
+export const onBeforeOrganizationRemoved = (fn) => {
+  if (typeof fn !== 'function') throw new TypeError('onBeforeOrganizationRemoved: fn must be a function');
+  guards.add(fn);
+};
+
+/**
+ * @function runBeforeOrganizationRemovedGuards
+ * @description Run every registered guard sequentially. The first guard that throws stops
+ *   the run and its error propagates as-is (never wrapped), so its status/code reach the client.
+ * @param {Object} payload - { organizationId, organization }.
+ * @returns {Promise<void>}
+ * @throws {Error} The first guard error — the removal must not proceed.
+ */
+export const runBeforeOrganizationRemovedGuards = async (payload) => {
+  for (const fn of guards) {
+    await fn(payload); // sequential, fail-fast: a refusal stops the removal
+  }
+};
 
 /**
  * @function onOrganizationRemoved
@@ -55,11 +88,12 @@ export const runOrganizationRemovedHandlers = async (payload) => {
 
 /**
  * @function _reset
- * @description Test helper — clears all registered handlers.
+ * @description Test helper — clears all registered guards and handlers.
  * @returns {void}
  */
 export const _reset = () => {
+  guards.clear();
   handlers.clear();
 };
 
-export default { onOrganizationRemoved, runOrganizationRemovedHandlers, _reset };
+export default { onBeforeOrganizationRemoved, runBeforeOrganizationRemovedGuards, onOrganizationRemoved, runOrganizationRemovedHandlers, _reset };

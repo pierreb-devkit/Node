@@ -8,6 +8,8 @@ import logger from '../../lib/services/logger.js';
 import billingEvents from './lib/billing.events.js';
 import invitationEvents from '../invitations/lib/invitations.events.js';
 import organizationEvents from '../organizations/lib/organizations.events.js';
+import { onBeforeOrganizationRemoved } from '../organizations/lib/organizations.removal.registry.js';
+import BillingService from './services/billing.service.js';
 import BillingUsageRepository from './repositories/billing.usage.repository.js';
 import BillingSignupGrantService from './services/billing.signupGrant.service.js';
 import { getAlertThresholdPercents } from './lib/billing.constants.js';
@@ -46,6 +48,11 @@ export default async (app) => {
 
   // Wire billing email listeners (quota warnings + payment-failed notifications).
   setupBillingEmails();
+
+  // Refuse an organization removal while its paid subscription is live (#4321): the
+  // provider would keep charging for an organization that no longer exists. With billing
+  // switched off this never registers, so removal is never refused.
+  onBeforeOrganizationRemoved(({ organizationId }) => BillingService.assertNoLiveSubscription(organizationId));
 
   // Referral grant (#3842, ex TODO(#5)) — billing is an OPTIONAL consumer of the
   // invitations fire-and-forget `invitation.accepted` event (dependency direction

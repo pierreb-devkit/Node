@@ -4,6 +4,19 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Organization removal refused while a paid subscription is live (2026-11-19)
+
+- Removing an organization whose paid subscription is still `active`, `trialing` or `past_due` now answers **409** with `errorCode: ORGANIZATION_HAS_LIVE_SUBSCRIPTION` and the description "Cancel the organization's subscription before removing it." Nothing is deleted and nothing is cancelled at the provider. A free organization (no provider subscription) and a canceled subscription are not affected.
+- The same rule covers every removal path: `DELETE /api/organizations/:id` (owner or platform admin) and account deletion (`DELETE /api/users`, `DELETE /api/admin/users/:userId`), which removes the organizations the user solely owns. The account deletion checks all of them first and deletes nothing if one is refused.
+- New in the organization-removal registry: `onBeforeOrganizationRemoved(fn)` registers a guard run before anything is deleted; a guard refuses by throwing (an `AppError` with a 4xx status). `OrganizationsService.assertRemovable(organization)` runs the guards without deleting. Billing registers its guard in `billing.init.js`, so with billing switched off removal is never refused.
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the change.
+2. Clients that delete an organization or an account: show the 409 description and point the user to cancel the subscription first.
+
+---
+
 ## Module activation: boot test and migrations follow `activated` (2026-11-19)
 
 - The module activation boot test (`lib/helpers/tests/config.activationBoot.integration.tests.js`) now covers only the modules outside `CORE_MODULES` whose config declares an `activated` key. Declaring it is the module's promise that it can be switched off. A module that never declares it is never switched off, so it is always on and out of the test.
