@@ -63,22 +63,6 @@ const increment = async (organizationId, month, key, amount) => {
 };
 
 /**
- * @function reset
- * @description Reset all counters to an empty object for the given org+month.
- * @param {String} organizationId - The organization ID.
- * @param {String} month - The month in YYYY-MM format.
- * @returns {Promise<Object|null>} The updated usage document or null.
- */
-const reset = (organizationId, month) => {
-  if (!mongoose.Types.ObjectId.isValid(organizationId)) return null;
-  return BillingUsage.findOneAndUpdate(
-    { organizationId, month },
-    { $set: { counters: {} } },
-    { returnDocument: 'after', runValidators: true },
-  ).exec();
-};
-
-/**
  * @function findByWeek
  * @description Fetch a single usage document by organizationId and weekKey.
  * @param {String} organizationId - The organization ID.
@@ -303,7 +287,6 @@ const countLegacyConsumedHistoryIds = () =>
 export default {
   get,
   increment,
-  reset,
   findByWeek,
   incrementMeter,
   archiveOtherWeeks,

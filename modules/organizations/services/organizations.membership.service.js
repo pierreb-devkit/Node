@@ -108,14 +108,6 @@ const findByUserAndOrganization = (userId, organizationId) =>
   MembershipRepository.findOne({ userId, organizationId, status: MEMBERSHIP_STATUSES.ACTIVE });
 
 /**
- * @function create
- * @description Service to create a membership directly (active by default).
- * @param {Object} data - Membership data containing userId, organizationId, role, and optionally status.
- * @returns {Promise<Object>} A promise resolving to the created membership.
- */
-const create = (data) => MembershipRepository.create(data);
-
-/**
  * @function updateRole
  * @description Service to update the role of an existing membership.
  * @param {Object} membership - The existing membership object.
@@ -566,7 +558,6 @@ export default {
   listByUsers,
   get,
   findByUserAndOrganization,
-  create,
   updateRole,
   remove,
   leave,

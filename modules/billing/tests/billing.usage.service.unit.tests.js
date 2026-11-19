@@ -67,7 +67,6 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
     mockUsageRepository = {
       get: jest.fn(),
       increment: jest.fn(),
-      reset: jest.fn(),
       findByWeek: jest.fn(),
       incrementMeter: jest.fn(),
       markThreshold: jest.fn().mockResolvedValue({ modifiedCount: 1 }),

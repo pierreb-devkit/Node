@@ -64,7 +64,6 @@ describe('BillingResetService unit tests:', () => {
       findByWeek: jest.fn(),
       increment: jest.fn(),
       get: jest.fn(),
-      reset: jest.fn(),
       incrementMeter: jest.fn(),
       archiveOtherWeeks: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
       upsertWeekSnapshot: jest.fn(),

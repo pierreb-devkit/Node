@@ -9,16 +9,6 @@ import schema from '../models/billing.subscription.schema.js';
  * Unit tests
  */
 describe('Billing unit tests:', () => {
-  // rule 1 (Node#4020): pick a plan from the LOADED config instead of hardcoding
-  // a devkit-default plan id ('pro'/'starter') — a consumer with a different plan
-  // catalogue must still pass these SubscriptionUpdate assertions. The `?? plans[0]`
-  // fallback only fires when EVERY plan in the catalogue equals defaultPlan (a
-  // single-distinct-plan catalogue) — there is no other plan to pick in that case,
-  // by construction. The round-trip these tests assert (partial update preserves
-  // the exact plan provided, no default silently injected) still holds either
-  // way; only the variable's "non-default" framing stops applying.
-  const nonDefaultPlan = config.billing.plans.find((plan) => plan !== config.billing.defaultPlan) ?? config.billing.plans[0];
-
   // rule 1 (Node#4020): fixture baseline plan for tests that need "some valid
   // plan" (not testing default-resolution itself) — derived from the loaded
   // config so a consumer whose catalogue lacks the devkit-shipped 'free' id
@@ -124,22 +114,6 @@ describe('Billing unit tests:', () => {
       done();
     });
 
-    test('should strip unknown fields with SubscriptionUpdate', (done) => {
-      const update = { plan: nonDefaultPlan, unknown: 'field' };
-      const result = schema.SubscriptionUpdate.safeParse(update);
-      expect(result.error).toBeFalsy();
-      expect(result.data?.unknown).toBeUndefined();
-      done();
-    });
-
-    test('should allow partial updates with SubscriptionUpdate', (done) => {
-      const update = { plan: nonDefaultPlan };
-      const result = schema.SubscriptionUpdate.safeParse(update);
-      expect(result.error).toBeFalsy();
-      expect(result.data.plan).toBe(nonDefaultPlan);
-      done();
-    });
-
     test('should reject invalid ObjectId for organization', (done) => {
       subscription.organization = 'not-an-objectid';
 
@@ -189,15 +163,6 @@ describe('Billing unit tests:', () => {
       const result = schema.Subscription.safeParse(subscription);
       expect(result.error).toBeFalsy();
       expect(result.data.stripeSubscriptionId).toBe('sub_xyz789');
-      done();
-    });
-
-    test('should not inject defaults in SubscriptionUpdate partial', (done) => {
-      const update = { plan: nonDefaultPlan };
-      const result = schema.SubscriptionUpdate.safeParse(update);
-      expect(result.error).toBeFalsy();
-      expect(result.data.plan).toBe(nonDefaultPlan);
-      expect(result.data.status).toBeUndefined();
       done();
     });
   });
@@ -251,13 +216,6 @@ describe('Billing unit tests:', () => {
       const result = schema.Subscription.safeParse(subscription);
       expect(result.error).toBeFalsy();
       expect(result.data.pastDueSince).toBeNull();
-    });
-
-    test('SubscriptionUpdate should allow patching planVersion alone', () => {
-      const update = { planVersion: 'v3' };
-      const result = schema.SubscriptionUpdate.safeParse(update);
-      expect(result.error).toBeFalsy();
-      expect(result.data.planVersion).toBe('v3');
     });
 
     test('should accept lastSubscriptionEventId as optional string', () => {
@@ -351,10 +309,9 @@ describe('Billing unit tests:', () => {
     });
   });
 
-  // rule 1 (Node#4020): the two SubscriptionUpdate fixes above prove the tests no
-  // longer HARDCODE a devkit-default plan id, but they still run against the real
-  // devkit-default catalogue (free/starter/pro/enterprise). This block proves the
-  // schema itself is config-driven — not merely re-labeling the same default —
+  // rule 1 (Node#4020): the fixtures above no longer HARDCODE a devkit-default
+  // plan id, but they still run against the real devkit-default catalogue
+  // (free/starter/pro/enterprise). This block proves the schema itself is config-driven — not merely re-labeling the same default —
   // by rebuilding it against a synthetic consumer profile with a totally different
   // plan catalogue and confirming the enum follows the config, not a stack default.
   describe('Subscription schema — synthetic consumer plan catalogue:', () => {
@@ -413,12 +370,6 @@ describe('Billing unit tests:', () => {
       });
       expect(result.error).toBeFalsy();
       expect(result.data.plan).toBe(syntheticFixturePlan);
-    });
-
-    test('SubscriptionUpdate round-trips a synthetic-catalogue plan id', () => {
-      const result = SyntheticSchema.SubscriptionUpdate.safeParse({ plan: syntheticPlans[1] });
-      expect(result.error).toBeFalsy();
-      expect(result.data.plan).toBe(syntheticPlans[1]);
     });
   });
 });

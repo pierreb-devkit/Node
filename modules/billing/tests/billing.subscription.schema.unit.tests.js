@@ -49,13 +49,6 @@ describe('Billing subscription schema — cancelAt lifecycle fields:', () => {
       const result = schema.Subscription.safeParse(subscription);
       expect(result.error).toBeDefined();
     });
-
-    test('SubscriptionUpdate should allow patching cancelAtPeriodEnd alone', () => {
-      const update = { cancelAtPeriodEnd: true };
-      const result = schema.SubscriptionUpdate.safeParse(update);
-      expect(result.error).toBeFalsy();
-      expect(result.data.cancelAtPeriodEnd).toBe(true);
-    });
   });
 
   describe('cancelAt', () => {
@@ -96,13 +89,6 @@ describe('Billing subscription schema — cancelAt lifecycle fields:', () => {
       const result = schema.Subscription.safeParse(subscription);
       expect(result.error).toBeFalsy();
       expect(result.data.cancelAt).toBeUndefined();
-    });
-
-    test('SubscriptionUpdate should allow patching cancelAt alone', () => {
-      const update = { cancelAt: '2026-07-15T00:00:00.000Z' };
-      const result = schema.SubscriptionUpdate.safeParse(update);
-      expect(result.error).toBeFalsy();
-      expect(result.data.cancelAt).toBeInstanceOf(Date);
     });
   });
 

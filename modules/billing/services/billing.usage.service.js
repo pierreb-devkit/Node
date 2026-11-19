@@ -78,13 +78,6 @@ const get = async (organizationId) => {
 };
 
 /**
- * @desc Reset usage counters for the given organization (current month).
- * @param {String} organizationId - The organization ID.
- * @returns {Promise<Object|null>} The updated usage document or null.
- */
-const reset = (organizationId) => UsageRepository.reset(organizationId, currentMonth());
-
-/**
  * @function incrementMeter
  * @description Full meter attribution flow for a given organization.
  *              1. Computes the current ISO weekKey.
@@ -343,7 +336,6 @@ const getMeter = async (organizationId) => {
 export default {
   increment,
   get,
-  reset,
   currentWeekKey,
   incrementMeter,
   getMeter,

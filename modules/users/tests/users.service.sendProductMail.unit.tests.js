@@ -68,7 +68,6 @@ jest.unstable_mockModule('../../organizations/repositories/organizations.reposit
     create: jest.fn(),
     get: jest.fn(),
     remove: jest.fn(),
-    removeById: jest.fn(),
     findOne: jest.fn(),
     exists: jest.fn(),
     update: jest.fn(),

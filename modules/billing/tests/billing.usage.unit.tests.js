@@ -180,7 +180,6 @@ describe('BillingUsage unit tests:', () => {
       mockUsageRepository = {
         get: jest.fn(),
         increment: jest.fn(),
-        reset: jest.fn(),
       };
 
       mockSubscriptionRepository = {
@@ -239,16 +238,6 @@ describe('BillingUsage unit tests:', () => {
 
       expect(result.counters.executions).toBe(42);
       expect(result.counters.aiCalls).toBe(5);
-    });
-
-    test('reset should clear counters', async () => {
-      const resetDoc = { organizationId: orgId, month: '2026-03', counters: {} };
-      mockUsageRepository.reset.mockResolvedValue(resetDoc);
-
-      const result = await BillingUsageService.reset(orgId);
-
-      expect(mockUsageRepository.reset).toHaveBeenCalledWith(orgId, expect.stringMatching(/^\d{4}-\d{2}$/));
-      expect(result.counters).toEqual({});
     });
   });
 });

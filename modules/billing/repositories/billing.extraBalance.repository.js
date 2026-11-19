@@ -603,21 +603,6 @@ const findOrgsWithExpiringTopups = async (now) => {
 };
 
 /**
- * Fetch the full ledger array for an org.
- * Returns null when no document exists yet (org has never had extras).
- * @param {string} orgId - Organization ObjectId (string).
- * @returns {Promise<Object[]|null>} Ledger entries array or null.
- */
-const findLedgerByOrg = async (orgId) => {
-  if (!isValidOrgId(orgId)) return null;
-  const doc = await BillingExtraBalance().findOne(
-    { organization: orgId },
-    { ledger: 1 },
-  ).lean();
-  return doc?.ledger ?? null;
-};
-
-/**
  * @function findExistingRefIds
  * @description Return the subset of `refIds` that already exist as ledger entry refIds
  *              (any org). Used by the referral reconcile cron (#3842) to diff the
@@ -718,7 +703,6 @@ export default {
   listLedgerPage,
   findOrgsWithExpiringTopups,
   findExistingRefIds,
-  findLedgerByOrg,
   countLinkReferrerGrants,
   sumDebitsByWindow,
 };

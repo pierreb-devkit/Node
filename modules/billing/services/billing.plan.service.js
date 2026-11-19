@@ -74,21 +74,7 @@ const getPlanByVersion = (planId, version) => {
   return plan;
 };
 
-/**
- * @desc Get the signup grant amount for a given planId (N2 Free Tier Grant feature).
- *       Returns the signupGrant value if the plan definition has it, or undefined.
- *       Callers must handle undefined as "no grant configured for this plan".
- *
- * @param {string} planId - The logical plan identifier (e.g. "free").
- * @returns {number|undefined} The signupGrant value, or undefined.
- */
-const getSignupGrant = (planId) => {
-  const plan = getPlanFromConfig(planId);
-  return plan?.signupGrant;
-};
-
 export default {
   getActivePlan,
   getPlanByVersion,
-  getSignupGrant,
 };

@@ -165,29 +165,6 @@ describe('BillingPlanService unit tests:', () => {
     });
   });
 
-  describe('getSignupGrant', () => {
-    test('returns signupGrant for a plan with both signupGrant and oneShot set', () => {
-      mockConfig.billing.planDefinitions = [
-        { planId: 'free', meterQuota: 0, signupGrant: 500, oneShot: true, ratios: {} },
-      ];
-      const grant = BillingPlanService.getSignupGrant('free');
-      expect(grant).toBe(500);
-    });
-
-    test('returns undefined for plans without signupGrant', () => {
-      mockConfig.billing.planDefinitions = [
-        { planId: 'pro', meterQuota: 8000, ratios: {} },
-      ];
-      const grant = BillingPlanService.getSignupGrant('pro');
-      expect(grant).toBeUndefined();
-    });
-
-    test('returns undefined for unknown planId', () => {
-      const grant = BillingPlanService.getSignupGrant('nonexistent');
-      expect(grant).toBeUndefined();
-    });
-  });
-
   describe('getPlanByVersion', () => {
     test('returns plan when version matches', () => {
       const result = BillingPlanService.getPlanByVersion('pro', '2026.05');
