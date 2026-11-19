@@ -74,30 +74,6 @@ const deleteMany = (filter) => {
  */
 const stats = (filter = {}) => Task.countDocuments(filter).exec();
 
-/**
- * @function push
- * @description Data access operation to update or insert multiple tasks in the database.
- * @param {Array} tasks - The array of task objects to update or insert.
- * @param {Array} filters - The array of property names to use as filters for the update.
- * @returns {Promise<Object>} The result of the bulkWrite operation.
- */
-const push = async (tasks, filters) =>
-  Task.bulkWrite(
-    tasks.map((task) => {
-      const filter = {};
-      filters.forEach((value) => {
-        filter[value] = task[value];
-      });
-      return {
-        updateOne: {
-          filter,
-          update: task,
-          upsert: true,
-        },
-      };
-    }),
-  );
-
 export default {
   list,
   create,
@@ -106,5 +82,4 @@ export default {
   remove,
   deleteMany,
   stats,
-  push,
 };

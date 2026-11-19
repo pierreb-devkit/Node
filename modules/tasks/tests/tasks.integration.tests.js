@@ -16,7 +16,6 @@ describe('Tasks integration tests:', () => {
   let UserService;
   const originalOrgEnabled = config.organizations.enabled;
   let TasksService;
-  let TasksDataService;
   let app; // Express app instance for fresh (unauthenticated) requests
   let agent;
   let user;
@@ -32,7 +31,6 @@ describe('Tasks integration tests:', () => {
       const init = await bootstrap();
       UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
       TasksService = (await import(path.resolve('./modules/tasks/services/tasks.service.js'))).default;
-      TasksDataService = (await import(path.resolve('./modules/tasks/services/tasks.data.service.js'))).default;
       app = init.app;
       agent = request.agent(app);
     } catch (err) {
@@ -356,86 +354,6 @@ describe('Tasks integration tests:', () => {
         await request(app).get('/api/tasks/stats').expect(401);
       } catch (err) {
         expect(err).toBeFalsy();
-        console.log(err);
-      }
-    });
-  });
-
-  describe('Data', () => {
-    beforeAll(async () => {
-      // user
-      _user = {
-        firstName: 'Full',
-        lastName: 'Name',
-        email: 'task@test.com',
-        password: 'W@os.jsI$Aw3$0m3',
-        provider: 'local',
-      };
-
-      // add user
-      try {
-        const result = await agent.post('/api/auth/signup').send(_user).expect(200);
-        user = result.body.user;
-      } catch (err) {
-        console.log(err);
-        expect(err).toBeFalsy();
-      }
-
-      // tasks
-      _tasks = [
-        {
-          title: 'title1',
-          description: 'do something about something else',
-          user: user.id,
-          _id: '64f1f177cb9cf84ed815acec',
-        },
-        {
-          title: 'title2',
-          description: 'do something about something else',
-          user: user.id,
-          _id: '64f1f177cb9cf84ed815aced',
-        },
-      ];
-    });
-
-    test('should be able to push a list of user tasks data', async () => {
-      try {
-        const result = await TasksDataService.push(_tasks, ['_id']);
-        expect(result).toBeInstanceOf(Object);
-        expect(result.upsertedCount).toBe(2);
-      } catch (err) {
-        expect(err).toBeFalsy();
-        console.log(err);
-      }
-    });
-
-    test('should be able to list user tasks data', async () => {
-      try {
-        const result = await TasksDataService.list(user);
-        expect(result).toBeInstanceOf(Array);
-        expect(result).toHaveLength(2);
-      } catch (err) {
-        expect(err).toBeFalsy();
-        console.log(err);
-      }
-    });
-
-    test('should be able to remove user tasks data', async () => {
-      try {
-        const result = await TasksDataService.remove(user);
-        expect(result).toBeInstanceOf(Object);
-        expect(result.deletedCount).toBe(2);
-      } catch (err) {
-        expect(err).toBeFalsy();
-        console.log(err);
-      }
-    });
-
-    afterAll(async () => {
-      // del user
-      try {
-        await UserService.remove(user);
-      } catch (err) {
         console.log(err);
       }
     });

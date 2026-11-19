@@ -28,7 +28,7 @@ Audit or apply the project's file and folder naming conventions.
 | Type            | Pattern                               | Example                                                    |
 | --------------- | ------------------------------------- | ---------------------------------------------------------- |
 | Controller      | `{module}[.{name}].controller.js`     | `tasks.controller.js`                                      |
-| Service         | `{module}[.{name}].service.js`        | `tasks.service.js`, `tasks.data.service.js`                |
+| Service         | `{module}[.{name}].service.js`        | `tasks.service.js`, `organizations.crud.service.js`        |
 | Repository      | `{module}.repository.js`              | `tasks.repository.js`                                      |
 | Mongoose Model  | `{module}.model.mongoose.js`          | `tasks.model.mongoose.js`                                  |
 | Sequelize Model | `{module}.model.sequelize.js`         | `tasks.model.sequelize.js`                                 |

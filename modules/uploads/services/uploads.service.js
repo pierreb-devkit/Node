@@ -5,7 +5,6 @@ import crypto from 'crypto';
 
 import config from '../../../config/index.js';
 import AppError from '../../../lib/helpers/AppError.js';
-import multerService from '../../../lib/services/multer.js';
 import gridfs from '../../../lib/services/gridfs.js';
 import UploadRepository from '../repositories/uploads.repository.js';
 
@@ -16,7 +15,7 @@ const MIME_TO_EXT = {
   'image/gif': 'gif',
   'application/pdf': 'pdf',
   // Allows downstream features that store rendered HTML snapshots in GridFS
-  // alongside binary uploads (e.g. error pages, scrap previews).
+  // alongside binary uploads (e.g. error pages, document previews).
   'text/html': 'html',
 };
 
@@ -25,49 +24,21 @@ const MIME_TO_EXT = {
  * @param {String} uploadName
  * @return {Promise} Upload
  */
-const get = async (uploadName) => {
-  const result = await UploadRepository.get(uploadName);
-  return Promise.resolve(result);
-};
+const get = async (uploadName) => UploadRepository.get(uploadName);
 
 /**
  * @desc Function to ask repository to get stream of chunks data
  * @param {Object} upload - an Upload doc (with `_id`)
  * @return {Promise} result stream
  */
-const getStream = async (upload) => {
-  const result = await UploadRepository.getStream(upload);
-  return Promise.resolve(result);
-};
-
-/**
- * @desc Function to ask repository to update an upload
- * @param {Object} file - the uploaded file (req.file)
- * @param {Object} user - the authenticated user
- * @param {String} [kind] - upload configuration path (important for futur transformations)
- * @return {Promise} Upload
- */
-const update = async (file, user, kind) => {
-  const update = {
-    filename: await multerService.generateFileName(file.filename || file.originalname),
-    metadata: {
-      user: user.id,
-      kind: kind || null,
-    },
-  };
-  const result = await UploadRepository.update(file._id, update);
-  return Promise.resolve(result);
-};
+const getStream = async (upload) => UploadRepository.getStream(upload);
 
 /**
  * @desc Function to ask repository to remove chunks data
  * @param {Object} upload - an Upload doc, or a bare lookup key (e.g. `{ filename }`)
  * @return {Promise} confirmation of delete
  */
-const remove = async (upload) => {
-  const result = await UploadRepository.remove(upload);
-  return Promise.resolve(result);
-};
+const remove = async (upload) => UploadRepository.remove(upload);
 
 /**
  * @desc Store a buffer as an upload programmatically (no HTTP request)
@@ -108,7 +79,6 @@ const createFromBuffer = async (buffer, contentType, kind, metadata = {}) => {
 export default {
   get,
   getStream,
-  update,
   remove,
   createFromBuffer,
 };

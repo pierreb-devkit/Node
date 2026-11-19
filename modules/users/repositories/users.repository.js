@@ -196,37 +196,6 @@ const weeklyCreated = (start) => User.aggregate(weeklyCountPipeline(start)).exec
 const count = (filter = {}) => User.countDocuments(filter).exec();
 
 /**
- * @desc Function to push list of users in db
- * @param {Object[]} users
- * @param {String[]} filters
- * @returns {Promise<Object>} bulkWrite result
- */
-const push = (users, filters) => {
-  if (!Array.isArray(filters) || filters.length === 0) {
-    throw new Error('push requires at least one filter field');
-  }
-  return User.bulkWrite(
-    users.map((user) => {
-      const missing = filters.filter((value) => user[value] == null || user[value] === '');
-      if (missing.length) {
-        throw new Error(`push requires ${missing.join(', ')} on every user`);
-      }
-      const filter = {};
-      filters.forEach((value) => {
-        filter[value] = user[value];
-      });
-      return {
-        updateOne: {
-          filter,
-          update: { $set: user },
-          upsert: true,
-        },
-      };
-    }),
-  );
-};
-
-/**
  * @desc Function to search users by name or email with a regex
  * @param {String} search - The search string
  * @returns {Promise<Array<Object>>} matching users (`_id` only)
@@ -302,14 +271,6 @@ const findPage = (filter, { afterId, limit = 200, select } = {}) => {
 };
 
 /**
- * @desc Function to update multiple users matching a filter
- * @param {Object} filter - Mongoose filter
- * @param {Object} data - Fields to update
- * @returns {Promise<Object>} update result
- */
-const updateMany = (filter, data) => User.updateMany(filter, data, { runValidators: true }).exec();
-
-/**
  * @desc Atomically attach an OAuth provider to an existing user matched by email.
  * Uses findOneAndUpdate to avoid TOCTOU races between concurrent OAuth callbacks.
  * Filter requires `emailVerified: true` so an unverified-squatter local signup
@@ -344,13 +305,11 @@ export default {
   remove,
   stats,
   count,
-  push,
   searchByNameOrEmail,
   findByEmail,
   updateById,
   findByIdAndUpdatePopulated,
   findWithFilter,
   findPage,
-  updateMany,
   linkProviderByEmail,
 };

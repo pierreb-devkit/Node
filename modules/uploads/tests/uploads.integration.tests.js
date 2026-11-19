@@ -14,7 +14,6 @@ import mongooseService from '../../../lib/services/mongoose.js';
 describe('Uploads integration tests:', () => {
   let UserService;
   let UploadsService;
-  let UploadsDataService;
   let UploadRepository;
   let mongoose;
   let gridfs;
@@ -30,7 +29,6 @@ describe('Uploads integration tests:', () => {
       const init = await bootstrap();
       UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
       UploadsService = (await import(path.resolve('./modules/uploads/services/uploads.service.js'))).default;
-      UploadsDataService = (await import(path.resolve('./modules/uploads/services/uploads.data.service.js'))).default;
       UploadRepository = (await import(path.resolve('./modules/uploads/repositories/uploads.repository.js'))).default;
       mongoose = (await import('mongoose')).default;
       gridfs = (await import(path.resolve('./lib/services/gridfs.js'))).default;
@@ -327,74 +325,6 @@ describe('Uploads integration tests:', () => {
     });
   });
 
-  describe('Data', () => {
-    beforeAll(async () => {
-      // user credentials
-      credentials = {
-        email: 'upload@test.com',
-        password: 'W@os.jsI$Aw3$0m3',
-      };
-
-      // user
-      _user = {
-        firstName: 'Full',
-        lastName: 'Name',
-        email: credentials.email,
-        password: credentials.password,
-        provider: 'local',
-      };
-
-      // add user
-      try {
-        const result = await agent.post('/api/auth/signup').send(_user).expect(200);
-        user = result.body.user;
-      } catch (err) {
-        console.log(err);
-        expect(err).toBeFalsy();
-      }
-
-      // add a upload
-      try {
-        const result = await agent.post('/api/users/avatar').attach('avatar', './modules/users/tests/img/default.jpeg').expect(200);
-        upload1 = result.body.data.avatar;
-      } catch (err) {
-        console.log(err);
-        expect(err).toBeFalsy();
-      }
-    });
-
-    test('should be able to list user uploaded data', async () => {
-      try {
-        const result = await UploadsDataService.list(user);
-        expect(result).toBeInstanceOf(Array);
-        expect(result).toHaveLength(1);
-      } catch (err) {
-        expect(err).toBeFalsy();
-        console.log(err);
-      }
-    });
-
-    test('should be able to remove user uploaded data', async () => {
-      try {
-        const result = await UploadsDataService.remove(user);
-        expect(result).toBeInstanceOf(Object);
-        expect(result.deletedCount).toBe(1);
-      } catch (err) {
-        expect(err).toBeFalsy();
-        console.log('tata', err);
-      }
-    });
-
-    afterAll(async () => {
-      // del user
-      try {
-        await UserService.remove(user);
-      } catch (err) {
-        console.log(err);
-      }
-    });
-  });
-
   describe('Cron', () => {
     test('purgeUnreferenced sweeps multi-path-unreferenced blobs past the grace window, against a real aggregation pipeline', async () => {
       // Declared outside the try block — the `finally` cleanup below needs
@@ -469,25 +399,6 @@ describe('Uploads integration tests:', () => {
         // track individual upload docs here.
         await mongoose.connection.db.collection(referencingCollection).deleteMany({});
         await UploadRepository.purgeUnreferenced(kind, referencingCollection, ['refA', 'refs.file'], 0);
-      }
-    });
-
-    test('should be able to purge data not linked to another entity', async () => {
-      try {
-        const _user2 = { ..._user };
-        _user2.email = 'upload2@test.com';
-        const resultUser = await agent.post('/api/auth/signup').send(_user2).expect(200);
-        const user = resultUser.body.user;
-        const uploadResult = await agent.post('/api/users/avatar').attach('avatar', './modules/users/tests/img/default.jpeg').expect(200);
-        const orphanAvatar = uploadResult.body.data.avatar;
-        await UserService.remove(user);
-        const result = await UploadRepository.purge('avatar', 'users', 'avatar');
-        expect(result.deletedCount).toBeGreaterThanOrEqual(1);
-        const removedUpload = await UploadRepository.get(orphanAvatar);
-        expect(removedUpload).toBeFalsy();
-      } catch (err) {
-        expect(err).toBeFalsy();
-        console.log(err);
       }
     });
   });
