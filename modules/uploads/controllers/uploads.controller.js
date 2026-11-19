@@ -45,7 +45,7 @@ const get = async (req, res) => {
       // Response headers are written when the first chunk is piped to res
       // (`stream.pipe(res)` below). If GridFS errors after that point, a
       // second status+body write would throw ERR_HTTP_HEADERS_SENT and crash
-      // the worker process. Pre-header errors still reach the client as 422;
+      // the worker process. Pre-header errors still reach the client with their status;
       // post-header errors destroy the socket so Express surfaces them via
       // its default error handler instead of double-sending.
       if (!res.headersSent) {
@@ -80,7 +80,7 @@ const getSharp = async (req, res) => {
     // headersSent guard for the GridFS source stream.
     // pipe() does not forward 'error' events between streams; each stream in the
     // chain needs its own listener. Source and Transform errors are handled below.
-    // Pre-header errors reach the client as 422; post-header errors destroy the
+    // Pre-header errors reach the client with their status; post-header errors destroy the
     // socket so Express surfaces them via its default handler instead of
     // attempting a second write that would throw ERR_HTTP_HEADERS_SENT.
     const onStreamError = (label) => (err) => {

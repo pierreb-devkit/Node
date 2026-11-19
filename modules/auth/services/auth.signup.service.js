@@ -82,7 +82,7 @@ const attributionEventProperties = (attribution) => {
  * signaled via an AppError carrying `code: 'SIGNUP_DISABLED'` rather than
  * writing a response directly, so the caller can reconstruct the exact
  * original 404 response (status, title, description — no `err` argument)
- * instead of falling through to the generic 422 mapping. Every distinct
+ * instead of falling through to the generic error mapping. Every distinct
  * error status this flow can produce keeps its own status/title/message;
  * none are collapsed into a shared helper.
  * @param {Object} req - Express request object. `req.body` is read verbatim
@@ -161,7 +161,7 @@ const signup = async (req) => {
     }
     // See this function's own doc comment: the caller (auth.controller.signup)
     // matches on `code: 'SIGNUP_DISABLED'` to reconstruct the exact original 404
-    // response rather than the generic 422 fallback.
+    // response rather than the generic error fallback.
     throw new AppError('Signup error', {
       status: 404,
       code: 'SIGNUP_DISABLED',
@@ -383,7 +383,7 @@ const signup = async (req) => {
       await eligibility?.finalize?.(user._id || user.id);
     } catch (finalizeErr) {
       // Best-effort: the account exists and the response is about to succeed —
-      // a finalize DB hiccup must not convert a created account into a 422.
+      // a finalize DB hiccup must not convert a created account into an error.
       // The claim stays stamped and the 15-min lazy sweep releases it; the
       // invite is reconcilable from its pending state + the account's email.
       logger.warn('[signup] invite finalize failed post-create (left to the sweep)', {

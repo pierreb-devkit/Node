@@ -36,7 +36,7 @@ import tokenCookieOptions from '../../../lib/helpers/tokenCookieOptions.js';
  *   response object (chained from res.json()); on the SIGNUP_DISABLED gate
  *   path, the plain result object returned by responses.error() ({type,
  *   message, code, status, errorCode, description} — not `res` itself);
- *   undefined on the generic 422 fallback, which has no explicit return
+ *   undefined on the generic error fallback, which has no explicit return
  *   (the error response is still sent as a side effect either way)
  */
 const signup = async (req, res) => {
@@ -73,7 +73,7 @@ const signup = async (req, res) => {
     // The capacity/eligibility gate (auth.signup.service.js) signals via this code
     // so the ORIGINAL 404 response is reproduced byte-for-byte — status, title,
     // description, and no `err` argument to responses.error (matches the inline
-    // call this replaced) — instead of falling through to the generic 422 mapping
+    // call this replaced) — instead of falling through to the generic error mapping
     // below. Every distinct error status this flow can produce keeps its own
     // status/title/message; none are collapsed into a shared helper.
     if (err?.code === 'SIGNUP_DISABLED') {
@@ -484,7 +484,7 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
         await oauthEligibility?.finalize?.(createdUser._id || createdUser.id);
       } catch (finalizeErr) {
         // Best-effort: the account exists and the response is about to succeed —
-        // a finalize DB hiccup must not convert a created account into a 422.
+        // a finalize DB hiccup must not convert a created account into an error.
         // The claim stays stamped and the 15-min lazy sweep releases it; the
         // invite is reconcilable from its pending state + the account's email.
         logger.warn('[oauth] invite finalize failed post-create (left to the sweep)', {
