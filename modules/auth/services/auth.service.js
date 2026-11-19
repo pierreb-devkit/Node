@@ -129,6 +129,7 @@ const checkPassword = (password) => {
   const result = zxcvbn(password);
   if (result.score < config.zxcvbn.minimumScore) {
     throw new AppError('Password too weak.', {
+      status: 422,
       code: 'SERVICE_ERROR',
       details: result.feedback.suggestions.map((s) => ({ message: s })),
     });
