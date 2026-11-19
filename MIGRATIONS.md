@@ -11,7 +11,7 @@ Modules now read each other through services, never through another module's rep
 - New public reads: `OrganizationsService.exists(orgId)` and `setPlan(orgId, plan)`; `MembershipService.resolveMembership(user, orgId)` (platform admin = synthetic owner), `listActiveByRoles(orgId, roles)`, `findFirstActiveByUser(userId)`; `InvitationsService.findAccepted()` and `findByAcceptedUserId(userId)`; `BillingService.getEffectivePlan(orgId)`, `getSubscriptionStatus(orgId)`, `getExtrasBalance(orgId)`.
 - `BillingExtraBalanceRepository.debit(orgId, amount, refId, { organizationExists })`: the org check is now an injected predicate. Without it only a subscription for the org proves it exists. Call it through `BillingExtraService`.
 - `effectivePlanOf(subscription)` (billing statuses) is the one effective-plan rule. `requirePlan` now sees an active subscription with no `plan` as `free`.
-- `PUT /api/users/password` is unchanged on the wire but is now mounted by the `auth` module.
+- `POST /api/users/password` is unchanged on the wire but is now mounted by the `auth` module.
 
 Moved out of `lib/` and `config/`:
 

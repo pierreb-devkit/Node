@@ -5,7 +5,7 @@ import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 
 import { onOrganizationRemoved, runOrganizationRemovedHandlers, _reset } from '../lib/organizations.removal.registry.js';
 
-describe('orgRemoval.registry', () => {
+describe('organizations.removal.registry', () => {
   beforeEach(() => {
     _reset();
   });
