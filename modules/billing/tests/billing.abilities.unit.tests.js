@@ -5,7 +5,7 @@ import { describe, test, expect } from '@jest/globals';
 import { AbilityBuilder, createMongoAbility } from '@casl/ability';
 
 import { billingAbilities } from '../policies/billing.policy.js';
-import { MEMBERSHIP_ROLES } from '../../organizations/lib/constants.js';
+import { MEMBERSHIP_ROLES } from '../../organizations/lib/organizations.constants.js';
 
 /**
  * Unit tests for billingAbilities with a real CASL AbilityBuilder: only organization

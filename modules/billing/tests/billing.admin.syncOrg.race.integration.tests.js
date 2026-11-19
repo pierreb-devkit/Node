@@ -72,7 +72,7 @@ describe('syncOrgFromStripe — event marker race-window closure integration tes
       },
     }));
 
-    jest.unstable_mockModule('../lib/stripe.js', () => ({
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({
       default: jest.fn().mockReturnValue(mockStripeInstance),
     }));
 
@@ -80,7 +80,7 @@ describe('syncOrgFromStripe — event marker race-window closure integration tes
       default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
     }));
 
-    jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
+    jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({
       default: {
         setPlan: jest.fn().mockResolvedValue({}),
       },
@@ -121,7 +121,7 @@ describe('syncOrgFromStripe — event marker race-window closure integration tes
       },
     }));
 
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: { emit: jest.fn() },
     }));
 

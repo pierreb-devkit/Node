@@ -1,15 +1,9 @@
 /**
  * Module dependencies
  */
+import _ from 'lodash';
 import mongoose from 'mongoose';
 import { weeklyCountPipeline } from '../../../lib/helpers/weeklyStats.js';
-
-/**
- * @desc Escape regex-special characters in a user-provided string.
- * @param {String} str - The raw string to escape.
- * @returns {String} The escaped string safe for use in a RegExp.
- */
-const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * @desc Normalize an email for an EXACT-MATCH query. Emails are stored lowercased
@@ -38,9 +32,9 @@ const list = (search, page, perPage) => {
   const filter = search
     ? {
         $or: [
-          { firstName: { $regex: escapeRegex(search), $options: 'i' } },
-          { lastName: { $regex: escapeRegex(search), $options: 'i' } },
-          { email: { $regex: escapeRegex(search), $options: 'i' } },
+          { firstName: { $regex: _.escapeRegExp(search), $options: 'i' } },
+          { lastName: { $regex: _.escapeRegExp(search), $options: 'i' } },
+          { email: { $regex: _.escapeRegExp(search), $options: 'i' } },
         ],
       }
     : {};
@@ -201,7 +195,7 @@ const count = (filter = {}) => User.countDocuments(filter).exec();
  * @returns {Promise<Array<Object>>} matching users (`_id` only)
  */
 const searchByNameOrEmail = (search) => {
-  const regex = new RegExp(escapeRegex(search), 'i');
+  const regex = new RegExp(_.escapeRegExp(search), 'i');
   return User.find({
     $or: [{ email: regex }, { firstName: regex }, { lastName: regex }],
   }).select('_id').exec();

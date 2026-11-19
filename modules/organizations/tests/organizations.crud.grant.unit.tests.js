@@ -13,7 +13,7 @@ import { jest, describe, test, expect, beforeEach } from '@jest/globals';
  */
 
 const mockEmit = jest.fn();
-jest.unstable_mockModule('../lib/events.js', () => ({
+jest.unstable_mockModule('../lib/organizations.events.js', () => ({
   default: { emit: mockEmit, on: jest.fn() },
 }));
 

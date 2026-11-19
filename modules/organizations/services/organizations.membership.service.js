@@ -5,10 +5,11 @@ import logger from '../../../lib/services/logger.js';
 import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
 import mailer from '../../../lib/helpers/mailer/index.js';
 import { assertEmailVerified } from '../../../lib/helpers/emailVerification.js';
+import isGlobalAdmin from '../../../lib/helpers/isGlobalAdmin.js';
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
 import OrganizationRepository from '../repositories/organizations.repository.js';
 import UserService from '../../users/services/users.service.js';
-import { MEMBERSHIP_STATUSES, MEMBERSHIP_ROLES, PENDING_SOURCES } from '../lib/constants.js';
+import { MEMBERSHIP_STATUSES, MEMBERSHIP_ROLES, PENDING_SOURCES } from '../lib/organizations.constants.js';
 
 /**
  * E17 — migration-ordering defensive read.
@@ -24,7 +25,7 @@ import { MEMBERSHIP_STATUSES, MEMBERSHIP_ROLES, PENDING_SOURCES } from '../lib/c
  * confirmed run everywhere (follow-up — see MIGRATIONS.md). After that, every
  * PENDING row has an explicit source (enforced by the model pre-validate guard).
  *
- * DOC-LEVEL TWIN: `isOwnerApprovable(source)` (organizations/lib/constants.js) is
+ * DOC-LEVEL TWIN: `isOwnerApprovable(source)` (organizations/lib/organizations.constants.js) is
  * the document-level expression of the SAME consent invariant — a PENDING row is
  * owner-approvable iff it is NOT an owner_add (join_request + legacy no-source).
  * A Mongo filter can't reuse a predicate, so this `$or` stays; keep the two in
@@ -106,6 +107,42 @@ const get = (id) => MembershipRepository.get(id);
  */
 const findByUserAndOrganization = (userId, organizationId) =>
   MembershipRepository.findOne({ userId, organizationId, status: MEMBERSHIP_STATUSES.ACTIVE });
+
+/**
+ * @function resolveMembership
+ * @description Resolve the membership a user acts with in an organization. A platform
+ *   admin gets a synthetic owner membership (no row needed); anyone else gets their
+ *   active membership, or null.
+ * @param {Object} user - The authenticated user (req.user).
+ * @param {String} organizationId - The ID of the organization.
+ * @returns {Promise<Object|null>} The membership, or null when the user is not a member.
+ */
+const resolveMembership = async (user, organizationId) => {
+  if (isGlobalAdmin(user)) return { role: MEMBERSHIP_ROLES.OWNER, organizationId };
+  if (!user) return null;
+  return findByUserAndOrganization(user._id, organizationId);
+};
+
+/**
+ * @function listActiveByRoles
+ * @description Public read for other modules: the active memberships of an organization
+ *   that hold one of the given roles (user populated).
+ * @param {String} organizationId - The ID of the organization.
+ * @param {String[]} roles - Roles to match (MEMBERSHIP_ROLES values).
+ * @returns {Promise<Array>} The matching memberships.
+ */
+const listActiveByRoles = (organizationId, roles) =>
+  MembershipRepository.list({ organizationId, role: { $in: roles }, status: MEMBERSHIP_STATUSES.ACTIVE });
+
+/**
+ * @function findFirstActiveByUser
+ * @description Public read for other modules: the user's oldest active membership
+ *   (createdAt ascending, so the answer is stable when the user has several).
+ * @param {String} userId - The ID of the user.
+ * @returns {Promise<Object|null>} The membership, or null.
+ */
+const findFirstActiveByUser = (userId) =>
+  MembershipRepository.findOne({ userId, status: MEMBERSHIP_STATUSES.ACTIVE }, { sort: { createdAt: 1 } });
 
 /**
  * @function updateRole
@@ -558,6 +595,9 @@ export default {
   listByUsers,
   get,
   findByUserAndOrganization,
+  resolveMembership,
+  listActiveByRoles,
+  findFirstActiveByUser,
   updateRole,
   remove,
   leave,

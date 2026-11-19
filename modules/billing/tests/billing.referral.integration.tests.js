@@ -54,7 +54,7 @@ describe('Billing referral grant (#3842):', () => {
     UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
     BillingExtraBalanceRepository = (await import(path.resolve('./modules/billing/repositories/billing.extraBalance.repository.js'))).default;
     BillingReferralService = (await import(path.resolve('./modules/billing/services/billing.referral.service.js'))).default;
-    invitationEvents = (await import(path.resolve('./modules/invitations/lib/events.js'))).default;
+    invitationEvents = (await import(path.resolve('./modules/invitations/lib/invitations.events.js'))).default;
     OrganizationsService = (await import(path.resolve('./modules/organizations/services/organizations.service.js'))).default;
   });
 

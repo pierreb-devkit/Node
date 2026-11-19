@@ -3,7 +3,7 @@
  */
 import { jest, describe, test, expect } from '@jest/globals';
 
-import { encodeReferralCode } from '../../users/utils/referralCode.js';
+import { encodeReferralCode } from '../../users/lib/users.referralCode.js';
 
 /**
  * Unit tests — shareable referral link (#4212) in auth.signup.service.js.

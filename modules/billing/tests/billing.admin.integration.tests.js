@@ -179,7 +179,7 @@ describe('Billing admin integration tests:', () => {
       },
     }));
 
-    jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
+    jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({
       default: {
         setPlan: jest.fn().mockResolvedValue({}),
       },

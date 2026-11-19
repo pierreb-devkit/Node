@@ -145,7 +145,7 @@ describe('OrganizationsCrudService.update — race-condition invariant (#3605):'
       assertEmailVerified: jest.fn(),
     }));
 
-    jest.unstable_mockModule('../helpers/organizations.slug.js', () => ({
+    jest.unstable_mockModule('../lib/organizations.slug.js', () => ({
       slugify: jest.fn().mockReturnValue('old-org'),
     }));
 

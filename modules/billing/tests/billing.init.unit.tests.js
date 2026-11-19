@@ -17,7 +17,7 @@ describe('billing.init unit tests:', () => {
   let mockReferralService;
   let mockOrganizationEvents;
   let mockUserService;
-  let mockInvitationRepository;
+  let mockInvitationsService;
   let mockSignupGrantService;
 
   const mockApp = {};
@@ -60,14 +60,14 @@ describe('billing.init unit tests:', () => {
       default: mockLogger,
     }));
 
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: { on: jest.fn(), emit: jest.fn() },
     }));
 
     // P8a: billing is an optional consumer of the invitations `invitation.accepted`
     // event — stub the singleton so the unit test asserts the listener wiring in isolation.
     mockInvitationEvents = { on: jest.fn(), emit: jest.fn() };
-    jest.unstable_mockModule('../../invitations/lib/events.js', () => ({
+    jest.unstable_mockModule('../../invitations/lib/invitations.events.js', () => ({
       default: mockInvitationEvents,
     }));
 
@@ -80,19 +80,19 @@ describe('billing.init unit tests:', () => {
 
     // #3844: the organizations `organization.provisioned` singleton — stub like invitationEvents.
     mockOrganizationEvents = { on: jest.fn(), emit: jest.fn() };
-    jest.unstable_mockModule('../../organizations/lib/events.js', () => ({
+    jest.unstable_mockModule('../../organizations/lib/organizations.events.js', () => ({
       default: mockOrganizationEvents,
     }));
 
-    // #3844: the listener lazy-imports UserService + InvitationRepository — stub both.
+    // #3844: the listener lazy-imports UserService + InvitationsService — stub both.
     mockUserService = { getBrut: jest.fn().mockResolvedValue(null) };
     jest.unstable_mockModule('../../users/services/users.service.js', () => ({
       default: mockUserService,
     }));
 
-    mockInvitationRepository = { findByAcceptedUserId: jest.fn().mockResolvedValue(null) };
-    jest.unstable_mockModule('../../invitations/repositories/invitations.repository.js', () => ({
-      default: mockInvitationRepository,
+    mockInvitationsService = { findByAcceptedUserId: jest.fn().mockResolvedValue(null) };
+    jest.unstable_mockModule('../../invitations/services/invitations.service.js', () => ({
+      default: mockInvitationsService,
     }));
 
     // #3952: the organization.created listener delegates to BillingSignupGrantService — stub it
@@ -218,24 +218,24 @@ describe('billing.init unit tests:', () => {
       const handler = await getHandler();
       await handler(payload);
       expect(mockUserService.getBrut).toHaveBeenCalledWith({ id: 'u1' });
-      expect(mockInvitationRepository.findByAcceptedUserId).not.toHaveBeenCalled();
+      expect(mockInvitationsService.findByAcceptedUserId).not.toHaveBeenCalled();
       expect(mockReferralService.grantForInvitation).not.toHaveBeenCalled();
     });
 
     test('referredBy set but no accepted invitation found → no grant (the cron owns the edge)', async () => {
       mockConfig.billing.referral = { enabled: true, referrerUnits: 1000, refereeUnits: 500 };
       mockUserService.getBrut.mockResolvedValue({ _id: 'u1', referredBy: 'x' });
-      mockInvitationRepository.findByAcceptedUserId.mockResolvedValue(null);
+      mockInvitationsService.findByAcceptedUserId.mockResolvedValue(null);
       const handler = await getHandler();
       await handler(payload);
-      expect(mockInvitationRepository.findByAcceptedUserId).toHaveBeenCalledWith('u1');
+      expect(mockInvitationsService.findByAcceptedUserId).toHaveBeenCalledWith('u1');
       expect(mockReferralService.grantForInvitation).not.toHaveBeenCalled();
     });
 
     test('happy path → grant called once with the exact stringified invitation payload', async () => {
       mockConfig.billing.referral = { enabled: true, referrerUnits: 1000, refereeUnits: 500 };
       mockUserService.getBrut.mockResolvedValue({ _id: 'u1', referredBy: 'x' });
-      mockInvitationRepository.findByAcceptedUserId.mockResolvedValue(invitation);
+      mockInvitationsService.findByAcceptedUserId.mockResolvedValue(invitation);
       const handler = await getHandler();
       await handler(payload);
       expect(mockReferralService.grantForInvitation).toHaveBeenCalledTimes(1);
@@ -249,7 +249,7 @@ describe('billing.init unit tests:', () => {
     test('admin-created invite (invitedBy null) → grant called with invitedBy:null', async () => {
       mockConfig.billing.referral = { enabled: true, referrerUnits: 1000, refereeUnits: 500 };
       mockUserService.getBrut.mockResolvedValue({ _id: 'u1', referredBy: 'x' });
-      mockInvitationRepository.findByAcceptedUserId.mockResolvedValue({ _id: 'i9', invitedBy: null, acceptedUserId: 'u1' });
+      mockInvitationsService.findByAcceptedUserId.mockResolvedValue({ _id: 'i9', invitedBy: null, acceptedUserId: 'u1' });
       const handler = await getHandler();
       await handler(payload);
       expect(mockReferralService.grantForInvitation).toHaveBeenCalledWith({
@@ -262,7 +262,7 @@ describe('billing.init unit tests:', () => {
     test('self-guard: a grant REJECTION is swallowed + logged, never escapes the listener', async () => {
       mockConfig.billing.referral = { enabled: true, referrerUnits: 1000, refereeUnits: 500 };
       mockUserService.getBrut.mockResolvedValue({ _id: 'u1', referredBy: 'x' });
-      mockInvitationRepository.findByAcceptedUserId.mockResolvedValue(invitation);
+      mockInvitationsService.findByAcceptedUserId.mockResolvedValue(invitation);
       mockReferralService.grantForInvitation.mockRejectedValue(new Error('mongo down'));
       const handler = await getHandler();
       // The emit-site catch is sync-only — the async listener must resolve, not reject.

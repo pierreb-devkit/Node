@@ -11,8 +11,11 @@ jest.unstable_mockModule('../services/organizations.crud.service.js', () => ({
 }));
 
 const mockFindByUserAndOrganization = jest.fn();
+// resolveMembership contract: platform admin → synthetic owner membership, else the active row.
+const mockResolveMembership = jest.fn(async (user, organizationId) =>
+  (user?.roles?.includes('admin') ? { role: 'owner', organizationId } : mockFindByUserAndOrganization(user._id, organizationId)));
 jest.unstable_mockModule('../services/organizations.membership.service.js', () => ({
-  default: { findByUserAndOrganization: mockFindByUserAndOrganization },
+  default: { resolveMembership: mockResolveMembership },
 }));
 
 const { default: organizationsMiddleware } = await import('../middlewares/organizations.middleware.js');

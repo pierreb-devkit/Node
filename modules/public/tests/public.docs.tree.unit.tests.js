@@ -1,6 +1,6 @@
 /**
  * Unit tests for the docs-tree helpers in
- * modules/public/helpers/public.docs.tree.js:
+ * modules/public/lib/public.docs.tree.js:
  * slugFromPath, prefixFromPath, moduleFromPath, titleFromMarkdown,
  * firstParagraph, loadGuideEntries, and buildDocsTree.
  *
@@ -16,7 +16,7 @@ import path from 'path';
 
 import { jest } from '@jest/globals';
 
-import docsTree from '../helpers/public.docs.tree.js';
+import docsTree from '../lib/public.docs.tree.js';
 import logger from '../../../lib/services/logger.js';
 import configHelper from '../../../lib/helpers/config.js';
 

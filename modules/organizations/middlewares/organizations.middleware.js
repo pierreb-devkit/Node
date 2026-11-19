@@ -4,7 +4,6 @@
 import OrganizationsCrudService from '../services/organizations.crud.service.js';
 import MembershipService from '../services/organizations.membership.service.js';
 import responses from '../../../lib/helpers/responses.js';
-import { MEMBERSHIP_ROLES } from '../lib/constants.js';
 
 /**
  * Middleware that resolves the current organization from a route param or
@@ -35,17 +34,11 @@ async function resolveOrganization(req, res, next) {
 
     req.organization = organization;
 
-    // Platform admin bypasses membership requirement
-    if (req.user && req.user.roles && req.user.roles.includes('admin')) {
-      req.membership = { role: MEMBERSHIP_ROLES.OWNER, organizationId: organization._id };
-      return next();
-    }
-
-    // Load membership for the current user
+    // Load membership for the current user (platform admins get a synthetic owner membership)
     if (!req.user) {
       return responses.error(res, 401, 'Unauthorized', 'Authentication required')();
     }
-    const membership = await MembershipService.findByUserAndOrganization(req.user._id, organization._id);
+    const membership = await MembershipService.resolveMembership(req.user, organization._id);
 
     if (!membership) {
       return responses.error(res, 403, 'Forbidden', 'User is not a member of this organization')();

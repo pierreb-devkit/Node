@@ -6,7 +6,7 @@ import mongoose from 'mongoose';
 import { beforeAll, afterAll, describe, test, expect } from '@jest/globals';
 import { bootstrap } from '../../../lib/app.js';
 import mongooseService from '../../../lib/services/mongoose.js';
-import { MEMBERSHIP_STATUSES, PENDING_SOURCES } from '../lib/constants.js';
+import { MEMBERSHIP_STATUSES, PENDING_SOURCES } from '../lib/organizations.constants.js';
 
 /**
  * Model-level consent guard (P5a — #3813).

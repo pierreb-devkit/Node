@@ -1,7 +1,7 @@
 /**
  * Organization ability definitions for CASL document-level authorization.
  */
-import { MEMBERSHIP_ROLES } from '../lib/constants.js';
+import { MEMBERSHIP_ROLES } from '../lib/organizations.constants.js';
 
 /**
  * Whether a route path targets an organization resource (regular or platform-admin form).

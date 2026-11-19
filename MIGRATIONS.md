@@ -4,6 +4,55 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## ⚠️ Module boundaries, shared helpers and file names (2026-11-19)
+
+Modules now read each other through services, never through another module's repository.
+
+- New public reads: `OrganizationsService.exists(orgId)` and `setPlan(orgId, plan)`; `MembershipService.resolveMembership(user, orgId)` (platform admin = synthetic owner), `listActiveByRoles(orgId, roles)`, `findFirstActiveByUser(userId)`; `InvitationsService.findAccepted()` and `findByAcceptedUserId(userId)`; `BillingService.getEffectivePlan(orgId)`, `getSubscriptionStatus(orgId)`, `getExtrasBalance(orgId)`.
+- `BillingExtraBalanceRepository.debit(orgId, amount, refId, { organizationExists })`: the org check is now an injected predicate. Without it only a subscription for the org proves it exists. Call it through `BillingExtraService`.
+- `effectivePlanOf(subscription)` (billing statuses) is the one effective-plan rule. `requirePlan` now sees an active subscription with no `plan` as `free`.
+- `POST /api/users/password` is unchanged on the wire but is now mounted by the `auth` module.
+
+Moved out of `lib/` and `config/`:
+
+| Old | New |
+| --- | --- |
+| `lib/services/gridfs.js` | `modules/uploads/repositories/uploads.gridfs.repository.js` |
+| `lib/services/multer.js` | `modules/uploads/middlewares/uploads.multer.js` |
+| `config/defaults/billing.pricing.constants.js` | `modules/billing/lib/billing.pricing.constants.js` (wired by `billing.development.config.js`, no longer in `config/defaults/development.config.js`) |
+
+New shared helpers: `lib/helpers/slug.js` (`slugify`, `uniqueSlug(base, exists, first)`), `lib/helpers/tokenCookieOptions.js`, and in `lib/helpers/zod.js` `objectIdRegex`, `isObjectId`, `objectId(message)`, `pageQuery({ firstPage, sizeKey, defaultSize, maxSize })`. Local `escapeRegex` copies are replaced by lodash `_.escapeRegExp`.
+
+Renamed files (one rule: every module file starts with its module name, module helpers live in `lib/`, never `helpers/` or `utils/`):
+
+| Old | New |
+| --- | --- |
+| `modules/auth/strategies/local/{local,jwt,google,apple}.js` | `modules/auth/strategies/auth.{local,jwt,google,apple}.strategy.js` |
+| `modules/auth/strategies/clerk/index.js` | `modules/auth/strategies/auth.clerk.strategy.js` |
+| `modules/billing/lib/constants.js` | `modules/billing/lib/billing.statuses.js` |
+| `modules/billing/lib/events.js` | `modules/billing/lib/billing.events.js` |
+| `modules/billing/lib/stripe.js` | `modules/billing/lib/billing.stripe.js` |
+| `modules/core/models/migration.model.mongoose.js` | `modules/core/models/core.migration.model.mongoose.js` |
+| `modules/core/repositories/migration.repository.js` | `modules/core/repositories/core.migration.repository.js` |
+| `modules/invitations/lib/{constants,events}.js` | `modules/invitations/lib/invitations.{constants,events}.js` |
+| `modules/organizations/lib/{constants,events}.js` | `modules/organizations/lib/organizations.{constants,events}.js` |
+| `modules/organizations/lib/orgRemoval.registry.js` | `modules/organizations/lib/organizations.removal.registry.js` |
+| `modules/organizations/helpers/organizations.slug.js` | `modules/organizations/lib/organizations.slug.js` |
+| `modules/public/helpers/public.docs.tree.js` | `modules/public/lib/public.docs.tree.js` |
+| `modules/users/utils/{unsubscribeToken,emailSequencesCron,referralCode,sanitizeUser}.js` | `modules/users/lib/users.{unsubscribeToken,emailSequencesCron,referralCode,sanitizeUser}.js` |
+
+Migration files are not renamed.
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the change.
+2. Grep your project modules and tests for every old path above (imports and `jest.unstable_mockModule` strings) and switch to the new path.
+3. A project module that imports another module's repository: call the service method listed above instead. Tests that mocked `organizations.repository.js` for billing code now mock `organizations.crud.service.js`.
+4. A direct `BillingExtraBalanceRepository.debit` caller: pass `{ organizationExists }` or go through `BillingExtraService`.
+5. A project config that set `billing.pricing` keeps working; one that imported the pricing constants from `config/defaults/` imports the new path.
+
+---
+
 ## ⚠️ Expired shims and dead code removed (2026-11-19)
 
 Routes and response fields:

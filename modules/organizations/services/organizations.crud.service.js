@@ -1,18 +1,12 @@
 /**
  * Module dependencies
  */
+import _ from 'lodash';
 import AppError from '../../../lib/helpers/AppError.js';
 import { assertEmailVerified } from '../../../lib/helpers/emailVerification.js';
 import config from '../../../config/index.js';
 import logger from '../../../lib/services/logger.js';
 import { weeklyWindowStart, fillWeeks } from '../../../lib/helpers/weeklyStats.js';
-
-/**
- * @desc Escape regex-special characters in a user-provided string.
- * @param {String} str - The raw string to escape.
- * @returns {String} The escaped string safe for use in a RegExp.
- */
-const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * Normalize a domain string by trimming whitespace and lowercasing.
@@ -24,10 +18,11 @@ const normalizeDomain = (value = '') => value.trim().toLowerCase();
 import OrganizationsRepository from '../repositories/organizations.repository.js';
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
 import UserService from '../../users/services/users.service.js';
-import organizationEvents from '../lib/events.js';
-import { slugify } from '../helpers/organizations.slug.js';
-import { MEMBERSHIP_STATUSES, MEMBERSHIP_ROLES } from '../lib/constants.js';
-import { runOrganizationRemovedHandlers } from '../lib/orgRemoval.registry.js';
+import organizationEvents from '../lib/organizations.events.js';
+import { slugify } from '../lib/organizations.slug.js';
+import { uniqueSlug } from '../../../lib/helpers/slug.js';
+import { MEMBERSHIP_STATUSES, MEMBERSHIP_ROLES } from '../lib/organizations.constants.js';
+import { runOrganizationRemovedHandlers } from '../lib/organizations.removal.registry.js';
 
 /**
  * @function list
@@ -39,7 +34,7 @@ import { runOrganizationRemovedHandlers } from '../lib/orgRemoval.registry.js';
  */
 const list = async (search, page, perPage) => {
   const filter = search
-    ? { $or: [{ name: { $regex: escapeRegex(search), $options: 'i' } }, { domain: { $regex: escapeRegex(search), $options: 'i' } }] }
+    ? { $or: [{ name: { $regex: _.escapeRegExp(search), $options: 'i' } }, { domain: { $regex: _.escapeRegExp(search), $options: 'i' } }] }
     : {};
   const result = await OrganizationsRepository.list(filter, page, perPage);
   return result;
@@ -77,12 +72,8 @@ const create = async (body, user) => {
   assertEmailVerified(user);
 
   // Auto-generate slug from name if not provided
-  let slug = body.slug || slugify(body.name);
-  let counter = 1;
-  while (await OrganizationsRepository.findOne({ slug })) {
-    slug = `${slugify(body.name)}-${counter}`;
-    counter += 1;
-  }
+  const base = slugify(body.name);
+  const slug = await uniqueSlug(base, (candidate) => OrganizationsRepository.exists({ slug: candidate }), body.slug || base);
 
   const domain = normalizeDomain(body.domain);
 
@@ -127,7 +118,7 @@ const create = async (body, user) => {
   // else a fresh org on a plan that defines one starts at 0 balance. Emitted outside the
   // rollback try/catch so a billing failure never rolls back the org; the listener owns its
   // idempotence (refId signup_grant-<orgId>) and never throws. Fire-and-forget, synchronous
-  // emit — the try/catch here only guards a SYNCHRONOUS listener throw (see ../lib/events.js).
+  // emit — the try/catch here only guards a SYNCHRONOUS listener throw (see ../lib/organizations.events.js).
   try {
     // planId is a literal 'free' (not `result.plan`), matching organizations.service.js::
     // createOrganizationForUser exactly — `plan: 'free'` is set unconditionally a few lines
@@ -349,6 +340,25 @@ const adminStats = async () => {
   return { total, weeks: fillWeeks(rows, start) };
 };
 
+/**
+ * @function exists
+ * @description Public read for other modules: whether an organization exists.
+ * @param {String} orgId - The organization ID.
+ * @returns {Promise<boolean>} True when the organization exists.
+ */
+const exists = async (orgId) => Boolean(await OrganizationsRepository.exists({ _id: orgId }));
+
+/**
+ * @function setPlan
+ * @description Public write for the billing module: keep `Organization.plan` in sync
+ *   with the subscription. The only path that writes `plan` (the settings update
+ *   allow-list never includes it).
+ * @param {String} orgId - The organization ID.
+ * @param {String} plan - The plan to set (e.g. 'free').
+ * @returns {Promise<Object|null>} The updated organization, or null when orgId is invalid.
+ */
+const setPlan = (orgId, plan) => OrganizationsRepository.setPlan(orgId, plan);
+
 export default {
   list,
   adminStats,
@@ -360,4 +370,6 @@ export default {
   switchOrganization,
   autoSetCurrentOrganization,
   searchByDomain,
+  exists,
+  setPlan,
 };

@@ -9,7 +9,7 @@ import { jest, beforeEach, afterEach } from '@jest/globals';
 describe('Billing webhook service unit tests:', () => {
   let BillingWebhookService;
   let mockSubscriptionRepository;
-  let mockOrganizationRepository;
+  let mockOrganizationsService;
 
   const orgId = '507f1f77bcf86cd799439011';
   const subId = '507f1f77bcf86cd799439022';
@@ -26,7 +26,7 @@ describe('Billing webhook service unit tests:', () => {
       updateIfEventNewer: jest.fn().mockResolvedValue({ _id: '507f1f77bcf86cd799439022' }),
     };
 
-    mockOrganizationRepository = {
+    mockOrganizationsService = {
       setPlan: jest.fn().mockResolvedValue({}),
     };
 
@@ -41,8 +41,8 @@ describe('Billing webhook service unit tests:', () => {
       },
     }));
 
-    jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
-      default: mockOrganizationRepository,
+    jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({
+      default: mockOrganizationsService,
     }));
 
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
@@ -53,7 +53,7 @@ describe('Billing webhook service unit tests:', () => {
       default: { resetWeek: jest.fn(), resetAllDue: jest.fn(), forceRotateForPlanChange: jest.fn().mockResolvedValue({}) },
     }));
 
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: { emit: jest.fn() },
     }));
 
@@ -74,7 +74,7 @@ describe('Billing webhook service unit tests:', () => {
 
     // Mock Stripe so handleCheckoutCompleted can call stripe.subscriptions.retrieve.
     // Returns 'active' by default; override per-test as needed.
-    jest.unstable_mockModule('../lib/stripe.js', () => ({
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({
       default: jest.fn(() => ({
         subscriptions: {
           retrieve: jest.fn().mockResolvedValue({ status: 'active' }),
@@ -119,7 +119,7 @@ describe('Billing webhook service unit tests:', () => {
           lastSubscriptionEventId: 'evt_checkout_1',
         }),
       );
-      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
+      expect(mockOrganizationsService.setPlan).toHaveBeenCalledWith(orgId, 'pro');
     });
 
     test('should update existing subscription on checkout via updateIfEventNewer', async () => {
@@ -244,7 +244,7 @@ describe('Billing webhook service unit tests:', () => {
         expect.objectContaining({ plan: 'pro', status: 'active' }),
         'subscription',
       );
-      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
+      expect(mockOrganizationsService.setPlan).toHaveBeenCalledWith(orgId, 'pro');
     });
 
     test('should return early when subscription not found', async () => {
@@ -334,7 +334,7 @@ describe('Billing webhook service unit tests:', () => {
         { plan: 'free', status: 'canceled' },
         'subscription',
       );
-      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'free');
+      expect(mockOrganizationsService.setPlan).toHaveBeenCalledWith(orgId, 'free');
       expect(resetService.forceRotateForPlanChange).toHaveBeenCalledWith(orgId, { preserveUsage: false });
     });
 

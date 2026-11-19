@@ -2,7 +2,7 @@
  * Module dependencies
  */
 import responses from '../../../lib/helpers/responses.js';
-import getStripe from '../lib/stripe.js';
+import getStripe from '../lib/billing.stripe.js';
 import BillingAdminService from '../services/billing.admin.service.js';
 import { AdminDeadLettersQuery, AdminOrgIdParam, AdminEventIdParam } from '../models/billing.subscription.schema.js';
 import logger from '../../../lib/services/logger.js';

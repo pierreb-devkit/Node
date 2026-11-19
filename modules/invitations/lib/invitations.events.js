@@ -31,7 +31,7 @@ import { EventEmitter } from 'events';
  *
  * This file ships the singleton + the error-listener hook (registered in
  * invitations.init.js after config is ready) so it stays config-free and
- * importable without ordering hazards (mirrors billing/lib/events.js).
+ * importable without ordering hazards (mirrors billing/lib/billing.events.js).
  */
 const invitationEvents = new EventEmitter();
 

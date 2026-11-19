@@ -5,9 +5,9 @@ import mongoose from 'mongoose';
 import config from '../../config/index.js';
 import AnalyticsService from '../../lib/services/analytics.js';
 import logger from '../../lib/services/logger.js';
-import billingEvents from './lib/events.js';
-import invitationEvents from '../invitations/lib/events.js';
-import organizationEvents from '../organizations/lib/events.js';
+import billingEvents from './lib/billing.events.js';
+import invitationEvents from '../invitations/lib/invitations.events.js';
+import organizationEvents from '../organizations/lib/organizations.events.js';
 import BillingUsageRepository from './repositories/billing.usage.repository.js';
 import BillingSignupGrantService from './services/billing.signupGrant.service.js';
 import { getAlertThresholdPercents } from './lib/billing.constants.js';
@@ -76,7 +76,7 @@ export default async (app) => {
       const { default: BillingReferralService } = await import('./services/billing.referral.service.js');
       await BillingReferralService.grantForInvitation(payload);
     } catch (err) {
-      // ⚠️ MANDATORY self-guard (see lib/events.js): never let a rejection escape.
+      // ⚠️ MANDATORY self-guard (see lib/billing.events.js): never let a rejection escape.
       logger.error('[billing] referral grant failed — reconcile cron will back-fill', {
         invitationId: String(payload?.invitationId ?? ''),
         err: err?.message,
@@ -100,7 +100,7 @@ export default async (app) => {
    * idempotent grantForInvitation (ledger refId guard `referral:<invitationId>:*`),
    * so a double-fire with the #3842 listener or the reconcile cron is harmless
    * (duplicate_grant). Self-guarded: never lets a rejection escape (see
-   * organizations/lib/events.js).
+   * organizations/lib/organizations.events.js).
    * @param {{userId: string, organizationId: string}} payload - Provisioned organization event payload.
    * @returns {Promise<void>} settles when the grant attempt completes (never rejects)
    */
@@ -114,8 +114,8 @@ export default async (app) => {
       const { default: UserService } = await import('../users/services/users.service.js');
       const user = await UserService.getBrut({ id: userId });
       if (!user?.referredBy) return; // not an invited signup — nothing to grant
-      const { default: InvitationRepository } = await import('../invitations/repositories/invitations.repository.js');
-      const invitation = await InvitationRepository.findByAcceptedUserId(userId);
+      const { default: InvitationsService } = await import('../invitations/services/invitations.service.js');
+      const invitation = await InvitationsService.findByAcceptedUserId(userId);
       const { default: BillingReferralService } = await import('./services/billing.referral.service.js');
       if (!invitation) {
         // referredBy without a finalized invite = a link signup (#4214): grantForLink is a
@@ -129,7 +129,7 @@ export default async (app) => {
         acceptedUserId: String(invitation.acceptedUserId),
       });
     } catch (err) {
-      // ⚠️ MANDATORY self-guard (see organizations/lib/events.js): never let a rejection escape.
+      // ⚠️ MANDATORY self-guard (see organizations/lib/organizations.events.js): never let a rejection escape.
       logger.error('[billing] instant referee grant failed — reconcile cron will back-fill', {
         userId: String(payload?.userId ?? ''),
         err: err?.message,
@@ -162,7 +162,7 @@ export default async (app) => {
     try {
       await BillingSignupGrantService.grantOnSignup({ orgId: payload?.orgId, planId: payload?.planId });
     } catch (err) {
-      // ⚠️ MANDATORY self-guard (see organizations/lib/events.js): never let a rejection escape.
+      // ⚠️ MANDATORY self-guard (see organizations/lib/organizations.events.js): never let a rejection escape.
       logger.error('[billing] signup grant failed via organization.created listener', {
         orgId: String(payload?.orgId ?? ''),
         planId: String(payload?.planId ?? ''),

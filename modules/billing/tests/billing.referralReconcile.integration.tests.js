@@ -9,7 +9,7 @@ import { beforeAll, afterAll, describe, test, expect } from '@jest/globals';
 
 import { bootstrap } from '../../../lib/app.js';
 import config from '../../../config/index.js';
-import { encodeReferralCode } from '../../users/utils/referralCode.js';
+import { encodeReferralCode } from '../../users/lib/users.referralCode.js';
 
 const run = promisify(execFile);
 

@@ -67,10 +67,6 @@ describe('Billing extras routes integration tests:', () => {
       },
     }));
 
-    jest.unstable_mockModule('../lib/constants.js', () => ({
-      activeStatuses: ['active', 'trialing'],
-    }));
-
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
       default: {
         error: jest.fn(),

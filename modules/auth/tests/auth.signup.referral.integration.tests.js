@@ -7,7 +7,7 @@ import { jest, afterEach } from '@jest/globals';
 
 import { bootstrap } from '../../../lib/app.js';
 import config from '../../../config/index.js';
-import { encodeReferralCode } from '../../users/utils/referralCode.js';
+import { encodeReferralCode } from '../../users/lib/users.referralCode.js';
 
 /**
  * Integration tests — shareable referral link (#4212), through the real Express

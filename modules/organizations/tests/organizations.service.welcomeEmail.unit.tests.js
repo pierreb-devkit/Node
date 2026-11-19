@@ -62,7 +62,7 @@ jest.unstable_mockModule('../../../lib/helpers/abilities.js', () => ({
   default: jest.fn().mockReturnValue(['ability-stub']),
 }));
 
-jest.unstable_mockModule('../helpers/organizations.slug.js', () => ({
+jest.unstable_mockModule('../lib/organizations.slug.js', () => ({
   /**
    * Lowercase and hyphenate a string for use as a slug (test stub).
    * @param {string} str - The string to slugify.
@@ -77,7 +77,7 @@ jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
   default: { error: jest.fn(), warn: mockLoggerWarn, info: jest.fn() },
 }));
 
-jest.unstable_mockModule('../lib/events.js', () => ({
+jest.unstable_mockModule('../lib/organizations.events.js', () => ({
   default: { emit: jest.fn(), on: jest.fn() },
 }));
 

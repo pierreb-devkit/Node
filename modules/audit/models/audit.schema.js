@@ -2,8 +2,7 @@
  * Module dependencies
  */
 import { z } from 'zod';
-
-const objectIdRegex = /^[0-9a-fA-F]{24}$/;
+import { objectIdRegex, pageQuery } from '../../../lib/helpers/zod.js';
 
 /**
  * AuditLog Zod schemas
@@ -22,12 +21,10 @@ const AuditLog = z.object({
 /**
  * Query filter schema for list endpoint
  */
-const AuditQuery = z.object({
+const AuditQuery = pageQuery({ defaultSize: 20 }).extend({
   action: z.string().trim().min(1).optional(),
   userId: z.string().trim().regex(objectIdRegex, 'must be a valid ObjectId').optional(),
   orgId: z.string().trim().regex(objectIdRegex, 'must be a valid ObjectId').optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  perPage: z.coerce.number().int().min(1).max(100).default(20),
 });
 
 export default {

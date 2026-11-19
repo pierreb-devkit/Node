@@ -6,7 +6,7 @@ import mongoose from 'mongoose';
 import { beforeAll, afterAll, describe, test, expect } from '@jest/globals';
 import { bootstrap } from '../../../lib/app.js';
 import mongooseService from '../../../lib/services/mongoose.js';
-import { PENDING_SOURCES } from '../lib/constants.js';
+import { PENDING_SOURCES } from '../lib/organizations.constants.js';
 
 import { up } from '../migrations/20260612120000-membership-user-org-unique-index.js';
 

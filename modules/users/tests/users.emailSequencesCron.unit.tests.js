@@ -3,10 +3,10 @@
  */
 import { describe, test, expect } from '@jest/globals';
 
-import { utcMidnight, stepCreatedAtRange, buildStepFilter } from '../utils/emailSequencesCron.js';
+import { utcMidnight, stepCreatedAtRange, buildStepFilter } from '../lib/users.emailSequencesCron.js';
 
 /**
- * Unit tests — modules/users/utils/emailSequencesCron.js (#4163).
+ * Unit tests — modules/users/lib/users.emailSequencesCron.js (#4163).
  *
  * The cron script itself (users.emailSequences.js) is a top-level-await CLI
  * entry point that connects to MongoDB and calls process.exit — same as

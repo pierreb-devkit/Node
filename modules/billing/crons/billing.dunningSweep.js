@@ -58,9 +58,9 @@ try {
     process.exitCode = 0;
   } else {
     try {
-      const [{ default: BillingSubscriptionRepository }, { default: OrganizationRepository }] = await Promise.all([
+      const [{ default: BillingSubscriptionRepository }, { default: OrganizationsService }] = await Promise.all([
         import('../repositories/billing.subscription.repository.js'),
-        import('../../organizations/repositories/organizations.repository.js'),
+        import('../../organizations/services/organizations.crud.service.js'),
       ]);
 
       const now = new Date();
@@ -82,7 +82,7 @@ try {
           }
 
           try {
-            await OrganizationRepository.setPlan(String(sub.organization), 'free');
+            await OrganizationsService.setPlan(String(sub.organization), 'free');
           } catch (orgErr) {
             // Compensation: Subscription is now unpaid but Org.plan update failed.
             // Log for manual reconciliation — do not revert Subscription status.

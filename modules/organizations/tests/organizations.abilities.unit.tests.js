@@ -9,7 +9,7 @@
 import { describe, test, expect, jest } from '@jest/globals';
 
 import { organizationAbilities } from '../policies/organizations.policy.js';
-import { MEMBERSHIP_ROLES } from '../lib/constants.js';
+import { MEMBERSHIP_ROLES } from '../lib/organizations.constants.js';
 
 /**
  * Build a membership fixture with a populated organizationId (the shape

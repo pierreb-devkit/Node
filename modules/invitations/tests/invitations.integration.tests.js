@@ -741,7 +741,7 @@ describe('Signup invitations:', () => {
     let originalUp; let originalCap;
 
     beforeAll(async () => {
-      invitationEvents = (await import(path.resolve('./modules/invitations/lib/events.js'))).default;
+      invitationEvents = (await import(path.resolve('./modules/invitations/lib/invitations.events.js'))).default;
     });
 
     beforeEach(() => { originalUp = config.sign.up; originalCap = config.sign.cap; });
@@ -947,7 +947,7 @@ describe('Signup invitations:', () => {
     let originalUp; let originalCap; let originalUserFacing;
 
     beforeAll(async () => {
-      invitationEvents = (await import(path.resolve('./modules/invitations/lib/events.js'))).default;
+      invitationEvents = (await import(path.resolve('./modules/invitations/lib/invitations.events.js'))).default;
       InvitationService = (await import(path.resolve('./modules/invitations/services/invitations.service.js'))).default;
     });
 

@@ -3,6 +3,7 @@
  */
 import mongoose from 'mongoose';
 import AppError from '../../../lib/helpers/AppError.js';
+import { isObjectId } from '../../../lib/helpers/zod.js';
 import BillingExtraBalanceSchema from '../models/billing.extraBalance.schema.js';
 import { computeExpiryRemovals } from '../lib/billing.packExpiry.js';
 
@@ -100,9 +101,13 @@ const creditPack = async (orgId, amount, stripeSessionId, expiresAt = null) => {
  * @param {string} orgId - The organization ObjectId (string).
  * @param {number} amount - Meter units to debit (must be > 0).
  * @param {string} refId - Unique reference for this debit (idempotency key).
+ * @param {Object} [options]
+ * @param {(orgId: string) => Promise<boolean>} [options.organizationExists] - Whether the
+ *   organization exists. Passed by the service (the organizations module owns that read, a
+ *   repository never reaches into another module). Without it only a Subscription proves the org.
  * @returns {Promise<{doc: Object|null, applied: boolean, reason?: string}>} Updated doc and whether debit was applied.
  */
-const debit = async (orgId, amount, refId) => {
+const debit = async (orgId, amount, refId, { organizationExists } = {}) => {
   if (!isValidOrgId(orgId)) return { doc: null, applied: false };
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('invalid argument: amount must be a positive finite number');
   if (typeof refId !== 'string' || refId.trim() === '') throw new Error('invalid argument: refId must be a non-empty string');
@@ -121,8 +126,7 @@ const debit = async (orgId, amount, refId) => {
   // before the full Organization doc, e.g. in CLI tools or integration tests).
   const existing = await BillingExtraBalance().exists({ organization: orgId });
   if (!existing) {
-    const { default: OrganizationRepository } = await import('../../organizations/repositories/organizations.repository.js');
-    const orgExists = await OrganizationRepository.exists({ _id: orgId });
+    const orgExists = organizationExists ? await organizationExists(orgId) : false;
     if (!orgExists) {
       const Subscription = mongoose.model('Subscription');
       const subExists = await Subscription.exists({ organization: orgId });
@@ -644,7 +648,7 @@ const findExistingRefIds = async (refIds) => {
  * @returns {Promise<number>} Number of link referrer grants for that referrer (0 for an invalid id).
  */
 const countLinkReferrerGrants = async (referrerId) => {
-  if (!/^[0-9a-f]{24}$/i.test(String(referrerId))) return 0;
+  if (!isObjectId(referrerId)) return 0;
   const pattern = new RegExp(`^referral:link:[^:]+:referrer:${String(referrerId)}$`);
   const [row] = await BillingExtraBalance().aggregate([
     { $match: { 'ledger.refId': { $regex: pattern } } },

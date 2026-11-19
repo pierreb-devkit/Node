@@ -8,10 +8,10 @@ import path from 'path';
 import mongoose from 'mongoose';
 
 // Ensure the Migration model is registered before tests
-import '../models/migration.model.mongoose.js';
+import '../models/core.migration.model.mongoose.js';
 
 import migrations from '../../../lib/services/migrations.js';
-import migrationRepository from '../repositories/migration.repository.js';
+import migrationRepository from '../repositories/core.migration.repository.js';
 import logger from '../../../lib/services/logger.js';
 
 /**

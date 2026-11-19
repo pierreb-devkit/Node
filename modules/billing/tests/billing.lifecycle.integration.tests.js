@@ -52,7 +52,7 @@ describe('Billing meter lifecycle integration tests:', () => {
     // handlers exercised in this file (handleSubscriptionUpdated, handleSubscriptionCreated,
     // BillingMeterService.attribute, BillingUsageService.incrementMeter) touch it, so this mock
     // is inert for those tests.
-    jest.unstable_mockModule('../lib/stripe.js', () => ({
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({
       default: jest.fn(() => ({
         subscriptions: {
           retrieve: jest.fn().mockResolvedValue({ status: 'active' }),
@@ -63,7 +63,7 @@ describe('Billing meter lifecycle integration tests:', () => {
     BillingWebhookService = (await import('../services/billing.webhook.service.js')).default;
     BillingMeterService = (await import('../services/billing.meter.service.js')).default;
     BillingUsageService = (await import('../services/billing.usage.service.js')).default;
-    billingEvents = (await import('../lib/events.js')).default;
+    billingEvents = (await import('../lib/billing.events.js')).default;
   });
 
   beforeEach(async () => {

@@ -21,8 +21,8 @@ describe('billing.referral.service unit tests:', () => {
   let mockConfig;
   let mockRepository;
   let mockUserService;
-  let mockMembershipRepository;
-  let mockInvitationRepository;
+  let mockMembershipService;
+  let mockInvitationsService;
   let mockLogger;
   let mockMailer;
 
@@ -59,8 +59,8 @@ describe('billing.referral.service unit tests:', () => {
       _users: users,
     };
 
-    mockInvitationRepository = { findByAcceptedUserId: jest.fn().mockResolvedValue(null) };
-    mockMembershipRepository = { findOne: jest.fn().mockResolvedValue(null) };
+    mockInvitationsService = { findByAcceptedUserId: jest.fn().mockResolvedValue(null) };
+    mockMembershipService = { findFirstActiveByUser: jest.fn().mockResolvedValue(null) };
     mockLogger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
     // Mailer OFF by default (matches the mailer.isConfigured() gate default in most
     // deployments) — tests that need to assert notifyReferrer's email flip it ON.
@@ -75,14 +75,11 @@ describe('billing.referral.service unit tests:', () => {
     jest.unstable_mockModule('../../../lib/helpers/mailer/index.js', () => ({ default: mockMailer }));
     jest.unstable_mockModule('../repositories/billing.extraBalance.repository.js', () => ({ default: mockRepository }));
     jest.unstable_mockModule('../../users/services/users.service.js', () => ({ default: mockUserService }));
-    jest.unstable_mockModule('../../organizations/repositories/organizations.membership.repository.js', () => ({
-      default: mockMembershipRepository,
+    jest.unstable_mockModule('../../organizations/services/organizations.membership.service.js', () => ({
+      default: mockMembershipService,
     }));
-    jest.unstable_mockModule('../../invitations/repositories/invitations.repository.js', () => ({
-      default: mockInvitationRepository,
-    }));
-    jest.unstable_mockModule('../../organizations/lib/constants.js', () => ({
-      MEMBERSHIP_STATUSES: { ACTIVE: 'active', PENDING: 'pending' },
+    jest.unstable_mockModule('../../invitations/services/invitations.service.js', () => ({
+      default: mockInvitationsService,
     }));
 
     const mod = await import('../services/billing.referral.service.js');
@@ -235,7 +232,7 @@ describe('billing.referral.service unit tests:', () => {
 
   test('actor without any organization → side skipped with no_organization (left to the cron)', async () => {
     mockUserService._users[refereeId] = { _id: refereeId, currentOrganization: null };
-    mockMembershipRepository.findOne.mockResolvedValue(null);
+    mockMembershipService.findFirstActiveByUser.mockResolvedValue(null);
 
     const result = await BillingReferralService.grantForInvitation({ invitationId, invitedBy: inviterId, acceptedUserId: refereeId });
 
@@ -247,15 +244,12 @@ describe('billing.referral.service unit tests:', () => {
 
   test('currentOrganization unset → falls back to the user active membership', async () => {
     mockUserService._users[refereeId] = { _id: refereeId, currentOrganization: null };
-    mockMembershipRepository.findOne.mockResolvedValue({ organizationId: { _id: refereeOrgId, name: 'Org' } });
+    mockMembershipService.findFirstActiveByUser.mockResolvedValue({ organizationId: { _id: refereeOrgId, name: 'Org' } });
 
     const result = await BillingReferralService.grantForInvitation({ invitationId, invitedBy: null, acceptedUserId: refereeId });
 
     // Deterministic fallback: oldest active membership wins (createdAt asc).
-    expect(mockMembershipRepository.findOne).toHaveBeenCalledWith(
-      { userId: refereeId, status: 'active' },
-      { sort: { createdAt: 1 } },
-    );
+    expect(mockMembershipService.findFirstActiveByUser).toHaveBeenCalledWith(refereeId);
     expect(result.referee).toMatchObject({ applied: true, organizationId: refereeOrgId });
   });
 
@@ -388,7 +382,7 @@ describe('billing.referral.service unit tests:', () => {
     });
 
     test('an accepted invitation wins: no link grant', async () => {
-      mockInvitationRepository.findByAcceptedUserId.mockResolvedValue({ _id: invitationId });
+      mockInvitationsService.findByAcceptedUserId.mockResolvedValue({ _id: invitationId });
       expect(await BillingReferralService.grantForLink(linkRecord)).toEqual({ skipped: 'invited' });
       expect(mockRepository.creditGrant).not.toHaveBeenCalled();
     });
@@ -444,7 +438,7 @@ describe('billing.referral.service unit tests:', () => {
 
     test('an invitation passed by the caller skips the lookup (null = looked up, none)', async () => {
       await BillingReferralService.grantForLink({ ...linkRecord, invitation: null });
-      expect(mockInvitationRepository.findByAcceptedUserId).not.toHaveBeenCalled();
+      expect(mockInvitationsService.findByAcceptedUserId).not.toHaveBeenCalled();
       expect(await BillingReferralService.grantForLink({ ...linkRecord, invitation: { _id: invitationId } })).toEqual({ skipped: 'invited' });
     });
 

@@ -4,7 +4,7 @@
 import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
 import MembershipService from '../services/organizations.membership.service.js';
-import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES, isOwnerApprovable } from '../lib/constants.js';
+import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES, isOwnerApprovable } from '../lib/organizations.constants.js';
 
 /**
  * @function create

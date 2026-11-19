@@ -59,7 +59,7 @@ await BillingUsageService.increment(organizationId, 'documents_create', 1);
 Listen for plan changes in downstream modules:
 
 ```js
-import billingEvents from '../billing/lib/events.js';
+import billingEvents from '../billing/lib/billing.events.js';
 
 billingEvents.on('plan.changed', ({ organizationId, previousPlan, newPlan, isDowngrade }) => {
   if (isDowngrade) {

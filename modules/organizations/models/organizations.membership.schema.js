@@ -2,8 +2,9 @@
  * Module dependencies
  */
 import { z } from 'zod';
+import { pageQuery } from '../../../lib/helpers/zod.js';
 
-import { MEMBERSHIP_ROLES } from '../lib/constants.js';
+import { MEMBERSHIP_ROLES } from '../lib/organizations.constants.js';
 
 const MembershipRole = z.enum(Object.values(MEMBERSHIP_ROLES));
 
@@ -29,9 +30,7 @@ const MembershipAdd = z.object({
  * `page` is 0-based; no `perPage` means the list is not paginated. An empty
  * `search` reads as absent.
  */
-const MembershipListQuery = z.object({
-  page: z.coerce.number().int().min(0).optional(),
-  perPage: z.coerce.number().int().min(1).max(100).optional(),
+const MembershipListQuery = pageQuery({ firstPage: 0 }).extend({
   search: z.string().trim().max(200).optional().transform((value) => value || undefined),
 });
 

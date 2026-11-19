@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import { z } from 'zod';
+import { objectIdRegex } from '../../../lib/helpers/zod.js';
 
 /**
  * BillingUsage Zod schema — mirrors billing.usage.model.mongoose.js
@@ -10,7 +11,6 @@ import { z } from 'zod';
  * Meter fields (weekKey, consumedAttributionKeys, etc.) are optional to preserve
  * backward compatibility with non-meter downstream projects.
  */
-const objectIdRegex = /^[a-f\d]{24}$/i;
 
 /**
  * Attribution key regex: accepts raw ObjectId (legacy), `${id}:${stepKey}`, or the weekly

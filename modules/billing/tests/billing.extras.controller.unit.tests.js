@@ -74,10 +74,6 @@ describe('Billing extras controller unit tests:', () => {
       default: mockConfig,
     }));
 
-    jest.unstable_mockModule('../lib/constants.js', () => ({
-      activeStatuses: ['active', 'trialing'],
-    }));
-
     // Mock logger: billing.controller.js imports logger, which reads config at module init.
     // Without this mock, tests that supply a minimal config object cause logger.js to throw.
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({

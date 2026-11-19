@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import errors from '../../../lib/helpers/errors.js';
+import isGlobalAdmin from '../../../lib/helpers/isGlobalAdmin.js';
 import responses from '../../../lib/helpers/responses.js';
 import logger from '../../../lib/services/logger.js';
 import InvitationService from '../services/invitations.service.js';
@@ -86,7 +87,7 @@ const remove = async (req, res) => {
  * @returns {Promise<void>} Sends HTTP 200 with the invitation, 403 when not admin, 409 when not pending, or 422 on error
  */
 const resend = async (req, res) => {
-  if (!Array.isArray(req.user?.roles) || !req.user.roles.includes('admin')) {
+  if (!isGlobalAdmin(req.user)) {
     return responses.error(res, 403, 'Forbidden', 'Only platform admins can resend invitations')();
   }
   try {

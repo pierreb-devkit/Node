@@ -3,11 +3,13 @@
  */
 import config from '../../../config/index.js';
 import logger from '../../../lib/services/logger.js';
-import getStripe from '../lib/stripe.js';
+import getStripe from '../lib/billing.stripe.js';
 import BillingPlansService from './billing.plans.service.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
+import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
 import { isDuplicateKeyError } from '../lib/billing.errors.js';
 import { SENTINEL_PENDING } from '../lib/billing.constants.js';
+import { effectivePlanOf } from '../lib/billing.statuses.js';
 
 /**
  * Validate that a redirect URL is safe for the current environment.
@@ -377,7 +379,33 @@ const getSubscription = async (organizationId) => {
   return { ...sub.toJSON?.() ?? sub, ...details };
 };
 
+/**
+ * @desc Public read for other modules: the plan the organization is entitled to now
+ *       (subscription plan while active or trialing, 'free' otherwise). Local DB only.
+ * @param {String} organizationId - The organization ID
+ * @returns {Promise<string>} The effective plan id
+ */
+const getEffectivePlan = async (organizationId) => effectivePlanOf(await getLocalSubscription(organizationId));
+
+/**
+ * @desc Public read for other modules: the subscription status of the organization.
+ *       Local DB only.
+ * @param {String} organizationId - The organization ID
+ * @returns {Promise<string|null>} Stripe subscription status, or null when there is no subscription
+ */
+const getSubscriptionStatus = async (organizationId) => (await getLocalSubscription(organizationId))?.status ?? null;
+
+/**
+ * @desc Public read for other modules: the organization's extras balance (meter units).
+ * @param {String} organizationId - The organization ID
+ * @returns {Promise<number>} Current extras balance
+ */
+const getExtrasBalance = (organizationId) => BillingExtraBalanceRepository.getBalance(String(organizationId));
+
 export default {
+  getEffectivePlan,
+  getSubscriptionStatus,
+  getExtrasBalance,
   createCheckout,
   createExtrasCheckout,
   createPortalSession,

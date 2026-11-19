@@ -161,7 +161,7 @@ describe('Organizations integration tests:', () => {
 
     /**
      * Poll the org ledger until a signup_grant entry appears. #3952 moved the grant off a
-     * direct synchronous call onto the `organization.created` event (organizations/lib/events.js) —
+     * direct synchronous call onto the `organization.created` event (organizations/lib/organizations.events.js) —
      * billing's subscriber (billing.init.js) is fire-and-forget, so the signup response does not
      * await it; the credit lands shortly after, not necessarily before the HTTP response returns.
      * @param {string} orgId - Organization id whose ledger to poll.

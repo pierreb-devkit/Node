@@ -44,7 +44,7 @@ describe('BillingExtraService.refundPartial — integer-cents math:', () => {
     jest.unstable_mockModule('../../../config/index.js', () => ({ default: mockConfig }));
     jest.unstable_mockModule('../repositories/billing.extraBalance.repository.js', () => ({ default: mockRepository }));
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: { info: jest.fn(), error: jest.fn() } }));
-    jest.unstable_mockModule('../lib/events.js', () => ({ default: { emit: jest.fn() } }));
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({ default: { emit: jest.fn() } }));
 
     const mod = await import('../services/billing.extra.service.js');
     BillingExtraService = mod.default;

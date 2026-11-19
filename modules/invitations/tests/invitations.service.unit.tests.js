@@ -14,6 +14,8 @@ jest.unstable_mockModule('../repositories/invitations.repository.js', () => ({
     remove: jest.fn(),
     revoke: jest.fn(),
     get: jest.fn(),
+    findAccepted: jest.fn(),
+    findByAcceptedUserId: jest.fn(),
   },
 }));
 
@@ -54,7 +56,7 @@ jest.unstable_mockModule('../../../lib/services/analytics.js', () => ({
 const InvitationRepository = (await import('../repositories/invitations.repository.js')).default;
 const InvitationService = (await import('../services/invitations.service.js')).default;
 // Real events singleton — the service emits on it; we spy to assert the payload.
-const invitationEvents = (await import('../lib/events.js')).default;
+const invitationEvents = (await import('../lib/invitations.events.js')).default;
 // Mocked config singleton — mutated per-test for the #3986 lifetime-cap describe block
 // (mirrors how integration tests flip config.sign.up/cap, kept + restored per test).
 const config = (await import('../../../config/index.js')).default;
@@ -558,5 +560,19 @@ describe('InvitationService.resend', () => {
     InvitationRepository.get.mockResolvedValue(pending);
     mockMailer.sendMail.mockRejectedValue(transportError);
     await expect(InvitationService.resend('i1')).rejects.toThrow('SMTP timeout');
+  });
+});
+
+describe('InvitationService public reads (billing referral)', () => {
+  test('findAccepted delegates to the repository', async () => {
+    const rows = [{ _id: 'i1', invitedBy: 'u1', acceptedUserId: 'u2' }];
+    InvitationRepository.findAccepted.mockResolvedValue(rows);
+    await expect(InvitationService.findAccepted()).resolves.toBe(rows);
+  });
+
+  test('findByAcceptedUserId delegates to the repository', async () => {
+    InvitationRepository.findByAcceptedUserId.mockResolvedValue(null);
+    await expect(InvitationService.findByAcceptedUserId('u2')).resolves.toBeNull();
+    expect(InvitationRepository.findByAcceptedUserId).toHaveBeenCalledWith('u2');
   });
 });

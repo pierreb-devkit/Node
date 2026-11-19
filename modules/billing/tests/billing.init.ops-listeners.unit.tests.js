@@ -78,7 +78,7 @@ describe('billing.init ops-listeners unit tests:', () => {
     billingInit = mod.default;
 
     // Grab the real singleton (same module instance, not a mock) for emit calls.
-    const eventsModule = await import('../lib/events.js');
+    const eventsModule = await import('../lib/billing.events.js');
     realBillingEvents = eventsModule.default;
 
     // Run init to wire the listeners.

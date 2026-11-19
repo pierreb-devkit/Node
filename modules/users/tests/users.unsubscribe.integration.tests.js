@@ -25,7 +25,7 @@ describe('Unsubscribe integration tests:', () => {
     try {
       const init = await bootstrap();
       UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
-      ({ createUnsubscribeToken } = await import(path.resolve('./modules/users/utils/unsubscribeToken.js')));
+      ({ createUnsubscribeToken } = await import(path.resolve('./modules/users/lib/users.unsubscribeToken.js')));
       app = init.app;
       agent = request.agent(app);
     } catch (err) {

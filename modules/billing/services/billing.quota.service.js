@@ -23,10 +23,11 @@ import BillingUsageService from './billing.usage.service.js';
 import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
 import BillingPlanService from './billing.plan.service.js';
 
-import { activeStatuses, failClosedStatuses } from '../lib/constants.js';
+import { effectivePlanOf, failClosedStatuses } from '../lib/billing.statuses.js';
 import { getDefaultPlanId, getGracePeriodDays } from '../lib/billing.constants.js';
 import config from '../../../config/index.js';
 import AppError from '../../../lib/helpers/AppError.js';
+import isGlobalAdmin from '../../../lib/helpers/isGlobalAdmin.js';
 
 /**
  * @typedef {Object} QuotaDenyReason
@@ -64,7 +65,7 @@ import AppError from '../../../lib/helpers/AppError.js';
  */
 async function assertCanExecute({ orgId, organization, user, resource, action }) {
   // ── Admin bypass ──────────────────────────────────────────────────────────
-  if (user?.roles?.includes('admin')) return { degraded: false };
+  if (isGlobalAdmin(user)) return { degraded: false };
 
   // ── meterExempt bypass ────────────────────────────────────────────────────
   if (organization?.meterExempt === true) return { degraded: false };
@@ -170,9 +171,7 @@ async function assertCanExecute({ orgId, organization, user, resource, action })
 
   // ── Legacy mode ───────────────────────────────────────────────────────────
   const subscription = await SubscriptionRepository.findByOrganization(orgIdStr);
-  const plan = (!subscription || !activeStatuses.includes(subscription.status))
-    ? 'free'
-    : (subscription.plan || 'free');
+  const plan = effectivePlanOf(subscription);
 
   const quotas = config.billing?.quotas;
   const limit = quotas?.[plan]?.[resource]?.[action];

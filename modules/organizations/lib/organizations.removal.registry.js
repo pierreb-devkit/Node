@@ -1,5 +1,5 @@
 /**
- * @module organizations/lib/orgRemoval.registry
+ * @module organizations/lib/organizations.removal.registry
  * @description Subscriber registry for organization-removal cleanup.
  *   Optional modules register a handler at load time via `onOrganizationRemoved`;
  *   `runOrganizationRemovedHandlers` runs every handler sequentially, ISOLATING each —

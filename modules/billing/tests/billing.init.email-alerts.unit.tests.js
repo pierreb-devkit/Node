@@ -10,7 +10,7 @@ import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globa
 describe('billing.email setupBillingEmails listeners:', () => {
   let setupBillingEmails;
   let mockMailer;
-  let mockMembershipRepository;
+  let mockMembershipService;
   let mockBillingEvents;
   let mockConfig;
   let mockLogger;
@@ -42,8 +42,8 @@ describe('billing.email setupBillingEmails listeners:', () => {
       getBrand: jest.fn().mockReturnValue({ name: 'MyApp', contact: 'support@myapp.example.com' }),
     };
 
-    mockMembershipRepository = {
-      list: jest.fn().mockResolvedValue([
+    mockMembershipService = {
+      listActiveByRoles: jest.fn().mockResolvedValue([
         { userId: { email: 'owner@test.com' } },
       ]),
     };
@@ -79,16 +79,16 @@ describe('billing.email setupBillingEmails listeners:', () => {
       default: mockGetBaseUrl,
     }));
 
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: mockBillingEvents,
     }));
 
-    // Relative path matches the import in billing.email.js
-    jest.unstable_mockModule('../../organizations/repositories/organizations.membership.repository.js', () => ({
-      default: mockMembershipRepository,
+    // Relative path matches the import in billing.email.js (the organizations membership service)
+    jest.unstable_mockModule('../../organizations/services/organizations.membership.service.js', () => ({
+      default: mockMembershipService,
     }));
 
-    jest.unstable_mockModule('../../organizations/lib/constants.js', () => ({
+    jest.unstable_mockModule('../../organizations/lib/organizations.constants.js', () => ({
       MEMBERSHIP_ROLES: { OWNER: 'owner', ADMIN: 'admin', MEMBER: 'member' },
       MEMBERSHIP_STATUSES: { ACTIVE: 'active', PENDING: 'pending' },
     }));
@@ -122,9 +122,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
       // Promise resolution: allow microtasks to settle
       await new Promise((r) => setImmediate(r));
 
-      expect(mockMembershipRepository.list).toHaveBeenCalledWith(
-        expect.objectContaining({ organizationId: orgId }),
-      );
+      expect(mockMembershipService.listActiveByRoles).toHaveBeenCalledWith(orgId, expect.any(Array));
       expect(mockMailer.sendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: 'owner@test.com',
@@ -223,7 +221,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
     });
 
     test('skips email when no owner/admin emails found', async () => {
-      mockMembershipRepository.list.mockResolvedValue([]);
+      mockMembershipService.listActiveByRoles.mockResolvedValue([]);
 
       listeners['meter.threshold_crossed']({
         organizationId: orgId,
@@ -239,7 +237,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
     });
 
     test('logs warn and skips email when membership lookup fails', async () => {
-      mockMembershipRepository.list.mockRejectedValue(new Error('DB error'));
+      mockMembershipService.listActiveByRoles.mockRejectedValue(new Error('DB error'));
 
       // Should not throw
       expect(() =>
@@ -285,7 +283,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
     });
 
     test('sends email to multiple owner/admin addresses', async () => {
-      mockMembershipRepository.list.mockResolvedValue([
+      mockMembershipService.listActiveByRoles.mockResolvedValue([
         { userId: { email: 'owner@test.com' } },
         { userId: { email: 'admin@test.com' } },
       ]);
@@ -304,7 +302,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
     });
 
     test('skips memberships with missing email', async () => {
-      mockMembershipRepository.list.mockResolvedValue([
+      mockMembershipService.listActiveByRoles.mockResolvedValue([
         { userId: null },
         { userId: { email: null } },
         { userId: { email: 'valid@test.com' } },
@@ -380,9 +378,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
 
       await new Promise((r) => setImmediate(r));
 
-      expect(mockMembershipRepository.list).toHaveBeenCalledWith(
-        expect.objectContaining({ organizationId: orgId }),
-      );
+      expect(mockMembershipService.listActiveByRoles).toHaveBeenCalledWith(orgId, expect.any(Array));
       expect(mockMailer.sendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: 'owner@test.com',
@@ -474,7 +470,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
     });
 
     test('skips email when no owner/admin emails found', async () => {
-      mockMembershipRepository.list.mockResolvedValue([]);
+      mockMembershipService.listActiveByRoles.mockResolvedValue([]);
 
       listeners['billing.extras.balance_threshold_crossed']({
         organizationId: orgId,
@@ -553,9 +549,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
 
       await new Promise((r) => setImmediate(r));
 
-      expect(mockMembershipRepository.list).toHaveBeenCalledWith(
-        expect.objectContaining({ organizationId: orgId }),
-      );
+      expect(mockMembershipService.listActiveByRoles).toHaveBeenCalledWith(orgId, expect.any(Array));
       expect(mockMailer.sendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: 'owner@test.com',
@@ -588,7 +582,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
     });
 
     test('skips email when no owner/admin emails found', async () => {
-      mockMembershipRepository.list.mockResolvedValue([]);
+      mockMembershipService.listActiveByRoles.mockResolvedValue([]);
 
       listeners['payment.failed']({ organizationId: orgId });
 
@@ -598,7 +592,7 @@ describe('billing.email setupBillingEmails listeners:', () => {
     });
 
     test('logs warn and skips email when membership lookup fails', async () => {
-      mockMembershipRepository.list.mockRejectedValue(new Error('DB error'));
+      mockMembershipService.listActiveByRoles.mockRejectedValue(new Error('DB error'));
 
       expect(() => listeners['payment.failed']({ organizationId: orgId })).not.toThrow();
 

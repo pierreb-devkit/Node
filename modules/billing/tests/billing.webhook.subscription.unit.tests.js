@@ -12,7 +12,7 @@ import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globa
 describe('Billing webhook subscription unit tests:', () => {
   let BillingWebhookService;
   let mockSubscriptionRepository;
-  let mockOrganizationRepository;
+  let mockOrganizationsService;
   let mockResetService;
   let mockEvents;
   let mockStripe;
@@ -32,7 +32,7 @@ describe('Billing webhook subscription unit tests:', () => {
       updateIfEventNewer: jest.fn().mockResolvedValue({ _id: subId }),
     };
 
-    mockOrganizationRepository = {
+    mockOrganizationsService = {
       setPlan: jest.fn().mockResolvedValue({}),
     };
 
@@ -54,8 +54,8 @@ describe('Billing webhook subscription unit tests:', () => {
       },
     }));
 
-    jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
-      default: mockOrganizationRepository,
+    jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({
+      default: mockOrganizationsService,
     }));
 
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
@@ -70,11 +70,11 @@ describe('Billing webhook subscription unit tests:', () => {
       subscriptions: { retrieve: jest.fn() },
     };
 
-    jest.unstable_mockModule('../lib/stripe.js', () => ({
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({
       default: jest.fn(() => mockStripe),
     }));
 
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: mockEvents,
     }));
 
@@ -589,7 +589,7 @@ describe('Billing webhook subscription unit tests:', () => {
         'invoice',
         { status: { $ne: 'canceled' } },
       );
-      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
+      expect(mockOrganizationsService.setPlan).toHaveBeenCalledWith(orgId, 'pro');
     });
 
     test('V8 C1 — Stripe re-fetch failure: falls back gracefully, does not restore plan', async () => {
@@ -631,7 +631,7 @@ describe('Billing webhook subscription unit tests:', () => {
       mockStripe.subscriptions.retrieve.mockResolvedValue({
         items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
       });
-      mockOrganizationRepository.setPlan.mockRejectedValue(new Error('DB write failed'));
+      mockOrganizationsService.setPlan.mockRejectedValue(new Error('DB write failed'));
 
       // The logger mock is registered in beforeEach via jest.unstable_mockModule.
       // Import it here (after BillingWebhookService) to get the same mocked instance
@@ -665,7 +665,7 @@ describe('Billing webhook subscription unit tests:', () => {
         items: { data: [{ price: { metadata: { planId: 'pro' } } }] },
       });
       // Make syncOrganizationPlan throw so we enter the syncErr catch
-      mockOrganizationRepository.setPlan.mockRejectedValue(new Error('DB write failed'));
+      mockOrganizationsService.setPlan.mockRejectedValue(new Error('DB write failed'));
       // Make billingEvents.emit throw so we enter the inner evtErr catch
       mockEvents.emit.mockImplementation(() => { throw new Error('listener crash'); });
 
@@ -735,7 +735,7 @@ describe('Billing webhook subscription unit tests:', () => {
         'invoice',
         { status: { $ne: 'canceled' } },
       );
-      expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'pro');
+      expect(mockOrganizationsService.setPlan).toHaveBeenCalledWith(orgId, 'pro');
       expect(mockEvents.emit).toHaveBeenCalledWith(
         'billing.webhook.plan_unresolved',
         expect.objectContaining({ organizationId: orgId, retainedPlan: 'pro', hadKnownPlan: true }),

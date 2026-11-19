@@ -5,6 +5,16 @@
 export const activeStatuses = ['active', 'trialing'];
 
 /**
+ * The one rule for the plan an organization is entitled to: the subscription's plan
+ * while its status is active or trialing, 'free' otherwise (no subscription, no plan,
+ * or any other status).
+ * @param {{ status?: string, plan?: string }|null|undefined} subscription - Local subscription document.
+ * @returns {string} The effective plan id.
+ */
+export const effectivePlanOf = (subscription) =>
+  (!subscription || !activeStatuses.includes(subscription.status) ? 'free' : subscription.plan || 'free');
+
+/**
  * Stripe subscription statuses that fail closed — billed and gated as if the
  * organization were on the default (free) plan. Shared by billing.quota.service.js
  * (the admission gate) and billing.usage.service.js (the meter) so the two

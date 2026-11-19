@@ -4,8 +4,8 @@
 import passport from 'passport';
 import AppleStrategy from 'passport-apple';
 
-import config from '../../../../config/index.js';
-import auth from '../../controllers/auth.controller.js';
+import config from '../../../config/index.js';
+import auth from '../controllers/auth.controller.js';
 
 const callbackURL = `${config.api.protocol}://${config.api.host}${config.api.port ? ':' : ''}${config.api.port ? config.api.port : ''}/${
   config.api.base

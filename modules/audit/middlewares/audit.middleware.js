@@ -4,6 +4,7 @@
 import AuditService from '../services/audit.service.js';
 import logger from '../../../lib/services/logger.js';
 import config from '../../../config/index.js';
+import { isObjectId } from '../../../lib/helpers/zod.js';
 
 /**
  * Default route prefixes to skip when auto-capturing audit events.
@@ -11,12 +12,6 @@ import config from '../../../config/index.js';
  * @type {string[]}
  */
 const SKIP_PREFIXES = ['/public', '/favicon', '/api/health'];
-
-/**
- * Regex to match a 24-hex-char MongoDB ObjectId.
- * @type {RegExp}
- */
-const OBJECT_ID_RE = /^[0-9a-fA-F]{24}$/;
 
 /**
  * Derive a human-readable action from the Express route path.
@@ -69,7 +64,7 @@ const deriveTargetType = (routePath, baseUrl) => {
 const deriveTargetId = (params) => {
   if (!params) return '';
   for (const value of Object.values(params)) {
-    if (typeof value === 'string' && OBJECT_ID_RE.test(value)) return value;
+    if (typeof value === 'string' && isObjectId(value)) return value;
   }
   return '';
 };

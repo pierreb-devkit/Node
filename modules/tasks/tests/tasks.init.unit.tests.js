@@ -6,7 +6,7 @@ import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 const mockOnOrganizationRemoved = jest.fn();
 const mockDeleteMany = jest.fn().mockResolvedValue({ deletedCount: 0 });
 
-jest.unstable_mockModule('../../organizations/lib/orgRemoval.registry.js', () => ({
+jest.unstable_mockModule('../../organizations/lib/organizations.removal.registry.js', () => ({
   onOrganizationRemoved: mockOnOrganizationRemoved,
 }));
 

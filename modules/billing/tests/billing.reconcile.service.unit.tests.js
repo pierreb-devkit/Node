@@ -91,8 +91,8 @@ describe('BillingReconcileService.runReconciliation unit tests:', () => {
 
     jest.unstable_mockModule('../../../config/index.js', () => ({ default: mockConfig }));
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mockLogger }));
-    jest.unstable_mockModule('../lib/stripe.js', () => ({ default: mockGetStripe }));
-    jest.unstable_mockModule('../lib/events.js', () => ({ default: mockEvents }));
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({ default: mockGetStripe }));
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({ default: mockEvents }));
     jest.unstable_mockModule('../lib/billing.isoWeek.js', () => ({
       currentWeekKey: jest.fn().mockReturnValue('2026-W18'),
       weekStartDate: jest.fn().mockReturnValue(new Date('2026-04-28T00:00:00.000Z')),

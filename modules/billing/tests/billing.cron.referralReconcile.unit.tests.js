@@ -129,7 +129,7 @@ describe('billing.referralReconcile cron — logic:', () => {
       },
     }));
 
-    jest.unstable_mockModule('../../invitations/repositories/invitations.repository.js', () => ({
+    jest.unstable_mockModule('../../invitations/services/invitations.service.js', () => ({
       default: {
         findAccepted: jest.fn().mockResolvedValue([]),
       },
@@ -145,7 +145,7 @@ describe('billing.referralReconcile cron — logic:', () => {
     const [serviceMod, repoMod, invitationMod, userMod] = await Promise.all([
       import('../services/billing.referral.service.js'),
       import('../repositories/billing.extraBalance.repository.js'),
-      import('../../invitations/repositories/invitations.repository.js'),
+      import('../../invitations/services/invitations.service.js'),
       import('../../users/services/users.service.js'),
     ]);
     UserService = userMod.default;

@@ -30,7 +30,7 @@ jest.unstable_mockModule('../services/invitations.service.js', () => ({ default:
 jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mockLogger }));
 
 const Eligibility = (await import('../../auth/services/auth.eligibility.js')).default;
-const invitationEvents = (await import('../lib/events.js')).default;
+const invitationEvents = (await import('../lib/invitations.events.js')).default;
 const init = (await import('../invitations.init.js')).default;
 
 beforeEach(async () => {

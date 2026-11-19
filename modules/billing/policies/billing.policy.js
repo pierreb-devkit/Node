@@ -1,7 +1,7 @@
 /**
  * Billing ability definitions for CASL document-level authorization.
  */
-import { MEMBERSHIP_ROLES } from '../../organizations/lib/constants.js';
+import { MEMBERSHIP_ROLES } from '../../organizations/lib/organizations.constants.js';
 
 /** Membership roles allowed to pay for the organization (checkout, extras, Stripe portal). */
 const BILLING_MANAGER_ROLES = [MEMBERSHIP_ROLES.OWNER, MEMBERSHIP_ROLES.ADMIN];

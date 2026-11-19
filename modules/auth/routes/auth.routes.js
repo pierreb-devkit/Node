@@ -5,6 +5,7 @@ import passport from 'passport';
 
 import limiters from '../../../lib/middlewares/rateLimiter.js';
 import model from '../../../lib/middlewares/model.js';
+import policy from '../../../lib/middlewares/policy.js';
 import UsersSchema from '../../users/models/users.schema.js';
 import auth from '../controllers/auth.controller.js';
 import authPassword from '../controllers/auth.password.controller.js';
@@ -37,6 +38,12 @@ export default (app) => {
   app.route('/api/auth/forgot').post(authLimiter, model.isValid(UsersSchema.PasswordForgot), authPassword.forgot);
   app.route('/api/auth/reset/:token').get(authLimiter, authPassword.validateResetToken);
   app.route('/api/auth/reset').post(authLimiter, model.isValid(UsersSchema.PasswordReset), authPassword.reset);
+
+  // Password change for the signed-in user. Owned by auth; the path stays under
+  // /api/users and its CASL subject (UserAccount) is registered by the users policy.
+  app
+    .route('/api/users/password')
+    .post(passport.authenticate('jwt', { session: false }), policy.isAllowed, model.isValid(UsersSchema.PasswordUpdate), authPassword.updatePassword);
 
   // Setting up the users authentication api
   // Validate signup against the restricted, `.strict()` SignupUser schema (NOT the full

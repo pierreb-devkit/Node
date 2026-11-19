@@ -3,7 +3,7 @@
  */
 import passport from 'passport';
 
-import multer from '../../../lib/services/multer.js';
+import multer from '../../uploads/middlewares/uploads.multer.js';
 import model from '../../../lib/middlewares/model.js';
 import config from '../../../config/index.js';
 import policy from '../../../lib/middlewares/policy.js';
@@ -11,7 +11,6 @@ import limiters from '../../../lib/middlewares/rateLimiter.js';
 import usersSchema from '../models/users.schema.js';
 import users from '../controllers/users.account.controller.js';
 import usersImage from '../controllers/users.images.controller.js';
-import authPassword from '../../auth/controllers/auth.password.controller.js';
 
 export default (app) => {
   app.route('/api/users/stats').all(policy.isAllowed).get(users.stats);
@@ -32,10 +31,6 @@ export default (app) => {
     .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
     .put(model.isValid(usersSchema.UserUpdate), users.update)
     .delete(users.remove);
-
-  app
-    .route('/api/users/password')
-    .post(passport.authenticate('jwt', { session: false }), policy.isAllowed, model.isValid(usersSchema.PasswordUpdate), authPassword.updatePassword);
 
   app
     .route('/api/users/avatar')

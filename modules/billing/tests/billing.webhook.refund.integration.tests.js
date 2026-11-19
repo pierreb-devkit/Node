@@ -75,7 +75,7 @@ describe('Billing webhook refund integration tests:', () => {
       updateIfEventNewer: jest.fn().mockResolvedValue(null),
     };
 
-    jest.unstable_mockModule('../lib/stripe.js', () => ({ default: mockGetStripe }));
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({ default: mockGetStripe }));
 
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
       default: mockExtraService,
@@ -96,7 +96,7 @@ describe('Billing webhook refund integration tests:', () => {
       },
     }));
 
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: mockEvents,
     }));
 

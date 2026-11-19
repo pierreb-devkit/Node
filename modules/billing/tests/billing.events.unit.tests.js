@@ -54,7 +54,7 @@ describe('Billing plan.changed event unit tests:', () => {
     // Import service and events from the same module context
     const mod = await import('../services/billing.webhook.service.js');
     BillingWebhookService = mod.default;
-    const eventsModule = await import('../lib/events.js');
+    const eventsModule = await import('../lib/billing.events.js');
     billingEvents = eventsModule.default;
   });
 

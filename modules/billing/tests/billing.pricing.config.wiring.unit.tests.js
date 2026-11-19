@@ -1,7 +1,7 @@
 import { describe, test, expect } from '@jest/globals';
-import defaults from '../../../config/defaults/development.config.js';
+import defaults from '../config/billing.development.config.js';
 
-describe('config.billing.pricing wiring (development.config.js):', () => {
+describe('config.billing.pricing wiring (billing.development.config.js):', () => {
   test('exposes PRICING_VERSION, PLAN_QUOTAS, RATIOS, STRIPE_PRICE_CENTS, STRIPE_PACK_CENTS', () => {
     expect(defaults.billing).toBeDefined();
     expect(defaults.billing.pricing).toBeDefined();

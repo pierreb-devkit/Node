@@ -4,14 +4,15 @@
 import crypto from 'crypto';
 
 import InvitationRepository from '../repositories/invitations.repository.js';
-import { DEFAULT_INVITE_EXPIRES_IN_DAYS, STALE_CLAIM_MINUTES } from '../lib/constants.js';
+import { DEFAULT_INVITE_EXPIRES_IN_DAYS, STALE_CLAIM_MINUTES } from '../lib/invitations.constants.js';
 import UserService from '../../users/services/users.service.js';
-import invitationEvents from '../lib/events.js';
+import invitationEvents from '../lib/invitations.events.js';
 import config from '../../../config/index.js';
 import mails from '../../../lib/helpers/mailer/index.js';
 import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
 import logger from '../../../lib/services/logger.js';
 import AppError from '../../../lib/helpers/AppError.js';
+import isGlobalAdmin from '../../../lib/helpers/isGlobalAdmin.js';
 import AnalyticsService from '../../../lib/services/analytics.js';
 
 /**
@@ -384,7 +385,7 @@ const list = (user) => {
   // not the authorization itself (CASL is). It is what keeps a non-admin scoped to their own
   // rows once the referral phase widens the Invitation abilities — any such widening MUST be
   // reviewed against this seam so the unscoped branch is never reachable by a regular user.
-  if (Array.isArray(user?.roles) && user.roles.includes('admin')) return InvitationRepository.list();
+  if (isGlobalAdmin(user)) return InvitationRepository.list();
   const userId = user?.id || user?._id;
   if (!userId) return Promise.resolve([]);
   return InvitationRepository.list({ invitedBy: userId });
@@ -396,6 +397,21 @@ const list = (user) => {
  * @returns {Promise<Object|null>}
  */
 const get = (id) => InvitationRepository.get(id);
+
+/**
+ * @desc Public read for other modules (billing referral): every accepted invitation,
+ * lean, `{ _id, invitedBy, acceptedUserId }` only.
+ * @returns {Promise<Array<Object>>}
+ */
+const findAccepted = () => InvitationRepository.findAccepted();
+
+/**
+ * @desc Public read for other modules (billing referral): the accepted invitation a
+ * user consumed, lean, `{ _id, invitedBy, acceptedUserId }` only.
+ * @param {String} userId - the accepted (invited) user's id
+ * @returns {Promise<Object|null>}
+ */
+const findByAcceptedUserId = (userId) => InvitationRepository.findByAcceptedUserId(userId);
 
 /**
  * @desc E8 — soft-delete (revoke) an invitation by id (status:'revoked' + revokedAt,
@@ -456,4 +472,6 @@ export default {
   get,
   revoke,
   resend,
+  findAccepted,
+  findByAcceptedUserId,
 };

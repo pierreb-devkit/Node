@@ -5,7 +5,7 @@
  */
 import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 import config from '../../../config/index.js';
-import { removeSensitive as realRemoveSensitive } from '../utils/sanitizeUser.js';
+import { removeSensitive as realRemoveSensitive } from '../lib/users.sanitizeUser.js';
 
 // ── mock UserService ──────────────────────────────────────────────────────────
 const mockRemoveSensitive = jest.fn();

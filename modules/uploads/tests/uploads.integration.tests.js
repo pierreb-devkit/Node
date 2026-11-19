@@ -31,7 +31,7 @@ describe('Uploads integration tests:', () => {
       UploadsService = (await import(path.resolve('./modules/uploads/services/uploads.service.js'))).default;
       UploadRepository = (await import(path.resolve('./modules/uploads/repositories/uploads.repository.js'))).default;
       mongoose = (await import('mongoose')).default;
-      gridfs = (await import(path.resolve('./lib/services/gridfs.js'))).default;
+      gridfs = (await import(path.resolve('./modules/uploads/repositories/uploads.gridfs.repository.js'))).default;
       agent = request.agent(init.app);
     } catch (err) {
       console.log(err);

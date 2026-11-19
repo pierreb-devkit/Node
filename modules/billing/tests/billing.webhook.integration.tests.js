@@ -67,7 +67,7 @@ describe('Billing webhook integration tests:', () => {
       default: { creditPack: jest.fn(), refundPartial: jest.fn() },
     }));
 
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: { emit: jest.fn() },
     }));
 
@@ -77,7 +77,7 @@ describe('Billing webhook integration tests:', () => {
 
     // Mock Stripe so handleCheckoutCompleted can call stripe.subscriptions.retrieve.
     // Default: return 'active' so normal flow proceeds; override per-test as needed.
-    jest.unstable_mockModule('../lib/stripe.js', () => ({
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({
       default: jest.fn(() => ({
         subscriptions: {
           retrieve: jest.fn().mockResolvedValue({ status: 'active' }),
@@ -301,7 +301,7 @@ describe('Billing webhook integration tests:', () => {
       // Existing paid org — an unrecognized metadata.planId is unresolvable, must not downgrade.
       const existing = { _id: subId, organization: orgId, plan: 'starter' };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      const { default: billingEvents } = await import('../lib/events.js');
+      const { default: billingEvents } = await import('../lib/billing.events.js');
 
       await WebhookService.handleSubscriptionUpdated(
         {
@@ -335,7 +335,7 @@ describe('Billing webhook integration tests:', () => {
     test('should downgrade plan to free and emit billing.subscription.expired on incomplete_expired', async () => {
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      const { default: billingEvents } = await import('../lib/events.js');
+      const { default: billingEvents } = await import('../lib/billing.events.js');
 
       await WebhookService.handleSubscriptionUpdated(
         { id: 'sub_456', status: 'incomplete_expired', items: { data: [] } },
@@ -359,7 +359,7 @@ describe('Billing webhook integration tests:', () => {
     test('should not throw when billing.subscription.expired listener throws', async () => {
       const existing = { _id: subId, organization: orgId };
       mockSubscriptionRepository.findByStripeSubscriptionId.mockResolvedValue(existing);
-      const { default: billingEvents } = await import('../lib/events.js');
+      const { default: billingEvents } = await import('../lib/billing.events.js');
       billingEvents.emit.mockImplementationOnce(() => { throw new Error('listener_error'); });
 
       await expect(
@@ -660,7 +660,7 @@ describe('Billing webhook integration tests:', () => {
     const makeEvent = (overrides = {}) => ({ id: 'evt_reinstated', data: {}, ...overrides });
 
     test('should emit billing.dispute.reinstated event on valid dispute', async () => {
-      const { default: billingEvents } = await import('../lib/events.js');
+      const { default: billingEvents } = await import('../lib/billing.events.js');
 
       await WebhookService.handleChargeDisputeFundsReinstated(
         { id: 'dp_123', charge: 'ch_456', amount: 5000 },
@@ -676,7 +676,7 @@ describe('Billing webhook integration tests:', () => {
     });
 
     test('should skip emit when disputeId is missing', async () => {
-      const { default: billingEvents } = await import('../lib/events.js');
+      const { default: billingEvents } = await import('../lib/billing.events.js');
 
       await WebhookService.handleChargeDisputeFundsReinstated(
         { charge: 'ch_456', amount: 5000 },
@@ -687,7 +687,7 @@ describe('Billing webhook integration tests:', () => {
     });
 
     test('should skip emit when chargeId is missing', async () => {
-      const { default: billingEvents } = await import('../lib/events.js');
+      const { default: billingEvents } = await import('../lib/billing.events.js');
 
       await WebhookService.handleChargeDisputeFundsReinstated(
         { id: 'dp_123', amount: 5000 },
@@ -698,7 +698,7 @@ describe('Billing webhook integration tests:', () => {
     });
 
     test('should not throw when billing.dispute.reinstated listener throws (non-fatal)', async () => {
-      const { default: billingEvents } = await import('../lib/events.js');
+      const { default: billingEvents } = await import('../lib/billing.events.js');
       billingEvents.emit.mockImplementationOnce(() => { throw new Error('listener_error'); });
 
       await expect(

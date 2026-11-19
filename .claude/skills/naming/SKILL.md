@@ -21,7 +21,9 @@ Audit or apply the project's file and folder naming conventions.
 | --------------- | ----------- | --------------------------------- |
 | Top-level dirs  | kebab-case  | `lib/`, `modules/`, `config/`     |
 | Module dirs     | kebab-case  | `modules/tasks/`, `modules/home/` |
-| Module sub-dirs | fixed names | `controllers/`, `services/`, `repositories/`, `models/`, `policies/`, `routes/`, `tests/`, `config/`, `doc/` |
+| Module sub-dirs | fixed names | `controllers/`, `services/`, `repositories/`, `models/`, `policies/`, `routes/`, `middlewares/`, `crons/`, `migrations/`, `lib/`, `tests/`, `config/`, `doc/` (+ `strategies/` in `auth`) |
+
+**Module helpers live in `lib/`** — constants, events, pure functions, small adapters. Never `helpers/` or `utils/` inside a module (the root `lib/helpers/` is the stack-wide shared folder, not a module one).
 
 ### Files
 
@@ -36,7 +38,13 @@ Audit or apply the project's file and folder naming conventions.
 | Policy          | `{module}[.{name}].policy.js`         | `tasks.policy.js`                                          |
 | Router          | `{module}.routes.js`                  | `tasks.routes.js`                                          |
 | Test            | `{module}.{type}.tests.js`            | `tasks.integration.tests.js`, `tasks.unit.tests.js`        |
+| Middleware      | `{module}[.{name}].js`                | `billing.requirePlan.js`, `uploads.multer.js`              |
+| Module helper   | `{module}.{name}.js` (in `lib/`)      | `billing.events.js`, `organizations.constants.js`          |
+| Strategy        | `{module}.{name}.strategy.js`         | `auth.jwt.strategy.js`                                     |
+| Migration       | `YYYYMMDDHHMMSS-{kebab-name}.js`      | `20260610120000-users-email-ci-unique-index.js`            |
 | Config          | `{name}.js`                           | `app.js`, `default.js`                                     |
+
+**Every source file inside a module starts with the module name** (`{module}.`; tests follow the Test row), helpers and models included (`core.migration.model.mongoose.js`, not `migration.model.mongoose.js`). The one exception is `migrations/`: a migration is recorded by its path, so it is never renamed or moved once shipped.
 
 > `[.{name}]` is optional — the reference `tasks` module uses the short form (e.g., `tasks.controller.js`, `tasks.service.js`).
 

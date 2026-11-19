@@ -33,7 +33,7 @@ This repository is open source. **Never reference downstream consumers** — pro
 
 ## Identity (auth + organizations)
 
-- `modules/auth/` owns sign-in/sign-up; Passport strategies live in `modules/auth/strategies/local/` (local, jwt, google, apple). `modules/auth/strategies/clerk/` is a no-op placeholder.
+- `modules/auth/` owns sign-in/sign-up; Passport strategies live in `modules/auth/strategies/` as `auth.{local,jwt,google,apple}.strategy.js`. `auth.clerk.strategy.js` is a no-op placeholder.
 - `modules/organizations/` owns organizations and memberships.
 - Membership roles: `owner`, `admin`, `member`.
 - `resolveOrganization` middleware loads org + membership onto `req.organization` / `req.membership`.

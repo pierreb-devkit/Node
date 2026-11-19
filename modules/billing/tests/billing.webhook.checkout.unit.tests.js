@@ -12,7 +12,7 @@ import { jest, describe, test, beforeEach, afterEach, expect } from '@jest/globa
 describe('Billing webhook checkout unit tests:', () => {
   let BillingWebhookService;
   let mockSubscriptionRepository;
-  let mockOrganizationRepository;
+  let mockOrganizationsService;
   let mockExtraService;
   let mockResetService;
   let mockStripeInstance;
@@ -33,7 +33,7 @@ describe('Billing webhook checkout unit tests:', () => {
       updateIfEventNewer: jest.fn().mockResolvedValue({ _id: subId }),
     };
 
-    mockOrganizationRepository = {
+    mockOrganizationsService = {
       setPlan: jest.fn().mockResolvedValue({}),
     };
 
@@ -63,8 +63,8 @@ describe('Billing webhook checkout unit tests:', () => {
       },
     }));
 
-    jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
-      default: mockOrganizationRepository,
+    jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({
+      default: mockOrganizationsService,
     }));
 
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
@@ -79,11 +79,11 @@ describe('Billing webhook checkout unit tests:', () => {
       default: mockResetService,
     }));
 
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: { emit: jest.fn() },
     }));
 
-    jest.unstable_mockModule('../lib/stripe.js', () => ({
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({
       default: jest.fn(() => mockStripeInstance),
     }));
 
@@ -489,15 +489,15 @@ describe('Billing webhook checkout unit tests:', () => {
       // The billing.webhook.checkout.unit.tests.js mocks stripe.js at module level.
       // To test the getStripe()=null branch, we reload the module with a null-returning mock.
       jest.resetModules();
-      jest.unstable_mockModule('../lib/stripe.js', () => ({ default: jest.fn(() => null) }));
+      jest.unstable_mockModule('../lib/billing.stripe.js', () => ({ default: jest.fn(() => null) }));
       jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
         default: mockSubscriptionRepository,
       }));
       jest.unstable_mockModule('../repositories/billing.processedStripeEvent.repository.js', () => ({
         default: { wasProcessed: jest.fn().mockResolvedValue(false), tryRecord: jest.fn().mockResolvedValue({ recorded: true }) },
       }));
-      jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
-        default: mockOrganizationRepository,
+      jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({
+        default: mockOrganizationsService,
       }));
       jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
         default: { creditPack: jest.fn(), refundPartial: jest.fn() },
@@ -505,7 +505,7 @@ describe('Billing webhook checkout unit tests:', () => {
       jest.unstable_mockModule('../services/billing.reset.service.js', () => ({
         default: { resetWeek: jest.fn() },
       }));
-      jest.unstable_mockModule('../lib/events.js', () => ({ default: { emit: jest.fn() } }));
+      jest.unstable_mockModule('../lib/billing.events.js', () => ({ default: { emit: jest.fn() } }));
       jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
         default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
       }));
@@ -549,7 +549,7 @@ describe('Billing webhook checkout unit tests:', () => {
       );
 
       // Event was stale — org plan should not be synced
-      expect(mockOrganizationRepository.setPlan).not.toHaveBeenCalled();
+      expect(mockOrganizationsService.setPlan).not.toHaveBeenCalled();
     });
   });
 });

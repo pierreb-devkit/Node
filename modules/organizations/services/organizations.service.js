@@ -10,9 +10,10 @@ import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
 import OrganizationsRepository from '../repositories/organizations.repository.js';
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
 import UserService from '../../users/services/users.service.js';
-import { slugify, generateOrganizationSlug } from '../helpers/organizations.slug.js';
-import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../lib/constants.js';
-import organizationEvents from '../lib/events.js';
+import { slugify, generateOrganizationSlug } from '../lib/organizations.slug.js';
+import { uniqueSlug } from '../../../lib/helpers/slug.js';
+import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../lib/organizations.constants.js';
+import organizationEvents from '../lib/organizations.events.js';
 import { isPublicDomain, normalizeEmailDomain } from './organizations.domain.js';
 
 /**
@@ -34,13 +35,7 @@ const nameFromDomain = (domain) => {
  */
 const generateSlugFromDomain = async (domain) => {
   const base = slugify(domain.split('.')[0]);
-  let candidate = base;
-  let counter = 1;
-  while (await OrganizationsRepository.exists({ slug: candidate })) {
-    candidate = `${base}-${counter}`;
-    counter += 1;
-  }
-  return candidate;
+  return uniqueSlug(base, (slug) => OrganizationsRepository.exists({ slug }));
 };
 
 /**
@@ -101,7 +96,7 @@ const createOrganizationForUser = async ({ name, slug, domain, user, slugGenerat
       // Emitted outside the try/catch above so billing failure never triggers org/membership
       // rollback; the listener owns its own guard (never throws/rejects out). Fire-and-forget,
       // synchronous emit — this try/catch only guards a SYNCHRONOUS listener throw (mirrors
-      // emitProvisioned below / see ../lib/events.js).
+      // emitProvisioned below / see ../lib/organizations.events.js).
       try {
         organizationEvents.emit('organization.created', { orgId: organization._id.toString(), planId: 'free' });
       } catch (err) {
@@ -247,7 +242,7 @@ const handleSignupOrganization = async (user) => {
    * exit path that returns a real organization (fresh create AND the A4 convergence
    * retry; consumers must be idempotent, so a double-fire is harmless by design).
    * The try/catch only guards SYNCHRONOUS listener throws — `EventEmitter.emit` is
-   * synchronous; async listeners own their own guards (see ../lib/events.js).
+   * synchronous; async listeners own their own guards (see ../lib/organizations.events.js).
    * @param {Object} organization - The provisioned (or converged-to) organization document.
    * @returns {void}
    */

@@ -4,8 +4,8 @@
 import passport from 'passport';
 import { Strategy } from 'passport-local';
 
-import AppError from '../../../../lib/helpers/AppError.js';
-import AuthService from '../../services/auth.service.js';
+import AppError from '../../../lib/helpers/AppError.js';
+import AuthService from '../services/auth.service.js';
 
 export default () => {
   passport.use(

@@ -33,7 +33,7 @@ describe('Stripe client — API version pinned:', () => {
       default: { stripe: { secretKey: 'sk_test_pinned' } },
     }));
 
-    const mod = await import('../lib/stripe.js');
+    const mod = await import('../lib/billing.stripe.js');
     const getStripe = mod.default;
     getStripe(); // trigger instantiation
 
@@ -77,12 +77,12 @@ describe('handleSubscriptionUpdated — period fields from items.data[0]:', () =
     jest.unstable_mockModule('../repositories/billing.processedStripeEvent.repository.js', () => ({
       default: { tryRecord: jest.fn().mockResolvedValue({ recorded: true }), incrementAttempts: jest.fn(), markDeadLetter: jest.fn(), deleteByEventId: jest.fn() },
     }));
-    jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
+    jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({
       default: { setPlan: jest.fn().mockResolvedValue({}) },
     }));
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({ default: { creditPack: jest.fn(), refundPartial: jest.fn() } }));
     jest.unstable_mockModule('../services/billing.reset.service.js', () => ({ default: mockResetService }));
-    jest.unstable_mockModule('../lib/events.js', () => ({ default: { emit: jest.fn() } }));
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({ default: { emit: jest.fn() } }));
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: { info: jest.fn(), error: jest.fn(), warn: jest.fn() } }));
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: { billing: { plans: ['free', 'starter', 'pro', 'enterprise'], meterMode: true } },
@@ -193,7 +193,7 @@ describe('handleChargeRefunded — backfill resolver + unresolved alert:', () =>
     };
     mockGetStripe = jest.fn().mockReturnValue(mockStripeInstance);
 
-    jest.unstable_mockModule('../lib/stripe.js', () => ({ default: mockGetStripe }));
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({ default: mockGetStripe }));
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({ default: mockExtraService }));
     jest.unstable_mockModule('../services/billing.reset.service.js', () => ({ default: { resetWeek: jest.fn() } }));
     jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
@@ -211,7 +211,7 @@ describe('handleChargeRefunded — backfill resolver + unresolved alert:', () =>
         markDeadLetter: jest.fn(),
       },
     }));
-    jest.unstable_mockModule('../lib/events.js', () => ({ default: mockEvents }));
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({ default: mockEvents }));
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mockLogger }));
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: { billing: { plans: ['free', 'starter', 'pro', 'enterprise'] } },
@@ -371,7 +371,7 @@ describe('withIdempotency — replay-storm dead-letter protection:', () => {
       default: { resetWeek: jest.fn(), forceRotateForPlanChange: jest.fn() },
     }));
 
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: { emit: jest.fn() },
     }));
 
@@ -671,7 +671,7 @@ describe('BillingService.createExtrasCheckout — idempotency key:', () => {
       customers: { create: jest.fn().mockResolvedValue({ id: 'cus_test' }) },
     };
 
-    jest.unstable_mockModule('../lib/stripe.js', () => ({ default: jest.fn().mockReturnValue(mockStripeInstance) }));
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({ default: jest.fn().mockReturnValue(mockStripeInstance) }));
 
     jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
       default: {
@@ -801,7 +801,7 @@ describe('BillingService.createCheckout — server-side active-sub guard:', () =
       update: jest.fn(),
     };
 
-    jest.unstable_mockModule('../lib/stripe.js', () => ({ default: jest.fn().mockReturnValue(mockStripeInstance) }));
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({ default: jest.fn().mockReturnValue(mockStripeInstance) }));
     jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({ default: mockSubscriptionRepository }));
     jest.unstable_mockModule('../services/billing.plans.service.js', () => ({
       default: { getPlans: jest.fn().mockResolvedValue([{ planId: 'pro', stripePriceMonthly: priceId }]) },
@@ -925,14 +925,14 @@ describe('handleSubscriptionUpdated — plan.changed listener error swallow:', (
     jest.unstable_mockModule('../repositories/billing.processedStripeEvent.repository.js', () => ({
       default: { tryRecord: jest.fn().mockResolvedValue({ recorded: true }), incrementAttempts: jest.fn(), markDeadLetter: jest.fn(), deleteByEventId: jest.fn() },
     }));
-    jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
+    jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({
       default: { setPlan: jest.fn().mockResolvedValue({}) },
     }));
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({ default: { creditPack: jest.fn(), refundPartial: jest.fn() } }));
     jest.unstable_mockModule('../services/billing.reset.service.js', () => ({
       default: { resetWeek: jest.fn().mockResolvedValue({}), forceRotateForPlanChange: jest.fn().mockResolvedValue({}) },
     }));
-    jest.unstable_mockModule('../lib/events.js', () => ({ default: mockEvents }));
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({ default: mockEvents }));
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mockLogger }));
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: { billing: { plans: ['free', 'starter', 'pro', 'enterprise'], meterMode: true } },
@@ -1002,7 +1002,7 @@ describe('handleChargeRefunded — billing.refund.unresolved listener error swal
       }),
     };
 
-    jest.unstable_mockModule('../lib/stripe.js', () => ({ default: jest.fn().mockReturnValue(null) }));
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({ default: jest.fn().mockReturnValue(null) }));
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
       default: { creditPack: jest.fn(), refundPartial: jest.fn() },
     }));
@@ -1022,7 +1022,7 @@ describe('handleChargeRefunded — billing.refund.unresolved listener error swal
         markDeadLetter: jest.fn(),
       },
     }));
-    jest.unstable_mockModule('../lib/events.js', () => ({ default: mockEvents }));
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({ default: mockEvents }));
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mockLogger }));
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: { billing: { plans: ['free', 'starter', 'pro', 'enterprise'] } },
@@ -1068,7 +1068,7 @@ describe('handleChargeRefunded — billing.refund.unresolved listener error swal
 describe('handleCustomerDeleted — null out stripeCustomerId / subscription:', () => {
   let BillingWebhookService;
   let mockSubscriptionRepository;
-  let mockOrganizationRepository;
+  let mockOrganizationsService;
   let mockResetService;
   let mockLogger;
   let mockProcessedStripeEventRepository;
@@ -1096,13 +1096,13 @@ describe('handleCustomerDeleted — null out stripeCustomerId / subscription:', 
       update: jest.fn(),
       updateIfEventNewer: jest.fn(),
     };
-    mockOrganizationRepository = { setPlan: jest.fn().mockResolvedValue() };
+    mockOrganizationsService = { setPlan: jest.fn().mockResolvedValue() };
     mockResetService = {
       resetWeek: jest.fn(),
       forceRotateForPlanChange: jest.fn().mockResolvedValue(),
     };
 
-    jest.unstable_mockModule('../lib/stripe.js', () => ({ default: jest.fn().mockReturnValue(null) }));
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({ default: jest.fn().mockReturnValue(null) }));
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({
       default: { creditPack: jest.fn(), refundPartial: jest.fn() },
     }));
@@ -1113,10 +1113,10 @@ describe('handleCustomerDeleted — null out stripeCustomerId / subscription:', 
     jest.unstable_mockModule('../repositories/billing.processedStripeEvent.repository.js', () => ({
       default: mockProcessedStripeEventRepository,
     }));
-    jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
-      default: mockOrganizationRepository,
+    jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({
+      default: mockOrganizationsService,
     }));
-    jest.unstable_mockModule('../lib/events.js', () => ({ default: { emit: jest.fn() } }));
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({ default: { emit: jest.fn() } }));
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mockLogger }));
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: { billing: { plans: ['free', 'starter', 'pro', 'enterprise'] } },
@@ -1164,7 +1164,7 @@ describe('handleCustomerDeleted — null out stripeCustomerId / subscription:', 
       }),
       'subscription',
     );
-    expect(mockOrganizationRepository.setPlan).toHaveBeenCalledWith(orgId, 'free');
+    expect(mockOrganizationsService.setPlan).toHaveBeenCalledWith(orgId, 'free');
     expect(mockResetService.forceRotateForPlanChange).toHaveBeenCalledWith(orgId, { preserveUsage: false });
   });
 
@@ -1177,7 +1177,7 @@ describe('handleCustomerDeleted — null out stripeCustomerId / subscription:', 
     );
 
     expect(mockSubscriptionRepository.updateIfEventNewer).not.toHaveBeenCalled();
-    expect(mockOrganizationRepository.setPlan).not.toHaveBeenCalled();
+    expect(mockOrganizationsService.setPlan).not.toHaveBeenCalled();
     expect(mockResetService.forceRotateForPlanChange).not.toHaveBeenCalled();
   });
 
@@ -1196,7 +1196,7 @@ describe('handleCustomerDeleted — null out stripeCustomerId / subscription:', 
       '[billing.webhook] skipped stale event',
       expect.objectContaining({ eventId: 'evt_cd_stale' }),
     );
-    expect(mockOrganizationRepository.setPlan).not.toHaveBeenCalled();
+    expect(mockOrganizationsService.setPlan).not.toHaveBeenCalled();
     expect(mockResetService.forceRotateForPlanChange).not.toHaveBeenCalled();
   });
 
@@ -1295,7 +1295,7 @@ describe('handleChargeDisputeCreated — log + emit, no auto-debit:', () => {
     };
     mockGetStripe = jest.fn().mockReturnValue(mockStripeInstance);
 
-    jest.unstable_mockModule('../lib/stripe.js', () => ({ default: mockGetStripe }));
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({ default: mockGetStripe }));
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({ default: mockExtraService }));
     jest.unstable_mockModule('../services/billing.reset.service.js', () => ({ default: { resetWeek: jest.fn() } }));
     jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
@@ -1308,7 +1308,7 @@ describe('handleChargeDisputeCreated — log + emit, no auto-debit:', () => {
     jest.unstable_mockModule('../repositories/billing.processedStripeEvent.repository.js', () => ({
       default: mockProcessedStripeEventRepository,
     }));
-    jest.unstable_mockModule('../lib/events.js', () => ({ default: mockEvents }));
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({ default: mockEvents }));
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mockLogger }));
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: { billing: { plans: ['free', 'starter', 'pro', 'enterprise'] } },
@@ -1478,7 +1478,7 @@ describe('handleChargeDisputeFundsWithdrawn — dispute lost, debit ledger:', ()
     };
     mockGetStripe = jest.fn().mockReturnValue(mockStripeInstance);
 
-    jest.unstable_mockModule('../lib/stripe.js', () => ({ default: mockGetStripe }));
+    jest.unstable_mockModule('../lib/billing.stripe.js', () => ({ default: mockGetStripe }));
     jest.unstable_mockModule('../services/billing.extra.service.js', () => ({ default: mockExtraService }));
     jest.unstable_mockModule('../services/billing.reset.service.js', () => ({ default: { resetWeek: jest.fn() } }));
     jest.unstable_mockModule('../repositories/billing.subscription.repository.js', () => ({
@@ -1496,7 +1496,7 @@ describe('handleChargeDisputeFundsWithdrawn — dispute lost, debit ledger:', ()
         markDeadLetter: jest.fn(),
       },
     }));
-    jest.unstable_mockModule('../lib/events.js', () => ({ default: mockEvents }));
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({ default: mockEvents }));
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mockLogger }));
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: { billing: { plans: ['free', 'starter', 'pro', 'enterprise'] } },

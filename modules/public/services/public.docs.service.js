@@ -2,7 +2,7 @@
  * Module dependencies
  */
 import config from '../../../config/index.js';
-import docsTree from '../helpers/public.docs.tree.js';
+import docsTree from '../lib/public.docs.tree.js';
 import logger from '../../../lib/services/logger.js';
 
 /**

@@ -3,7 +3,7 @@
  */
 import { describe, test, expect } from '@jest/globals';
 
-import { encodeReferralCode, decodeReferralCode } from '../utils/referralCode.js';
+import { encodeReferralCode, decodeReferralCode } from '../lib/users.referralCode.js';
 
 /**
  * Unit tests — referralCode.js (#4212): the code is the user id encoded, derived not stored.

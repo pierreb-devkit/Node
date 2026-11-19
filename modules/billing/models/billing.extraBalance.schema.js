@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import { z } from 'zod';
+import { objectIdRegex } from '../../../lib/helpers/zod.js';
 
 import { GRANT_SOURCES, LEDGER_KINDS } from '../lib/billing.constants.js';
 
@@ -9,7 +10,6 @@ import { GRANT_SOURCES, LEDGER_KINDS } from '../lib/billing.constants.js';
  * BillingExtraBalance Zod schema — mirrors billing.extraBalance.model.mongoose.js
  */
 
-const objectIdRegex = /^[a-f\d]{24}$/i;
 
 /**
  * Ledger entry kinds enum — mirrors the Mongoose enum.

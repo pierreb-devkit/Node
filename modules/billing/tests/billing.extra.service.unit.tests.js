@@ -62,7 +62,7 @@ describe('BillingExtraService unit tests:', () => {
     }));
 
 
-    jest.unstable_mockModule('../lib/events.js', () => ({
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({
       default: { emit: jest.fn() },
     }));
 
@@ -120,7 +120,7 @@ describe('BillingExtraService unit tests:', () => {
 
       const result = await BillingExtraService.debit(orgId, 100000, 'ref_hist_123');
 
-      expect(mockRepository.debit).toHaveBeenCalledWith(orgId, 100000, 'ref_hist_123');
+      expect(mockRepository.debit).toHaveBeenCalledWith(orgId, 100000, 'ref_hist_123', { organizationExists: expect.any(Function) });
       expect(result.applied).toBe(true);
     });
 
@@ -155,8 +155,8 @@ describe('BillingExtraService unit tests:', () => {
       const result = await BillingExtraService.debit(orgId, 100000, 'ref_transient');
 
       expect(mockRepository.debit).toHaveBeenCalledTimes(2);
-      expect(mockRepository.debit).toHaveBeenNthCalledWith(1, orgId, 100000, 'ref_transient');
-      expect(mockRepository.debit).toHaveBeenNthCalledWith(2, orgId, 100000, 'ref_transient');
+      expect(mockRepository.debit).toHaveBeenNthCalledWith(1, orgId, 100000, 'ref_transient', { organizationExists: expect.any(Function) });
+      expect(mockRepository.debit).toHaveBeenNthCalledWith(2, orgId, 100000, 'ref_transient', { organizationExists: expect.any(Function) });
       expect(result.applied).toBe(true);
       expect(result.doc).toBe(doc);
     });
@@ -550,7 +550,7 @@ describe('BillingExtraService refundPartial — sentinel listener-error swallow:
       },
     }));
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mockLogger }));
-    jest.unstable_mockModule('../lib/events.js', () => ({ default: mockEvents }));
+    jest.unstable_mockModule('../lib/billing.events.js', () => ({ default: mockEvents }));
 
     const mod = await import('../services/billing.extra.service.js');
     BillingExtraService = mod.default;

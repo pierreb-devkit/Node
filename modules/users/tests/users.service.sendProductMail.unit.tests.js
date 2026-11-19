@@ -50,7 +50,7 @@ jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
   default: { info: jest.fn(), warn: mockLoggerWarn, error: jest.fn(), debug: jest.fn() },
 }));
 
-jest.unstable_mockModule('../utils/sanitizeUser.js', () => ({
+jest.unstable_mockModule('../lib/users.sanitizeUser.js', () => ({
   removeSensitive: jest.fn((u) => u),
 }));
 
@@ -89,13 +89,13 @@ jest.unstable_mockModule('../../organizations/repositories/organizations.members
   },
 }));
 
-jest.unstable_mockModule('../../organizations/lib/constants.js', () => ({
+jest.unstable_mockModule('../../organizations/lib/organizations.constants.js', () => ({
   MEMBERSHIP_ROLES: { OWNER: 'owner', MEMBER: 'member' },
   MEMBERSHIP_STATUSES: { ACTIVE: 'active', PENDING: 'pending' },
 }));
 
 const { default: UserService, walkSendProductMail } = await import('../services/users.service.js');
-const { verifyUnsubscribeToken } = await import('../utils/unsubscribeToken.js');
+const { verifyUnsubscribeToken } = await import('../lib/users.unsubscribeToken.js');
 const { default: config } = await import('../../../config/index.js');
 
 const verifiedUser = { _id: '64b2f0000000000000000abc', id: '64b2f0000000000000000abc', email: 'a@test.com', emailVerified: true };

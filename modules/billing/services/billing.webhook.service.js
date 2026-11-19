@@ -4,15 +4,15 @@
 import mongoose from 'mongoose';
 
 import config from '../../../config/index.js';
-import getStripe from '../lib/stripe.js';
+import getStripe from '../lib/billing.stripe.js';
 import logger from '../../../lib/services/logger.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import ProcessedStripeEventRepository from '../repositories/billing.processedStripeEvent.repository.js';
-import OrganizationRepository from '../../organizations/repositories/organizations.repository.js';
+import OrganizationsService from '../../organizations/services/organizations.crud.service.js';
 import BillingFailedBackfillRepository from '../repositories/billing.failedBackfill.repository.js';
 import BillingExtraService from './billing.extra.service.js';
 import BillingResetService from './billing.reset.service.js';
-import billingEvents from '../lib/events.js';
+import billingEvents from '../lib/billing.events.js';
 import { SENTINEL_PENDING } from '../lib/billing.constants.js';
 import { retryWithBackoff } from '../lib/billing.retry.js';
 import { isNonTransientStripeError } from '../lib/billing.stripe-errors.js';
@@ -112,14 +112,14 @@ const resolvePlan = (subscription, fallbackPlan = null, ctx = {}) => {
 
 /**
  * @description Sync the organization plan field to match the subscription plan.
- *              Delegates to OrganizationRepository.setPlan to keep DB access in the repo layer.
+ *              Delegates to OrganizationsService.setPlan (the organizations module owns the write).
  * @param {String} organizationId - Organization document ID
  * @param {String} plan - Plan name to set
  * @returns {Promise<void>}
  */
 const syncOrganizationPlan = async (organizationId, plan) => {
   if (!organizationId || !mongoose.Types.ObjectId.isValid(organizationId)) return;
-  await OrganizationRepository.setPlan(organizationId, plan);
+  await OrganizationsService.setPlan(organizationId, plan);
 };
 
 /**

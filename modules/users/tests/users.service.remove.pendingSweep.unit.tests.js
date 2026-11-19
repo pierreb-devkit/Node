@@ -10,7 +10,6 @@ const mockMembershipServiceListByUser = jest.fn();
 const mockMembershipServiceCount = jest.fn();
 const mockMembershipServiceDeleteMany = jest.fn();
 const mockMembershipRepositoryList = jest.fn();
-const mockMembershipRepositoryDeleteMany = jest.fn();
 const mockUserRepositoryFindWithFilter = jest.fn();
 const mockUserRepositoryUpdateById = jest.fn();
 const mockUserRepositoryRemove = jest.fn();
@@ -62,7 +61,7 @@ jest.unstable_mockModule('../../organizations/repositories/organizations.members
     list: mockMembershipRepositoryList,
     findOne: jest.fn(),
     create: jest.fn(),
-    deleteMany: mockMembershipRepositoryDeleteMany,
+    deleteMany: jest.fn(),
     update: jest.fn(),
     remove: jest.fn(),
     count: jest.fn(),
@@ -73,7 +72,7 @@ jest.unstable_mockModule('../../../config/index.js', () => ({
   default: { organizations: { enabled: true } },
 }));
 
-jest.unstable_mockModule('../utils/sanitizeUser.js', () => ({
+jest.unstable_mockModule('../lib/users.sanitizeUser.js', () => ({
   removeSensitive: jest.fn((u) => u),
 }));
 
@@ -90,7 +89,6 @@ describe('users.service.remove — pending membership sweep (#3831):', () => {
     jest.clearAllMocks();
     mockUserRepositoryRemove.mockResolvedValue({ deletedCount: 1 });
     mockMembershipServiceDeleteMany.mockResolvedValue({});
-    mockMembershipRepositoryDeleteMany.mockResolvedValue({ deletedCount: 0 });
   });
 
   test('sweeps the user PENDING rows (both sources) even with no active membership', async () => {
@@ -98,7 +96,7 @@ describe('users.service.remove — pending membership sweep (#3831):', () => {
 
     await UsersService.remove(user);
 
-    expect(mockMembershipRepositoryDeleteMany).toHaveBeenCalledWith({ userId: 'uid1', status: 'pending' });
+    expect(mockMembershipServiceDeleteMany).toHaveBeenCalledWith({ userId: 'uid1', status: 'pending' });
     expect(mockUserRepositoryRemove).toHaveBeenCalledTimes(1);
   });
 
@@ -112,7 +110,7 @@ describe('users.service.remove — pending membership sweep (#3831):', () => {
     // Active membership handled via the existing per-row delete...
     expect(mockMembershipServiceDeleteMany).toHaveBeenCalledWith({ _id: 'm1' });
     // ...and the pending sweep ran exactly once with the userId + pending filter.
-    expect(mockMembershipRepositoryDeleteMany).toHaveBeenCalledTimes(1);
-    expect(mockMembershipRepositoryDeleteMany).toHaveBeenCalledWith({ userId: 'uid1', status: 'pending' });
+    expect(mockMembershipServiceDeleteMany).toHaveBeenCalledTimes(2);
+    expect(mockMembershipServiceDeleteMany).toHaveBeenLastCalledWith({ userId: 'uid1', status: 'pending' });
   });
 });
