@@ -38,9 +38,9 @@ const setupMocks = async (configOverrides = {}) => {
     billing: {
       meterMode: false,
       quotas: {
-        free: { scraps: { execute: 100, create: 3 } },
-        starter: { scraps: { execute: 2000, create: 20 } },
-        pro: { scraps: { execute: Infinity, create: Infinity } },
+        free: { documents: { execute: 100, create: 3 } },
+        starter: { documents: { execute: 2000, create: 20 } },
+        pro: { documents: { execute: Infinity, create: Infinity } },
       },
       packs: [],
       upgradeUrl: '/billing/plans',
@@ -83,7 +83,7 @@ describe('assertCanExecute — bypasses', () => {
       orgId: ORG_ID,
       organization: BASE_ORG,
       user: { roles: ['admin'] },
-      resource: 'scraps',
+      resource: 'documents',
       action: 'execute',
     });
     expect(result).toEqual({ degraded: false });
@@ -98,7 +98,7 @@ describe('assertCanExecute — bypasses', () => {
       orgId: ORG_ID,
       organization: { ...BASE_ORG, meterExempt: true },
       user: { roles: ['user'] },
-      resource: 'scraps',
+      resource: 'documents',
       action: 'execute',
     });
     expect(result).toEqual({ degraded: false });
@@ -108,13 +108,13 @@ describe('assertCanExecute — bypasses', () => {
   test('does NOT bypass for meterExempt: false', async () => {
     const assertCanExecute = await setupMocks();
     mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'free', status: 'active' });
-    mockBillingUsageService.get.mockResolvedValue({ counters: { scraps_execute: 50 } });
+    mockBillingUsageService.get.mockResolvedValue({ counters: { documents_execute: 50 } });
 
     const result = await assertCanExecute({
       orgId: ORG_ID,
       organization: { ...BASE_ORG, meterExempt: false },
       user: { roles: ['user'] },
-      resource: 'scraps',
+      resource: 'documents',
       action: 'execute',
     });
     expect(result).toEqual({ degraded: false });
@@ -143,7 +143,7 @@ describe('assertCanExecute — meter mode (meterMode: true)', () => {
 
     const result = await assertCanExecute({
       orgId: ORG_ID, organization: BASE_ORG, user: { roles: ['user'] },
-      resource: 'scraps', action: 'execute',
+      resource: 'documents', action: 'execute',
     });
     expect(result).toEqual({ degraded: false });
   });
@@ -156,7 +156,7 @@ describe('assertCanExecute — meter mode (meterMode: true)', () => {
 
     await expect(assertCanExecute({
       orgId: ORG_ID, organization: BASE_ORG, user: { roles: ['user'] },
-      resource: 'scraps', action: 'execute',
+      resource: 'documents', action: 'execute',
     })).resolves.toEqual({ degraded: false });
   });
 
@@ -171,7 +171,7 @@ describe('assertCanExecute — meter mode (meterMode: true)', () => {
 
     await expect(assertCanExecute({
       orgId: ORG_ID, organization: BASE_ORG, user: { roles: ['user'] },
-      resource: 'scraps', action: 'execute',
+      resource: 'documents', action: 'execute',
     })).resolves.toEqual({ degraded: false });
   });
 
@@ -183,7 +183,7 @@ describe('assertCanExecute — meter mode (meterMode: true)', () => {
 
     await expect(assertCanExecute({
       orgId: ORG_ID, organization: BASE_ORG, user: { roles: ['user'] },
-      resource: 'scraps', action: 'execute',
+      resource: 'documents', action: 'execute',
     })).rejects.toMatchObject({ status: 402, message: 'Meter exhausted' });
   });
 
@@ -197,7 +197,7 @@ describe('assertCanExecute — meter mode (meterMode: true)', () => {
     try {
       await assertCanExecute({
         orgId: ORG_ID, organization: BASE_ORG, user: { roles: ['user'] },
-        resource: 'scraps', action: 'execute',
+        resource: 'documents', action: 'execute',
       });
     } catch (err) {
       caught = err;
@@ -221,7 +221,7 @@ describe('assertCanExecute — meter mode (meterMode: true)', () => {
 
     await expect(assertCanExecute({
       orgId: ORG_ID, organization: BASE_ORG, user: { roles: ['user'] },
-      resource: 'scraps', action: 'execute',
+      resource: 'documents', action: 'execute',
     })).rejects.toMatchObject({ status: 402 });
   });
 
@@ -234,7 +234,7 @@ describe('assertCanExecute — meter mode (meterMode: true)', () => {
 
     const result = await assertCanExecute({
       orgId: ORG_ID, organization: BASE_ORG, user: { roles: ['user'] },
-      resource: 'scraps', action: 'execute',
+      resource: 'documents', action: 'execute',
     });
     expect(result).toEqual({ degraded: true });
   });
@@ -249,7 +249,7 @@ describe('assertCanExecute — meter mode (meterMode: true)', () => {
 
       await expect(assertCanExecute({
         orgId: ORG_ID, organization: BASE_ORG, user: { roles: ['user'] },
-        resource: 'scraps', action: 'execute',
+        resource: 'documents', action: 'execute',
       })).rejects.toMatchObject({ status: 402 });
     },
   );
@@ -262,7 +262,7 @@ describe('assertCanExecute — meter mode (meterMode: true)', () => {
 
     await expect(assertCanExecute({
       orgId: ORG_ID, organization: BASE_ORG, user: { roles: ['user'] },
-      resource: 'scraps', action: 'execute',
+      resource: 'documents', action: 'execute',
     })).rejects.toMatchObject({ status: 503 });
   });
 
@@ -275,7 +275,7 @@ describe('assertCanExecute — meter mode (meterMode: true)', () => {
 
     const result = await assertCanExecute({
       orgId: ORG_ID, organization: BASE_ORG, user: { roles: ['user'] },
-      resource: 'scraps', action: 'execute',
+      resource: 'documents', action: 'execute',
     });
     expect(result).toEqual({ degraded: false });
   });
@@ -289,7 +289,7 @@ describe('assertCanExecute — meter mode (meterMode: true)', () => {
 
     await expect(assertCanExecute({
       orgId: ORG_ID, organization: BASE_ORG, user: { roles: ['user'] },
-      resource: 'scraps', action: 'execute',
+      resource: 'documents', action: 'execute',
     })).rejects.toMatchObject({ status: 503 });
   });
 });
@@ -302,22 +302,22 @@ describe('assertCanExecute — legacy mode (meterMode: false)', () => {
   test('resolves when under quota', async () => {
     const assertCanExecute = await setupMocks();
     mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'free', status: 'active' });
-    mockBillingUsageService.get.mockResolvedValue({ counters: { scraps_execute: 50 } });
+    mockBillingUsageService.get.mockResolvedValue({ counters: { documents_execute: 50 } });
 
     await expect(assertCanExecute({
       orgId: ORG_ID, organization: BASE_ORG, user: { roles: ['user'] },
-      resource: 'scraps', action: 'execute',
+      resource: 'documents', action: 'execute',
     })).resolves.toEqual({ degraded: false });
   });
 
   test('throws 429 QUOTA_EXCEEDED when at limit', async () => {
     const assertCanExecute = await setupMocks();
     mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'free', status: 'active' });
-    mockBillingUsageService.get.mockResolvedValue({ counters: { scraps_execute: 100 } });
+    mockBillingUsageService.get.mockResolvedValue({ counters: { documents_execute: 100 } });
 
     await expect(assertCanExecute({
       orgId: ORG_ID, organization: BASE_ORG, user: { roles: ['user'] },
-      resource: 'scraps', action: 'execute',
+      resource: 'documents', action: 'execute',
     })).rejects.toMatchObject({ status: 429 });
   });
 
@@ -327,7 +327,7 @@ describe('assertCanExecute — legacy mode (meterMode: false)', () => {
 
     await expect(assertCanExecute({
       orgId: ORG_ID, organization: BASE_ORG, user: { roles: ['user'] },
-      resource: 'scraps', action: 'execute',
+      resource: 'documents', action: 'execute',
     })).resolves.toEqual({ degraded: false });
     expect(mockBillingUsageService.get).not.toHaveBeenCalled();
   });
@@ -345,22 +345,22 @@ describe('assertCanExecute — legacy mode (meterMode: false)', () => {
   test('missing subscription → treated as free plan', async () => {
     const assertCanExecute = await setupMocks();
     mockSubscriptionRepository.findByOrganization.mockResolvedValue(null);
-    mockBillingUsageService.get.mockResolvedValue({ counters: { scraps_execute: 100 } });
+    mockBillingUsageService.get.mockResolvedValue({ counters: { documents_execute: 100 } });
 
     await expect(assertCanExecute({
       orgId: ORG_ID, organization: BASE_ORG, user: { roles: ['user'] },
-      resource: 'scraps', action: 'execute',
+      resource: 'documents', action: 'execute',
     })).rejects.toMatchObject({ status: 429 });
   });
 
   test('starter plan with higher quota → resolves when under starter limit', async () => {
     const assertCanExecute = await setupMocks();
     mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'starter', status: 'active' });
-    mockBillingUsageService.get.mockResolvedValue({ counters: { scraps_execute: 1500 } });
+    mockBillingUsageService.get.mockResolvedValue({ counters: { documents_execute: 1500 } });
 
     await expect(assertCanExecute({
       orgId: ORG_ID, organization: BASE_ORG, user: { roles: ['user'] },
-      resource: 'scraps', action: 'execute',
+      resource: 'documents', action: 'execute',
     })).resolves.toEqual({ degraded: false });
   });
 });

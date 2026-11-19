@@ -860,7 +860,7 @@ describe('Core unit tests:', () => {
       const tmpDir = path.join('/tmp', `guides-order-${Date.now()}`);
       fsMod.mkdirSync(tmpDir, { recursive: true });
       const files = [
-        { name: '02-scraping.md', body: '# Scraping\n\nScraping body.\n' },
+        { name: '02-exporting.md', body: '# Exporting\n\nExporting body.\n' },
         { name: '00-welcome.md', body: '# Welcome\n\nWelcome body.\n' },
         { name: '01-api-access.md', body: '# Api Access\n\nAccess body.\n' },
       ].map(({ name, body }) => {
@@ -870,7 +870,7 @@ describe('Core unit tests:', () => {
       });
       try {
         const guides = guidesHelper.loadGuides(files);
-        expect(guides.map((g) => g.title)).toEqual(['Welcome', 'Api Access', 'Scraping']);
+        expect(guides.map((g) => g.title)).toEqual(['Welcome', 'Api Access', 'Exporting']);
       } finally {
         files.forEach((f) => fsMod.unlinkSync(f));
         fsMod.rmdirSync(tmpDir);

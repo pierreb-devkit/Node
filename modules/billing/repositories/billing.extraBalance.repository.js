@@ -92,7 +92,7 @@ const creditPack = async (orgId, amount, stripeSessionId, expiresAt = null) => {
  * @description Atomically debit meter units from the extra balance.
  *              Guard: no existing ledger entry with refId (idempotency).
  *              Negative cachedBalance is allowed — the requireQuota middleware gates entry
- *              at scrap-start (remaining > 0); mid-operation overages may push the balance
+ *              at operation start (remaining > 0); mid-operation overages may push the balance
  *              below zero, which correctly reflects economic debt (same pattern as refundPartial).
  *              Upserts the document when none exists yet (org paying without prior pack purchase)
  *              so overage debt is never silently lost on the next weekly meter reset.

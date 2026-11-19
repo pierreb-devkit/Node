@@ -47,7 +47,7 @@ describe('BillingUsage concurrent attribution integration tests:', () => {
       Subscription.deleteMany({}),
     ]);
     config.billing.planDefinitions = [
-      { planId: 'pro', version: 'pro-v1', meterQuota: 5, ratios: { scrap: 1 } },
+      { planId: 'pro', version: 'pro-v1', meterQuota: 5, ratios: { document: 1 } },
     ];
   });
 
@@ -74,7 +74,7 @@ describe('BillingUsage concurrent attribution integration tests:', () => {
       BillingUsageService.incrementMeter(
         organizationId.toString(),
         15,
-        { scrap: 15 },
+        { document: 15 },
         `step-concurrent-${i}`,
       ),
     );
@@ -106,7 +106,7 @@ describe('BillingUsage concurrent attribution integration tests:', () => {
     const result = await BillingUsageService.incrementMeter(
       organizationId.toString(),
       50,
-      { scrap: 50 },
+      { document: 50 },
       'step-fresh-org',
     );
 
@@ -139,7 +139,7 @@ describe('BillingUsage concurrent attribution integration tests:', () => {
     await BillingUsageService.incrementMeter(
       organizationId.toString(),
       30,
-      { scrap: 30 },
+      { document: 30 },
       'step-replay-key',
     );
 
@@ -147,7 +147,7 @@ describe('BillingUsage concurrent attribution integration tests:', () => {
     await BillingUsageService.incrementMeter(
       organizationId.toString(),
       30,
-      { scrap: 30 },
+      { document: 30 },
       'step-replay-key',
     );
 

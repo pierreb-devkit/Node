@@ -83,7 +83,7 @@ const UsageMongoose = new Schema(
     },
     /**
      * Free-form breakdown of meter units by feature bucket.
-     * Example: { scrap: 100, autofix: 50, wizard: 200 }
+     * Example: { document: 100, export: 50, wizard: 200 }
      */
     meterBreakdown: {
       type: Schema.Types.Mixed,

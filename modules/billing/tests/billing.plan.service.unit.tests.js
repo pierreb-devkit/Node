@@ -19,8 +19,8 @@ describe('BillingPlanService unit tests:', () => {
         meterMode: true,
         planDefinitions: [
           { planId: 'free', meterQuota: 0, ratios: { default: 1 }, version: '2026.05' },
-          { planId: 'growth', meterQuota: 1600, ratios: { scrap: 1, autofix: 2 }, version: '2026.05' },
-          { planId: 'pro', meterQuota: 8000, ratios: { scrap: 1, autofix: 2 }, version: '2026.05' },
+          { planId: 'growth', meterQuota: 1600, ratios: { document: 1, export: 2 }, version: '2026.05' },
+          { planId: 'pro', meterQuota: 8000, ratios: { document: 1, export: 2 }, version: '2026.05' },
         ],
         meter: {
           ratioVersion: '2026.05',
@@ -53,7 +53,7 @@ describe('BillingPlanService unit tests:', () => {
       expect(result.planId).toBe('pro');
       expect(result.meterQuota).toBe(8000);
       expect(result.version).toBe('2026.05');
-      expect(result.ratios).toEqual({ scrap: 1, autofix: 2 });
+      expect(result.ratios).toEqual({ document: 1, export: 2 });
     });
 
     test('returns null for unknown planId', () => {

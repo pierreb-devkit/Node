@@ -77,7 +77,7 @@ describe('billing.attachUsageContext middleware unit tests:', () => {
     mockBillingUsageService.getMeter.mockResolvedValue({
       meterUsed: 1200,
       meterQuota: 5000,
-      meterBreakdown: { scrape: 1000, llm: 200 },
+      meterBreakdown: { document: 1000, llm: 200 },
     });
     mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(2500);
 
@@ -87,7 +87,7 @@ describe('billing.attachUsageContext middleware unit tests:', () => {
       used: 1200,
       quota: 5000,
       extrasRemaining: 2500,
-      breakdown: { scrape: 1000, llm: 200 },
+      breakdown: { document: 1000, llm: 200 },
     });
     expect(next).toHaveBeenCalled();
   });

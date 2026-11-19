@@ -35,7 +35,7 @@ describe('HomeService.getReadinessStatus unit tests:', () => {
     jest.unstable_mockModule('../../../config/index.js', () => ({
       default: {
         domain: '',
-        jwt: { secret: 'WaosSecretKeyExampleToChnageAbsolutely' },
+        jwt: { secret: 'DevkitSecretKeyExampleToChangeAbsolutely' },
         oAuth: {},
         stripe: {},
         analytics: { posthog: {} },
@@ -154,7 +154,7 @@ describe('HomeService.getReadinessStatus unit tests:', () => {
 
   describe('security (JWT) row — uses shared isJwtSecretWeak', () => {
     test('warning when jwt.secret is a known default placeholder', async () => {
-      const HomeService = await withConfig({ jwt: { secret: 'WaosSecretKeyExampleToChnageAbsolutely' } });
+      const HomeService = await withConfig({ jwt: { secret: 'DevkitSecretKeyExampleToChangeAbsolutely' } });
       const checks = HomeService.getReadinessStatus();
       const row = checks.find((c) => c.category === 'security');
       expect(row.status).toBe('warning');

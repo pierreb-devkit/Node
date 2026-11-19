@@ -153,7 +153,7 @@ describe('precedenceTier:', () => {
   });
 
   it('classifies a guide from a non-core module as application', () => {
-    expect(precedenceTier({ path: 'modules/scrap/doc/guides/01-welcome.md' })).toBe('application');
+    expect(precedenceTier({ path: 'modules/document/doc/guides/01-welcome.md' })).toBe('application');
     expect(precedenceTier({ path: 'modules/billing/doc/guides/01-welcome.md' })).toBe('application');
     expect(CORE_MODULES.has('billing')).toBe(false);
   });
@@ -196,7 +196,7 @@ describe('resolveGuideEntries:', () => {
       slug: 'welcome', title: 'Framework Welcome', order: 0, summary: 's', body: 'framework body', path: 'modules/home/doc/guides/00-welcome.md',
     };
     const appGuide = {
-      slug: 'welcome', title: 'App Welcome', order: 0, summary: 's', body: 'app body', path: 'modules/scrap/doc/guides/00-welcome.md',
+      slug: 'welcome', title: 'App Welcome', order: 0, summary: 's', body: 'app body', path: 'modules/document/doc/guides/00-welcome.md',
     };
 
     // Framework guide scanned first, app guide second — app should still win.
@@ -234,7 +234,7 @@ describe('resolveGuideEntries:', () => {
 
   it('same-tier collision (two application guides) keeps the later entry and warns', () => {
     const first = {
-      slug: 'setup', title: 'Setup A', order: 0, summary: 'a', body: 'A', path: 'modules/scrap/doc/guides/01-setup.md',
+      slug: 'setup', title: 'Setup A', order: 0, summary: 'a', body: 'A', path: 'modules/document/doc/guides/01-setup.md',
     };
     const second = {
       slug: 'setup', title: 'Setup B', order: 1, summary: 'b', body: 'B', path: 'modules/wizard/doc/guides/01-setup.md',
@@ -255,7 +255,7 @@ describe('resolveGuideEntries:', () => {
       slug: 'quickstart', title: 'Quickstart', order: 1, summary: 's', body: 'b', path: 'modules/home/doc/guides/01-quickstart.md',
     };
     const appWelcome = {
-      slug: 'welcome', title: 'App Welcome', order: 0, summary: 's', body: 'b', path: 'modules/scrap/doc/guides/00-welcome.md',
+      slug: 'welcome', title: 'App Welcome', order: 0, summary: 's', body: 'b', path: 'modules/document/doc/guides/00-welcome.md',
     };
 
     const resolved = resolveGuideEntries([home, quickstart, appWelcome]);

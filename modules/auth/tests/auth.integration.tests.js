@@ -1711,7 +1711,7 @@ describe('Auth integration tests:', () => {
       const originalBilling = config.billing;
       const equivalences = {
         plans: {
-          growth: { scrapsPerMonth: 200, typicalScrapsPerMonth: 50, features: ['alerts', 'export'] },
+          growth: { documentsPerMonth: 200, typicalDocumentsPerMonth: 50, features: ['alerts', 'export'] },
         },
       };
       config.billing = { ...config.billing, equivalences };
