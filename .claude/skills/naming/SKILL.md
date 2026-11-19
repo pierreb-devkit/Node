@@ -44,7 +44,7 @@ Audit or apply the project's file and folder naming conventions.
 | Migration       | `YYYYMMDDHHMMSS-{kebab-name}.js`      | `20260610120000-users-email-ci-unique-index.js`            |
 | Config          | `{name}.js`                           | `app.js`, `default.js`                                     |
 
-**Every file inside a module starts with the module name** (`{module}.`), helpers and models included (`core.migration.model.mongoose.js`, not `migration.model.mongoose.js`). The one exception is `migrations/`: a migration is recorded by its path, so it is never renamed or moved once shipped.
+**Every source file inside a module starts with the module name** (`{module}.`; tests follow the Test row), helpers and models included (`core.migration.model.mongoose.js`, not `migration.model.mongoose.js`). The one exception is `migrations/`: a migration is recorded by its path, so it is never renamed or moved once shipped.
 
 > `[.{name}]` is optional — the reference `tasks` module uses the short form (e.g., `tasks.controller.js`, `tasks.service.js`).
 
