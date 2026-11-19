@@ -305,10 +305,10 @@ const oauthCall = (req, res, next) => {
 const checkOAuthUserProfile = async (profil, key, provider) => {
   // Guard: validate provider and key against allowlists before using as dynamic object keys
   if (!ALLOWED_PROVIDERS.has(provider)) {
-    throw new AppError('oAuth, unsupported provider', { code: 'VALIDATION_ERROR', details: { provider } });
+    throw new AppError('oAuth, unsupported provider', { status: 422, code: 'VALIDATION_ERROR', details: { provider } });
   }
   if (!ALLOWED_PROVIDER_KEYS.has(key)) {
-    throw new AppError('oAuth, unsupported provider key', { code: 'VALIDATION_ERROR', details: { key } });
+    throw new AppError('oAuth, unsupported provider key', { status: 422, code: 'VALIDATION_ERROR', details: { key } });
   }
   // 1. Primary identity: match on (provider, providerData[key]) — OAuth-first users
   try {
@@ -367,6 +367,7 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
         // `err.description` with the same precedence. Without a mailer the
         // account is not "pending": use neutral text, it may have no password.
         throw new AppError(canLinkByEmail ? 'oAuth, cannot link to unverified local account' : 'oAuth, cannot link by email without a mailer', {
+          status: 422,
           code: 'VALIDATION_ERROR',
           description: canLinkByEmail
             ? 'A pending account with this email is not verified. Verify the original signup first or contact support.'
@@ -419,6 +420,7 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
       // — NOT `details.message` — so it reaches the client in every environment,
       // same as local signup's explicit `responses.error(...)` argument.
       throw new AppError('Signup error', {
+        status: 404,
         code: 'VALIDATION_ERROR',
         description: 'Registration is currently deactivated',
       });
@@ -435,7 +437,7 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
     const result = model.getResultFromZod(user, UsersSchema.User);
     // check error
     const error = model.checkError(result);
-    if (error) throw new AppError('Schema validation error', { code: 'VALIDATION_ERROR', details: { message: error } });
+    if (error) throw new AppError('Schema validation error', { status: 422, code: 'VALIDATION_ERROR', details: { message: error } });
     // else return req.body with the data after Zod validation
     if (oauthInvite) result.value.email = oauthInvite.email;
     const createdUser = await UserService.create(result.value);
