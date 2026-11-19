@@ -20,6 +20,7 @@ describe('billing.init unit tests:', () => {
   let mockInvitationsService;
   let mockSignupGrantService;
   let mockOnOrganizationRemoved;
+  let mockOnBeforeOrganizationRemoved;
   let mockBillingService;
 
   const mockApp = {};
@@ -111,10 +112,13 @@ describe('billing.init unit tests:', () => {
 
     // #4306: org-removal cleanup — stub the registry and the lazily imported billing service.
     mockOnOrganizationRemoved = jest.fn();
+    mockOnBeforeOrganizationRemoved = jest.fn();
     jest.unstable_mockModule('../../organizations/lib/organizations.removal.registry.js', () => ({
+      onBeforeOrganizationRemoved: mockOnBeforeOrganizationRemoved,
       onOrganizationRemoved: mockOnOrganizationRemoved,
     }));
     mockBillingService = {
+      assertNoLiveSubscription: jest.fn().mockResolvedValue(undefined),
       cleanupOrganizationData: jest.fn().mockResolvedValue({ tombstoneId: 'tomb-1', subscriptions: 1, extraBalances: 1, usage: 2 }),
     };
     jest.unstable_mockModule('../services/billing.service.js', () => ({
@@ -427,6 +431,30 @@ describe('billing.init unit tests:', () => {
       await billingInit(mockApp);
       const handler = mockOnOrganizationRemoved.mock.calls[0][0];
       await expect(handler({ organizationId: 'org-1' })).rejects.toThrow('db down');
+    });
+  });
+
+  describe('#4321 org-removal guard:', () => {
+    test('registers one guard on the org-removal registry', async () => {
+      await billingInit(mockApp);
+      expect(mockOnBeforeOrganizationRemoved).toHaveBeenCalledTimes(1);
+      expect(typeof mockOnBeforeOrganizationRemoved.mock.calls[0][0]).toBe('function');
+    });
+
+    test('the guard checks the organization (id + document, for its name) through the billing service', async () => {
+      await billingInit(mockApp);
+      const guard = mockOnBeforeOrganizationRemoved.mock.calls[0][0];
+      const organization = { _id: 'org-1', name: 'Acme' };
+      await guard({ organizationId: 'org-1', organization });
+      expect(mockBillingService.assertNoLiveSubscription).toHaveBeenCalledWith('org-1', organization);
+    });
+
+    test('the guard propagates a refusal unchanged', async () => {
+      const refusal = Object.assign(new Error('Cancel first'), { status: 409, code: 'ORGANIZATION_HAS_LIVE_SUBSCRIPTION' });
+      mockBillingService.assertNoLiveSubscription.mockRejectedValueOnce(refusal);
+      await billingInit(mockApp);
+      const guard = mockOnBeforeOrganizationRemoved.mock.calls[0][0];
+      await expect(guard({ organizationId: 'org-1' })).rejects.toBe(refusal);
     });
   });
 

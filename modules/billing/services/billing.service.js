@@ -3,16 +3,16 @@
  */
 import mongoose from 'mongoose';
 import config from '../../../config/index.js';
+import AppError from '../../../lib/helpers/AppError.js';
 import logger from '../../../lib/services/logger.js';
 import getStripe from '../lib/billing.stripe.js';
 import BillingPlansService from './billing.plans.service.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
-import AppError from '../../../lib/helpers/AppError.js';
 import { isObjectId } from '../../../lib/helpers/zod.js';
 import { isDuplicateKeyError } from '../lib/billing.errors.js';
 import { SENTINEL_PENDING } from '../lib/billing.constants.js';
-import { effectivePlanOf } from '../lib/billing.statuses.js';
+import { effectivePlanOf, hasLiveSubscription } from '../lib/billing.statuses.js';
 
 /**
  * Validate that a redirect URL is safe for the current environment.
@@ -150,8 +150,7 @@ const createCheckout = async (organization, priceId, successUrl, cancelUrl) => {
 
   // Block checkout when an active subscription already exists — direct to portal for changes
   const existingForBlock = await SubscriptionRepository.findByOrganization(organization._id);
-  const blockStatuses = ['active', 'trialing', 'past_due'];
-  if (existingForBlock?.stripeSubscriptionId && blockStatuses.includes(existingForBlock.status)) {
+  if (hasLiveSubscription(existingForBlock)) {
     const portalUrl = await createPortalSession(organization);
     /** @type {Error & {statusCode?: number, code?: string, portalUrl?: string}} */
     const err = new Error('Subscription already active');
@@ -406,6 +405,28 @@ const getSubscriptionStatus = async (organizationId) => (await getLocalSubscript
 const getExtrasBalance = (organizationId) => BillingExtraBalanceRepository.getBalance(String(organizationId));
 
 /**
+ * @desc Organization-removal guard (registered in billing.init.js): refuse to remove an
+ *       organization while its paid subscription is live at the provider, so the customer
+ *       is never left charged for an organization that no longer exists. Local DB only —
+ *       no provider call, nothing is cancelled. "Live" is the shared hasLiveSubscription
+ *       rule (also used by the checkout block). A subscription already set to end
+ *       (`cancelAtPeriodEnd`) counts as cancelled: the owner did what the refusal asks,
+ *       so the removal is allowed.
+ * @param {String} organizationId - The organization ID
+ * @param {{ name?: string }} [organization] - The organization being removed; its name goes in the refusal.
+ * @returns {Promise<void>} resolves when the organization may be removed
+ * @throws {AppError} 409 ORGANIZATION_HAS_LIVE_SUBSCRIPTION while the subscription is active, trialing or past_due and not set to end
+ */
+const assertNoLiveSubscription = async (organizationId, organization) => {
+  const sub = await getLocalSubscription(String(organizationId));
+  if (!hasLiveSubscription(sub) || sub.cancelAtPeriodEnd === true) return;
+  const message = organization?.name
+    ? `Cancel the subscription of "${organization.name}" before removing it.`
+    : "Cancel the organization's subscription before removing it.";
+  throw new AppError(message, { status: 409, code: 'ORGANIZATION_HAS_LIVE_SUBSCRIPTION', description: message });
+};
+
+/**
  * @function cleanupOrganizationData
  * @description Org-removal cleanup of the billing records of one organization. Its
  *              subscription and its extras balance (the ledger, referral entries included)
@@ -416,8 +437,9 @@ const getExtrasBalance = (organizationId) => BillingExtraBalanceRepository.getBa
  *              credited to the other party's organization stays there. Called by the
  *              org-removal handler registered in billing.init.js. The three writes run
  *              independently: one failing never skips the others, and every failure is
- *              re-raised together afterwards. Local data only — Stripe is not called, so a
- *              live Stripe subscription is not cancelled here.
+ *              re-raised together afterwards. Local data only — Stripe is not called; a
+ *              live subscription never gets here, the removal guard (assertNoLiveSubscription)
+ *              refuses it first.
  * @param {string} organizationId - The removed organization's ObjectId (string).
  * @returns {Promise<{tombstoneId: string, subscriptions: number, extraBalances: number, usage: number}>}
  *          The tombstone id, the anonymized counts and the deleted usage count.
@@ -455,6 +477,7 @@ const cleanupOrganizationData = async (organizationId) => {
 };
 
 export default {
+  assertNoLiveSubscription,
   getEffectivePlan,
   getSubscriptionStatus,
   getExtrasBalance,
