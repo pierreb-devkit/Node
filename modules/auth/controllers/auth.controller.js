@@ -36,7 +36,7 @@ import tokenCookieOptions from '../../../lib/helpers/tokenCookieOptions.js';
  *   response object (chained from res.json()); on the SIGNUP_DISABLED gate
  *   path, the plain result object returned by responses.error() ({type,
  *   message, code, status, errorCode, description} — not `res` itself);
- *   undefined on the generic 422 fallback, which has no explicit return
+ *   undefined on the generic error fallback, which has no explicit return
  *   (the error response is still sent as a side effect either way)
  */
 const signup = async (req, res) => {
@@ -73,13 +73,13 @@ const signup = async (req, res) => {
     // The capacity/eligibility gate (auth.signup.service.js) signals via this code
     // so the ORIGINAL 404 response is reproduced byte-for-byte — status, title,
     // description, and no `err` argument to responses.error (matches the inline
-    // call this replaced) — instead of falling through to the generic 422 mapping
+    // call this replaced) — instead of falling through to the generic error mapping
     // below. Every distinct error status this flow can produce keeps its own
     // status/title/message; none are collapsed into a shared helper.
     if (err?.code === 'SIGNUP_DISABLED') {
       return responses.error(res, 404, 'Signup error', 'Registration is currently deactivated')();
     }
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -305,10 +305,10 @@ const oauthCall = (req, res, next) => {
 const checkOAuthUserProfile = async (profil, key, provider) => {
   // Guard: validate provider and key against allowlists before using as dynamic object keys
   if (!ALLOWED_PROVIDERS.has(provider)) {
-    throw new AppError('oAuth, unsupported provider', { code: 'VALIDATION_ERROR', details: { provider } });
+    throw new AppError('oAuth, unsupported provider', { status: 422, code: 'VALIDATION_ERROR', details: { provider } });
   }
   if (!ALLOWED_PROVIDER_KEYS.has(key)) {
-    throw new AppError('oAuth, unsupported provider key', { code: 'VALIDATION_ERROR', details: { key } });
+    throw new AppError('oAuth, unsupported provider key', { status: 422, code: 'VALIDATION_ERROR', details: { key } });
   }
   // 1. Primary identity: match on (provider, providerData[key]) — OAuth-first users
   try {
@@ -367,6 +367,7 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
         // `err.description` with the same precedence. Without a mailer the
         // account is not "pending": use neutral text, it may have no password.
         throw new AppError(canLinkByEmail ? 'oAuth, cannot link to unverified local account' : 'oAuth, cannot link by email without a mailer', {
+          status: 422,
           code: 'VALIDATION_ERROR',
           description: canLinkByEmail
             ? 'A pending account with this email is not verified. Verify the original signup first or contact support.'
@@ -419,6 +420,7 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
       // — NOT `details.message` — so it reaches the client in every environment,
       // same as local signup's explicit `responses.error(...)` argument.
       throw new AppError('Signup error', {
+        status: 404,
         code: 'VALIDATION_ERROR',
         description: 'Registration is currently deactivated',
       });
@@ -435,7 +437,7 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
     const result = model.getResultFromZod(user, UsersSchema.User);
     // check error
     const error = model.checkError(result);
-    if (error) throw new AppError('Schema validation error', { code: 'VALIDATION_ERROR', details: { message: error } });
+    if (error) throw new AppError('Schema validation error', { status: 422, code: 'VALIDATION_ERROR', details: { message: error } });
     // else return req.body with the data after Zod validation
     if (oauthInvite) result.value.email = oauthInvite.email;
     const createdUser = await UserService.create(result.value);
@@ -482,7 +484,7 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
         await oauthEligibility?.finalize?.(createdUser._id || createdUser.id);
       } catch (finalizeErr) {
         // Best-effort: the account exists and the response is about to succeed —
-        // a finalize DB hiccup must not convert a created account into a 422.
+        // a finalize DB hiccup must not convert a created account into an error.
         // The claim stays stamped and the 15-min lazy sweep releases it; the
         // invite is reconcilable from its pending state + the account's email.
         logger.warn('[oauth] invite finalize failed post-create (left to the sweep)', {
@@ -749,7 +751,7 @@ const getConfig = async (req, res) => {
 
     responses.success(res, 'Auth config')(data);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -785,7 +787,7 @@ const verifyEmail = async (req, res) => {
 
     return responses.success(res, 'Email verified successfully')({ emailVerified: true });
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -822,7 +824,7 @@ const resendVerification = async (req, res) => {
       message: err?.message,
       stack: err?.stack,
     });
-    responses.error(res, 422, 'Unprocessable Entity', 'Failed to send the email, please try again.')(err);
+    responses.error(res, 500, undefined, 'Failed to send the email, please try again.')(err);
   }
 };
 

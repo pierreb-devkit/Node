@@ -464,19 +464,19 @@ describe('User admin integration tests:', () => {
       }
     });
 
-    test('should return 422 when list fails', async () => {
+    test('should return 500 when list fails', async () => {
       jest.spyOn(UserService, 'list').mockRejectedValueOnce(new Error('DB error'));
-      const result = await agent.get('/api/admin/users').expect(422);
+      const result = await agent.get('/api/admin/users').expect(500);
       expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.message).toBe('Internal Server Error');
       expect(result.body.description).toBe('DB error.');
     });
 
-    test('should return 422 when admin update fails', async () => {
+    test('should return 500 when admin update fails', async () => {
       jest.spyOn(UserService, 'update').mockRejectedValueOnce(new Error('DB error'));
-      const result = await agent.put(`/api/admin/users/${targetUser._id}`).send({ firstName: 'X' }).expect(422);
+      const result = await agent.put(`/api/admin/users/${targetUser._id}`).send({ firstName: 'X' }).expect(500);
       expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.message).toBe('Internal Server Error');
       expect(result.body.description).toBe('DB error.');
     });
 
@@ -490,11 +490,11 @@ describe('User admin integration tests:', () => {
       expect(result.body.message).toBe('Schema validation error');
     });
 
-    test('should return 422 when admin remove fails', async () => {
+    test('should return 500 when admin remove fails', async () => {
       jest.spyOn(UserService, 'remove').mockRejectedValueOnce(new Error('DB error'));
-      const result = await agent.delete(`/api/admin/users/${targetUser._id}`).expect(422);
+      const result = await agent.delete(`/api/admin/users/${targetUser._id}`).expect(500);
       expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.message).toBe('Internal Server Error');
       expect(result.body.description).toBe('DB error.');
     });
 

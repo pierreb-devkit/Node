@@ -91,7 +91,7 @@ const create = async (body, user) => {
     result = await OrganizationsRepository.create(organization);
   } catch (err) {
     if (err?.code === 11000 && err?.keyPattern?.slug) {
-      throw new AppError('An organization with this slug already exists. Please try again.', { code: 'CONFLICT' });
+      throw new AppError('An organization with this slug already exists. Please try again.', { status: 409, code: 'CONFLICT' });
     }
     throw err;
   }
@@ -167,7 +167,7 @@ const update = async (organization, body) => {
     if (body.slug !== organization.slug) {
       const existing = await OrganizationsRepository.findOne({ slug: body.slug });
       if (existing) {
-        throw new AppError('An organization with this slug already exists.', { code: 'CONFLICT' });
+        throw new AppError('An organization with this slug already exists.', { status: 409, code: 'CONFLICT' });
       }
     }
     patch.slug = body.slug;
@@ -282,7 +282,7 @@ const switchOrganization = async (user, organizationId) => {
   });
 
   if (!membership) {
-    throw new AppError('User is not a member of this organization', { code: 'FORBIDDEN' });
+    throw new AppError('User is not a member of this organization', { status: 403, code: 'FORBIDDEN' });
   }
 
   const updatedUser = await UserService.findByIdAndUpdatePopulated(

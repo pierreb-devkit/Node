@@ -126,3 +126,34 @@ describe('home.controller health unit tests:', () => {
     expect(payload.type).toBe('success');
   });
 });
+
+describe('home.controller page unit tests:', () => {
+  let page;
+
+  beforeEach(async () => {
+    jest.resetModules();
+    jest.unstable_mockModule('../services/home.service.js', () => ({ default: {} }));
+    page = (await import('../controllers/home.controller.js')).default.page;
+  });
+
+  test('returns the loaded page with 200', async () => {
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() };
+    await page({ page: [{ title: 'About' }] }, res);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json.mock.calls[0][0].data).toEqual([{ title: 'About' }]);
+  });
+
+  test('a failure while answering (#4304) responds 500 with no hard-coded 422', async () => {
+    // First json() call throws like Express does on an unserializable body;
+    // the catch then answers with the status the error resolves to.
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn()
+        .mockImplementationOnce(() => { throw new TypeError('Converting circular structure to JSON'); })
+        .mockReturnThis(),
+    };
+    await page({ page: [{ title: 'About' }] }, res);
+    expect(res.status).toHaveBeenLastCalledWith(500);
+    expect(res.json.mock.calls[1][0]).toMatchObject({ type: 'error', message: 'Internal Server Error' });
+  });
+});

@@ -357,6 +357,36 @@ describe('Core unit tests:', () => {
       expect(result.errorCode).toBe('SERVER_ERROR');
     });
 
+    it('should answer 422 for driver and schema errors that carry no status', () => {
+      const shapes = [
+        { name: 'MongoServerError', code: 11000, keyPattern: { email: 1 } },
+        { name: 'MongoServerError', code: 11001 },
+        { name: 'ValidationError', errors: {} },
+        { name: 'CastError' },
+        { name: 'ZodError', issues: [] },
+      ];
+      shapes.forEach((err) => {
+        const mockRes = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+        const result = responses.error(mockRes)(err);
+        expect(mockRes.status).toHaveBeenCalledWith(422);
+        expect(result.message).toBe('Unprocessable Entity');
+      });
+    });
+
+    it('should keep an explicit err.status over the driver-error rule', () => {
+      const mockRes = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      responses.error(mockRes)({ name: 'ValidationError', status: 409 });
+      expect(mockRes.status).toHaveBeenCalledWith(409);
+    });
+
+    it('should never read a MongoDB numeric code as an http status', () => {
+      const mockRes = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      // 112 = WriteConflict: inside the 100-599 range, but a driver code.
+      const result = responses.error(mockRes)({ name: 'MongoServerError', code: 112 });
+      expect(mockRes.status).toHaveBeenCalledWith(500);
+      expect(result.status).toBe(500);
+    });
+
     it('should fallback to 500 and empty description for unknown error shape', () => {
       const mockRes = {
         status: jest.fn().mockReturnThis(),

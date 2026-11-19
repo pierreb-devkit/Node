@@ -2,7 +2,7 @@
  * @desc E2E tests for the owner-add membership lifecycle through real HTTP routes
  * (passport + CASL + param middleware): owner adds a member → pending row visible
  * in the members list → invited user accepts → owner promotes → member leaves.
- * Also covers the invited user's decline path and the duplicate-add guard (422).
+ * Also covers the invited user's decline path and the duplicate-add guard (409).
  */
 import request from 'supertest';
 import path from 'path';
@@ -242,7 +242,7 @@ describe('Organizations member-add E2E tests:', () => {
     // Jest runs test() blocks within a file in declaration order, so this runs after
     // the lifecycle test above (which leaves A owning org A and B with no membership);
     // the precondition assert below guards against that test having aborted.
-    test('decline path: re-add → duplicate guard 422 → B declines → row gone everywhere', async () => {
+    test('decline path: re-add → duplicate guard 409 → B declines → row gone everywhere', async () => {
       // Finding #2: guard against test-1 abort leaving shared state unpopulated
       // precondition: the lifecycle test must have populated shared state
       expect(orgA && userB && agentA && agentB).toBeTruthy();
@@ -263,13 +263,13 @@ describe('Organizations member-add E2E tests:', () => {
         expect(err).toBeFalsy();
       }
 
-      // 2. Duplicate guard: adding B again while pending is rejected (422)
-      // Finding #3: chain .expect(422) so a 500 is not swallowed
+      // 2. Duplicate guard: adding B again while pending is rejected (409)
+      // Finding #3: chain .expect(409) so a 500 is not swallowed
       try {
         const dupRes = await agentA
           .post(`/api/organizations/${orgA._id}/members`)
           .send({ userId: userB.id, role: 'member' })
-          .expect(422);
+          .expect(409);
         expect(dupRes.body.type).toBe('error');
         expect(dupRes.body.description).toBe('This user already has a pending membership for this organization.');
       } catch (err) {

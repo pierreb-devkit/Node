@@ -104,7 +104,7 @@ const authenticate = async (email, password) => {
     // the work (and thus the response timing) indistinguishable from a real
     // password mismatch, then throw the same generic error (anti-enumeration).
     await comparePassword(password, DUMMY_PASSWORD_HASH);
-    throw new AppError('invalid user or password.', { code: 'SERVICE_ERROR' });
+    throw new AppError('invalid user or password.', { status: 401, code: 'SERVICE_ERROR' });
   }
 
   // Check lockout before attempting password comparison
@@ -117,7 +117,7 @@ const authenticate = async (email, password) => {
 
   // Wrong password — record the failure
   await recordFailedAttempt(user);
-  throw new AppError('invalid user or password.', { code: 'SERVICE_ERROR' });
+  throw new AppError('invalid user or password.', { status: 401, code: 'SERVICE_ERROR' });
 };
 
 /**
@@ -129,6 +129,7 @@ const checkPassword = (password) => {
   const result = zxcvbn(password);
   if (result.score < config.zxcvbn.minimumScore) {
     throw new AppError('Password too weak.', {
+      status: 422,
       code: 'SERVICE_ERROR',
       details: result.feedback.suggestions.map((s) => ({ message: s })),
     });

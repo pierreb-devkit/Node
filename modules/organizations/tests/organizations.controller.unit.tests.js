@@ -9,12 +9,22 @@ const mockListByUser = jest.fn();
 const mockLeave = jest.fn();
 const mockAdminStats = jest.fn();
 const mockFindByUserAndOrganization = jest.fn();
+const mockCrudListByUser = jest.fn();
+const mockCrudCreate = jest.fn();
+const mockCrudUpdate = jest.fn();
+const mockCrudList = jest.fn();
+const mockCrudSearchByDomain = jest.fn();
 
 jest.unstable_mockModule('../services/organizations.crud.service.js', () => ({
   default: {
     remove: mockCrudRemove,
     switchOrganization: mockCrudSwitchOrganization,
     adminStats: mockAdminStats,
+    listByUser: mockCrudListByUser,
+    create: mockCrudCreate,
+    update: mockCrudUpdate,
+    list: mockCrudList,
+    searchByDomain: mockCrudSearchByDomain,
   },
 }));
 
@@ -47,6 +57,7 @@ jest.unstable_mockModule('../../users/services/users.service.js', () => ({
 
 const { default: organizationsController } = await import('../controllers/organizations.controller.js');
 const { default: logger } = await import('../../../lib/services/logger.js');
+const { default: AppError } = await import('../../../lib/helpers/AppError.js');
 
 /**
  * Unit tests for the organizations controller remove handler.
@@ -239,36 +250,36 @@ describe('Organizations controller unit tests:', () => {
       expect(res.status).not.toHaveBeenCalledWith(422);
     });
 
-    test('should return 422 when the last owner tries to leave', async () => {
-      mockLeave.mockRejectedValue(new Error('Cannot remove the last owner'));
+    test('should return 409 when the last owner tries to leave', async () => {
+      mockLeave.mockRejectedValue(Object.assign(new Error('Organization must have at least one active owner'), { status: 409 }));
       const req = mockReq();
       const res = mockRes();
 
       await organizationsController.leave(req, res);
 
       expect(mockLeave).toHaveBeenCalledTimes(1);
-      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.status).toHaveBeenCalledWith(409);
     });
 
-    test('should return 422 when the user is not a member', async () => {
-      mockLeave.mockRejectedValue(new Error('You are not a member of this organization'));
+    test('should return 403 when the user is not a member', async () => {
+      mockLeave.mockRejectedValue(Object.assign(new Error('You are not a member of this organization'), { status: 403 }));
       const req = mockReq();
       const res = mockRes();
 
       await organizationsController.leave(req, res);
 
       expect(mockLeave).toHaveBeenCalledTimes(1);
-      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.status).toHaveBeenCalledWith(403);
     });
   });
 
   describe('adminStats', () => {
-    test('should answer 422 and log the cause when the stats read fails', async () => {
+    test('should answer 500 and log the cause when the stats read fails', async () => {
       const logSpy = jest.spyOn(logger, 'error').mockImplementation(() => {});
       mockAdminStats.mockRejectedValueOnce(new Error('aggregate failed'));
       const res = mockRes();
       await organizationsController.adminStats(mockReq(), res);
-      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json.mock.calls[0][0].description).toBe('Unable to compute organization stats');
       expect(logSpy).toHaveBeenCalledWith('[stats] organization stats failed', expect.objectContaining({ message: 'aggregate failed' }));
       logSpy.mockRestore();
@@ -297,6 +308,63 @@ describe('Organizations controller unit tests:', () => {
       expect(req.membership).toBeUndefined();
       expect(next).toHaveBeenCalledTimes(1);
       expect(next).toHaveBeenCalledWith(dbErr);
+    });
+  });
+
+  describe('error status (#4304): a failed call answers the HTTP status the error carries', () => {
+    test('list: an AppError 403 from the service answers 403 Forbidden', async () => {
+      mockCrudListByUser.mockRejectedValueOnce(new AppError('User is not a member of this organization', { status: 403, code: 'FORBIDDEN' }));
+      const res = mockRes();
+      await organizationsController.list(mockReq(), res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json.mock.calls[0][0]).toMatchObject({ message: 'Forbidden', errorCode: 'FORBIDDEN' });
+    });
+
+    test('create: a slug conflict AppError answers 409 Conflict, not 422', async () => {
+      mockCrudCreate.mockRejectedValueOnce(new AppError('An organization with this slug already exists.', { status: 409, code: 'CONFLICT' }));
+      const res = mockRes();
+      await organizationsController.create(mockReq({ body: { name: 'Acme' } }), res);
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json.mock.calls[0][0]).toMatchObject({ message: 'Conflict', errorCode: 'CONFLICT' });
+    });
+
+    test('update: a slug conflict AppError answers 409 Conflict', async () => {
+      mockCrudUpdate.mockRejectedValueOnce(new AppError('An organization with this slug already exists.', { status: 409, code: 'CONFLICT' }));
+      const res = mockRes();
+      await organizationsController.update(mockReq({ body: { name: 'Acme' } }), res);
+      expect(mockCrudUpdate).toHaveBeenCalledTimes(1);
+      expect(res.status).toHaveBeenCalledWith(409);
+    });
+
+    test('remove: an unexpected error answers 500, never 422', async () => {
+      mockCrudRemove.mockRejectedValueOnce(new Error('db down'));
+      const res = mockRes();
+      await organizationsController.remove(mockReq({ membership: undefined }), res);
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json.mock.calls[0][0]).toMatchObject({ message: 'Internal Server Error', errorCode: 'SERVER_ERROR' });
+    });
+
+    test('adminList: an unexpected error answers 500', async () => {
+      mockCrudList.mockRejectedValueOnce(new Error('db down'));
+      const res = mockRes();
+      await organizationsController.adminList(mockReq({ search: '', page: 0, perPage: 10 }), res);
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+
+    test('search: an AppError 404 from the service answers 404 Not Found', async () => {
+      mockCrudSearchByDomain.mockRejectedValueOnce(new AppError('Not found', { status: 404, code: 'NOT_FOUND' }));
+      const res = mockRes();
+      await organizationsController.search(mockReq({ user: { _id: 'u1', id: 'u1', email: 'a@acme.test', emailVerified: true } }), res);
+      expect(mockCrudSearchByDomain).toHaveBeenCalledWith('a@acme.test');
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    test('switchOrganization: a non-FORBIDDEN AppError keeps its own status (404)', async () => {
+      mockCrudSwitchOrganization.mockRejectedValueOnce(new AppError('Organization not found', { status: 404, code: 'NOT_FOUND' }));
+      const res = mockRes();
+      await organizationsController.switchOrganization(mockReq({ params: { organizationId: 'org1' } }), res);
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json.mock.calls[0][0]).toMatchObject({ message: 'Not Found', errorCode: 'NOT_FOUND' });
     });
   });
 });

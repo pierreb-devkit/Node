@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import logger from '../../../lib/services/logger.js';
+import AppError from '../../../lib/helpers/AppError.js';
 import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
 import mailer from '../../../lib/helpers/mailer/index.js';
 import { assertEmailVerified } from '../../../lib/helpers/emailVerification.js';
@@ -40,7 +41,7 @@ const joinRequestSourceFilter = {
  * @description Throws if there is only one active owner left in the organization.
  * @param {String} organizationId - The ID of the organization to check.
  * @returns {Promise<void>}
- * @throws {Error} If the organization has only one active owner.
+ * @throws {AppError} 409 if the organization has only one active owner.
  */
 const validateLastOwnerProtection = async (organizationId) => {
   const ownerCount = await MembershipRepository.count({
@@ -49,7 +50,7 @@ const validateLastOwnerProtection = async (organizationId) => {
     status: MEMBERSHIP_STATUSES.ACTIVE,
   });
   if (ownerCount <= 1) {
-    throw new Error('Organization must have at least one active owner');
+    throw new AppError('Organization must have at least one active owner', { status: 409, code: 'CONFLICT' });
   }
 };
 
@@ -239,7 +240,7 @@ const listPendingOwnerAddsByUser = (userId) =>
  */
 const createJoinRequest = async (userId, organizationId) => {
   const user = await UserService.getBrut({ id: String(userId) });
-  if (!user) throw new Error('User not found');
+  if (!user) throw new AppError('User not found', { status: 404, code: 'NOT_FOUND' });
   assertEmailVerified(user);
 
   // Per-(user,org) duplicate guard: ANY existing membership blocks a join request,
@@ -247,15 +248,15 @@ const createJoinRequest = async (userId, organizationId) => {
   // active membership in, a pending join_request for, or a pending owner_add invite to.
   const existing = await MembershipRepository.findOne({ userId, organizationId, status: { $in: [MEMBERSHIP_STATUSES.ACTIVE, MEMBERSHIP_STATUSES.PENDING] } });
   if (existing) {
-    if (existing.status === MEMBERSHIP_STATUSES.ACTIVE) throw new Error('Already a member of this organization');
-    if (existing.source === PENDING_SOURCES.OWNER_ADD) throw new Error('You already have a pending invitation to this organization. Please accept or decline it.');
-    throw new Error('A pending request already exists');
+    if (existing.status === MEMBERSHIP_STATUSES.ACTIVE) throw new AppError('Already a member of this organization', { status: 409, code: 'CONFLICT' });
+    if (existing.source === PENDING_SOURCES.OWNER_ADD) throw new AppError('You already have a pending invitation to this organization. Please accept or decline it.', { status: 409, code: 'CONFLICT' });
+    throw new AppError('A pending request already exists', { status: 409, code: 'CONFLICT' });
   }
   // Limit to 1 pending JOIN REQUEST at a time across all organizations. Source-scoped
   // (+ E17 legacy fallback): a pending owner_add invitation in another org must NOT
   // block the user from requesting to join — the two surfaces are orthogonal.
   const pendingAnywhere = await MembershipRepository.findOne({ userId, status: MEMBERSHIP_STATUSES.PENDING, ...joinRequestSourceFilter });
-  if (pendingAnywhere) throw new Error('You already have a pending request. Please wait for it to be reviewed before requesting to join another organization.');
+  if (pendingAnywhere) throw new AppError('You already have a pending request. Please wait for it to be reviewed before requesting to join another organization.', { status: 409, code: 'CONFLICT' });
   const membership = await MembershipRepository.create({ userId, organizationId, role: MEMBERSHIP_ROLES.MEMBER, status: MEMBERSHIP_STATUSES.PENDING, source: PENDING_SOURCES.JOIN_REQUEST });
 
   if (mailer.isConfigured()) {
@@ -395,12 +396,12 @@ const findUserByExactEmail = async (email) => {
  *   mailer is configured, also notifies the invited user by email (invitation
  *   wording — the membership awaits THEIR acceptance) with a link to their
  *   organizations page. Fire-and-forget: a mail failure never fails the add.
- * @throws {Error} If userId is missing, the user does not exist, or a membership already exists.
+ * @throws {AppError} 422 if userId is missing, 404 if the user does not exist, 409 if a membership already exists.
  */
 const addMember = async (organizationId, userId, role, addedBy) => {
-  if (!userId) throw new Error('A user is required to add a member');
+  if (!userId) throw new AppError('A user is required to add a member', { status: 422, code: 'VALIDATION_ERROR' });
   const user = await UserService.getBrut({ id: String(userId) });
-  if (!user) throw new Error('User not found');
+  if (!user) throw new AppError('User not found', { status: 404, code: 'NOT_FOUND' });
 
   // Per-(user,org) guard across BOTH sources and both statuses — an owner_add must
   // not duplicate, nor be stacked on an existing membership / pending join request.
@@ -410,8 +411,8 @@ const addMember = async (organizationId, userId, role, addedBy) => {
     status: { $in: [MEMBERSHIP_STATUSES.ACTIVE, MEMBERSHIP_STATUSES.PENDING] },
   });
   if (existing) {
-    if (existing.status === MEMBERSHIP_STATUSES.ACTIVE) throw new Error('User is already a member of this organization');
-    throw new Error('This user already has a pending membership for this organization');
+    if (existing.status === MEMBERSHIP_STATUSES.ACTIVE) throw new AppError('User is already a member of this organization', { status: 409, code: 'CONFLICT' });
+    throw new AppError('This user already has a pending membership for this organization', { status: 409, code: 'CONFLICT' });
   }
 
   // status EXPLICIT — never rely on the schema 'active' default (consent bypass).
@@ -542,7 +543,7 @@ const declineMembership = async (membershipId, decliningUserId) => {
  */
 const leave = async (userId, organizationId) => {
   const membership = await MembershipRepository.findOne({ userId, organizationId, status: MEMBERSHIP_STATUSES.ACTIVE });
-  if (!membership) throw new Error('You are not a member of this organization');
+  if (!membership) throw new AppError('You are not a member of this organization', { status: 403, code: 'FORBIDDEN' });
   if (membership.role === MEMBERSHIP_ROLES.OWNER) {
     await validateLastOwnerProtection(organizationId);
   }
