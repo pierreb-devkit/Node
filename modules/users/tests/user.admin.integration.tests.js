@@ -397,7 +397,7 @@ describe('User admin integration tests:', () => {
       }
     });
 
-    test('should return 404 when pagination params exceed maximum of 3', async () => {
+    test('should return 422 when pagination params exceed maximum of 3', async () => {
       try {
         userEdited = await signupAndPromoteAdmin(agent, { ..._userEdited, roles: ['user', 'admin'] });
       } catch (err) {
@@ -407,7 +407,7 @@ describe('User admin integration tests:', () => {
 
       try {
         // 4 params separated by & exceeds the allowed max of 3
-        const result = await agent.get('/api/admin/users/page/0&10&search&extra').expect(404);
+        const result = await agent.get('/api/admin/users/page/0&10&search&extra').expect(422);
         expect(result.body.message).toBeDefined();
       } catch (err) {
         console.log(err);
