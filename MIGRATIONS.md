@@ -28,7 +28,7 @@ Stack API removed (no callers):
 Renamed defaults:
 
 - Default JWT secret is now `DevkitSecretKeyExampleToChangeAbsolutely`. The old default is still refused outside development.
-- Default production DB name is now `DevkitNode`. If you ran on the old default, set `db.uri` to keep your current database.
+- **Default production DB name is now `DevkitNode`.** A production deploy that never set `db.uri` (`DEVKIT_NODE_db_uri`) silently connects to a new, empty database after this update. Set `db.uri` explicitly before you deploy.
 
 ### Action for downstream
 
