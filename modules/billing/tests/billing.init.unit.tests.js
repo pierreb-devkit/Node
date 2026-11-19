@@ -19,6 +19,8 @@ describe('billing.init unit tests:', () => {
   let mockUserService;
   let mockInvitationsService;
   let mockSignupGrantService;
+  let mockOnOrganizationRemoved;
+  let mockBillingService;
 
   const mockApp = {};
 
@@ -105,6 +107,16 @@ describe('billing.init unit tests:', () => {
     // Stub billing.email so boot validator tests don't wire real email listeners
     jest.unstable_mockModule('../billing.email.js', () => ({
       setupBillingEmails: jest.fn(),
+    }));
+
+    // #4306: org-removal cleanup — stub the registry and the lazily imported billing service.
+    mockOnOrganizationRemoved = jest.fn();
+    jest.unstable_mockModule('../../organizations/lib/organizations.removal.registry.js', () => ({
+      onOrganizationRemoved: mockOnOrganizationRemoved,
+    }));
+    mockBillingService = { deleteOrganizationData: jest.fn().mockResolvedValue({ subscriptions: 1, usage: 2, extraBalances: 1 }) };
+    jest.unstable_mockModule('../services/billing.service.js', () => ({
+      default: mockBillingService,
     }));
 
     jest.unstable_mockModule('mongoose', () => ({
@@ -392,6 +404,28 @@ describe('billing.init unit tests:', () => {
 
     const warnCalls = mockLogger.warn.mock.calls.map((c) => c[0]);
     expect(warnCalls.some((w) => typeof w === 'string' && w.includes('silently skipped'))).toBe(false);
+  });
+
+  describe('#4306 org-removal cleanup handler:', () => {
+    test('registers one handler on the org-removal registry', async () => {
+      await billingInit(mockApp);
+      expect(mockOnOrganizationRemoved).toHaveBeenCalledTimes(1);
+      expect(typeof mockOnOrganizationRemoved.mock.calls[0][0]).toBe('function');
+    });
+
+    test('the handler deletes the removed organization billing data', async () => {
+      await billingInit(mockApp);
+      const handler = mockOnOrganizationRemoved.mock.calls[0][0];
+      await handler({ organizationId: 'org-1', organization: { _id: 'org-1' } });
+      expect(mockBillingService.deleteOrganizationData).toHaveBeenCalledWith('org-1');
+    });
+
+    test('the handler surfaces a cleanup failure to the registry (no silent swallow)', async () => {
+      mockBillingService.deleteOrganizationData.mockRejectedValueOnce(new Error('db down'));
+      await billingInit(mockApp);
+      const handler = mockOnOrganizationRemoved.mock.calls[0][0];
+      await expect(handler({ organizationId: 'org-1' })).rejects.toThrow('db down');
+    });
   });
 
   test('boot validator failure does not crash boot', async () => {

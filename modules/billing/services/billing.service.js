@@ -7,6 +7,9 @@ import getStripe from '../lib/billing.stripe.js';
 import BillingPlansService from './billing.plans.service.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
+import BillingUsageRepository from '../repositories/billing.usage.repository.js';
+import AppError from '../../../lib/helpers/AppError.js';
+import { isObjectId } from '../../../lib/helpers/zod.js';
 import { isDuplicateKeyError } from '../lib/billing.errors.js';
 import { SENTINEL_PENDING } from '../lib/billing.constants.js';
 import { effectivePlanOf } from '../lib/billing.statuses.js';
@@ -402,6 +405,39 @@ const getSubscriptionStatus = async (organizationId) => (await getLocalSubscript
  */
 const getExtrasBalance = (organizationId) => BillingExtraBalanceRepository.getBalance(String(organizationId));
 
+/**
+ * @function deleteOrganizationData
+ * @description Delete every billing record scoped to one organization: its subscription,
+ *              its usage documents and its extras balance (the ledger, referral entries
+ *              included). Records of other organizations are never touched — a referral
+ *              grant credited to the other party's organization stays there. Called by the
+ *              org-removal cleanup handler registered in billing.init.js. The three deletes
+ *              run independently: one failing never skips the others, and every failure is
+ *              re-raised together afterwards. Local data only — a live Stripe subscription is
+ *              not cancelled here.
+ * @param {string} organizationId - The removed organization's ObjectId (string).
+ * @returns {Promise<{subscriptions: number, usage: number, extraBalances: number}>} Deleted counts.
+ * @throws {AppError} When organizationId is not a valid ObjectId (nothing is deleted).
+ * @throws {AggregateError} When one or more deletes failed.
+ */
+const deleteOrganizationData = async (organizationId) => {
+  if (!isObjectId(organizationId)) {
+    throw new AppError('Billing: invalid organization id for removal cleanup', { code: 'SERVICE_ERROR' });
+  }
+  const orgId = String(organizationId);
+  const results = await Promise.allSettled([
+    SubscriptionRepository.deleteByOrganization(orgId),
+    BillingUsageRepository.deleteByOrganization(orgId),
+    BillingExtraBalanceRepository.deleteByOrganization(orgId),
+  ]);
+  const errors = results.filter((r) => r.status === 'rejected').map((r) => r.reason);
+  if (errors.length > 0) {
+    throw new AggregateError(errors, `billing: ${errors.length} org-removal delete(s) failed for ${orgId}`);
+  }
+  const [subscriptions, usage, extraBalances] = results.map((r) => r.value?.deletedCount ?? 0);
+  return { subscriptions, usage, extraBalances };
+};
+
 export default {
   getEffectivePlan,
   getSubscriptionStatus,
@@ -412,4 +448,5 @@ export default {
   fetchSubscriptionDetails,
   getLocalSubscription,
   getSubscription,
+  deleteOrganizationData,
 };

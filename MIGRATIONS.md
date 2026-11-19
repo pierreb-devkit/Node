@@ -4,6 +4,18 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Organization removal cleans billing and uploads (2026-11-19)
+
+Removing an organization now also deletes its billing records (subscription, usage, extras balance and its ledger) and its org-scoped uploads (files included). Before, they stayed behind.
+
+- The org-removal hook is the documented extension point: a module that owns organization-scoped data registers `onOrganizationRemoved(fn)` (`modules/organizations/lib/organizations.removal.registry.js`) in its own `*.init.js`. Payload: `{ organizationId, organization }`. See `modules/organizations/README.md`.
+- **Action for downstream:** a project module with org-scoped data registers its cleanup the same way. Remove any cleanup patched into `organizations.crud.service.js` or a stack module.
+- **Billing records are deleted, not kept.** Stripe is not called: cancel a live subscription in Stripe before removing the organization. If you must keep billing records for legal retention, export them before removal.
+- New service methods: `BillingService.deleteOrganizationData(orgId)`, `UploadsService.removeByOrganization(orgId)`.
+- Ownership rule written in `CLAUDE.md` (§ Stack vs downstream ownership); `/update-stack` step 3ter now **warns** on a downstream file inside a stack folder without the project name, and on a file the stack deleted.
+
+---
+
 ## ⚠️ Module boundaries, shared helpers and file names (2026-11-19)
 
 Modules now read each other through services, never through another module's repository.

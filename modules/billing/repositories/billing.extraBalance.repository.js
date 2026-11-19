@@ -693,6 +693,17 @@ const sumDebitsByWindow = async (orgId, windowStart, windowEnd) => {
   return result?.total ?? 0;
 };
 
+/**
+ * @function deleteByOrganization
+ * @description Delete the extras balance document of one organization, ledger included
+ *              (packs, grants, referral and debit entries) — org-removal cleanup.
+ *              The id is cast to an ObjectId so the filter can only ever match that org.
+ * @param {string} orgId - The removed organization's ObjectId (string).
+ * @returns {Promise<{deletedCount: number}>} Mongoose deleteMany result.
+ */
+const deleteByOrganization = (orgId) =>
+  BillingExtraBalance().deleteMany({ organization: new mongoose.Types.ObjectId(String(orgId)) }).exec();
+
 export default {
   getOrCreate,
   creditPack,
@@ -709,4 +720,5 @@ export default {
   findExistingRefIds,
   countLinkReferrerGrants,
   sumDebitsByWindow,
+  deleteByOrganization,
 };

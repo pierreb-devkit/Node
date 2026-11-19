@@ -284,6 +284,16 @@ const markThreshold = (docId, field) =>
 const countLegacyConsumedHistoryIds = () =>
   BillingUsage.countDocuments({ consumedHistoryIds: { $exists: true } });
 
+/**
+ * @function deleteByOrganization
+ * @description Delete every usage document of one organization (org-removal cleanup).
+ *              The id is cast to an ObjectId so the filter can only ever match that org.
+ * @param {string} organizationId - The removed organization's ObjectId (string).
+ * @returns {Promise<{deletedCount: number}>} Mongoose deleteMany result.
+ */
+const deleteByOrganization = (organizationId) =>
+  BillingUsage.deleteMany({ organizationId: new mongoose.Types.ObjectId(String(organizationId)) }).exec();
+
 export default {
   get,
   increment,
@@ -295,4 +305,5 @@ export default {
   rotateWeekSnapshotForPlanChange,
   markThreshold,
   countLegacyConsumedHistoryIds,
+  deleteByOrganization,
 };
