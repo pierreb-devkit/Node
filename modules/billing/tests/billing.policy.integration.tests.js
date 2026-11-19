@@ -69,7 +69,7 @@ describe('Billing policy — owner/admin only pay routes:', () => {
   };
 
   beforeAll(async () => {
-    config.organizations = { ...config.organizations, enabled: true, autoCreate: true, domainMatching: false };
+    config.organizations = { ...config.organizations, enabled: true, domainMatching: false };
     app = (await bootstrap()).app;
     UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
     MembershipService = (await import(path.resolve('./modules/organizations/services/organizations.membership.service.js'))).default;

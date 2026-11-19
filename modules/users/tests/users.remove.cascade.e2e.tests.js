@@ -49,7 +49,7 @@ describe('users.service.remove cascade (#3709):', () => {
     let agentB;
 
     beforeAll(async () => {
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
+      config.organizations = { enabled: true, domainMatching: false };
       agentA = request.agent(agent.app);
       agentB = request.agent(agent.app);
     });

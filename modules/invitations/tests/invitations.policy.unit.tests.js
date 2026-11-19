@@ -20,7 +20,7 @@ describe('invitationSubjectRegistration', () => {
     expect(registerPathSubject.mock.calls[0][1]).toBe('Invitation');
   });
 
-  test('predicate matches BOTH the canonical /api/invitations and the /api/auth/invitations alias', () => {
+  test('predicate matches the /api/invitations mount only', () => {
     const registerPathSubject = jest.fn();
     invitationSubjectRegistration({ registerPathSubject });
     const predicate = registerPathSubject.mock.calls[0][0];
@@ -28,9 +28,8 @@ describe('invitationSubjectRegistration', () => {
     expect(predicate('/api/invitations')).toBe(true);
     expect(predicate('/api/invitations/abc')).toBe(true);
     expect(predicate('/api/invitations/verify/tok')).toBe(true);
-    // back-compat alias
-    expect(predicate('/api/auth/invitations')).toBe(true);
-    expect(predicate('/api/auth/invitations/abc')).toBe(true);
+    // the removed /api/auth/invitations alias no longer maps to Invitation
+    expect(predicate('/api/auth/invitations')).toBe(false);
     // unrelated paths
     expect(predicate('/api/auth/google')).toBe(false);
     expect(predicate('/api/other')).toBe(false);

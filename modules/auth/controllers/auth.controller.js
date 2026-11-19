@@ -70,8 +70,6 @@ const signup = async (req, res) => {
         abilities: orgResult.abilities || [],
         organizationSetupRequired: orgResult.organizationSetupRequired || false,
         emailVerificationRequired: orgResult.emailVerificationRequired || false,
-        // deprecated: always null since always-create (A2); superseded by suggestedJoin — remove next release
-        suggestedOrganization: orgResult.suggestedOrganization || null,
         suggestedJoin: orgResult.suggestedJoin || null,
         type: 'success',
         message: 'Sign up',
@@ -714,7 +712,6 @@ const getConfig = async (req, res) => {
       organizations: {
         enabled: !!config.organizations?.enabled,
         domainMatching: !!config.organizations?.domainMatching,
-        autoCreate: !!config.organizations?.autoCreate,
       },
       mail: {
         configured: isMailerConfigured(),

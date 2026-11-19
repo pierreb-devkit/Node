@@ -75,7 +75,7 @@ describe('Organizations join request E2E tests:', () => {
     });
 
     test('should complete the full join request flow: request → reject → re-request → approve', async () => {
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
+      config.organizations = { enabled: true, domainMatching: false };
       agentA = request.agent(agent.app);
       agentB = request.agent(agent.app);
 

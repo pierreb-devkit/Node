@@ -147,7 +147,7 @@ describe('handleSignupOrganization — welcome email (Node#4116):', () => {
   });
 
   test('sent once on a fresh create, orgs enabled — includes orgName', async () => {
-    const fakeOrg = setupConfig({ enabled: true, autoCreate: false, domainMatching: false });
+    const fakeOrg = setupConfig({ enabled: true, domainMatching: false });
     const user = makeUser('alice@corp.example.com');
 
     const result = await OrganizationsService.handleSignupOrganization(user);
@@ -193,7 +193,6 @@ describe('handleSignupOrganization — welcome email (Node#4116):', () => {
   test('forwards config.organizations.welcomeEmail.from/.replyTo when a downstream project sets them (Node#4161)', async () => {
     const fakeOrg = setupConfig({
       enabled: true,
-      autoCreate: false,
       domainMatching: false,
       welcomeEmail: { enabled: true, from: 'Acme <hello@acme.test>', replyTo: 'support@acme.test' },
     });

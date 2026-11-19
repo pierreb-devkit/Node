@@ -179,8 +179,7 @@ const sendWelcomeEmail = (user, orgName, orgId) => {
  * Handle organization provisioning during the signup flow.
  *
  * Spec D5 — always-create: every successful signup provisions a workspace for the user.
- * The `autoCreate` config flag is a deprecated no-op (spec D5): signup always provisions
- * a workspace regardless of its value. Domain-matching is a hint mechanism only.
+ * Domain-matching is a hint mechanism only.
  *
  * Behaviour:
  * - **!enabled**: Creates a silent/default org named "{firstName}'s organization".
@@ -293,9 +292,7 @@ const handleSignupOrganization = async (user) => {
     return result;
   }
 
-  // Case 2: Organizations enabled — always provision a workspace for the user.
-  // config.organizations.autoCreate is a deprecated no-op (spec D5): signup always provisions
-  // a workspace regardless of its value.
+  // Case 2: Organizations enabled — always provision a workspace for the user (spec D5).
   //
   // normalizeEmailDomain (A1): single canonical path — lowercased/trimmed, null-safe.
   // Returns null on malformed email; the isCorporateDomain Boolean guard below excludes null.
@@ -325,7 +322,6 @@ const handleSignupOrganization = async (user) => {
 
   // Derive org name/slug: use domain-based name only when domainMatching is on AND
   // the domain is corporate (non-public). Otherwise fall back to a personal workspace name.
-  // This preserves the original naming convention from the autoCreate:true/domainMatching paths.
   let name;
   let slug;
   if (isCorporateDomain) {

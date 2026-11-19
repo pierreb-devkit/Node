@@ -68,7 +68,7 @@ describe('Auth E2E tests:', () => {
     });
 
     test('should auto-create an organization on signup and assign owner role', async () => {
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
+      config.organizations = { enabled: true, domainMatching: false };
 
       try {
         const result = await agent
@@ -121,7 +121,7 @@ describe('Auth E2E tests:', () => {
     test('spec D5: second user with same domain gets own workspace + suggestedJoin (no pending join request)', async () => {
       // Spec D5 always-create: domain-match no longer creates a pending join request.
       // Both users get their own active workspace.
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: true };
+      config.organizations = { enabled: true, domainMatching: true };
 
       try {
         // Step 1: signup first user to create org with domain 'e2etest.com'
@@ -194,7 +194,7 @@ describe('Auth E2E tests:', () => {
     });
 
     test('should signin successfully after signup and get valid JWT + abilities', async () => {
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
+      config.organizations = { enabled: true, domainMatching: false };
 
       try {
         // Step 1: signup
@@ -239,7 +239,7 @@ describe('Auth E2E tests:', () => {
     });
 
     test('should return 200 on signin even when autoSetCurrentOrganization would encounter a data-integrity anomaly', async () => {
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
+      config.organizations = { enabled: true, domainMatching: false };
 
       // Signup user, then directly corrupt their currentOrganization to a non-existent ObjectId
       // to simulate a pre-existing dangling ref in prod

@@ -1630,9 +1630,9 @@ describe('Auth integration tests:', () => {
       config.organizations.enabled = original;
     });
 
-    test('should expose autoCreate in organizations config', async () => {
+    test('should no longer expose the removed autoCreate flag', async () => {
       const result = await agent.get('/api/auth/config').expect(200);
-      expect(result.body.data.organizations.autoCreate).toBeDefined();
+      expect(result.body.data.organizations).not.toHaveProperty('autoCreate');
     });
 
     test('should reflect organizations.enabled=false when disabled', async () => {

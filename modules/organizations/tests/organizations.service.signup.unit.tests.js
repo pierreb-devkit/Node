@@ -2,7 +2,7 @@
  * Unit tests — handleSignupOrganization always-create + suggestedJoin (spec D5 / A2).
  *
  * Contract:
- *  - Every signup path (autoCreate true|false × domainMatching true|false × domain public|corporate × match|no-match)
+ *  - Every signup path (domainMatching true|false × domain public|corporate × match|no-match)
  *    returns a real `organization` + active `membership`. NEVER `organizationSetupRequired` or `pendingJoin`.
  *  - `suggestedJoin` returned ONLY when: domainMatching on + non-public domain + existing different org matches.
  *    Shape is name-only: { orgId: string, orgName: string } — no size/domain/membership keys.
@@ -180,9 +180,9 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
 
   // ─── Core invariant: always returns a real org + membership ──────────────
 
-  describe('autoCreate:false — footgun branch deleted:', () => {
+  describe('always-create — no org setup step:', () => {
     test('non-public domain, no existing org → creates workspace, no suggestedJoin', async () => {
-      setupConfig({ enabled: true, autoCreate: false, domainMatching: false });
+      setupConfig({ enabled: true, domainMatching: false });
       const user = makeUser('alice@acme.com');
 
       const result = await OrganizationsService.handleSignupOrganization(user);
@@ -195,7 +195,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
     });
 
     test('public domain → creates workspace, no suggestedJoin', async () => {
-      setupConfig({ enabled: true, autoCreate: false, domainMatching: true, publicDomains: ['gmail.com'] });
+      setupConfig({ enabled: true, domainMatching: true, publicDomains: ['gmail.com'] });
       const user = makeUser('alice@gmail.com');
 
       const result = await OrganizationsService.handleSignupOrganization(user);
@@ -207,7 +207,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
     });
 
     test('domainMatching on, non-public, existing org → creates workspace + suggestedJoin name-only', async () => {
-      setupConfig({ enabled: true, autoCreate: false, domainMatching: true, publicDomains: [] });
+      setupConfig({ enabled: true, domainMatching: true, publicDomains: [] });
       const existingOrg = makeFakeOrg({ name: 'Acme Corp', domain: 'acme.com' });
       mockOrgList.mockResolvedValue([existingOrg]);
       const user = makeUser('alice@acme.com');
@@ -232,7 +232,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
     });
 
     test('domainMatching on, public domain, existing org → NO suggestedJoin', async () => {
-      setupConfig({ enabled: true, autoCreate: false, domainMatching: true, publicDomains: ['gmail.com'] });
+      setupConfig({ enabled: true, domainMatching: true, publicDomains: ['gmail.com'] });
       const existingOrg = makeFakeOrg({ name: 'Gmail Users', domain: 'gmail.com' });
       mockOrgList.mockResolvedValue([existingOrg]);
       const user = makeUser('alice@gmail.com');
@@ -244,9 +244,9 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
     });
   });
 
-  describe('autoCreate:true — existing paths preserved, same always-create guarantee:', () => {
+  describe('always-create — domain-matching paths:', () => {
     test('domainMatching off → creates personal workspace', async () => {
-      setupConfig({ enabled: true, autoCreate: true, domainMatching: false });
+      setupConfig({ enabled: true, domainMatching: false });
       const user = makeUser('alice@acme.com');
 
       const result = await OrganizationsService.handleSignupOrganization(user);
@@ -259,7 +259,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
     });
 
     test('domainMatching on, non-public, no existing org → creates domain-named workspace', async () => {
-      setupConfig({ enabled: true, autoCreate: true, domainMatching: true });
+      setupConfig({ enabled: true, domainMatching: true });
       mockOrgList.mockResolvedValue([]);
       const user = makeUser('alice@acme.com');
 
@@ -272,7 +272,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
     });
 
     test('domainMatching on, non-public, existing org → creates own workspace + suggestedJoin (no pendingJoin/join-request)', async () => {
-      setupConfig({ enabled: true, autoCreate: true, domainMatching: true });
+      setupConfig({ enabled: true, domainMatching: true });
       const existingOrg = makeFakeOrg({ name: 'Acme Corp', domain: 'acme.com' });
       mockOrgList.mockResolvedValue([existingOrg]);
       const user = makeUser('alice@acme.com');
@@ -291,7 +291,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
     });
 
     test('domainMatching on, public domain (gmail), existing org → NO suggestedJoin', async () => {
-      setupConfig({ enabled: true, autoCreate: true, domainMatching: true, publicDomains: ['gmail.com'] });
+      setupConfig({ enabled: true, domainMatching: true, publicDomains: ['gmail.com'] });
       const existingOrg = makeFakeOrg({ name: 'Gmail Users', domain: 'gmail.com' });
       mockOrgList.mockResolvedValue([existingOrg]);
       const user = makeUser('alice@gmail.com');
@@ -320,8 +320,8 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
   // ─── organization.created (#3952) — emitted exactly once per real new org ─
 
   describe('organization.created emit (billing subscribes from billing.init.js):', () => {
-    test('emitted exactly once for a real new signup (autoCreate:false, no domain match)', async () => {
-      setupConfig({ enabled: true, autoCreate: false, domainMatching: false });
+    test('emitted exactly once for a real new signup (no domain match)', async () => {
+      setupConfig({ enabled: true, domainMatching: false });
       const user = makeUser('alice@acme.com');
 
       await OrganizationsService.handleSignupOrganization(user);
@@ -331,8 +331,8 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
       expect(created[0]).toEqual(expect.objectContaining({ planId: 'free' }));
     });
 
-    test('emitted exactly once for a real new signup (autoCreate:true, domain match → always-create)', async () => {
-      setupConfig({ enabled: true, autoCreate: true, domainMatching: true });
+    test('emitted exactly once for a real new signup (domain match → always-create)', async () => {
+      setupConfig({ enabled: true, domainMatching: true });
       const existingOrg = makeFakeOrg({ name: 'Acme Corp', domain: 'acme.com' });
       mockOrgList.mockResolvedValue([existingOrg]);
       const user = makeUser('alice@acme.com');
@@ -344,7 +344,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
     });
 
     test('NOT emitted on email-verification early-return path', async () => {
-      setupConfig({ enabled: true, autoCreate: false, domainMatching: false });
+      setupConfig({ enabled: true, domainMatching: false });
       mockIsConfigured.mockReturnValue(true);
       const user = makeUser('alice@acme.com');
       user.emailVerified = false;
@@ -361,7 +361,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
 
   describe('suggestedJoin shape:', () => {
     test('orgId is a string representation of the matched org id', async () => {
-      setupConfig({ enabled: true, autoCreate: false, domainMatching: true });
+      setupConfig({ enabled: true, domainMatching: true });
       const existingOrg = makeFakeOrg({ name: 'Acme Corp', domain: 'acme.com' });
       mockOrgList.mockResolvedValue([existingOrg]);
       const user = makeUser('alice@acme.com');
@@ -374,7 +374,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
 
     test('suggestedJoin uses isPublicDomain (A1) for the public-domain gate', async () => {
       // Use the A1 PUBLIC_DOMAINS list — icloud.com is in it
-      setupConfig({ enabled: true, autoCreate: false, domainMatching: true, publicDomains: [] });
+      setupConfig({ enabled: true, domainMatching: true, publicDomains: [] });
       const existingOrg = makeFakeOrg({ name: 'iCloud Corp', domain: 'icloud.com' });
       mockOrgList.mockResolvedValue([existingOrg]);
       const user = makeUser('alice@icloud.com');
@@ -386,18 +386,15 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
     });
 
     test('MembershipService.createJoinRequest is NEVER called on any path', async () => {
-      // Test all paths that previously called createJoinRequest
-      for (const autoCreate of [true, false]) {
-        jest.clearAllMocks();
-        setupConfig({ enabled: true, autoCreate, domainMatching: true });
-        const existingOrg = makeFakeOrg({ name: 'Acme Corp', domain: 'acme.com' });
-        mockOrgList.mockResolvedValue([existingOrg]);
-        const user = makeUser('alice@acme.com');
+      // The domain-match path previously called createJoinRequest
+      setupConfig({ enabled: true, domainMatching: true });
+      const existingOrg = makeFakeOrg({ name: 'Acme Corp', domain: 'acme.com' });
+      mockOrgList.mockResolvedValue([existingOrg]);
+      const user = makeUser('alice@acme.com');
 
-        await OrganizationsService.handleSignupOrganization(user);
+      await OrganizationsService.handleSignupOrganization(user);
 
-        expect(mockCreateJoinRequest).not.toHaveBeenCalled();
-      }
+      expect(mockCreateJoinRequest).not.toHaveBeenCalled();
     });
   });
 
@@ -407,7 +404,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
     test('org created with mixed-case email → domain persisted normalized (lowercase)', async () => {
       // Asserts the canonical-normalization contract: normalizeEmailDomain (A1) is the single
       // path, so the org create call must receive a lowercased, trimmed domain.
-      setupConfig({ enabled: true, autoCreate: false, domainMatching: true, publicDomains: [] });
+      setupConfig({ enabled: true, domainMatching: true, publicDomains: [] });
       mockOrgList.mockResolvedValue([]);
       const user = makeUser('dave@ACME.com');
 
@@ -421,7 +418,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
 
     test('mixed-case email matches existing org with stored lowercase domain (case-insensitive match)', async () => {
       // RED: signup from Dave@Acme.COM should match existing org stored as 'acme.com'
-      setupConfig({ enabled: true, autoCreate: false, domainMatching: true, publicDomains: [] });
+      setupConfig({ enabled: true, domainMatching: true, publicDomains: [] });
       const existingOrg = makeFakeOrg({ name: 'Acme Corp', domain: 'acme.com' });
       mockOrgList.mockResolvedValue([existingOrg]);
       const user = makeUser('Dave@Acme.COM');
@@ -443,7 +440,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
     test('subdomain email does NOT match org with base domain (no subdomain recursion)', async () => {
       // RED: erin@eu.acme.com must NOT match an org stored with domain 'acme.com'
       // Exact equality only — 'eu.acme.com' !== 'acme.com'
-      setupConfig({ enabled: true, autoCreate: false, domainMatching: true, publicDomains: [] });
+      setupConfig({ enabled: true, domainMatching: true, publicDomains: [] });
       // Even if the repo returns a result (simulate loose DB query), the service must not suggest
       // In practice with exact-equality the repo won't be called with 'acme.com' at all —
       // it'll be called with 'eu.acme.com'. Return [] to simulate no exact match.
@@ -463,7 +460,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
     });
 
     test('public domain still skipped even with mixed-case email (no suggestedJoin)', async () => {
-      setupConfig({ enabled: true, autoCreate: false, domainMatching: true, publicDomains: [] });
+      setupConfig({ enabled: true, domainMatching: true, publicDomains: [] });
       // gmail.com is in A1 PUBLIC_DOMAINS hardcoded list
       const existingOrg = makeFakeOrg({ name: 'Gmail Users', domain: 'gmail.com' });
       mockOrgList.mockResolvedValue([existingOrg]);
@@ -484,7 +481,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
 
   describe('A4 — idempotent convergence (retry-safe signup provisioning):', () => {
     test('user already has active membership → returns existing org+membership, NO new org created, NO organization.created emit', async () => {
-      setupConfig({ enabled: true, autoCreate: false, domainMatching: false });
+      setupConfig({ enabled: true, domainMatching: false });
       const existingOrg = makeFakeOrg({ name: 'Existing Corp', domain: 'acme.com' });
       const existingMembership = {
         _id: new mongoose.Types.ObjectId(),
@@ -531,7 +528,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
     });
 
     test('genuinely new user (no existing membership) → org IS created, organization.created emitted once', async () => {
-      setupConfig({ enabled: true, autoCreate: false, domainMatching: false });
+      setupConfig({ enabled: true, domainMatching: false });
       // No active membership exists (default from beforeEach)
       mockMembershipFindOne.mockResolvedValue(null);
       const user = makeUser('bob@acme.com');
@@ -545,7 +542,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
     });
 
     test('converge path returns abilities from policy (same shape as fresh-signup path)', async () => {
-      setupConfig({ enabled: true, autoCreate: false, domainMatching: false });
+      setupConfig({ enabled: true, domainMatching: false });
       const existingOrg = makeFakeOrg();
       const existingMembership = { _id: new mongoose.Types.ObjectId(), role: 'owner', status: 'active', organizationId: existingOrg };
       mockMembershipFindOne.mockResolvedValue(existingMembership);
@@ -559,7 +556,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
     });
 
     test('email-verification early-return precedes idempotent guard (no membership lookup when mailer gates)', async () => {
-      setupConfig({ enabled: true, autoCreate: false, domainMatching: false });
+      setupConfig({ enabled: true, domainMatching: false });
       mockIsConfigured.mockReturnValue(true);
       // Even if an active membership existed, the email-verification guard fires first
       const existingMembership = {
@@ -583,7 +580,7 @@ describe('handleSignupOrganization — always-create (spec D5 / A2):', () => {
     });
 
     test('converge path does NOT return suggestedJoin (retry, not fresh corporate signup)', async () => {
-      setupConfig({ enabled: true, autoCreate: false, domainMatching: true });
+      setupConfig({ enabled: true, domainMatching: true });
       const existingOrg = makeFakeOrg({ domain: 'acme.com' });
       const existingMembership = { _id: new mongoose.Types.ObjectId(), role: 'owner', status: 'active', organizationId: existingOrg };
       mockMembershipFindOne.mockResolvedValue(existingMembership);

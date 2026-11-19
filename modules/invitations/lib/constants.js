@@ -25,14 +25,3 @@ export const INVITATION_STATUSES = {
  * a legitimately in-flight signup is never swept out from under itself.
  */
 export const STALE_CLAIM_MINUTES = 15;
-
-/**
- * Canonical admin/public mount for the invitations module.
- */
-export const INVITATIONS_PATH_PREFIX = '/api/invitations';
-
-/**
- * Back-compat alias prefix kept in auth.routes.js (before the greedy
- * `/api/auth/:strategy` wildcard) until the Vue admin store migrates off it.
- */
-export const INVITATIONS_LEGACY_PATH_PREFIX = '/api/auth/invitations';

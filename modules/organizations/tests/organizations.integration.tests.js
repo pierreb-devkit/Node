@@ -58,7 +58,7 @@ describe('Organizations integration tests:', () => {
     let user;
 
     beforeAll(async () => {
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
+      config.organizations = { enabled: true, domainMatching: false };
       try {
         const result = await agent
           .post('/api/auth/signup')
@@ -103,7 +103,7 @@ describe('Organizations integration tests:', () => {
     let org;
 
     beforeAll(async () => {
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
+      config.organizations = { enabled: true, domainMatching: false };
       ownerAgent = request.agent((await bootstrap()).app);
       memberAgent = request.agent((await bootstrap()).app);
 
@@ -213,7 +213,7 @@ describe('Organizations integration tests:', () => {
     let org2;
 
     beforeAll(async () => {
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
+      config.organizations = { enabled: true, domainMatching: false };
       switchAgent = request.agent((await bootstrap()).app);
       MembershipService = (await import(path.resolve('./modules/organizations/services/organizations.membership.service.js'))).default;
 

@@ -75,7 +75,7 @@ describe('Auth signup organization integration tests:', () => {
 
   describe('Signup with organizations disabled', () => {
     test('should create a silent default organization for the user', async () => {
-      config.organizations = { enabled: false, autoCreate: true, domainMatching: true };
+      config.organizations = { enabled: false, domainMatching: true };
 
       let user;
       // clean up stale users from previous runs on shared databases
@@ -115,11 +115,11 @@ describe('Auth signup organization integration tests:', () => {
     });
   });
 
-  describe('Signup with organizations enabled + autoCreate + domainMatching', () => {
+  describe('Signup with organizations enabled + domainMatching', () => {
     test('spec D5: second user with same domain gets own workspace + suggestedJoin hint (no pending request)', async () => {
       // Spec D5 always-create: domain-match no longer creates a pending join request.
       // Both users get their own active workspace; the second receives a suggestedJoin hint.
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: true };
+      config.organizations = { enabled: true, domainMatching: true };
 
       let firstUser;
       let secondUser;
@@ -190,7 +190,7 @@ describe('Auth signup organization integration tests:', () => {
     });
 
     test('should create a new organization when no domain match exists', async () => {
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: true };
+      config.organizations = { enabled: true, domainMatching: true };
 
       let user;
       // clean up stale users from previous runs on shared databases
@@ -228,9 +228,9 @@ describe('Auth signup organization integration tests:', () => {
     });
   });
 
-  describe('Signup with organizations enabled + autoCreate + no domainMatching', () => {
+  describe('Signup with organizations enabled + no domainMatching', () => {
     test('should create a personal organization for the user (domainMatching off = personal name)', async () => {
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
+      config.organizations = { enabled: true, domainMatching: false };
 
       let user;
       await purgeUser('personal@somecompany.com');
@@ -267,11 +267,10 @@ describe('Auth signup organization integration tests:', () => {
     });
   });
 
-  describe('Signup with organizations enabled + no autoCreate (spec D5: autoCreate is deprecated no-op)', () => {
-    test('spec D5: autoCreate:false is a no-op — workspace always provisioned', async () => {
-      // Spec D5: config.organizations.autoCreate is a deprecated no-op.
+  describe('Signup with organizations enabled + domainMatching (spec D5: always-create)', () => {
+    test('spec D5: workspace always provisioned', async () => {
       // Signup ALWAYS provisions a workspace; organizationSetupRequired is never returned.
-      config.organizations = { enabled: true, autoCreate: false, domainMatching: true };
+      config.organizations = { enabled: true, domainMatching: true };
 
       let user;
       await purgeUser('manual@setup.com');
@@ -309,7 +308,7 @@ describe('Auth signup organization integration tests:', () => {
 
   describe('Signup response structure', () => {
     test('should include organization and abilities in signup response', async () => {
-      config.organizations = { enabled: false, autoCreate: true, domainMatching: true };
+      config.organizations = { enabled: false, domainMatching: true };
 
       let user;
       // clean up stale users from previous runs on shared databases

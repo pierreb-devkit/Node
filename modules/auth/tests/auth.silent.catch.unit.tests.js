@@ -54,7 +54,7 @@ describe('auth.controller silent-catch error logging:', () => {
           handleSignupOrganization: jest.fn().mockResolvedValue({
             organization: null, joined: false, pendingJoin: false,
             abilities: [], organizationSetupRequired: false,
-            emailVerificationRequired: false, suggestedOrganization: null,
+            emailVerificationRequired: false,
           }),
         },
       }));
@@ -193,7 +193,7 @@ describe('auth.controller signup mass-assignment strip:', () => {
         handleSignupOrganization: jest.fn().mockResolvedValue({
           organization: null, joined: false, pendingJoin: false,
           abilities: [], organizationSetupRequired: false,
-          emailVerificationRequired: false, suggestedOrganization: null,
+          emailVerificationRequired: false,
         }),
       },
     }));
@@ -378,7 +378,7 @@ describe('auth.controller signup analytics: invite/referral attribution (#3945):
         handleSignupOrganization: jest.fn().mockResolvedValue({
           organization: null, joined: false, pendingJoin: false,
           abilities: [], organizationSetupRequired: false,
-          emailVerificationRequired: false, suggestedOrganization: null,
+          emailVerificationRequired: false,
         }),
       },
     }));
@@ -501,7 +501,7 @@ describe('auth.controller signup analytics: invite/referral attribution (#3945):
         handleSignupOrganization: jest.fn().mockResolvedValue({
           organization: null, joined: false, pendingJoin: false,
           abilities: [], organizationSetupRequired: false,
-          emailVerificationRequired: false, suggestedOrganization: null,
+          emailVerificationRequired: false,
         }),
       },
     }));

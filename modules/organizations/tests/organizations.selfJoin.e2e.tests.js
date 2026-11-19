@@ -80,7 +80,7 @@ describe('Organizations self-join authorization E2E tests:', () => {
     const emailOutsider = `self-join-outsider-${suffix}@test.com`;
 
     beforeAll(() => {
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
+      config.organizations = { enabled: true, domainMatching: false };
     });
 
     afterAll(async () => {

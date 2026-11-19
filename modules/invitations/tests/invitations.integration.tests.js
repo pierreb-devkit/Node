@@ -187,49 +187,6 @@ describe('Signup invitations:', () => {
     });
   });
 
-  describe('Deprecation alias — /api/auth/invitations still resolves (until Vue P6)', () => {
-    test('admin CRUD works through the legacy /api/auth/invitations alias', async () => {
-      const adminAgent = await createAdminAndSignin();
-
-      const created = await adminAgent.post('/api/auth/invitations').send({ email: 'alias@example.com' });
-      expect(created.status).toBe(200);
-      expect(created.body.data.email).toBe('alias@example.com');
-      const id = created.body.data.id;
-
-      const listed = await adminAgent.get('/api/auth/invitations');
-      expect(listed.status).toBe(200);
-      expect(listed.body.data.some((i) => i.id === id)).toBe(true);
-
-      const removed = await adminAgent.delete(`/api/auth/invitations/${id}`);
-      expect(removed.status).toBe(200);
-    });
-
-    test('public verify works through the legacy alias, interchangeable with the canonical mount', async () => {
-      const adminAgent = await createAdminAndSignin();
-      const created = await adminAgent.post('/api/invitations').send({ email: 'alias-verify@example.com' });
-      const { token } = created.body.data;
-
-      // canonical create → alias verify resolves the SAME invite
-      const viaAlias = await request(app).get(`/api/auth/invitations/verify/${token}`);
-      expect(viaAlias.status).toBe(200);
-      expect(viaAlias.body.data).toEqual({ valid: true, email: 'alias-verify@example.com' });
-    });
-
-    test('the alias did NOT shadow the greedy /api/auth/:strategy wildcard (OAuth routing intact)', async () => {
-      // /api/auth/google must still hit the OAuth :strategy route handler, not
-      // fall through as an unmatched invitations sub-path. 'google' is
-      // allowlisted but unregistered in test config (no clientID) so the
-      // handler's own guard (#3900) now returns a deliberate 404 with
-      // `code: OAUTH_PROVIDER_NOT_FOUND` — asserting on that code (rather than
-      // just "not a 404") is what proves the wildcard route was actually
-      // matched and its handler ran, as opposed to Express's own generic
-      // route-miss 404 the alias mount could otherwise cause.
-      const res = await request(app).get('/api/auth/google');
-      expect(res.status).toBe(404);
-      expect(res.body.code).toBe('OAUTH_PROVIDER_NOT_FOUND');
-    });
-  });
-
   describe('Local signup gate (cap + invite)', () => {
     let originalUp; let originalCap;
     beforeEach(() => { originalUp = config.sign.up; originalCap = config.sign.cap; });
@@ -981,15 +938,6 @@ describe('Signup invitations:', () => {
       const conflicted = await adminAgent.post(`/api/invitations/${id}/resend`);
       expect(conflicted.status).toBe(409);
       expect(conflicted.body.description).toBe('Only pending invitations can be resent.');
-    });
-
-    test('resend resolves through the legacy /api/auth/invitations alias too (kept consistent)', async () => {
-      const adminAgent = await createAdminAndSignin();
-      const created = await adminAgent.post('/api/invitations').send({ email: 'ops-resend-alias@example.com' });
-      jest.spyOn(mails, 'isConfigured').mockReturnValue(true);
-      jest.spyOn(mails, 'sendMail').mockResolvedValue({});
-      const res = await adminAgent.post(`/api/auth/invitations/${created.body.data.id}/resend`);
-      expect(res.status).toBe(200);
     });
   });
 
