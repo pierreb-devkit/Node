@@ -4,6 +4,42 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## ⚠️ Expired shims and dead code removed (2026-11-19)
+
+Routes and response fields:
+
+- `/api/auth/invitations*` (the old alias) is gone. Use `/api/invitations*`.
+- `GET /api/users/terms` is gone. The stored `terms` field stays and `GET /api/users/me` still returns it.
+- The sign-up response no longer has `suggestedOrganization` (it was always `null`). Use `suggestedJoin`.
+- `GET /api/auth/config` no longer returns `organizations.autoCreate`.
+
+Config keys removed (nothing read them): `organizations.autoCreate`, `csrf` (the whole block), `app.googleAnalyticsTrackingID`, `secure.caBundle`, `users.blacklists`.
+
+Security headers: `lusca` is removed and helmet owns the headers. Responses now carry `X-XSS-Protection: 0` (was `1; mode=block`) and no `P3P` header.
+
+Stack API removed (no callers):
+
+- Files: `modules/tasks/services/tasks.data.service.js`, `modules/uploads/services/uploads.data.service.js`, `lib/services/analytics.featureFlags.js` (use `isFeatureEnabled` / `getFeatureFlag` and their `*ForRequest` forms in `lib/services/analytics.js`), `lib/helpers/files.js` (use `readFile(path, 'utf8')` from `fs/promises`).
+- Repositories: `TasksRepository.push`, `UsersRepository.push` and `updateMany`, `UploadsRepository.list`, `update`, `deleteMany` and `purge` (use `purgeUnreferenced`), `AuditRepository.deleteMany`, `SubscriptionRepository.list`, `get` and `remove`, `BillingUsageRepository.reset`, `BillingExtraBalanceRepository.findLedgerByOrg`.
+- Services: `UploadsService.update`, `BillingUsageService.reset`, `MembershipService.create` (use `MembershipRepository.create`), `OrganizationsCrudService.removeById`, `BillingPlanService.getSignupGrant` (read `signupGrant` from `getActivePlan`).
+- Zod schemas: `SubscriptionUpdate`, `ProcessedStripeEventCreate`, `ExtraBalanceCreditPack`, `ExtraBalanceDebit`.
+- Policy files that export only the old `invokeRolesPolicies()` are no longer loaded. Export `<module>Abilities` instead.
+
+Renamed defaults:
+
+- Default JWT secret is now `DevkitSecretKeyExampleToChangeAbsolutely`. The old default is still refused outside development.
+- Default production DB name is now `DevkitNode` (was `WaosNode`).
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the change.
+2. Grep your project for the removed names above (routes, config keys, methods, schemas, `suggestedOrganization`, `autoCreate`) and move each caller to the replacement listed.
+3. If a client sets the `csrf` config or relies on `X-XSS-Protection: 1` or `P3P`, drop that dependency.
+4. If you run with `NODE_ENV=production` and no DB override, set `db.uri` (or `DEVKIT_NODE_db_uri`) to keep your current database name.
+5. Nothing to do otherwise.
+
+---
+
 ## ⚠️ Module activation is honest (2026-11-19)
 
 - `organizations`, `invitations` and `uploads` can no longer be switched off: always-on `auth` and `users` import them, so `activated: false` already crashed the boot. They are now core modules and their `activated` keys are gone.
