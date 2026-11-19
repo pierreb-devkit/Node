@@ -694,15 +694,23 @@ const sumDebitsByWindow = async (orgId, windowStart, windowEnd) => {
 };
 
 /**
- * @function deleteByOrganization
- * @description Delete the extras balance document of one organization, ledger included
- *              (packs, grants, referral and debit entries) — org-removal cleanup.
- *              The id is cast to an ObjectId so the filter can only ever match that org.
+ * @function tombstoneByOrganization
+ * @description Anonymize the extras balance of a removed organization (org-removal cleanup):
+ *              its `organization` reference is replaced with a tombstone id; the ledger
+ *              (packs, grants, referral and debit entries) and the cached balance are kept
+ *              as they are. Both ids are cast to ObjectIds so the filter can only ever match
+ *              that org.
  * @param {string} orgId - The removed organization's ObjectId (string).
- * @returns {Promise<{deletedCount: number}>} Mongoose deleteMany result.
+ * @param {string} tombstoneId - The fresh ObjectId (string) standing in for the removed organization.
+ * @returns {Promise<{modifiedCount: number}>} Mongoose updateMany result.
  */
-const deleteByOrganization = (orgId) =>
-  BillingExtraBalance().deleteMany({ organization: new mongoose.Types.ObjectId(String(orgId)) }).exec();
+const tombstoneByOrganization = (orgId, tombstoneId) =>
+  BillingExtraBalance()
+    .updateMany(
+      { organization: new mongoose.Types.ObjectId(String(orgId)) },
+      { $set: { organization: new mongoose.Types.ObjectId(String(tombstoneId)) } },
+    )
+    .exec();
 
 export default {
   getOrCreate,
@@ -720,5 +728,5 @@ export default {
   findExistingRefIds,
   countLinkReferrerGrants,
   sumDebitsByWindow,
-  deleteByOrganization,
+  tombstoneByOrganization,
 };

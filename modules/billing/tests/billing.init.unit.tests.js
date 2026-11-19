@@ -114,7 +114,9 @@ describe('billing.init unit tests:', () => {
     jest.unstable_mockModule('../../organizations/lib/organizations.removal.registry.js', () => ({
       onOrganizationRemoved: mockOnOrganizationRemoved,
     }));
-    mockBillingService = { deleteOrganizationData: jest.fn().mockResolvedValue({ subscriptions: 1, usage: 2, extraBalances: 1 }) };
+    mockBillingService = {
+      cleanupOrganizationData: jest.fn().mockResolvedValue({ tombstoneId: 'tomb-1', subscriptions: 1, extraBalances: 1, usage: 2 }),
+    };
     jest.unstable_mockModule('../services/billing.service.js', () => ({
       default: mockBillingService,
     }));
@@ -413,15 +415,15 @@ describe('billing.init unit tests:', () => {
       expect(typeof mockOnOrganizationRemoved.mock.calls[0][0]).toBe('function');
     });
 
-    test('the handler deletes the removed organization billing data', async () => {
+    test('the handler cleans the removed organization billing data (anonymize + delete usage)', async () => {
       await billingInit(mockApp);
       const handler = mockOnOrganizationRemoved.mock.calls[0][0];
       await handler({ organizationId: 'org-1', organization: { _id: 'org-1' } });
-      expect(mockBillingService.deleteOrganizationData).toHaveBeenCalledWith('org-1');
+      expect(mockBillingService.cleanupOrganizationData).toHaveBeenCalledWith('org-1');
     });
 
     test('the handler surfaces a cleanup failure to the registry (no silent swallow)', async () => {
-      mockBillingService.deleteOrganizationData.mockRejectedValueOnce(new Error('db down'));
+      mockBillingService.cleanupOrganizationData.mockRejectedValueOnce(new Error('db down'));
       await billingInit(mockApp);
       const handler = mockOnOrganizationRemoved.mock.calls[0][0];
       await expect(handler({ organizationId: 'org-1' })).rejects.toThrow('db down');

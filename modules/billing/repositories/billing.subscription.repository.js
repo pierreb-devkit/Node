@@ -342,14 +342,20 @@ const findPageForReconciliation = (statuses, lastSeenId, limit) => {
 };
 
 /**
- * @function deleteByOrganization
- * @description Delete the subscription document(s) of one organization (org-removal cleanup).
- *              The id is cast to an ObjectId so the filter can only ever match that org.
+ * @function tombstoneByOrganization
+ * @description Anonymize the subscription of a removed organization (org-removal cleanup):
+ *              its `organization` reference is replaced with a tombstone id; every other
+ *              field is kept. Both ids are cast to ObjectIds so the filter can only ever
+ *              match that org.
  * @param {string} organizationId - The removed organization's ObjectId (string).
- * @returns {Promise<{deletedCount: number}>} Mongoose deleteMany result.
+ * @param {string} tombstoneId - The fresh ObjectId (string) standing in for the removed organization.
+ * @returns {Promise<{modifiedCount: number}>} Mongoose updateMany result.
  */
-const deleteByOrganization = (organizationId) =>
-  Subscription.deleteMany({ organization: new mongoose.Types.ObjectId(String(organizationId)) }).exec();
+const tombstoneByOrganization = (organizationId, tombstoneId) =>
+  Subscription.updateMany(
+    { organization: new mongoose.Types.ObjectId(String(organizationId)) },
+    { $set: { organization: new mongoose.Types.ObjectId(String(tombstoneId)) } },
+  ).exec();
 
 export default {
   create,
@@ -365,5 +371,5 @@ export default {
   updateIfEventNewer,
   adminUpdatePlanOnly,
   findPageForReconciliation,
-  deleteByOrganization,
+  tombstoneByOrganization,
 };

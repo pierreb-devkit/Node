@@ -10,8 +10,9 @@ import mongooseService from '../../../lib/services/mongoose.js';
 
 /**
  * Org removal cleans the removed organization's billing data (#4306): the billing
- * org-removal handler (registered by billing.init at boot) deletes its subscription,
- * usage and extras balance, and leaves another organization's rows intact.
+ * org-removal handler (registered by billing.init at boot) keeps its subscription and
+ * extras balance, anonymized under one tombstone id (ledger unchanged), deletes its usage,
+ * and leaves another organization's rows intact.
  */
 describe('Billing org-removal cleanup integration tests:', () => {
   let OrganizationsService;
@@ -23,6 +24,7 @@ describe('Billing org-removal cleanup integration tests:', () => {
   const removedId = new mongoose.Types.ObjectId();
   const keptId = new mongoose.Types.ObjectId();
   const orgIds = [removedId, keptId];
+  const seeded = { subscriptions: [], balances: [] };
 
   /**
    * Seed an organization with one row in every org-scoped billing collection.
@@ -32,13 +34,15 @@ describe('Billing org-removal cleanup integration tests:', () => {
    */
   const seed = async (orgId, slug) => {
     await Organization.create({ _id: orgId, name: slug, slug, plan: 'free' });
-    await Subscription.create({ organization: orgId, plan: 'pro', status: 'active' });
+    const sub = await Subscription.create({ organization: orgId, plan: 'pro', status: 'active', stripeCustomerId: `cus_${slug}` });
     await BillingUsage.create({ organizationId: orgId, month: '2026-11', legacyPeriod: true });
-    await BillingExtraBalance.create({
+    const balance = await BillingExtraBalance.create({
       organization: orgId,
       ledger: [{ kind: 'topup', source: 'referral', amount: 100, refId: `referral:${slug}:referrer`, at: new Date() }],
       cachedBalance: 100,
     });
+    seeded.subscriptions.push(sub._id);
+    seeded.balances.push(balance._id);
   };
 
   const counts = async (orgId) => ({
@@ -50,9 +54,9 @@ describe('Billing org-removal cleanup integration tests:', () => {
   const cleanup = async () => {
     await Promise.all([
       Organization.deleteMany({ _id: { $in: orgIds } }),
-      Subscription.deleteMany({ organization: { $in: orgIds } }),
+      Subscription.deleteMany({ $or: [{ organization: { $in: orgIds } }, { _id: { $in: seeded.subscriptions } }] }),
       BillingUsage.deleteMany({ organizationId: { $in: orgIds } }),
-      BillingExtraBalance.deleteMany({ organization: { $in: orgIds } }),
+      BillingExtraBalance.deleteMany({ $or: [{ organization: { $in: orgIds } }, { _id: { $in: seeded.balances } }] }),
     ]);
   };
 
@@ -73,11 +77,29 @@ describe('Billing org-removal cleanup integration tests:', () => {
     await mongooseService.disconnect();
   });
 
-  test('removing an organization deletes only its billing data', async () => {
+  test('removing an organization anonymizes its billing records, deletes its usage, leaves others intact', async () => {
     const organization = await Organization.findById(removedId);
     await OrganizationsService.remove(organization);
 
+    // Nothing is left under the removed organization id.
     expect(await counts(removedId)).toEqual({ subscriptions: 0, usage: 0, extraBalances: 0 });
+
+    // Subscription and extras balance are kept under one shared tombstone id.
+    const sub = await Subscription.findById(seeded.subscriptions[0]).lean();
+    const balance = await BillingExtraBalance.findById(seeded.balances[0]).lean();
+    expect(sub).not.toBeNull();
+    expect(balance).not.toBeNull();
+    expect(String(sub.organization)).not.toBe(String(removedId));
+    expect(String(balance.organization)).toBe(String(sub.organization));
+    expect(await Organization.exists({ _id: sub.organization })).toBeNull();
+
+    // Nothing else of the financial record changed.
+    expect(sub).toMatchObject({ plan: 'pro', status: 'active', stripeCustomerId: 'cus_billing-org-removal-gone' });
+    expect(balance.cachedBalance).toBe(100);
+    expect(balance.ledger).toHaveLength(1);
+    expect(balance.ledger[0]).toMatchObject({ kind: 'topup', source: 'referral', amount: 100, refId: 'referral:billing-org-removal-gone:referrer' });
+
+    // The other organization is untouched.
     expect(await counts(keptId)).toEqual({ subscriptions: 1, usage: 1, extraBalances: 1 });
   });
 });
