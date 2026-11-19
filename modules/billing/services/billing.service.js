@@ -7,7 +7,6 @@ import getStripe from '../lib/billing.stripe.js';
 import BillingPlansService from './billing.plans.service.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.repository.js';
-import BillingUsageRepository from '../repositories/billing.usage.repository.js';
 import AppError from '../../../lib/helpers/AppError.js';
 import { isObjectId } from '../../../lib/helpers/zod.js';
 import { isDuplicateKeyError } from '../lib/billing.errors.js';
@@ -425,6 +424,9 @@ const deleteOrganizationData = async (organizationId) => {
     throw new AppError('Billing: invalid organization id for removal cleanup', { code: 'SERVICE_ERROR' });
   }
   const orgId = String(organizationId);
+  // Lazy: the usage repository resolves its model at import time, which would break every
+  // unit test of this service that runs without registered models.
+  const { default: BillingUsageRepository } = await import('../repositories/billing.usage.repository.js');
   const results = await Promise.allSettled([
     SubscriptionRepository.deleteByOrganization(orgId),
     BillingUsageRepository.deleteByOrganization(orgId),
