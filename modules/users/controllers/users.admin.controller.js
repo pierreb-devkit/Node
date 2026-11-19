@@ -31,7 +31,7 @@ const list = async (req, res) => {
     });
     responses.success(res, 'user list')(enriched);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -47,7 +47,7 @@ const stats = async (req, res) => {
     responses.success(res, 'user stats')(data);
   } catch (err) {
     logger.error('[stats] user stats failed', { message: err?.message, stack: err?.stack });
-    responses.error(res, 422, 'Unprocessable Entity', 'Unable to compute user stats')(err);
+    responses.error(res, undefined, undefined, 'Unable to compute user stats')(err);
   }
 };
 
@@ -66,7 +66,7 @@ const get = async (req, res) => {
     });
     responses.success(res, 'user get')(user);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -80,7 +80,7 @@ const update = async (req, res) => {
     const user = await UserService.update(req.model, req.body, 'admin');
     responses.success(res, 'user updated')(user);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -94,7 +94,7 @@ const remove = async (req, res) => {
     const result = await UserService.remove(req.model);
     responses.success(res, 'user deleted')({ id: req.model.id, ...result });
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -129,7 +129,7 @@ const userByPage = async (req, res, next, params) => {
   try {
     if (!params) responses.error(res, 404, 'Not Found', 'No users with that params has been found')();
     const request = params.split('&');
-    if (request.length > 3) responses.error(res, 422, 'Not Found', 'That search countain more than 3 params')();
+    if (request.length > 3) responses.error(res, 422, 'Unprocessable Entity', 'That search countain more than 3 params')();
     else {
       if (request.length === 3) {
         req.page = Number(request[0]);

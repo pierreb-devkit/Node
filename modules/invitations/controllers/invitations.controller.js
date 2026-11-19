@@ -14,20 +14,14 @@ import InvitationService from '../services/invitations.service.js';
  * @param {string} req.body.email - Email address to invite
  * @param {Object} req.user - Authenticated admin user
  * @param {Object} res - Express response object
- * @returns {Promise<void>} Sends HTTP 200 with created invitation, 409 on duplicate pending, or 422 on error
+ * @returns {Promise<void>} Sends HTTP 200 with created invitation, 409 on duplicate pending, or the error's own status (500 when it has none)
  */
 const create = async (req, res) => {
   try {
     const invitation = await InvitationService.create(req.body.email, req.user);
     responses.success(res, 'invitation created')(invitation);
   } catch (err) {
-    // Thread ANY service-thrown AppError status (409 duplicate-pending, etc.)
-    // rather than flattening everything but 409 to 422 (same style as the
-    // billing admin controller). create() does not throw 404 today, but the
-    // shared form keeps it consistent with resend().
-    const status = err.status ?? 422;
-    const title = status === 409 ? 'Conflict' : status === 404 ? 'Not Found' : 'Unprocessable Entity';
-    responses.error(res, status, title, errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -37,14 +31,14 @@ const create = async (req, res) => {
  * @param {Object} req - Express request object
  * @param {Object} req.user - Authenticated caller (scoping key)
  * @param {Object} res - Express response object
- * @returns {Promise<void>} Sends HTTP 200 with invitation array or 422 on error
+ * @returns {Promise<void>} Sends HTTP 200 with invitation array or the error's own status (500 when it has none)
  */
 const list = async (req, res) => {
   try {
     const invitations = await InvitationService.list(req.user);
     responses.success(res, 'invitation list')(invitations);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -54,7 +48,7 @@ const list = async (req, res) => {
  * @param {Object} req.invitation - Loaded invitation document (set by invitationByID middleware)
  * @param {string} req.invitation.id - Invitation id
  * @param {Object} res - Express response object
- * @returns {Promise<void>} Sends HTTP 200 with deleted id, 409 when not pending, or 422 on error
+ * @returns {Promise<void>} Sends HTTP 200 with deleted id, 409 when not pending, or the error's own status (500 when it has none)
  */
 const remove = async (req, res) => {
   try {
@@ -68,7 +62,7 @@ const remove = async (req, res) => {
     }
     responses.success(res, 'invitation deleted')({ id: req.invitation.id });
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -84,7 +78,7 @@ const remove = async (req, res) => {
  * @param {Object} req.invitation - Loaded invitation document (set by invitationByID middleware)
  * @param {string} req.invitation.id - Invitation id
  * @param {Object} res - Express response object
- * @returns {Promise<void>} Sends HTTP 200 with the invitation, 403 when not admin, 409 when not pending, or 422 on error
+ * @returns {Promise<void>} Sends HTTP 200 with the invitation, 403 when not admin, 409 when not pending, or the error's own status (500 when it has none)
  */
 const resend = async (req, res) => {
   if (!isGlobalAdmin(req.user)) {
@@ -94,11 +88,6 @@ const resend = async (req, res) => {
     const invitation = await InvitationService.resend(req.invitation.id);
     responses.success(res, 'invitation resent')(invitation);
   } catch (err) {
-    // Thread ANY service-thrown AppError status (409 duplicate-pending, 404
-    // unknown id, 422 mailer-not-configured, etc.) rather than flattening
-    // everything but 409 to 422 — a 404 must not surface as Unprocessable
-    // Entity if a future caller reaches the service without the
-    // invitationByID param-loader's 404 guard.
     // #3966 hardening: InvitationService.resend's mails.sendMail(...) call is
     // unguarded and now propagates (#3966) — a raw transport rejection has no
     // `.status` (unlike the AppErrors thrown deliberately above) and must not
@@ -110,11 +99,9 @@ const resend = async (req, res) => {
         message: err?.message,
         stack: err?.stack,
       });
-      return responses.error(res, 422, 'Unprocessable Entity', 'Failed to send the email, please try again.')(err);
+      return responses.error(res, 500, undefined, 'Failed to send the email, please try again.')(err);
     }
-    const status = err.status;
-    const title = status === 409 ? 'Conflict' : status === 404 ? 'Not Found' : 'Unprocessable Entity';
-    responses.error(res, status, title, errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -124,14 +111,14 @@ const resend = async (req, res) => {
  * @param {Object} req.params - Route parameters
  * @param {string} req.params.token - Invitation token to verify
  * @param {Object} res - Express response object
- * @returns {Promise<void>} Sends HTTP 200 with { valid, email } or 422 on error
+ * @returns {Promise<void>} Sends HTTP 200 with { valid, email } or the error's own status (500 when it has none)
  */
 const verify = async (req, res) => {
   try {
     const invite = await InvitationService.findValid(req.params.token);
     responses.success(res, 'invitation verify')({ valid: !!invite, email: invite ? invite.email : null });
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 

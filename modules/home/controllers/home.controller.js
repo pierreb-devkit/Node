@@ -20,7 +20,7 @@ const team = async (req, res) => {
     const users = await HomeService.team();
     responses.success(res, 'team list')(users);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -33,7 +33,7 @@ const page = async (req, res) => {
   try {
     responses.success(res, 'page')(req.page);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -97,7 +97,7 @@ const readiness = (req, res) => {
     const data = HomeService.getReadinessStatus();
     responses.success(res, 'readiness check')(data);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 

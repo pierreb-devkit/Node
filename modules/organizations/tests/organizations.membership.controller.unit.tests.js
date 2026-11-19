@@ -23,6 +23,7 @@ jest.unstable_mockModule('../services/organizations.membership.service.js', () =
 }));
 
 const { default: membershipController } = await import('../controllers/organizations.membership.controller.js');
+const { default: AppError } = await import('../../../lib/helpers/AppError.js');
 
 /**
  * Unit tests for the membership controller RBAC guards.
@@ -335,14 +336,14 @@ describe('Membership controller unit tests:', () => {
       expect(res.status).not.toHaveBeenCalledWith(403);
     });
 
-    test('a service rejection surfaces as 422', async () => {
-      mockAddMember.mockRejectedValue(new Error('User is already a member of this organization'));
+    test('a service rejection keeps its own status (409 duplicate)', async () => {
+      mockAddMember.mockRejectedValue(Object.assign(new Error('User is already a member of this organization'), { status: 409 }));
       const req = mockReq({ membership: { role: MEMBERSHIP_ROLES.OWNER }, body: { userId: 'u9' } });
       const res = mockRes();
 
       await membershipController.addMember(req, res);
 
-      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.status).toHaveBeenCalledWith(409);
     });
   });
 
@@ -376,6 +377,40 @@ describe('Membership controller unit tests:', () => {
 
       expect(res.status).toHaveBeenCalledWith(422);
       expect(mockFindUserByExactEmail).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('error status (#4304): a failed service call answers the HTTP status the error carries', () => {
+    test('list: an unexpected error answers 500, never 422', async () => {
+      mockList.mockRejectedValueOnce(new Error('db down'));
+      const res = mockRes();
+      await membershipController.list(mockReq(), res);
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json.mock.calls[0][0]).toMatchObject({ message: 'Internal Server Error', errorCode: 'SERVER_ERROR' });
+    });
+
+    test('findUserByEmail: an unexpected error answers 500', async () => {
+      mockFindUserByExactEmail.mockRejectedValueOnce(new Error('db down'));
+      const res = mockRes();
+      await membershipController.findUserByEmail(mockReq({ query: { email: 'ada@acme.test' } }), res);
+      expect(mockFindUserByExactEmail).toHaveBeenCalledWith('ada@acme.test');
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+
+    test('updateRole: a last-owner AppError 409 answers 409 Conflict', async () => {
+      mockUpdateRole.mockRejectedValueOnce(new AppError('Organization must have at least one active owner', { status: 409, code: 'CONFLICT' }));
+      const res = mockRes();
+      await membershipController.updateRole(mockReq({ body: { role: MEMBERSHIP_ROLES.MEMBER } }), res);
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json.mock.calls[0][0]).toMatchObject({ message: 'Conflict', errorCode: 'CONFLICT' });
+    });
+
+    test('remove: an AppError 403 from the service answers 403 Forbidden', async () => {
+      mockRemove.mockRejectedValueOnce(new AppError('You are not a member of this organization', { status: 403, code: 'FORBIDDEN' }));
+      const res = mockRes();
+      await membershipController.remove(mockReq(), res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json.mock.calls[0][0]).toMatchObject({ message: 'Forbidden', errorCode: 'FORBIDDEN' });
     });
   });
 });

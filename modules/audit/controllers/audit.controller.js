@@ -29,7 +29,7 @@ const list = async (req, res) => {
     );
     responses.success(res, 'audit log list')(result);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -46,7 +46,7 @@ const stats = async (req, res) => {
     responses.success(res, 'audit stats')(data);
   } catch (err) {
     logger.error('[stats] audit stats failed', { message: err?.message, stack: err?.stack });
-    responses.error(res, 422, 'Unprocessable Entity', 'Unable to compute audit stats')(err);
+    responses.error(res, undefined, undefined, 'Unable to compute audit stats')(err);
   }
 };
 

@@ -25,7 +25,7 @@ const list = async (req, res) => {
     const members = await MembershipService.list(req.organization._id, search, page, perPage);
     responses.success(res, 'membership list')(members);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -61,7 +61,7 @@ const findUserByEmail = async (req, res) => {
     const match = await MembershipService.findUserByExactEmail(email);
     responses.success(res, 'user lookup')(match);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -119,7 +119,7 @@ const addMember = async (req, res) => {
     );
     responses.success(res, 'membership invitation created')(membership);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -144,7 +144,7 @@ const updateRole = async (req, res) => {
     const membership = await MembershipService.updateRole(req.membershipDoc, req.body.role);
     responses.success(res, 'membership updated')(membership);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -173,7 +173,7 @@ const remove = async (req, res) => {
     const result = await MembershipService.remove(req.membershipDoc);
     responses.success(res, 'membership deleted')({ id: req.membershipDoc.id, ...result });
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 

@@ -121,7 +121,7 @@ describe('Billing admin toolkit integration tests:', () => {
     jest.unstable_mockModule('../../../lib/helpers/responses.js', () => ({
       default: {
         success: jest.fn((_res, _msg) => (data) => _res.status(200).json({ type: 'success', data })), // eslint-disable-line no-unused-vars
-        error: jest.fn((_res, status) => (_err) => _res.status(status).json({ type: 'error' })), // eslint-disable-line no-unused-vars
+        error: jest.fn((_res, status) => (_err) => _res.status(status ?? _err?.status ?? 500).json({ type: 'error' })),
       },
     }));
 

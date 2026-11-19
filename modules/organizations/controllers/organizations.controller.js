@@ -28,7 +28,7 @@ const list = async (req, res) => {
     const organizations = await OrganizationsService.listByUser(req.user);
     responses.success(res, 'organization list')(organizations);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -53,7 +53,7 @@ const create = async (req, res) => {
 
     responses.success(res, 'organization created')(organization);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -89,7 +89,7 @@ const update = async (req, res) => {
 
     responses.success(res, 'organization updated')(organization);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -117,7 +117,7 @@ const remove = async (req, res) => {
     const result = await OrganizationsService.remove(req.organization);
     responses.success(res, 'organization deleted')({ id: req.organization.id, ...result });
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -142,7 +142,7 @@ const adminList = async (req, res) => {
     });
     responses.success(res, 'organization list')(enriched);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -159,7 +159,7 @@ const adminStats = async (req, res) => {
     responses.success(res, 'organization stats')(data);
   } catch (err) {
     logger.error('[stats] organization stats failed', { message: err?.message, stack: err?.stack });
-    responses.error(res, 422, 'Unprocessable Entity', 'Unable to compute organization stats')(err);
+    responses.error(res, undefined, undefined, 'Unable to compute organization stats')(err);
   }
 };
 
@@ -210,7 +210,7 @@ const search = async (req, res) => {
     const organizations = await OrganizationsService.searchByDomain(req.user.email);
     responses.success(res, 'organization search')(organizations);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -295,7 +295,7 @@ const switchOrganization = async (req, res) => {
     if (err.code === 'FORBIDDEN') {
       return responses.error(res, 403, 'Forbidden', 'User is not a member of this organization')(err);
     }
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -314,7 +314,7 @@ const leave = async (req, res) => {
     );
     responses.success(res, 'organization left')(result);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 

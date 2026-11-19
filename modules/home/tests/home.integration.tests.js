@@ -293,22 +293,22 @@ describe('Home integration tests:', () => {
       }
     });
 
-    test('should return 422 when readiness service throws', async () => {
+    test('should return 500 when readiness service throws', async () => {
       jest.spyOn(HomeService, 'getReadinessStatus').mockImplementationOnce(() => {
         throw new Error('config error');
       });
-      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(422);
+      const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(500);
       expect(result.body.type).toBe('error');
       expect(result.body.description).toBe('config error.');
     });
   });
 
   describe('Errors', () => {
-    test('should return 422 when team service fails', async () => {
+    test('should return 500 when team service fails', async () => {
       jest.spyOn(HomeService, 'team').mockRejectedValueOnce(new Error('DB error'));
-      const result = await agent.get('/api/home/team').expect(422);
+      const result = await agent.get('/api/home/team').expect(500);
       expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.message).toBe('Internal Server Error');
       expect(result.body.description).toBe('DB error.');
     });
 

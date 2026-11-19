@@ -8,6 +8,7 @@ import { jest, afterAll, beforeAll } from '@jest/globals';
 import { bootstrap } from '../../../lib/app.js';
 import mongooseService from '../../../lib/services/mongoose.js';
 import config from '../../../config/index.js';
+import AppError from '../../../lib/helpers/AppError.js';
 
 /**
  * Unit tests
@@ -386,44 +387,51 @@ describe('Tasks integration tests:', () => {
       }
     });
 
-    test('should return 422 when list fails', async () => {
+    test('should return 500 when list fails', async () => {
       jest.spyOn(TasksService, 'list').mockRejectedValueOnce(new Error('DB error'));
-      const result = await agent.get('/api/tasks').expect(422);
+      const result = await agent.get('/api/tasks').expect(500);
       expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.message).toBe('Internal Server Error');
       expect(result.body.description).toBe('DB error.');
     });
 
-    test('should return 422 when create fails', async () => {
+    test('should return 500 when create fails', async () => {
       jest.spyOn(TasksService, 'create').mockRejectedValueOnce(new Error('DB error'));
-      const result = await agent.post('/api/tasks').send({ title: 'test', description: 'desc' }).expect(422);
+      const result = await agent.post('/api/tasks').send({ title: 'test', description: 'desc' }).expect(500);
       expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.message).toBe('Internal Server Error');
       expect(result.body.description).toBe('DB error.');
     });
 
-    test('should return 422 when update fails', async () => {
+    test('should return 500 when update fails', async () => {
       jest.spyOn(TasksService, 'update').mockRejectedValueOnce(new Error('DB error'));
-      const result = await agent.put(`/api/tasks/${errorTask.id}`).send({ title: 'upd', description: 'desc' }).expect(422);
+      const result = await agent.put(`/api/tasks/${errorTask.id}`).send({ title: 'upd', description: 'desc' }).expect(500);
       expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.message).toBe('Internal Server Error');
       expect(result.body.description).toBe('DB error.');
     });
 
-    test('should return 422 when remove fails', async () => {
+    test('should return 500 when remove fails', async () => {
       jest.spyOn(TasksService, 'remove').mockRejectedValueOnce(new Error('DB error'));
-      const result = await agent.delete(`/api/tasks/${errorTask.id}`).expect(422);
+      const result = await agent.delete(`/api/tasks/${errorTask.id}`).expect(500);
       expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.message).toBe('Internal Server Error');
       expect(result.body.description).toBe('DB error.');
     });
 
-    test('should return 422 when stats fails', async () => {
+    test('should return 500 when stats fails', async () => {
       jest.spyOn(TasksService, 'stats').mockRejectedValueOnce(new Error('DB error'));
-      const result = await agent.get('/api/tasks/stats').expect(422);
+      const result = await agent.get('/api/tasks/stats').expect(500);
       expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.message).toBe('Internal Server Error');
       expect(result.body.description).toBe('DB error.');
+    });
+
+    test('should keep the status a service error carries (403)', async () => {
+      jest.spyOn(TasksService, 'list').mockRejectedValueOnce(new AppError('Forbidden here', { status: 403, code: 'FORBIDDEN' }));
+      const result = await agent.get('/api/tasks').expect(403);
+      expect(result.body.message).toBe('Forbidden');
+      expect(result.body.errorCode).toBe('FORBIDDEN');
     });
 
     afterAll(async () => {

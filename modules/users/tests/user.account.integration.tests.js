@@ -640,31 +640,31 @@ describe('User integration tests:', () => {
       }
     });
 
-    test('should return 422 when remove fails', async () => {
+    test('should return 500 when remove fails', async () => {
       jest.spyOn(UserService, 'remove').mockRejectedValueOnce(new Error('DB error'));
-      const result = await agent.delete('/api/users').expect(422);
+      const result = await agent.delete('/api/users').expect(500);
       expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.message).toBe('Internal Server Error');
       expect(result.body.description).toBe('DB error.');
     });
 
-    test('should return 422 when stats returns an error', async () => {
+    test('should return 500 when stats returns an error', async () => {
       jest.spyOn(UserService, 'stats').mockResolvedValueOnce({ err: new Error('DB error') });
-      const result = await agent.get('/api/users/stats').expect(422);
+      const result = await agent.get('/api/users/stats').expect(500);
       expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.message).toBe('Internal Server Error');
       expect(result.body.description).toBe('DB error.');
     });
 
-    test('should return 422 when updatePassword fails', async () => {
+    test('should return 500 when updatePassword fails', async () => {
       jest.spyOn(UserService, 'update').mockRejectedValueOnce(new Error('DB error'));
       const result = await agent.post('/api/users/password').send({
         currentPassword: 'W@os.jsI$Aw3$0m3',
         newPassword: 'NewP@ss!W0rd123',
         verifyPassword: 'NewP@ss!W0rd123',
-      }).expect(422);
+      }).expect(500);
       expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.message).toBe('Internal Server Error');
       expect(result.body.description).toBe('DB error.');
     });
 
@@ -685,11 +685,11 @@ describe('User integration tests:', () => {
       expect(result.body.data.position).toBe('developer');
     });
 
-    test('should return 422 when removeAvatar update fails', async () => {
+    test('should return 500 when removeAvatar update fails', async () => {
       jest.spyOn(UserService, 'update').mockRejectedValueOnce(new Error('DB error'));
-      const result = await agent.delete('/api/users/avatar').expect(422);
+      const result = await agent.delete('/api/users/avatar').expect(500);
       expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.message).toBe('Internal Server Error');
       expect(result.body.description).toBe('DB error.');
     });
 

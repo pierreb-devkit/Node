@@ -22,7 +22,7 @@ const update = async (req, res) => {
       return responses.success(res, 'user updated')(user);
     });
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -36,7 +36,7 @@ const remove = async (req, res) => {
     const result = await UserService.remove(req.user);
     responses.success(res, 'user deleted')({ id: req.user.id, ...result });
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -85,7 +85,7 @@ const me = (req, res) => {
  * session and no page. Responds the same way (200/400) whether the token was
  * tampered with, expired in format, or simply never existed — nothing here
  * lets a caller distinguish those cases — barring an unexpected server error
- * (422).
+ * (500).
  * @param {Object} req - Express request object (req.params.token)
  * @param {Object} res - Express response object
  */
@@ -99,7 +99,7 @@ const unsubscribe = async (req, res) => {
 
     return responses.success(res, 'Unsubscribed successfully')({ kind: parsed.kind });
   } catch (err) {
-    return responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    return responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -113,7 +113,7 @@ const stats = async (req, res) => {
   if (!data.err) {
     responses.success(res, 'users stats')(data);
   } else {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(data.err))(data.err);
+    responses.error(res, undefined, undefined, errors.getMessage(data.err))(data.err);
   }
 };
 

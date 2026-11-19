@@ -39,15 +39,18 @@ jest.unstable_mockModule('../../../lib/helpers/errors.js', () => ({
 }));
 
 // responses.success(res, msg)(data) → res.json({ data })
-// responses.error(res, code, label, msg)() → res.status(code).json({ message: msg })
+// responses.error(res, code, label, msg)(err) → res.status(code).json({ message: msg }); the forwarded err is recorded
+const mockErrorForwarded = jest.fn();
 jest.unstable_mockModule('../../../lib/helpers/responses.js', () => ({
   default: {
     // eslint-disable-next-line no-unused-vars
     success: (_res, _label) => (data) => _res.json({ data }),
     error:
       (_res, code, _label, msg) =>
-      () =>
-        _res.status(code).json({ message: msg }),
+      (err) => {
+        mockErrorForwarded(err);
+        return _res.status(code).json({ message: msg });
+      },
   },
 }));
 
@@ -148,16 +151,29 @@ describe('users.admin.controller unit tests:', () => {
       const responseUser = res.json.mock.calls[0][0].data;
       expect(responseUser).toEqual({ memberships: [] });
     });
+
+    test('should leave the status to the error (#4304) when the memberships read fails', async () => {
+      const failure = new Error('db down');
+      mockListByUser.mockRejectedValueOnce(failure);
+      await controller.get(req, res);
+      // No fixed status, and the caught error is forwarded: responses.error resolves the status from it.
+      expect(res.status).toHaveBeenCalledWith(undefined);
+      expect(mockErrorForwarded).toHaveBeenLastCalledWith(failure);
+      expect(res.json).toHaveBeenCalledWith({ message: 'db down' });
+    });
   });
 
   describe('stats', () => {
-    test('should answer 422 and log the cause when the stats read fails', async () => {
+    test('should leave the status to the error (500 for a plain error) and log the cause when the stats read fails', async () => {
       const logSpy = jest.spyOn(logger, 'error').mockImplementation(() => {});
-      UserService.adminStats.mockRejectedValueOnce(new Error('aggregate failed'));
+      const failure = new Error('aggregate failed');
+      UserService.adminStats.mockRejectedValueOnce(failure);
       const res = { status: jest.fn(), json: jest.fn() };
       res.status.mockReturnValue(res);
       await controller.stats({}, res);
-      expect(res.status).toHaveBeenCalledWith(422);
+      // No fixed status, and the caught error is forwarded: responses.error resolves the status from it.
+      expect(res.status).toHaveBeenCalledWith(undefined);
+      expect(mockErrorForwarded).toHaveBeenLastCalledWith(failure);
       expect(res.json).toHaveBeenCalledWith({ message: 'Unable to compute user stats' });
       expect(logSpy).toHaveBeenCalledWith('[stats] user stats failed', expect.objectContaining({ message: 'aggregate failed' }));
       logSpy.mockRestore();

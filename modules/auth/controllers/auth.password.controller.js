@@ -32,7 +32,7 @@ const forgot = async (req, res) => {
   try {
     user = await UserService.getBrut({ email });
   } catch (err) {
-    return responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    return responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 
   // Unknown email or OAuth user — perform a dummy bcrypt compare to equalise
@@ -55,7 +55,7 @@ const forgot = async (req, res) => {
     };
     user = await UserService.update(user, edit, 'recover');
   } catch (err) {
-    return responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    return responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 
   try {
@@ -132,7 +132,7 @@ const reset = async (req, res) => {
         message: 'Password changed successfully',
       });
   } catch (err) {
-    return responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    return responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -163,7 +163,7 @@ const updatePassword = async (req, res) => {
         message: 'Password changed successfully',
       });
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 

@@ -38,7 +38,7 @@ const updateAvatar = async (req, res) => {
     // other eight call sites were fixed for). Multer attaches its own `code`
     // (e.g. `LIMIT_FILE_SIZE`) and `field` on top of `message`; only `message`
     // is a deliberate, human-readable reason worth publishing.
-    if (req.multerErr) throw new AppError(req.multerErr.message, { code: 'SERVICE_ERROR', details: { message: req.multerErr.message } });
+    if (req.multerErr) throw new AppError(req.multerErr.message, { status: 422, code: 'SERVICE_ERROR', details: { message: req.multerErr.message } });
     // delete old image (only if it belongs to this user)
     await removeOwnAvatarFile(req.user);
     // update user
@@ -49,7 +49,7 @@ const updateAvatar = async (req, res) => {
       return responses.success(res, 'profile avatar updated')(user);
     });
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -72,7 +72,7 @@ const removeAvatar = async (req, res) => {
       return responses.success(res, 'profile avatar updated')(user);
     });
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 

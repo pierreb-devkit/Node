@@ -17,7 +17,7 @@ const list = async (req, res) => {
     const tasks = await TasksService.list(req.organization);
     responses.success(res, 'task list')(tasks);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -33,7 +33,7 @@ const create = async (req, res) => {
     const task = await TasksService.create(req.body, req.user, req.organization);
     responses.success(res, 'task created')(task);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -61,7 +61,7 @@ const update = async (req, res) => {
     const task = await TasksService.update(req.task, req.body);
     responses.success(res, 'task updated')(task);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -78,7 +78,7 @@ const remove = async (req, res) => {
     result.id = req.task.id;
     responses.success(res, 'task deleted')({ id: req.task.id, ...result });
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 
@@ -94,7 +94,7 @@ const stats = async (req, res) => {
     const data = await TasksService.stats(req.organization);
     responses.success(res, 'tasks stats')(data);
   } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
 

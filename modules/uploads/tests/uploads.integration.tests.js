@@ -244,27 +244,27 @@ describe('Uploads integration tests:', () => {
       }
     });
 
-    test('should return 422 when get stream fails', async () => {
+    test('should return 500 when get stream fails', async () => {
       jest.spyOn(UploadsService, 'getStream').mockRejectedValueOnce(new Error('DB error'));
-      const result = await agent.get(`/api/uploads/${upload1}`).expect(422);
+      const result = await agent.get(`/api/uploads/${upload1}`).expect(500);
       expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.message).toBe('Internal Server Error');
       expect(result.body.description).toBe('DB error.');
     });
 
-    test('should return 422 when getSharp stream fails', async () => {
+    test('should return 500 when getSharp stream fails', async () => {
       jest.spyOn(UploadsService, 'getStream').mockRejectedValueOnce(new Error('DB error'));
-      const result = await agent.get(`/api/uploads/images/${upload1}`).expect(422);
+      const result = await agent.get(`/api/uploads/images/${upload1}`).expect(500);
       expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.message).toBe('Internal Server Error');
       expect(result.body.description).toBe('DB error.');
     });
 
-    test('should return 422 when remove fails', async () => {
+    test('should return 500 when remove fails', async () => {
       jest.spyOn(UploadsService, 'remove').mockRejectedValueOnce(new Error('DB error'));
-      const result = await agent.delete(`/api/uploads/${upload1}`).expect(422);
+      const result = await agent.delete(`/api/uploads/${upload1}`).expect(500);
       expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
+      expect(result.body.message).toBe('Internal Server Error');
       expect(result.body.description).toBe('DB error.');
     });
 

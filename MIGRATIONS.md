@@ -4,6 +4,26 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## ⚠️ API errors answer with their real HTTP status (2026-11-19)
+
+Controller errors no longer always answer 422. When the caller passes no status, `responses.error` takes it from the error, in this order: `err.status`, then `err.statusCode`, then 422 for a duplicate key, a Mongoose validation / cast error or a Zod error, then a numeric `err.code` (never on a Mongo error: its `code` is a driver code), then **500** (it was 422).
+
+What a downstream must do:
+
+- Give every `AppError` or plain `Error` you throw for a client mistake an explicit status (`new AppError('Not found', { status: 404, code: ... })`). Without one it now answers 500: a plain `Error` caught by the template catch answers 500.
+- Update your controllers' catch to the template shape (`modules/tasks/controllers/tasks.controller.js`):
+
+  ```js
+  } catch (err) {
+    responses.error(res, undefined, undefined, errors.getMessage(err))(err);
+  }
+  ```
+
+  Drop any hand-rolled `err.status ?? 500` + title ternary in ordinary controller catches: `responses.error` picks the status and its title. Keep the explicit `err.status ?? 500` in catches that wrap a Stripe call (billing): a raw Stripe error carries Stripe's own `statusCode` (401 = our API key), which must not become the client-facing status. Keep an explicit `responses.error(res, 422, ...)` for a real validation failure you detect yourself.
+- Update tests that assert 422 for errors that are now 403, 404, 409 or 500.
+
+---
+
 ## Module activation: boot test and migrations follow `activated` (2026-11-19)
 
 - The module activation boot test (`lib/helpers/tests/config.activationBoot.integration.tests.js`) now covers only the modules outside `CORE_MODULES` whose config declares an `activated` key. Declaring it is the module's promise that it can be switched off. A module that never declares it is never switched off, so it is always on and out of the test.

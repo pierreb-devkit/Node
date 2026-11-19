@@ -228,4 +228,37 @@ describe('auth.password.controller.forgot — account enumeration + timing oracl
     // Must still return the exact uniform success message
     expect(responses.success).toHaveBeenCalledWith(res, UNIFORM_MSG);
   });
+
+  test('should hand a lookup failure to responses.error with no fixed status (#4304: the error decides, 500 when it has none)', async () => {
+    const dbErr = new Error('db down');
+    mockGetBrut.mockRejectedValueOnce(dbErr);
+
+    const { default: PasswordController } = await import('../controllers/auth.password.controller.js');
+    const { default: responses } = await import('../../../lib/helpers/responses.js');
+
+    const res = {};
+    await PasswordController.forgot({ body: { email: 'known@example.com' } }, res);
+
+    expect(responses.error).toHaveBeenCalledWith(res, undefined, undefined, 'error');
+    expect(mockErrorFn.mock.results[0].value).toHaveBeenCalledWith(dbErr);
+    expect(responses.success).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  test('should hand a token-save failure to responses.error with no fixed status (#4304)', async () => {
+    const knownUser = { id: 'u5', email: 'save@example.com', provider: 'local' };
+    const saveErr = Object.assign(new Error('write conflict'), { status: 409 });
+    mockGetBrut.mockResolvedValueOnce(knownUser);
+    mockUpdate.mockRejectedValueOnce(saveErr);
+
+    const { default: PasswordController } = await import('../controllers/auth.password.controller.js');
+    const { default: responses } = await import('../../../lib/helpers/responses.js');
+
+    const res = {};
+    await PasswordController.forgot({ body: { email: 'save@example.com' } }, res);
+
+    expect(responses.error).toHaveBeenCalledWith(res, undefined, undefined, 'error');
+    expect(mockErrorFn.mock.results[0].value).toHaveBeenCalledWith(saveErr);
+    expect(mockSendMail).not.toHaveBeenCalled();
+  });
 });

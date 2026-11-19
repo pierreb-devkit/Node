@@ -41,15 +41,19 @@ describe('invitations.controller.create', () => {
     expect(success).toHaveBeenCalled();
     expect(successInner).toHaveBeenCalledWith({ id: 'i1', email: 'a@b.co' });
   });
-  test('maps a thrown error to 422', async () => {
-    mockService.create.mockRejectedValue(new Error('boom'));
+  test('passes a thrown error through so responses.error resolves its status (500 when it has none)', async () => {
+    const caughtError = new Error('boom');
+    mockService.create.mockRejectedValue(caughtError);
     await controller.create({ body: { email: 'a@b.co' }, user: {} }, makeRes());
-    expect(error).toHaveBeenCalledWith(expect.anything(), 422, 'Unprocessable Entity', 'boom');
+    expect(error).toHaveBeenCalledWith(expect.anything(), undefined, undefined, 'boom');
+    expect(errorInner).toHaveBeenCalledWith(caughtError);
   });
-  test('threads a service 409 (duplicate pending) through as Conflict', async () => {
-    mockService.create.mockRejectedValue(Object.assign(new Error('A pending invitation already exists for this email'), { status: 409 }));
+  test('passes a service 409 (duplicate pending) through to responses.error', async () => {
+    const caughtError = Object.assign(new Error('A pending invitation already exists for this email'), { status: 409 });
+    mockService.create.mockRejectedValue(caughtError);
     await controller.create({ body: { email: 'a@b.co' }, user: {} }, makeRes());
-    expect(error).toHaveBeenCalledWith(expect.anything(), 409, 'Conflict', 'A pending invitation already exists for this email');
+    expect(error).toHaveBeenCalledWith(expect.anything(), undefined, undefined, 'A pending invitation already exists for this email');
+    expect(errorInner).toHaveBeenCalledWith(caughtError);
   });
 });
 
@@ -60,6 +64,14 @@ describe('invitations.controller.list', () => {
     await controller.list(req, makeRes());
     expect(mockService.list).toHaveBeenCalledWith({ id: 'u1', roles: ['user'] });
     expect(successInner).toHaveBeenCalledWith([{ id: 'i1' }]);
+  });
+  test('passes a thrown error through with no hard-coded status, so responses.error answers its own (403)', async () => {
+    const caughtError = Object.assign(new Error('Forbidden'), { status: 403 });
+    mockService.list.mockRejectedValue(caughtError);
+    await controller.list({ user: { id: 'u1' } }, makeRes());
+    expect(error).toHaveBeenCalledWith(expect.anything(), undefined, undefined, 'Forbidden');
+    expect(errorInner).toHaveBeenCalledWith(caughtError);
+    expect(success).not.toHaveBeenCalled();
   });
 });
 
@@ -76,6 +88,13 @@ describe('invitations.controller.remove', () => {
     expect(error).toHaveBeenCalledWith(expect.anything(), 409, 'Conflict', 'Only pending invitations can be revoked');
     expect(success).not.toHaveBeenCalled();
   });
+  test('passes a thrown error through with no hard-coded status (500 when it has none)', async () => {
+    const caughtError = new Error('db down');
+    mockService.revoke.mockRejectedValue(caughtError);
+    await controller.remove({ invitation: { id: 'i9' } }, makeRes());
+    expect(error).toHaveBeenCalledWith(expect.anything(), undefined, undefined, 'db down');
+    expect(errorInner).toHaveBeenCalledWith(caughtError);
+  });
 });
 
 describe('invitations.controller.resend', () => {
@@ -88,15 +107,15 @@ describe('invitations.controller.resend', () => {
     expect(success).toHaveBeenCalledWith(expect.anything(), 'invitation resent');
     expect(successInner).toHaveBeenCalledWith({ id: 'i1', status: 'pending' });
   });
-  test('threads a 409 (non-pending) as Conflict', async () => {
+  test('passes a 409 (non-pending) through to responses.error', async () => {
     mockService.resend.mockRejectedValue(Object.assign(new Error('Only pending invitations can be resent'), { status: 409 }));
     await controller.resend({ invitation: { id: 'i1' }, user: admin }, makeRes());
-    expect(error).toHaveBeenCalledWith(expect.anything(), 409, 'Conflict', expect.any(String));
+    expect(error).toHaveBeenCalledWith(expect.anything(), undefined, undefined, expect.any(String));
   });
-  test('maps a 422 (mailer unconfigured) as Unprocessable Entity', async () => {
+  test('passes a 422 (mailer unconfigured) through to responses.error', async () => {
     mockService.resend.mockRejectedValue(Object.assign(new Error('mailer is not configured'), { status: 422 }));
     await controller.resend({ invitation: { id: 'i1' }, user: admin }, makeRes());
-    expect(error).toHaveBeenCalledWith(expect.anything(), 422, 'Unprocessable Entity', expect.any(String));
+    expect(error).toHaveBeenCalledWith(expect.anything(), undefined, undefined, expect.any(String));
   });
   // #3966 hardening: a bare transport rejection (no `.status`, unlike the
   // deliberate AppErrors above) must not leak the raw provider/SMTP error
@@ -107,7 +126,7 @@ describe('invitations.controller.resend', () => {
     mockService.resend.mockRejectedValue(providerError);
     await controller.resend({ invitation: { id: 'i1' }, user: admin }, makeRes());
 
-    expect(error).toHaveBeenCalledWith(expect.anything(), 422, 'Unprocessable Entity', expect.any(String));
+    expect(error).toHaveBeenCalledWith(expect.anything(), 500, undefined, expect.any(String));
     const clientMessage = error.mock.calls[0][3];
     expect(clientMessage).not.toContain('sk_live_abc123');
     expect(clientMessage).not.toContain('Resend API error');
@@ -153,6 +172,13 @@ describe('invitations.controller.verify', () => {
     mockService.findValid.mockResolvedValue(null);
     await controller.verify({ params: { token: 'nope' } }, makeRes());
     expect(successInner).toHaveBeenCalledWith({ valid: false, email: null });
+  });
+  test('passes a thrown error through with no hard-coded status (500 when it has none)', async () => {
+    const caughtError = new Error('db down');
+    mockService.findValid.mockRejectedValue(caughtError);
+    await controller.verify({ params: { token: 'tok' } }, makeRes());
+    expect(error).toHaveBeenCalledWith(expect.anything(), undefined, undefined, 'db down');
+    expect(errorInner).toHaveBeenCalledWith(caughtError);
   });
 });
 
