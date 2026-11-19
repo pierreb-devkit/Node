@@ -81,6 +81,8 @@ describe('BillingService.cleanupOrganizationData unit tests:', () => {
 
     expect(err).toBeInstanceOf(AggregateError);
     expect(err.errors.map((e) => e.message)).toEqual(['usage down']);
+    expect(err.message).toContain('usage: usage down');
+    expect(err.message).not.toContain('subscription:');
     expect(mockSubscriptionRepository.tombstoneByOrganization).toHaveBeenCalled();
     expect(mockExtraBalanceRepository.tombstoneByOrganization).toHaveBeenCalled();
   });

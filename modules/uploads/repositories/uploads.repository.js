@@ -332,7 +332,7 @@ const removeByOrganization = async (organizationId) => {
     { projection: { _id: 1 } },
   );
   let deleted = 0;
-  const errors = [];
+  const failures = [];
   for await (const file of cursor) {
     try {
       await bucket.delete(file._id);
@@ -341,12 +341,16 @@ const removeByOrganization = async (organizationId) => {
       if (isFileNotFound(err)) {
         deleted += 1;
       } else {
-        errors.push(err);
+        failures.push({ fileId: String(file._id), err });
       }
     }
   }
-  if (errors.length > 0) {
-    throw new AggregateError(errors, `Upload: ${errors.length} org-scoped file(s) could not be deleted`);
+  if (failures.length > 0) {
+    const causes = failures.map(({ fileId, err }) => `${fileId}: ${err?.message ?? err}`).join('; ');
+    throw new AggregateError(
+      failures.map(({ err }) => err),
+      `Upload: ${failures.length} org-scoped file(s) could not be deleted — ${causes}`,
+    );
   }
   return { deleted };
 };

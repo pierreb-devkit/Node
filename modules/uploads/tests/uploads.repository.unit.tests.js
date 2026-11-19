@@ -448,6 +448,7 @@ describe('UploadRepository unit tests:', () => {
 
       expect(err).toBeInstanceOf(AggregateError);
       expect(err.errors).toHaveLength(1);
+      expect(err.message).toContain('f1: bucket down');
       expect(mockBucket.delete).toHaveBeenCalledTimes(2);
     });
   });

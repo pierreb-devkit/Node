@@ -438,9 +438,14 @@ const cleanupOrganizationData = async (organizationId) => {
     BillingExtraBalanceRepository.tombstoneByOrganization(orgId, tombstoneId),
     BillingUsageRepository.deleteByOrganization(orgId),
   ]);
-  const errors = results.filter((r) => r.status === 'rejected').map((r) => r.reason);
-  if (errors.length > 0) {
-    throw new AggregateError(errors, `billing: ${errors.length} org-removal write(s) failed for ${orgId} (tombstone ${tombstoneId})`);
+  const writes = ['subscription', 'extraBalance', 'usage'];
+  const failed = results.flatMap((r, i) => (r.status === 'rejected' ? [{ write: writes[i], reason: r.reason }] : []));
+  if (failed.length > 0) {
+    const causes = failed.map(({ write, reason }) => `${write}: ${reason?.message ?? reason}`).join('; ');
+    throw new AggregateError(
+      failed.map(({ reason }) => reason),
+      `billing: org-removal write(s) failed for ${orgId} (tombstone ${tombstoneId}) — ${causes}`,
+    );
   }
   const [subscriptions, extraBalances] = results.slice(0, 2).map((r) => r.value?.modifiedCount ?? 0);
   const usage = results[2].value?.deletedCount ?? 0;

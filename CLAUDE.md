@@ -93,7 +93,7 @@ A downstream project never edits a stack file. Inside stack folders (`lib/`, `co
 - project-only → move it to the project's own module;
 - a dead copy of a file the stack deleted → delete it at the next stack update.
 
-Existing migration files never move — they are recorded by path, a moved one re-runs. `/update-stack` step 3ter warns on every break of this rule.
+Existing migration files never move — they are recorded by path, a moved one re-runs. In `/update-stack`, editing a stack file blocks as drift; step 3ter warns on downstream files added to stack folders under `modules/`, `lib/`, `config/` without the project name, and on copies of files the stack deleted.
 
 A downstream module that owns organization-scoped data cleans it through the org-removal hook (`onOrganizationRemoved`, see `modules/organizations/README.md`), registered from its own `*.init.js` — never by editing `organizations.crud.service.js`.
 
