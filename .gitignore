@@ -20,7 +20,7 @@ coverage/
 # Graphify code knowledge graph (transient, regen via `graphify update .`)
 graphify-out/
 
-# waos Node app and assets
+# Node app and assets
 # ======================
 # Environment files (secrets)
 .env

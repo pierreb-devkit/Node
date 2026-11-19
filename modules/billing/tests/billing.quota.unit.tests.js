@@ -71,7 +71,7 @@ describe('requireQuota middleware:', () => {
   test('should return 403 when organization context is missing', async () => {
     req.organization = undefined;
 
-    await requireQuota('scraps', 'create')(req, res, next);
+    await requireQuota('documents', 'create')(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
@@ -82,7 +82,7 @@ describe('requireQuota middleware:', () => {
   test('should allow request when assertCanExecute resolves { degraded: false }', async () => {
     mockBillingQuotaService.assertCanExecute.mockResolvedValue({ degraded: false });
 
-    await requireQuota('scraps', 'create')(req, res, next);
+    await requireQuota('documents', 'create')(req, res, next);
 
     expect(next).toHaveBeenCalled();
     expect(res.status).not.toHaveBeenCalled();
@@ -92,7 +92,7 @@ describe('requireQuota middleware:', () => {
   test('should allow request and set billingDegraded when assertCanExecute resolves { degraded: true }', async () => {
     mockBillingQuotaService.assertCanExecute.mockResolvedValue({ degraded: true });
 
-    await requireQuota('scraps', 'create')(req, res, next);
+    await requireQuota('documents', 'create')(req, res, next);
 
     expect(next).toHaveBeenCalled();
     expect(res.locals.billingDegraded).toBe(true);
@@ -103,13 +103,13 @@ describe('requireQuota middleware:', () => {
     mockBillingQuotaService.assertCanExecute.mockResolvedValue({ degraded: false });
     req.user = { roles: ['user'] };
 
-    await requireQuota('scraps', 'execute')(req, res, next);
+    await requireQuota('documents', 'execute')(req, res, next);
 
     expect(mockBillingQuotaService.assertCanExecute).toHaveBeenCalledWith({
       orgId: '507f1f77bcf86cd799439011',
       organization: req.organization,
       user: req.user,
-      resource: 'scraps',
+      resource: 'documents',
       action: 'execute',
     });
   });
@@ -120,7 +120,7 @@ describe('requireQuota middleware:', () => {
     req.user = { roles: ['admin'] };
     mockBillingQuotaService.assertCanExecute.mockResolvedValue({ degraded: false });
 
-    await requireQuota('scraps', 'create')(req, res, next);
+    await requireQuota('documents', 'create')(req, res, next);
 
     expect(next).toHaveBeenCalled();
     expect(res.status).not.toHaveBeenCalled();
@@ -131,11 +131,11 @@ describe('requireQuota middleware:', () => {
     mockBillingQuotaService.assertCanExecute.mockRejectedValue(
       new AppError('You have reached the usage limit for this resource', {
         status: 429,
-        details: { type: 'QUOTA_EXCEEDED', resource: 'scraps', action: 'create', limit: 3, current: 3 },
+        details: { type: 'QUOTA_EXCEEDED', resource: 'documents', action: 'create', limit: 3, current: 3 },
       }),
     );
 
-    await requireQuota('scraps', 'create')(req, res, next);
+    await requireQuota('documents', 'create')(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(429);
@@ -147,7 +147,7 @@ describe('requireQuota middleware:', () => {
     req.organization = { _id: '507f1f77bcf86cd799439011', meterExempt: true };
     mockBillingQuotaService.assertCanExecute.mockResolvedValue({ degraded: false });
 
-    await requireQuota('scraps', 'create')(req, res, next);
+    await requireQuota('documents', 'create')(req, res, next);
 
     expect(next).toHaveBeenCalled();
     expect(res.status).not.toHaveBeenCalled();
@@ -158,11 +158,11 @@ describe('requireQuota middleware:', () => {
     mockBillingQuotaService.assertCanExecute.mockRejectedValue(
       new AppError('You have reached the usage limit for this resource', {
         status: 429,
-        details: { type: 'QUOTA_EXCEEDED', resource: 'scraps', action: 'create', limit: 3, current: 3 },
+        details: { type: 'QUOTA_EXCEEDED', resource: 'documents', action: 'create', limit: 3, current: 3 },
       }),
     );
 
-    await requireQuota('scraps', 'create')(req, res, next);
+    await requireQuota('documents', 'create')(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(429);
@@ -174,11 +174,11 @@ describe('requireQuota middleware:', () => {
     mockBillingQuotaService.assertCanExecute.mockRejectedValue(
       new AppError('You have reached the usage limit for this resource', {
         status: 429,
-        details: { type: 'QUOTA_EXCEEDED', resource: 'scraps', action: 'create', limit: 3, current: 3 },
+        details: { type: 'QUOTA_EXCEEDED', resource: 'documents', action: 'create', limit: 3, current: 3 },
       }),
     );
 
-    await requireQuota('scraps', 'create')(req, res, next);
+    await requireQuota('documents', 'create')(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(429);
@@ -194,11 +194,11 @@ describe('requireQuota middleware:', () => {
     mockBillingQuotaService.assertCanExecute.mockRejectedValue(
       new AppError('You have reached the usage limit for this resource', {
         status: 429,
-        details: { type: 'QUOTA_EXCEEDED', resource: 'scraps', action: 'create', limit: 3, current: 5 },
+        details: { type: 'QUOTA_EXCEEDED', resource: 'documents', action: 'create', limit: 3, current: 5 },
       }),
     );
 
-    await requireQuota('scraps', 'create')(req, res, next);
+    await requireQuota('documents', 'create')(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(429);
@@ -208,11 +208,11 @@ describe('requireQuota middleware:', () => {
     mockBillingQuotaService.assertCanExecute.mockRejectedValue(
       new AppError('You have reached the usage limit for this resource', {
         status: 429,
-        details: { type: 'QUOTA_EXCEEDED', resource: 'scraps', action: 'create', limit: 3, current: 3 },
+        details: { type: 'QUOTA_EXCEEDED', resource: 'documents', action: 'create', limit: 3, current: 3 },
       }),
     );
 
-    await requireQuota('scraps', 'create')(req, res, next);
+    await requireQuota('documents', 'create')(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(429);
@@ -228,11 +228,11 @@ describe('requireQuota middleware:', () => {
       mockBillingQuotaService.assertCanExecute.mockRejectedValue(
         new AppError('You have reached the usage limit for this resource', {
           status: 429,
-          details: { type: 'QUOTA_EXCEEDED', resource: 'scraps', action: 'create', limit: 3, current: 3 },
+          details: { type: 'QUOTA_EXCEEDED', resource: 'documents', action: 'create', limit: 3, current: 3 },
         }),
       );
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(429);
@@ -246,7 +246,7 @@ describe('requireQuota middleware:', () => {
   test('should allow unlimited (Infinity) without checking usage (service resolves)', async () => {
     mockBillingQuotaService.assertCanExecute.mockResolvedValue({ degraded: false });
 
-    await requireQuota('scraps', 'create')(req, res, next);
+    await requireQuota('documents', 'create')(req, res, next);
 
     expect(next).toHaveBeenCalled();
   });
@@ -263,14 +263,14 @@ describe('requireQuota middleware:', () => {
     mockBillingQuotaService.assertCanExecute.mockRejectedValue(
       new AppError('You have reached the usage limit for this resource', {
         status: 429,
-        details: { type: 'QUOTA_EXCEEDED', resource: 'scraps', action: 'execute', limit: 100, current: 100, upgradeUrl: '/billing/plans' },
+        details: { type: 'QUOTA_EXCEEDED', resource: 'documents', action: 'execute', limit: 100, current: 100, upgradeUrl: '/billing/plans' },
       }),
     );
 
     const previousNodeEnv = process.env.NODE_ENV;
     process.env.NODE_ENV = 'production';
     try {
-      await requireQuota('scraps', 'execute')(req, res, next);
+      await requireQuota('documents', 'execute')(req, res, next);
     } finally {
       process.env.NODE_ENV = previousNodeEnv;
     }
@@ -301,7 +301,7 @@ describe('requireQuota middleware:', () => {
   test('should use subscription plan when status is trialing (service resolves)', async () => {
     mockBillingQuotaService.assertCanExecute.mockResolvedValue({ degraded: false });
 
-    await requireQuota('scraps', 'create')(req, res, next);
+    await requireQuota('documents', 'create')(req, res, next);
 
     expect(next).toHaveBeenCalled();
     expect(res.status).not.toHaveBeenCalled();
@@ -310,7 +310,7 @@ describe('requireQuota middleware:', () => {
   test('should treat zero usage as under quota (service resolves)', async () => {
     mockBillingQuotaService.assertCanExecute.mockResolvedValue({ degraded: false });
 
-    await requireQuota('scraps', 'create')(req, res, next);
+    await requireQuota('documents', 'create')(req, res, next);
 
     expect(next).toHaveBeenCalled();
   });
@@ -321,7 +321,7 @@ describe('requireQuota middleware:', () => {
     test('should call next() when remaining quota > 0 (meter not exhausted)', async () => {
       mockBillingQuotaService.assertCanExecute.mockResolvedValue({ degraded: false });
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(next).toHaveBeenCalled();
       expect(res.status).not.toHaveBeenCalled();
@@ -330,7 +330,7 @@ describe('requireQuota middleware:', () => {
     test('should call next() when plan quota exhausted but extras balance covers it', async () => {
       mockBillingQuotaService.assertCanExecute.mockResolvedValue({ degraded: false });
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(next).toHaveBeenCalled();
     });
@@ -350,7 +350,7 @@ describe('requireQuota middleware:', () => {
         }),
       );
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(402);
@@ -375,7 +375,7 @@ describe('requireQuota middleware:', () => {
         }),
       );
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(402);
       const payload = res.json.mock.calls[0][0];
@@ -421,7 +421,7 @@ describe('requireQuota middleware:', () => {
       const previousNodeEnv = process.env.NODE_ENV;
       process.env.NODE_ENV = 'production';
       try {
-        await requireQuota('scraps', 'create')(req, res, next);
+        await requireQuota('documents', 'create')(req, res, next);
       } finally {
         process.env.NODE_ENV = previousNodeEnv;
       }
@@ -454,7 +454,7 @@ describe('requireQuota middleware:', () => {
       const previousNodeEnv = process.env.NODE_ENV;
       process.env.NODE_ENV = 'production';
       try {
-        await requireQuota('scraps', 'create')(req, res, next);
+        await requireQuota('documents', 'create')(req, res, next);
       } finally {
         process.env.NODE_ENV = previousNodeEnv;
       }
@@ -476,13 +476,13 @@ describe('requireQuota middleware:', () => {
         }),
       );
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(402);
     });
 
-    // ── Fix #3569: lazy fallback for new-user first scrap ─────────────────────
+    // ── Fix #3569: lazy fallback for new-user first document ─────────────────────
 
     test('fix #3575: no meter doc + getActivePlan returns null — returns 503 PLAN_NOT_CONFIGURED (not 402)', async () => {
       mockBillingQuotaService.assertCanExecute.mockRejectedValue(
@@ -492,7 +492,7 @@ describe('requireQuota middleware:', () => {
         }),
       );
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(503);
@@ -515,7 +515,7 @@ describe('requireQuota middleware:', () => {
       const previousNodeEnv = process.env.NODE_ENV;
       process.env.NODE_ENV = 'production';
       try {
-        await requireQuota('scraps', 'create')(req, res, next);
+        await requireQuota('documents', 'create')(req, res, next);
       } finally {
         process.env.NODE_ENV = previousNodeEnv;
       }
@@ -527,19 +527,19 @@ describe('requireQuota middleware:', () => {
       expect(payload.error).toBeUndefined();
     });
 
-    test('fix #3569: new Free user — 1st scrap passes when plan meterQuota > 0', async () => {
+    test('fix #3569: new Free user — 1st document passes when plan meterQuota > 0', async () => {
       mockBillingQuotaService.assertCanExecute.mockResolvedValue({ degraded: false });
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(next).toHaveBeenCalled();
       expect(res.status).not.toHaveBeenCalled();
     });
 
-    test('fix #3569: new Pro user — 1st scrap passes with full pro quota', async () => {
+    test('fix #3569: new Pro user — 1st document passes with full pro quota', async () => {
       mockBillingQuotaService.assertCanExecute.mockResolvedValue({ degraded: false });
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(next).toHaveBeenCalled();
       expect(res.status).not.toHaveBeenCalled();
@@ -548,7 +548,7 @@ describe('requireQuota middleware:', () => {
     test('fix #3569: no meter doc + no subscription — falls back to defaultPlan quota (service resolves)', async () => {
       mockBillingQuotaService.assertCanExecute.mockResolvedValue({ degraded: false });
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(next).toHaveBeenCalled();
     });
@@ -556,7 +556,7 @@ describe('requireQuota middleware:', () => {
     test('fix #3569: no meter doc — does NOT write a BillingUsage doc (service boundary handles it)', async () => {
       mockBillingQuotaService.assertCanExecute.mockResolvedValue({ degraded: false });
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(mockBillingQuotaService.assertCanExecute).toHaveBeenCalledTimes(1);
       expect(next).toHaveBeenCalled();
@@ -565,7 +565,7 @@ describe('requireQuota middleware:', () => {
     test('should call assertCanExecute in meter mode (degraded-mode gate)', async () => {
       mockBillingQuotaService.assertCanExecute.mockResolvedValue({ degraded: false });
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(mockBillingQuotaService.assertCanExecute).toHaveBeenCalled();
       expect(next).toHaveBeenCalled();
@@ -574,7 +574,7 @@ describe('requireQuota middleware:', () => {
     test('should allow through with billingDegraded flag when past_due within grace period (J+5)', async () => {
       mockBillingQuotaService.assertCanExecute.mockResolvedValue({ degraded: true });
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(next).toHaveBeenCalled();
       expect(res.locals.billingDegraded).toBe(true);
@@ -589,7 +589,7 @@ describe('requireQuota middleware:', () => {
         }),
       );
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(402);
@@ -606,7 +606,7 @@ describe('requireQuota middleware:', () => {
         }),
       );
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(402);
@@ -631,7 +631,7 @@ describe('requireQuota middleware:', () => {
       const previousNodeEnv = process.env.NODE_ENV;
       process.env.NODE_ENV = 'production';
       try {
-        await requireQuota('scraps', 'create')(req, res, next);
+        await requireQuota('documents', 'create')(req, res, next);
       } finally {
         process.env.NODE_ENV = previousNodeEnv;
       }
@@ -646,7 +646,7 @@ describe('requireQuota middleware:', () => {
     test('should NOT block past_due with no pastDueSince set (service resolves)', async () => {
       mockBillingQuotaService.assertCanExecute.mockResolvedValue({ degraded: false });
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(next).toHaveBeenCalled();
       expect(res.locals.billingDegraded).toBeUndefined();
@@ -660,7 +660,7 @@ describe('requireQuota middleware:', () => {
         }),
       );
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(402);
@@ -670,7 +670,7 @@ describe('requireQuota middleware:', () => {
       req.user = { roles: ['admin'] };
       mockBillingQuotaService.assertCanExecute.mockResolvedValue({ degraded: false });
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(next).toHaveBeenCalled();
       expect(res.status).not.toHaveBeenCalled();
@@ -680,7 +680,7 @@ describe('requireQuota middleware:', () => {
       req.organization = { _id: '507f1f77bcf86cd799439011', meterExempt: true };
       mockBillingQuotaService.assertCanExecute.mockResolvedValue({ degraded: false });
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(next).toHaveBeenCalled();
       expect(res.status).not.toHaveBeenCalled();
@@ -694,7 +694,7 @@ describe('requireQuota middleware:', () => {
         }),
       );
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(402);
@@ -720,7 +720,7 @@ describe('requireQuota middleware:', () => {
         }),
       );
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(402);
@@ -745,7 +745,7 @@ describe('requireQuota middleware:', () => {
         }),
       );
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(402);

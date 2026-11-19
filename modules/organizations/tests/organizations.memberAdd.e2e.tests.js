@@ -75,7 +75,7 @@ describe('Organizations member-add E2E tests:', () => {
     // Finding #2: move config assignment into beforeAll so it is always set
     // before any test in this describe block runs
     beforeAll(() => {
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
+      config.organizations = { enabled: true, domainMatching: false };
     });
 
     afterAll(async () => {

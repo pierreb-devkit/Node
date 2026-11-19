@@ -100,8 +100,8 @@ describe('Billing meter lifecycle integration tests:', () => {
     const upgradeVersion = `${upgradePlan}-v2`;
 
     config.billing.planDefinitions = [
-      { planId: initialPlan, version: initialVersion, meterQuota: 100, ratios: { scrap: 1 } },
-      { planId: upgradePlan, version: upgradeVersion, meterQuota: 1000, ratios: { scrap: 1 } },
+      { planId: initialPlan, version: initialVersion, meterQuota: 100, ratios: { document: 1 } },
+      { planId: upgradePlan, version: upgradeVersion, meterQuota: 1000, ratios: { document: 1 } },
     ];
 
     const organizationId = new mongoose.Types.ObjectId();
@@ -122,7 +122,7 @@ describe('Billing meter lifecycle integration tests:', () => {
       meterUsed: 25,
       meterQuota: 100,
       planVersion: initialVersion,
-      meterBreakdown: { scrap: 25 },
+      meterBreakdown: { document: 25 },
       consumedAttributionKeys: [],
     });
 
@@ -148,7 +148,7 @@ describe('Billing meter lifecycle integration tests:', () => {
     expect(usage.meterQuota).toBe(1000);
     expect(usage.planVersion).toBe(upgradeVersion);
     expect(usage.meterUsed).toBe(25);
-    expect(usage.meterBreakdown).toEqual({ scrap: 25 });
+    expect(usage.meterBreakdown).toEqual({ document: 25 });
   });
 
   test('checkout activation refreshes the active week quota snapshot and attribution reads the live quota', async () => {
@@ -166,8 +166,8 @@ describe('Billing meter lifecycle integration tests:', () => {
     const upgradeQuota = 1000;
 
     config.billing.planDefinitions = [
-      { planId: initialPlan, version: initialVersion, meterQuota: 0, ratios: { scrap: 1 } },
-      { planId: upgradePlan, version: upgradeVersion, meterQuota: upgradeQuota, ratios: { scrap: 1 } },
+      { planId: initialPlan, version: initialVersion, meterQuota: 0, ratios: { document: 1 } },
+      { planId: upgradePlan, version: upgradeVersion, meterQuota: upgradeQuota, ratios: { document: 1 } },
     ];
 
     const organizationId = new mongoose.Types.ObjectId();
@@ -193,7 +193,7 @@ describe('Billing meter lifecycle integration tests:', () => {
       meterUsed: 500,
       meterQuota: 0,
       planVersion: initialVersion,
-      meterBreakdown: { scrap: 500 },
+      meterBreakdown: { document: 500 },
       consumedAttributionKeys: [],
     });
 
@@ -217,7 +217,7 @@ describe('Billing meter lifecycle integration tests:', () => {
     const result = await BillingUsageService.incrementMeter(
       organizationId.toString(),
       50,
-      { scrap: 50 },
+      { document: 50 },
       `${organizationId.toString()}:post-activation`,
     );
 
@@ -242,8 +242,8 @@ describe('Billing meter lifecycle integration tests:', () => {
     const upgradeQuota = 2000;
 
     config.billing.planDefinitions = [
-      { planId: initialPlan, version: initialVersion, meterQuota: 0, ratios: { scrap: 1 } },
-      { planId: upgradePlan, version: upgradeVersion, meterQuota: upgradeQuota, ratios: { scrap: 1 } },
+      { planId: initialPlan, version: initialVersion, meterQuota: 0, ratios: { document: 1 } },
+      { planId: upgradePlan, version: upgradeVersion, meterQuota: upgradeQuota, ratios: { document: 1 } },
     ];
 
     const organizationId = new mongoose.Types.ObjectId();
@@ -267,7 +267,7 @@ describe('Billing meter lifecycle integration tests:', () => {
       meterUsed: 300,
       meterQuota: 0,
       planVersion: initialVersion,
-      meterBreakdown: { scrap: 300 },
+      meterBreakdown: { document: 300 },
       consumedAttributionKeys: [],
     });
 
@@ -293,7 +293,7 @@ describe('Billing meter lifecycle integration tests:', () => {
 
   test('attribute applies usage inline — no outbox collection created', async () => {
     config.billing.planDefinitions = [
-      { planId: 'pro', version: 'pro-v1', meterQuota: 100000, ratios: { scrap: 1 } },
+      { planId: 'pro', version: 'pro-v1', meterQuota: 100000, ratios: { document: 1 } },
     ];
     config.billing.meter = { ...(config.billing.meter ?? {}), ratioVersion: 'pro-v1' };
 
@@ -307,7 +307,7 @@ describe('Billing meter lifecycle integration tests:', () => {
     const result = await BillingMeterService.attribute(
       {
         _id: new mongoose.Types.ObjectId(),
-        costs: { scrap: 0.01 },
+        costs: { document: 0.01 },
         planId: 'pro',
         planVersion: 'pro-v1',
       },
@@ -328,7 +328,7 @@ describe('Billing meter lifecycle integration tests:', () => {
 
   test('attribute with overflow debits extras inline — no outbox doc persisted', async () => {
     config.billing.planDefinitions = [
-      { planId: 'pro', version: 'pro-v1', meterQuota: 5, ratios: { scrap: 1 } },
+      { planId: 'pro', version: 'pro-v1', meterQuota: 5, ratios: { document: 1 } },
     ];
     config.billing.meter = { ...(config.billing.meter ?? {}), ratioVersion: 'pro-v1' };
 
@@ -347,7 +347,7 @@ describe('Billing meter lifecycle integration tests:', () => {
     const result = await BillingMeterService.attribute(
       {
         _id: new mongoose.Types.ObjectId(),
-        costs: { scrap: 0.01 },
+        costs: { document: 0.01 },
         planId: 'pro',
         planVersion: 'pro-v1',
       },
@@ -369,7 +369,7 @@ describe('Billing meter lifecycle integration tests:', () => {
 
   test('incrementMeter creates BillingUsage doc with correct meter snapshot', async () => {
     config.billing.planDefinitions = [
-      { planId: 'free', version: 'free-v1', meterQuota: 500, ratios: { scrap: 1 } },
+      { planId: 'free', version: 'free-v1', meterQuota: 500, ratios: { document: 1 } },
     ];
 
     const organizationId = new mongoose.Types.ObjectId();
@@ -382,7 +382,7 @@ describe('Billing meter lifecycle integration tests:', () => {
     const result = await BillingUsageService.incrementMeter(
       organizationId.toString(),
       10,
-      { scrap: 10 },
+      { document: 10 },
       `${organizationId.toString()}:initial`,
     );
 

@@ -3,10 +3,21 @@
  */
 import request from 'supertest';
 import path from 'path';
+import mongoose from 'mongoose';
 
 import { bootstrap } from '../../../lib/app.js';
 import mongooseService from '../../../lib/services/mongoose.js';
 import config from '../../../config/index.js';
+
+/**
+ * Read an org's extras ledger straight from the model (null when the org has no doc yet).
+ * @param {string} orgId - Organization id.
+ * @returns {Promise<Object[]|null>} Ledger entries or null.
+ */
+const findLedger = async (orgId) => {
+  const doc = await mongoose.model('BillingExtraBalance').findOne({ organization: orgId }, { ledger: 1 }).lean();
+  return doc?.ledger ?? null;
+};
 
 /**
  * Integration tests for organization routes.
@@ -58,7 +69,7 @@ describe('Organizations integration tests:', () => {
     let user;
 
     beforeAll(async () => {
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
+      config.organizations = { enabled: true, domainMatching: false };
       try {
         const result = await agent
           .post('/api/auth/signup')
@@ -103,7 +114,7 @@ describe('Organizations integration tests:', () => {
     let org;
 
     beforeAll(async () => {
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
+      config.organizations = { enabled: true, domainMatching: false };
       ownerAgent = request.agent((await bootstrap()).app);
       memberAgent = request.agent((await bootstrap()).app);
 
@@ -125,8 +136,7 @@ describe('Organizations integration tests:', () => {
       member = memberRes.body.user;
 
       // Add member to owner's org as 'member'
-      const MembershipService = (await import(path.resolve('./modules/organizations/services/organizations.membership.service.js'))).default;
-      await MembershipService.create({ userId: member._id || member.id, organizationId: org._id || org.id, role: 'member' });
+      await MembershipRepository.create({ userId: member._id || member.id, organizationId: org._id || org.id, role: 'member' });
     });
 
     test('owner should see pending requests — 200 with array', async () => {
@@ -161,7 +171,7 @@ describe('Organizations integration tests:', () => {
     async function waitForSignupGrantEntry(orgId, timeoutMs = 5000) {
       const start = Date.now();
       while (Date.now() - start < timeoutMs) {
-        const ledger = await BillingExtraBalanceRepository.findLedgerByOrg(orgId);
+        const ledger = await findLedger(orgId);
         const entry = (ledger ?? []).find((e) => e.source === 'signup_grant');
         if (entry) return entry;
         await new Promise((resolve) => { setTimeout(resolve, 100); });
@@ -208,14 +218,12 @@ describe('Organizations integration tests:', () => {
 
   describe('POST /api/organizations/:organizationId/switch (#3963 — sanitized response)', () => {
     let switchAgent;
-    let MembershipService;
     let user;
     let org2;
 
     beforeAll(async () => {
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
+      config.organizations = { enabled: true, domainMatching: false };
       switchAgent = request.agent((await bootstrap()).app);
-      MembershipService = (await import(path.resolve('./modules/organizations/services/organizations.membership.service.js'))).default;
 
       const signupRes = await switchAgent
         .post('/api/auth/signup')
@@ -233,7 +241,7 @@ describe('Organizations integration tests:', () => {
       // the CASL `create` action on Organization, which only the owner's `manage`
       // wildcard grants), so the switch has somewhere valid to go.
       org2 = await OrganizationsRepository.create({ name: 'Switch Target Org', slug: `switch-target-3963-${Date.now()}` });
-      await MembershipService.create({ userId: user._id || user.id, organizationId: org2._id, role: 'owner' });
+      await MembershipRepository.create({ userId: user._id || user.id, organizationId: org2._id, role: 'owner' });
 
       // Simulate what a real production user document carries — a linked OAuth
       // account and a stray reset token — so the assertions below prove the

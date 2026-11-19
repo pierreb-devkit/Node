@@ -64,7 +64,6 @@ describe('BillingResetService unit tests:', () => {
       findByWeek: jest.fn(),
       increment: jest.fn(),
       get: jest.fn(),
-      reset: jest.fn(),
       incrementMeter: jest.fn(),
       archiveOtherWeeks: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
       upsertWeekSnapshot: jest.fn(),
@@ -546,7 +545,7 @@ describe('BillingResetService unit tests:', () => {
     test('resets usage when preserveUsage=false', async () => {
       const existingDoc = makeUsageDoc({
         meterUsed: 1234,
-        meterBreakdown: { scrap: 1234 },
+        meterBreakdown: { document: 1234 },
       });
       const updatedDoc = makeUsageDoc({
         meterUsed: 0,
@@ -573,7 +572,7 @@ describe('BillingResetService unit tests:', () => {
 
     test('uses billing.planChange.preserveUsageDefault when option is omitted', async () => {
       mockConfig.billing.planChange.preserveUsageDefault = false;
-      const existingDoc = makeUsageDoc({ meterUsed: 1234, meterBreakdown: { scrap: 1234 } });
+      const existingDoc = makeUsageDoc({ meterUsed: 1234, meterBreakdown: { document: 1234 } });
       mockUsageRepository.findByWeek.mockResolvedValue(existingDoc);
       mockSubscriptionRepository.findPlan.mockResolvedValue({ plan: 'starter' });
       mockPlanService.getActivePlan.mockReturnValue(makePlan({ meterQuota: 100000, version: 'v3' }));

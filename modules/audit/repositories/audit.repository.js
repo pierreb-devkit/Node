@@ -58,20 +58,6 @@ const list = async (filter, page, perPage) => {
 };
 
 /**
- * @function deleteMany
- * @description Delete multiple audit log entries based on a filter.
- * @param {Object} filter - The filter to apply
- * @returns {Promise<Object>} Deletion result
- */
-const deleteMany = (filter) => {
-  if (!filter || Object.keys(filter).length === 0) {
-    // Require explicit filter to prevent accidental full collection wipe
-    return Promise.resolve({ deletedCount: 0 });
-  }
-  return getModel().deleteMany(filter).exec();
-};
-
-/**
  * @function weeklyCount
  * @description Count audit entries per week since `start`.
  * @param {Date} start - window start (Monday 00:00 UTC)
@@ -121,7 +107,6 @@ const activeUsers = async (previousStart, currentStart, end) => {
 export default {
   create,
   list,
-  deleteMany,
   weeklyCount,
   topActions,
   activeUsers,

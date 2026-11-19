@@ -589,7 +589,7 @@ describe('requireQuota — fail-closed statuses in meter mode:', () => {
       mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro', status });
       mockBillingPlanService.getActivePlan.mockReturnValue({ meterQuota: 0 });
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(402);
@@ -610,7 +610,7 @@ describe('requireQuota — fail-closed statuses in meter mode:', () => {
       mockBillingPlanService.getActivePlan.mockReturnValue({ meterQuota: 0 });
       mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(500000);
 
-      await requireQuota('scraps', 'create')(req, res, next);
+      await requireQuota('documents', 'create')(req, res, next);
 
       expect(next).toHaveBeenCalled();
     },
@@ -620,7 +620,7 @@ describe('requireQuota — fail-closed statuses in meter mode:', () => {
     mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro', status: 'paused' });
     mockBillingPlanService.getActivePlan.mockReturnValue({ meterQuota: 10 });
 
-    await requireQuota('scraps', 'create')(req, res, next);
+    await requireQuota('documents', 'create')(req, res, next);
 
     // meterQuota=10 + extras=0 = 10 > 0 → allow
     expect(next).toHaveBeenCalled();
@@ -630,7 +630,7 @@ describe('requireQuota — fail-closed statuses in meter mode:', () => {
     mockSubscriptionRepository.findByOrganization.mockResolvedValue({ plan: 'pro', status: 'paused' });
     mockBillingPlanService.getActivePlan.mockReturnValue(null);
 
-    await requireQuota('scraps', 'create')(req, res, next);
+    await requireQuota('documents', 'create')(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(503);
@@ -641,7 +641,7 @@ describe('requireQuota — fail-closed statuses in meter mode:', () => {
     mockBillingUsageService.getMeter.mockResolvedValue({ meterUsed: 100, meterQuota: 5000 });
     mockBillingExtraBalanceRepository.getBalance.mockResolvedValue(0);
 
-    await requireQuota('scraps', 'create')(req, res, next);
+    await requireQuota('documents', 'create')(req, res, next);
 
     expect(next).toHaveBeenCalled();
     // Normal meter path — getActivePlan not called for fail-closed path

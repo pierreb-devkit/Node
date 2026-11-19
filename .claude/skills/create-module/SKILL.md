@@ -6,7 +6,7 @@ description: >
   vertical (controller + service + repo + model + routes + tests). Duplicates
   the canonical `modules/tasks` template, applies kebab/Pascal/camel renames,
   and registers config-driven enums. A `crud-only` option scaffolds a leaner
-  module for plain CRUD, skipping the bulk data service and the OpenAPI yaml. Module stays self-contained — never modify
+  module for plain CRUD, skipping the OpenAPI yaml. Module stays self-contained — never modify
   shared `lib/` or `config/` to bolt on module logic.
 ---
 
@@ -44,15 +44,10 @@ cp -r modules/tasks modules/{new-module-name}
 
 On this stack `crud-only` removes files (the Vue stack's option of the same name only thins the store test — its template has no extra files to drop).
 
-When the new module is plain CRUD with no bulk-import/export need, scaffold it leaner by removing these **right after the copy, before step 4's renaming** (files are still named `tasks.*` at this point — the copy doesn't rename them):
+When the new module needs no public API documentation, scaffold it leaner by removing these **right after the copy, before step 4's renaming** (files are still named `tasks.*` at this point — the copy doesn't rename them):
 
-- `services/tasks.data.service.js` — the bulk push/list/remove data service
 - `doc/tasks.yml` — the OpenAPI spec
 - `tests/tasks.openapi-operationid.unit.tests.js` — it only exists to check the yaml above, now gone with it
-
-Each removal leaves a dangling reference in the main integration test — clean it up in the same pass:
-
-- In `tests/tasks.integration.tests.js`: drop the `TasksDataService` variable, its `import(...)` in `beforeAll`, and the whole `describe('Data', ...)` block that exercises it.
 
 Then proceed to step 4, which renames what's left (including these surviving files) to `{new-module-name}`.
 
@@ -74,7 +69,7 @@ Files to check in `modules/{new-module-name}/`:
 - File names (controllers, services, repositories, models, schemas, policies, routes, tests)
 - Mongoose model name and collection name
 - Route paths and prefixes
-- Joi validation schemas
+- Zod validation schemas
 - Policy function names
 - Test descriptions and fixture data
 

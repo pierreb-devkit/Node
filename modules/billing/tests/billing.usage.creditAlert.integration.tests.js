@@ -48,7 +48,7 @@ describe('BillingUsage credit-balance alert integration tests:', () => {
       Subscription.deleteMany({}),
     ]);
     config.billing.planDefinitions = [
-      { planId: 'free', meterQuota: 0, signupGrant: 500, oneShot: true, ratios: { scrap: 1 } },
+      { planId: 'free', meterQuota: 0, signupGrant: 500, oneShot: true, ratios: { document: 1 } },
     ];
   });
 
@@ -84,7 +84,7 @@ describe('BillingUsage credit-balance alert integration tests:', () => {
     await BillingUsageService.incrementMeter(
       organizationId.toString(),
       401,
-      { scrap: 401 },
+      { document: 401 },
       'step-credit-alert-1',
     );
 
@@ -105,7 +105,7 @@ describe('BillingUsage credit-balance alert integration tests:', () => {
     await BillingUsageService.incrementMeter(
       organizationId.toString(),
       50,
-      { scrap: 50 },
+      { document: 50 },
       'step-credit-alert-2',
     );
 

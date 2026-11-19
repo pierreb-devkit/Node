@@ -38,7 +38,7 @@ describe('scripts/jest.globalTeardown safety guards', () => {
   });
 
   test('refuses to drop when NODE_ENV is not "test"', async () => {
-    process.env.NODE_ENV = 'ism';
+    process.env.NODE_ENV = 'myproject';
     const { default: globalTeardown } = await import('../jest.globalTeardown.js');
 
     await globalTeardown();
@@ -46,7 +46,7 @@ describe('scripts/jest.globalTeardown safety guards', () => {
     expect(connect).not.toHaveBeenCalled();
     expect(dropDatabase).not.toHaveBeenCalled();
     expect(disconnect).not.toHaveBeenCalled();
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('NODE_ENV is "ism"'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('NODE_ENV is "myproject"'));
   });
 
   test('refuses to drop when resolved DB name does not contain "test"', async () => {

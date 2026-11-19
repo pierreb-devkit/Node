@@ -25,7 +25,7 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
     planId: 'pro',
     version: '2026.05',
     meterQuota: 500000,
-    ratios: { scrap: 1, autofix: 2 },
+    ratios: { document: 1, export: 2 },
     ...overrides,
   });
 
@@ -67,7 +67,6 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
     mockUsageRepository = {
       get: jest.fn(),
       increment: jest.fn(),
-      reset: jest.fn(),
       findByWeek: jest.fn(),
       incrementMeter: jest.fn(),
       markThreshold: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
@@ -197,13 +196,13 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       const updatedDoc = makeUsageDoc({ meterUsed: 100 });
       mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
 
-      const result = await BillingUsageService.incrementMeter(orgId, 100, { scrap: 100 }, 'hist_001');
+      const result = await BillingUsageService.incrementMeter(orgId, 100, { document: 100 }, 'hist_001');
 
       expect(mockUsageRepository.incrementMeter).toHaveBeenCalledWith(
         orgId,
         expect.stringMatching(/^\d{4}-W\d{2}$/),
         100,
-        { scrap: 100 },
+        { document: 100 },
         'hist_001',
         expect.objectContaining({ meterQuota: 500000, planVersion: '2026.05' }),
       );
@@ -259,7 +258,7 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
         makePlan({ planId, meterQuota: planId === 'free' ? 0 : 500000 }));
       mockUsageRepository.incrementMeter.mockResolvedValue(makeUsageDoc({ meterUsed: 10, meterQuota: 0 }));
 
-      const result = await BillingUsageService.incrementMeter(orgId, 10, { scrap: 10 }, 'hist_failclosed');
+      const result = await BillingUsageService.incrementMeter(orgId, 10, { document: 10 }, 'hist_failclosed');
 
       expect(mockPlanService.getActivePlan).toHaveBeenCalledWith('free');
       expect(mockPlanService.getActivePlan).not.toHaveBeenCalledWith('pro');
@@ -588,7 +587,7 @@ describe('BillingUsageService — meter extensions unit tests:', () => {
       mockUsageRepository.incrementMeter.mockResolvedValue(updatedDoc);
       mockExtraService.debit.mockResolvedValue({ applied: true, doc: { cachedBalance: 995 } });
 
-      const result = await BillingUsageService.incrementMeter(orgId, 5, { scrap: 5 }, 'hist_free_5');
+      const result = await BillingUsageService.incrementMeter(orgId, 5, { document: 5 }, 'hist_free_5');
 
       expect(result.applied).toBe(true);
       expect(result.extrasConsumed).toBe(5);

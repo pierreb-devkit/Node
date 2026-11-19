@@ -22,7 +22,7 @@ import responses from '../../../lib/helpers/responses.js';
  *
  * Expects `req.organization` to be set by resolveOrganization upstream.
  *
- * @param {string} resource - The quota resource name (e.g. 'scraps'). Used in legacy mode.
+ * @param {string} resource - The quota resource name (e.g. 'documents'). Used in legacy mode.
  * @param {string} action - The quota action name (e.g. 'create', 'execute'). Used in legacy mode.
  * @returns {Function} Express middleware function.
  */

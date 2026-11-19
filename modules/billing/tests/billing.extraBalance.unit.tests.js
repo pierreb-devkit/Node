@@ -88,57 +88,6 @@ describe('BillingExtraBalance unit tests:', () => {
         expect(result.data.amount).toBe(-500);
       });
     });
-
-    describe('ExtraBalanceCreditPack', () => {
-      test('should be valid with required fields', () => {
-        const result = schema.ExtraBalanceCreditPack.safeParse({
-          orgId: '507f1f77bcf86cd799439011',
-          amount: 500000,
-          stripeSessionId: 'cs_test_abc',
-        });
-        expect(result.error).toBeFalsy();
-      });
-
-      test('should reject amount of 0', () => {
-        const result = schema.ExtraBalanceCreditPack.safeParse({
-          orgId: '507f1f77bcf86cd799439011',
-          amount: 0,
-          stripeSessionId: 'cs_test_abc',
-        });
-        expect(result.error).toBeDefined();
-      });
-
-      test('should accept optional expiresAt', () => {
-        const result = schema.ExtraBalanceCreditPack.safeParse({
-          orgId: '507f1f77bcf86cd799439011',
-          amount: 500000,
-          stripeSessionId: 'cs_test_abc',
-          expiresAt: '2027-01-01T00:00:00Z',
-        });
-        expect(result.error).toBeFalsy();
-        expect(result.data.expiresAt).toBeInstanceOf(Date);
-      });
-    });
-
-    describe('ExtraBalanceDebit', () => {
-      test('should be valid with required fields', () => {
-        const result = schema.ExtraBalanceDebit.safeParse({
-          orgId: '507f1f77bcf86cd799439011',
-          amount: 1000,
-          refId: 'history_abc123',
-        });
-        expect(result.error).toBeFalsy();
-      });
-
-      test('should reject empty refId', () => {
-        const result = schema.ExtraBalanceDebit.safeParse({
-          orgId: '507f1f77bcf86cd799439011',
-          amount: 1000,
-          refId: '',
-        });
-        expect(result.error).toBeDefined();
-      });
-    });
   });
 
   // ─── Repository tests ──────────────────────────────────────────────────────

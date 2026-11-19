@@ -124,20 +124,4 @@ UserMongoose.set('toJSON', {
   virtuals: true,
 });
 
-/**
- * Create instance method for authenticating user
- */
-// UserMongoose.methods.authenticate = password => this.password === this.hashPassword(password);
-
-// UserMongoose.static('findOneOrCreate', async (condition, doc) => {
-//   const one = await this.findOne(condition);
-//   return one || this.create(doc).then((document) => {
-//     console.log('docteur', document);
-//     return document;
-//   }).catch((err) => {
-//     console.log(err);
-//     return Promise.resolve(doc);
-//   });
-// });
-
 mongoose.model('User', UserMongoose);

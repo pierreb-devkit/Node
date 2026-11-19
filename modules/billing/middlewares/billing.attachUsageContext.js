@@ -25,7 +25,6 @@ import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.
  * @param {import('express').NextFunction} next - Express next callback.
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js middleware, not Qwik
 const attachUsageContext = async (req, res, next) => {
   // No-op when meterMode is disabled or organization is not resolved
   if (!config.billing?.meterMode || !req.organization) {

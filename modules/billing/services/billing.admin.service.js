@@ -19,7 +19,6 @@ import { resolvePlanFromSubscription } from '../lib/billing.planResolver.js';
  * @param {string} orgId - Organization ObjectId (string).
  * @returns {Promise<{db: Object|null, stripe: Object|null}>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const getCustomerStatus = async (orgId) => {
   if (!/^[0-9a-fA-F]{24}$/.test(orgId)) {
     throw Object.assign(new Error('invalid argument: orgId must be a valid ObjectId'), { status: 422 });
@@ -67,7 +66,6 @@ const getCustomerStatus = async (orgId) => {
  * @param {string} orgId - Organization ObjectId (string).
  * @returns {Promise<{previous: Object, updated: Object}>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const syncOrgFromStripe = async (orgId) => {
   if (!/^[0-9a-fA-F]{24}$/.test(orgId)) {
     throw Object.assign(new Error('invalid argument: orgId must be a valid ObjectId'), { status: 422 });
@@ -159,7 +157,6 @@ const syncOrgFromStripe = async (orgId) => {
  * @param {string} eventId - Stripe event ID (evt_xxx).
  * @returns {Promise<Object>} Dispatch result from BillingWebhookService.withIdempotency.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const replayWebhookEvent = async (eventId) => {
   if (typeof eventId !== 'string' || eventId.trim() === '') {
     throw Object.assign(new Error('invalid argument: eventId must be a non-empty string'), { status: 422 });
@@ -203,7 +200,6 @@ const replayWebhookEvent = async (eventId) => {
  * @param {Object} [opts] - Pagination options (page, limit).
  * @returns {Promise<{items: Array, total: number, page: number, limit: number}>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const listDeadLetters = (opts = {}) => ProcessedStripeEventRepository.listDeadLetters(opts);
 
 /**
@@ -213,7 +209,6 @@ const listDeadLetters = (opts = {}) => ProcessedStripeEventRepository.listDeadLe
  * @param {string} eventId - Stripe event ID.
  * @returns {Promise<{purged: boolean}>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const purgeDeadLetter = async (eventId) => {
   if (typeof eventId !== 'string' || eventId.trim() === '') {
     throw Object.assign(new Error('invalid argument: eventId must be a non-empty string'), { status: 422 });
@@ -238,7 +233,6 @@ const purgeDeadLetter = async (eventId) => {
  * @param {string} orgId - Organization ObjectId (string).
  * @returns {Promise<{previous: Object, updated: Object, stripeStatus: string}>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const cancelSubscription = async (orgId) => {
   if (!/^[0-9a-fA-F]{24}$/.test(orgId)) {
     throw Object.assign(new Error('invalid argument: orgId must be a valid ObjectId'), { status: 422 });
@@ -343,7 +337,6 @@ const cancelSubscription = async (orgId) => {
  * @param {string} adminUserId - Authenticated admin user ID for audit trail.
  * @returns {Promise<{applied: boolean, ledgerEntry: Object|null}>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const creditDisputeReinstated = async (chargeId, amountCents, reason, refundRequestId, orgId, adminUserId) => {
   if (!/^[0-9a-fA-F]{24}$/.test(orgId)) {
     throw Object.assign(new Error('invalid argument: orgId must be a valid ObjectId'), { status: 422 });
@@ -412,7 +405,6 @@ const creditDisputeReinstated = async (chargeId, amountCents, reason, refundRequ
  * @param {Object} subscription - Stripe subscription object.
  * @returns {string|null} plan name, or null when unresolved (caller must abort the write).
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const resolveStripePlan = (subscription) =>
   resolvePlanFromSubscription(subscription, { logPrefix: '[billing.admin]' });
 
@@ -423,7 +415,6 @@ const resolveStripePlan = (subscription) =>
  * @param {Object} event - Stripe event object.
  * @returns {Promise<Object>} Handler result.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const dispatchWebhookEvent = (event) => {
   switch (event.type) {
     case 'checkout.session.completed':
@@ -488,7 +479,6 @@ const dispatchWebhookEvent = (event) => {
  * @param {string} adminUserId - Authenticated admin user ObjectId (string) for audit trail.
  * @returns {Promise<Object>} Updated subscription document.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const bumpOrgPlan = async (orgId, newPlanId, adminUserId) => {
   if (!/^[0-9a-fA-F]{24}$/.test(orgId)) {
     throw Object.assign(new Error('invalid argument: orgId must be a valid ObjectId'), { status: 422 });

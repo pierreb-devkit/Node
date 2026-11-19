@@ -25,20 +25,6 @@ const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {
 });
 
 /**
- * @desc Function to get all upload in db with filter or not. The MIME type is
- * stored in `metadata.contentType` (the driver dropped the top-level GridFS
- * `contentType` option); it is returned as `contentType`, falling back to the
- * top-level field older files may still carry.
- * @param {Object} filter
- * @return {Promise<Array>} uploads - { _id, filename, uploadDate, contentType }
- */
-const list = async (filter) => {
-  /** @type {Array<{ _id: unknown, filename?: string, uploadDate?: Date, contentType?: string, metadata?: { contentType?: string } }>} */
-  const uploads = await Uploads.find(filter).select('filename uploadDate contentType metadata.contentType').sort('-createdAt').lean().exec();
-  return uploads.map(({ metadata, ...upload }) => ({ ...upload, contentType: upload.contentType || metadata?.contentType }));
-};
-
-/**
  * @desc Function to get an upload from db
  * @param {String} uploadName
  * @return {Promise<Object|null>} upload
@@ -74,14 +60,6 @@ const getStream = (upload) => {
  * @return {Boolean}
  */
 const isFileNotFound = (err) => err?.name === 'MongoRuntimeError' && typeof err.message === 'string' && err.message.startsWith('File not found for id ');
-
-/**
- * @desc Function to update an upload in db
- * @param {import('mongoose').Types.ObjectId|string} id - upload ID
- * @param {Object} update
- * @return {Promise<Object|null>} upload updated
- */
-const update = (id, update) => Uploads.findOneAndUpdate({ _id: id }, update, { returnDocument: 'after' }).exec();
 
 /**
  * @desc Function to remove an upload from db. A missing file — no record
@@ -140,63 +118,6 @@ const remove = async (upload) => {
     // Curated (issue #4059) — see the identical comment on getStream above.
     throw new AppError('Upload: delete error', { code: 'REPOSITORY_ERROR', details: { message: err?.message } });
   }
-};
-
-/**
- * @desc Function to remove uploads of one user in db
- * @param {Object} filter
- * @return {Promise<{deletedCount: number}>} confirmation of delete
- */
-const deleteMany = async (filter) => {
-  const uploads = await list(filter);
-  let deletedCount = 0;
-   
-  for (const upload of uploads) {
-    try {
-       
-      await bucket.delete(upload._id);
-      deletedCount += 1;
-    } catch (err) {
-      // Curated (issue #4059) — see the identical comment on getStream above.
-      throw new AppError('Upload: delete error', { code: 'REPOSITORY_ERROR', details: { message: err?.message } });
-    }
-  }
-  return { deletedCount };
-};
-
-/**
- * @desc Function to purge uploads by kind if they are not referenced in another collection
- * @param {String} kind - metadata kind to match
- * @param {String} collection - name of the collection to check reference presence
- * @param {String} key - name of the key to check id
- * @return {Promise<{deletedCount: number}>} confirmation of delete
- */
-const purge = async (kind, collection, key) => {
-  const toDelete = await Uploads.aggregate([
-    { $match: { 'metadata.kind': kind } },
-    {
-      $lookup: {
-        from: collection,
-        localField: 'filename',
-        foreignField: key,
-        as: 'references',
-      },
-    },
-    { $match: { references: [] } },
-  ]);
-  let deletedCount = 0;
-   
-  for (const upload of toDelete) {
-    try {
-       
-      await bucket.delete(upload._id);
-      deletedCount += 1;
-    } catch (err) {
-      // Curated (issue #4059) — see the identical comment on getStream above.
-      throw new AppError('Upload: delete error', { code: 'REPOSITORY_ERROR', details: { message: err?.message } });
-    }
-  }
-  return { deletedCount };
 };
 
 /**
@@ -392,12 +313,8 @@ const purgeUnreferenced = async (kind, collection, paths, graceMs) => {
 };
 
 export default {
-  list,
   get,
   getStream,
-  update,
   remove,
-  deleteMany,
-  purge,
   purgeUnreferenced,
 };

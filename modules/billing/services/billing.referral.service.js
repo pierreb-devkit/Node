@@ -42,7 +42,6 @@ import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.
  * @param {string} invitationId - The accepted invitation id.
  * @returns {{referrer: string, referee: string}}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const referralKeys = (invitationId) => ({
   referrer: `referral:${invitationId}:referrer`,
   referee: `referral:${invitationId}:referee`,
@@ -58,7 +57,6 @@ const referralKeys = (invitationId) => ({
  * @param {Object} cfg - The `config.billing.referral` block.
  * @returns {{root: string, referrerId: *, refereeId: *, referrerSuffix?: string}|null} null when the record has no id or the link flag is off.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const describeRecord = (record, cfg) => {
   if (record?.kind === 'link') {
     if (!cfg?.link) return null;
@@ -85,7 +83,6 @@ const describeRecord = (record, cfg) => {
  * @param {Object} cfg - The `config.billing.referral` block.
  * @returns {Array<{side: 'referrer'|'referee', key: string}>} The implied grant sides.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const expectedGrantKeys = (record, cfg) => {
   if (!cfg?.enabled) return [];
   const described = describeRecord(record, cfg);
@@ -121,7 +118,6 @@ const expectedGrantKeys = (record, cfg) => {
  * @param {string} userId - The user ObjectId (string).
  * @returns {Promise<string|null>} The organization id to credit, or null.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const resolveGrantOrganization = async (userId) => {
   if (!userId) return null;
   const { default: UserService } = await import('../../users/services/users.service.js');
@@ -154,7 +150,6 @@ const resolveGrantOrganization = async (userId) => {
  * @param {Date|null} params.expiresAt - Optional expiry for the grant entry.
  * @returns {Promise<{applied: boolean, reason?: string, organizationId?: string}>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const grantSide = async ({ userId, units, key, expiresAt }) => {
   const organizationId = await resolveGrantOrganization(userId);
   if (!organizationId) {
@@ -193,7 +188,6 @@ const grantSide = async ({ userId, units, key, expiresAt }) => {
  * @param {number} units - Units credited to the referrer (config-driven).
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const notifyReferrer = async (userId, units) => {
   try {
     if (!mailer.isConfigured()) return;
@@ -235,7 +229,6 @@ const notifyReferrer = async (userId, units) => {
  * @param {Object} cfg - The `config.billing.referral` block (enabled).
  * @returns {Promise<{referrer: Object, referee: Object}>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const grantRecord = async (record, referrerId, refereeId, cfg) => {
   const isLink = record?.kind === 'link';
   const expected = new Map(expectedGrantKeys(record, cfg).map(({ side, key }) => [side, key]));
@@ -292,7 +285,6 @@ const grantRecord = async (record, referrerId, refereeId, cfg) => {
  * @param {string|null} [payload.acceptedUserId] - The referee (just-created user) id, or null for legacy/cron rows.
  * @returns {Promise<{skipped?: string, referrer?: Object, referee?: Object}>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const grantForInvitation = async ({ invitationId, invitedBy, acceptedUserId } = {}) => {
   const cfg = config.billing?.referral;
   if (!cfg?.enabled) return { skipped: 'disabled' };
@@ -310,7 +302,6 @@ const grantForInvitation = async ({ invitationId, invitedBy, acceptedUserId } = 
  *              a cap (a null / undefined / 0 / non-integer value means NO link grant).
  * @returns {number|null} The cap, or null when none is configured.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const getLinkCap = () => {
   const cap = config.invitations?.maxLifetime;
   return Number.isInteger(cap) && cap > 0 ? cap : null;
@@ -329,7 +320,6 @@ const getLinkCap = () => {
  * @returns {Promise<{remaining?: number, skipped?: string}>} `skipped:'referrer_no_organization'`
  *          when the referrer has no workspace yet (fail closed; the cron retries).
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const linkBudget = async (referredBy, cap) => {
   if (!(config.billing?.referral?.referrerUnits > 0)) return { remaining: Infinity };
   const organizationId = await resolveGrantOrganization(referredBy);
@@ -357,7 +347,6 @@ const linkBudget = async (referredBy, cap) => {
  *        invitation for this user (null = looked up, none). Omit to look it up here.
  * @returns {Promise<{skipped?: string, referrer?: Object, referee?: Object}>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const grantForLink = async ({ userId, referredBy, invitation } = {}) => {
   const cfg = config.billing?.referral;
   if (!cfg?.enabled || !cfg.link) return { skipped: 'disabled' };

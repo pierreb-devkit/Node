@@ -225,13 +225,9 @@ describe('User integration tests:', () => {
     });
 
     test('should include terms in user details after signing them', async () => {
-      // Sign terms first
-      try {
-        await agent.get('/api/users/terms').expect(200);
-      } catch (err) {
-        console.log(err);
-        expect(err).toBeFalsy();
-      }
+      // Sign terms first (written straight to the stored user — no route sets it)
+      const mongoose = (await import('mongoose')).default;
+      await mongoose.model('User').updateOne({ _id: user.id }, { terms: new Date() });
 
       // Then get user — terms should be populated
       try {
@@ -260,17 +256,6 @@ describe('User integration tests:', () => {
         expect(result.body.data.roles).toHaveLength(1);
         expect(result.body.data.roles).toEqual(expect.arrayContaining(['user']));
         expect(result.body.data.id).toBe(String(user.id));
-      } catch (err) {
-        console.log(err);
-        expect(err).toBeFalsy();
-      }
-    });
-
-    test('should be able to update Terms sign date if logged in', async () => {
-      try {
-        const result = await agent.get('/api/users/terms').expect(200);
-        expect(result.body.type).toBe('success');
-        expect(result.body.message).toBe('user terms signed');
       } catch (err) {
         console.log(err);
         expect(err).toBeFalsy();
@@ -561,15 +546,6 @@ describe('User integration tests:', () => {
   // describe block (user deleted in afterEach) can never invalidate subsequent
   // authenticated tests in later describes. See #3472.
   describe('Logout', () => {
-    test('should not be able to update Terms sign date if not logged in', async () => {
-      try {
-        await request(app).get('/api/users/terms').expect(401);
-      } catch (err) {
-        console.log(err);
-        expect(err).toBeFalsy();
-      }
-    });
-
     test('should not be able to change user own password if not signed in', async () => {
       try {
         await request(app)
@@ -662,14 +638,6 @@ describe('User integration tests:', () => {
         console.log(err);
         expect(err).toBeFalsy();
       }
-    });
-
-    test('should return 422 when terms fails', async () => {
-      jest.spyOn(UserService, 'terms').mockRejectedValueOnce(new Error('DB error'));
-      const result = await agent.get('/api/users/terms').expect(422);
-      expect(result.body.type).toBe('error');
-      expect(result.body.message).toBe('Unprocessable Entity');
-      expect(result.body.description).toBe('DB error.');
     });
 
     test('should return 422 when remove fails', async () => {

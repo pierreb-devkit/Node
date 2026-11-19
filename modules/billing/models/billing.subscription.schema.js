@@ -44,17 +44,6 @@ const Subscription = z.object({
 });
 
 /**
- * Update schema without defaults to avoid populating unspecified fields during PATCH
- */
-const SubscriptionCore = z.object({
-  ...baseShape,
-  plan: z.enum(config.billing.plans),
-  status: z.enum(config.billing.statuses),
-});
-
-const SubscriptionUpdate = SubscriptionCore.partial();
-
-/**
  * Checkout request body schema
  */
 const CheckoutRequest = z
@@ -174,7 +163,6 @@ export {
 
 export default {
   Subscription,
-  SubscriptionUpdate,
   CheckoutRequest,
   PortalRequest,
   ExtrasCheckoutRequest,

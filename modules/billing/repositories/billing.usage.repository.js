@@ -63,29 +63,12 @@ const increment = async (organizationId, month, key, amount) => {
 };
 
 /**
- * @function reset
- * @description Reset all counters to an empty object for the given org+month.
- * @param {String} organizationId - The organization ID.
- * @param {String} month - The month in YYYY-MM format.
- * @returns {Promise<Object|null>} The updated usage document or null.
- */
-const reset = (organizationId, month) => {
-  if (!mongoose.Types.ObjectId.isValid(organizationId)) return null;
-  return BillingUsage.findOneAndUpdate(
-    { organizationId, month },
-    { $set: { counters: {} } },
-    { returnDocument: 'after', runValidators: true },
-  ).exec();
-};
-
-/**
  * @function findByWeek
  * @description Fetch a single usage document by organizationId and weekKey.
  * @param {String} organizationId - The organization ID.
  * @param {String} weekKey - The ISO week key in YYYY-Www format.
  * @returns {Promise<Object|null>} The usage document (plain object) or null.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const findByWeek = (organizationId, weekKey) => {
   if (!mongoose.Types.ObjectId.isValid(organizationId)) return null;
   return BillingUsage.findOne({ organizationId, weekKey }).lean();
@@ -109,7 +92,6 @@ const findByWeek = (organizationId, weekKey) => {
  * @param {import('mongoose').ClientSession} [options.session] - Optional Mongo session for transaction-scoped writes.
  * @returns {Promise<Object|null>} The updated usage document, or null if this was a replay (no-op).
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const incrementMeter = async (organizationId, weekKey, units, breakdown, idempotencyKey, baseSnapshot, options = {}) => {
   if (!mongoose.Types.ObjectId.isValid(organizationId)) return null;
 
@@ -191,7 +173,6 @@ const incrementMeter = async (organizationId, weekKey, units, breakdown, idempot
  * @param {Date} archivedAt - Timestamp to stamp on archived documents.
  * @returns {Promise<{modifiedCount: number}>} Mongoose updateMany result.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const archiveOtherWeeks = (orgId, currentWeekKey, archivedAt) =>
   BillingUsage.updateMany(
     {
@@ -214,7 +195,6 @@ const archiveOtherWeeks = (orgId, currentWeekKey, archivedAt) =>
  *    meterBreakdown, resetAt, alertedAt80, alertedAt100, consumedAttributionKeys).
  * @returns {Promise<Object>} The upserted document.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const upsertWeekSnapshot = (orgId, weekKey, snapshotFields) =>
   BillingUsage.findOneAndUpdate(
     { organizationId: orgId, weekKey },
@@ -235,7 +215,6 @@ const upsertWeekSnapshot = (orgId, weekKey, snapshotFields) =>
  * @param {string} settlementKey - Idempotency key, `settle:<weekKey>`.
  * @returns {Promise<Object|null>} The updated week document, or null when already applied (or no doc).
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const applySettlementUsage = (orgId, weekKey, units, settlementKey) => {
   if (!mongoose.Types.ObjectId.isValid(orgId)) return null;
   return BillingUsage.findOneAndUpdate(
@@ -258,7 +237,6 @@ const applySettlementUsage = (orgId, weekKey, units, settlementKey) => {
  * @param {boolean} preserveUsage - Whether to keep existing meterUsed and breakdown.
  * @returns {Promise<Object|null>} The updated usage document, or null when none exists.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const rotateWeekSnapshotForPlanChange = (orgId, weekKey, snapshotFields, preserveUsage = true) => {
   const update = {
     $set: {
@@ -292,7 +270,6 @@ const rotateWeekSnapshotForPlanChange = (orgId, weekKey, snapshotFields, preserv
  * @param {'alertedAt80'|'alertedAt100'} field - The threshold field to set.
  * @returns {Promise<{modifiedCount: number}>} Mongoose updateOne result.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const markThreshold = (docId, field) =>
   BillingUsage.updateOne(
     { _id: docId, [field]: null },
@@ -304,14 +281,12 @@ const markThreshold = (docId, field) =>
  * @description Count usage documents that still carry the removed legacy migration field.
  * @returns {Promise<number>} Number of documents with consumedHistoryIds present.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const countLegacyConsumedHistoryIds = () =>
   BillingUsage.countDocuments({ consumedHistoryIds: { $exists: true } });
 
 export default {
   get,
   increment,
-  reset,
   findByWeek,
   incrementMeter,
   archiveOtherWeeks,

@@ -53,7 +53,7 @@ describe('Billing extras controller unit tests:', () => {
         meterMode: false,
         packs: [{ packId: 'pack_500k', meterUnits: 500000 }],
         quotas: {
-          free: { scraps: { create: 3 } },
+          free: { documents: { create: 3 } },
         },
       },
     };
@@ -255,7 +255,7 @@ describe('Billing extras controller unit tests:', () => {
         resetAt: new Date('2026-05-04'),
         meterUsed: 1200,
         meterQuota: 5000,
-        meterBreakdown: { scrape: 1000, llm: 200 },
+        meterBreakdown: { document: 1000, llm: 200 },
       });
       mockBillingExtraService.getOrgBalanceContext.mockResolvedValue(2500);
 
@@ -269,7 +269,7 @@ describe('Billing extras controller unit tests:', () => {
           weekKey: '2026-W18',
           meterUsed: 1200,
           meterQuota: 5000,
-          meterBreakdown: { scrape: 1000, llm: 200 },
+          meterBreakdown: { document: 1000, llm: 200 },
           extrasRemaining: 2500,
           packsAvailable: mockConfig.billing.packs,
         }),
@@ -298,7 +298,7 @@ describe('Billing extras controller unit tests:', () => {
     test('should return legacy usage shape when meterMode=false', async () => {
       mockConfig.billing.meterMode = false;
       mockBillingService.getLocalSubscription.mockResolvedValue({ plan: 'free', status: 'active' });
-      mockBillingUsageService.get.mockResolvedValue({ month: '2026-04', counters: { scraps_create: 1 } });
+      mockBillingUsageService.get.mockResolvedValue({ month: '2026-04', counters: { documents_create: 1 } });
 
       await BillingController.getUsage(req, res);
 
@@ -307,7 +307,7 @@ describe('Billing extras controller unit tests:', () => {
         data: expect.objectContaining({
           plan: 'free',
           period: '2026-04',
-          usage: { scraps_create: 1 },
+          usage: { documents_create: 1 },
         }),
       }));
       // meter fields should NOT be present in legacy mode

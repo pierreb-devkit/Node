@@ -6,7 +6,6 @@ const config = {
   },
   organizations: {
     enabled: true, // false → B2C mode, organizations invisible
-    autoCreate: true, // automatically create/join orgs at signup
     domainMatching: true, // match users to existing orgs by email domain
     // Email-verification policy for org provisioning/discovery.
     //   'strict' (default) → when the mailer is configured, an unverified user

@@ -371,17 +371,6 @@ const setEmailPreference = async (userId, kind, value) => {
 };
 
 /**
- * @desc Function to ask repository to sign terms for current user
- * @param {Object} user - original user document
- * @returns {Promise<Object>} updated user (sanitized)
- */
-const terms = async (user) => {
-  user = _.assignIn(user, { terms: new Date() });
-  const result = await UserRepository.update(user);
-  return removeSensitive(result);
-};
-
-/**
  * @desc Function to remove a user from db and clean up associated memberships/orgs
  * @param {Object} user - user document with _id or id field
  * @returns {Promise<Object>} deletion result
@@ -530,7 +519,6 @@ export default {
   sendProductMail,
   announce,
   setEmailPreference,
-  terms,
   remove,
   stats,
   count,

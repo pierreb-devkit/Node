@@ -223,10 +223,10 @@ Common setups:
 
 | Method   | Endpoint                                  | Auth      | Description                          |
 | -------- | ----------------------------------------- | --------- | ------------------------------------ |
-| `POST`   | `/api/auth/invitations`                   | JWT+Admin | Create + email a signup invitation   |
-| `GET`    | `/api/auth/invitations`                   | JWT+Admin | List invitations                     |
-| `DELETE` | `/api/auth/invitations/:invitationId`     | JWT+Admin | Revoke an invitation                 |
-| `GET`    | `/api/auth/invitations/verify/:token`     | Public    | Check a token → `{ valid, email }`   |
+| `POST`   | `/api/invitations`                        | JWT+Admin | Create + email a signup invitation   |
+| `GET`    | `/api/invitations`                        | JWT+Admin | List invitations                     |
+| `DELETE` | `/api/invitations/:invitationId`          | JWT+Admin | Revoke an invitation                 |
+| `GET`    | `/api/invitations/verify/:token`          | Public    | Check a token → `{ valid, email }`   |
 | `POST`   | `/api/auth/signup?inviteToken=…`          | Public    | Signup; a valid token bypasses closed signup |
 
 ## :credit_card: Billing — Version Namespace Contract

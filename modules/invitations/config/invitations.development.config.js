@@ -1,6 +1,5 @@
 const config = {
-  // Audit: label /api/invitations* routes as the Invitation target type (matches the
-  // canonical mount; the /api/auth/invitations alias still resolves under `auth`→User).
+  // Audit: label /api/invitations* routes as the Invitation target type.
   audit: {
     routeTypeMap: {
       invitations: 'Invitation',

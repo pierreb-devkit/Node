@@ -42,8 +42,6 @@ export default {
     '!<rootDir>/modules/audit/audit.init.js',
     // Exclude server bootstrap — startup orchestration, tested indirectly via integration tests
     '!<rootDir>/lib/app.js',
-    // Exclude thin fs wrapper — trivial I/O helper
-    '!<rootDir>/lib/helpers/files.js',
     // Exclude mailer internals — require real SMTP credentials not available in CI
     '!<rootDir>/lib/helpers/mailer/**',
     // Exclude DB migrations — one-time data scripts, not business logic
@@ -51,8 +49,6 @@ export default {
     // Exclude cron CLI entry points — top-level-await scripts requiring live DB;
     // underlying business logic is covered via the corresponding service tests
     '!<rootDir>/modules/**/crons/**',
-    // Exclude static upload config — just object literals, like config/defaults
-    '!<rootDir>/modules/uploads/config/config.uploads.js',
     // Exclude test fixtures — helper stubs used by tests, not production code
     '!<rootDir>/**/tests/fixtures/**',
   ],

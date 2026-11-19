@@ -10,3 +10,7 @@ reviews:
     enabled: true
     drafts: false
     auto_pause_after_reviewed_commits: 0
+  tools:
+    # No Biome in this repo (lint = eslint.config.js): its Qwik rules only produce false positives.
+    biome:
+      enabled: false

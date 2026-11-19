@@ -13,7 +13,7 @@ const config = {
     port: 4200,
   },
   db: {
-    uri: 'mongodb://127.0.0.1:27017/WaosNode',
+    uri: 'mongodb://127.0.0.1:27017/DevkitNode',
     debug: false,
   },
   trust: {
@@ -23,7 +23,6 @@ const config = {
     ssl: false,
     privateKey: './config/sslcerts/key.pem',
     certificate: './config/sslcerts/cert.pem',
-    caBundle: './config/sslcerts/cabundle.crt',
   },
   cookie: {
     secure: true, // HTTPS only in prod

@@ -120,10 +120,6 @@ describe('Authorization integration tests:', () => {
       await publicAgent.get('/api/users/me').expect(401);
     });
 
-    test('GET /api/users/terms should return 401 for guests', async () => {
-      await publicAgent.get('/api/users/terms').expect(401);
-    });
-
     test('PUT /api/users should return 401 for guests', async () => {
       await publicAgent.put('/api/users').send({ firstName: 'x' }).expect(401);
     });

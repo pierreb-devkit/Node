@@ -31,10 +31,10 @@ This repository is open source. **Never reference downstream consumers** — pro
 - Org scoping: `{ organizationId: String(membership.organizationId) }` when membership present.
 - `resolveSubject(req)` maps req properties to CASL subjects. `deriveSubjectType(routePath)` for collection-level checks.
 
-## Identity module
+## Identity (auth + organizations)
 
-- Located at `modules/identity-local/` — auth, organizations, memberships in one module.
-- Swappable with `identity-clerk` (same interface, different provider).
+- `modules/auth/` owns sign-in/sign-up; Passport strategies live in `modules/auth/strategies/local/` (local, jwt, google, apple). `modules/auth/strategies/clerk/` is a no-op placeholder.
+- `modules/organizations/` owns organizations and memberships.
 - Membership roles: `owner`, `admin`, `member`.
 - `resolveOrganization` middleware loads org + membership onto `req.organization` / `req.membership`.
 - Config: `modules/organizations/config/organizations.development.config.js` → `organizations: { enabled, domainMatching }`.
@@ -88,7 +88,7 @@ This repository is open source. **Never reference downstream consumers** — pro
 ## Workflow rules
 
 - **Never push directly to master/main.** Always create a branch, push, create a PR, wait for CI green + review, then merge.
-- **Never lower coverage thresholds** in `jest.config.js`. If coverage drops after adding code, write tests for the new project modules to bring it back above thresholds.
+- **Never lower coverage thresholds.** Coverage is gated by Codecov (`codecov.yml`), not by `jest.config.js`. If coverage drops after adding code, write tests to bring it back above the floor.
 - **Audit existing modules before implementing.** Before creating new storage, file handling, or utility code, check `modules/` for existing solutions (e.g., `uploads` module for file storage via GridFS).
 - **Always run `/verify` after any code change** before declaring done. CI must be green.
 

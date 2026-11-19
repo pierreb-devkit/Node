@@ -13,7 +13,6 @@ import BillingWebhookService from '../services/billing.webhook.service.js';
  * @param {Object} res - Express response object
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const handleWebhook = async (req, res) => {
   const stripe = getStripe();
   if (!stripe) {

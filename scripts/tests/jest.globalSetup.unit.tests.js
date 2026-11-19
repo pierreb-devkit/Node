@@ -48,7 +48,7 @@ describe('scripts/jest.globalSetup safety guards', () => {
   });
 
   test('refuses to drop when NODE_ENV is not "test" (project env leak)', async () => {
-    process.env.NODE_ENV = 'ism';
+    process.env.NODE_ENV = 'myproject';
     const { default: globalSetup } = await import('../jest.globalSetup.js');
 
     await globalSetup();
@@ -56,7 +56,7 @@ describe('scripts/jest.globalSetup safety guards', () => {
     expect(connect).not.toHaveBeenCalled();
     expect(dropDatabase).not.toHaveBeenCalled();
     expect(disconnect).not.toHaveBeenCalled();
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('NODE_ENV is "ism"'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('NODE_ENV is "myproject"'));
   });
 
   test('refuses to drop when NODE_ENV is undefined', async () => {

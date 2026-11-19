@@ -23,7 +23,7 @@ describe('BillingMeterService unit tests:', () => {
     planId: 'pro',
     version: '2026.05',
     meterQuota: 500000,
-    ratios: { scrap: 1, autofix: 2, wizard: 5 },
+    ratios: { document: 1, export: 2, wizard: 5 },
     ...overrides,
   });
 
@@ -89,16 +89,16 @@ describe('BillingMeterService unit tests:', () => {
     test('should compute units correctly using plan ratios', () => {
       mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan());
 
-      const costs = { scrap: 0.001, autofix: 0.002 };
+      const costs = { document: 0.001, export: 0.002 };
       const result = BillingMeterService.unitsFromCosts(costs, 'pro', '2026.05');
 
       expect(mockBillingPlanService.getPlanByVersion).toHaveBeenCalledWith('pro', '2026.05');
-      // scrap: floor(0.001 * 1 * 1000) = 1
-      // autofix: floor(0.002 * 2 * 1000) = 4
+      // document: floor(0.001 * 1 * 1000) = 1
+      // export: floor(0.002 * 2 * 1000) = 4
       // total = 5
       expect(result.totalUnits).toBe(5);
-      expect(result.breakdown.scrap).toBe(1);
-      expect(result.breakdown.autofix).toBe(4);
+      expect(result.breakdown.document).toBe(1);
+      expect(result.breakdown.export).toBe(4);
     });
 
     test('should use ratio=1 as default when feature key not in plan ratios', () => {
@@ -113,10 +113,10 @@ describe('BillingMeterService unit tests:', () => {
     });
 
     test('should return zero when positive costs floor to zero units', () => {
-      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { document: 1 } }));
 
       // 0.000001 * 1 * 1000 = 0.001 → floor = 0
-      const costs = { scrap: 0.000001 };
+      const costs = { document: 0.000001 };
       const result = BillingMeterService.unitsFromCosts(costs, 'pro', '2026.05');
 
       expect(result.totalUnits).toBe(0);
@@ -160,16 +160,16 @@ describe('BillingMeterService unit tests:', () => {
 
     test('unitsFromCosts reads dollarsToUnitRatio from config', () => {
       mockConfig.billing.meter.dollarsToUnitRatio = 500;
-      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { document: 1 } }));
 
-      const result = BillingMeterService.unitsFromCosts({ scrap: 0.01 }, 'pro', '2026.05');
+      const result = BillingMeterService.unitsFromCosts({ document: 0.01 }, 'pro', '2026.05');
 
       expect(result.totalUnits).toBe(5);
     });
 
     test('throws when positive costs have no ratioVersion in meterMode', () => {
       expect(() =>
-        BillingMeterService.unitsFromCosts({ scrap: 0.001 }, 'pro', null),
+        BillingMeterService.unitsFromCosts({ document: 0.001 }, 'pro', null),
       ).toThrow('[billing.meter] non-null costs without ratioVersion in meterMode');
       expect(mockBillingPlanService.getPlanByVersion).not.toHaveBeenCalled();
     });
@@ -178,9 +178,9 @@ describe('BillingMeterService unit tests:', () => {
       const warnSpy = mockLogger.warn;
       mockConfig.billing.meterMode = false;
 
-      const result = BillingMeterService.unitsFromCosts({ scrap: 0.002 }, 'pro', null);
+      const result = BillingMeterService.unitsFromCosts({ document: 0.002 }, 'pro', null);
 
-      expect(result).toEqual({ totalUnits: 2, breakdown: { scrap: 2 } });
+      expect(result).toEqual({ totalUnits: 2, breakdown: { document: 2 } });
       expect(warnSpy).toHaveBeenCalledWith(
         '[billing.meter] non-null costs without ratioVersion in meterMode',
       );
@@ -190,7 +190,7 @@ describe('BillingMeterService unit tests:', () => {
     test('should throw when plan version is missing and meterMode is enabled', () => {
       mockBillingPlanService.getPlanByVersion.mockReturnValue(null);
 
-      const costs = { scrap: 0.001 };
+      const costs = { document: 0.001 };
 
       expect(() =>
         BillingMeterService.unitsFromCosts(costs, 'pro', 'nonexistent-version'),
@@ -202,24 +202,24 @@ describe('BillingMeterService unit tests:', () => {
       mockConfig.billing.meterMode = false;
       mockBillingPlanService.getPlanByVersion.mockReturnValue(null);
 
-      const result = BillingMeterService.unitsFromCosts({ scrap: 0.002 }, 'pro', 'nonexistent-version');
+      const result = BillingMeterService.unitsFromCosts({ document: 0.002 }, 'pro', 'nonexistent-version');
 
-      expect(result).toEqual({ totalUnits: 2, breakdown: { scrap: 2 } });
+      expect(result).toEqual({ totalUnits: 2, breakdown: { document: 2 } });
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('[billing.meter] getPlanByVersion(pro, nonexistent-version) returned null'),
       );
     });
 
     test('should skip cost entries with non-numeric or zero values', () => {
-      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { document: 1 } }));
 
-      const costs = { scrap: 0.001, bad: 'notanumber', zero: 0, neg: -1 };
+      const costs = { document: 0.001, bad: 'notanumber', zero: 0, neg: -1 };
       const result = BillingMeterService.unitsFromCosts(costs, 'pro', '2026.05');
 
       expect(result.breakdown.bad).toBeUndefined();
       expect(result.breakdown.zero).toBeUndefined();
       expect(result.breakdown.neg).toBeUndefined();
-      expect(result.breakdown.scrap).toBe(1);
+      expect(result.breakdown.document).toBe(1);
     });
   });
 
@@ -275,7 +275,7 @@ describe('BillingMeterService unit tests:', () => {
     test('should return applied=false when meterMode is disabled', async () => {
       mockConfig.billing.meterMode = false;
 
-      const history = { _id: '507f1f77bcf86cd799439033', costs: { scrap: 0.001 }, planId: 'pro', planVersion: '2026.05' };
+      const history = { _id: '507f1f77bcf86cd799439033', costs: { document: 0.001 }, planId: 'pro', planVersion: '2026.05' };
       const result = await BillingMeterService.attribute(history, orgId);
 
       expect(result.applied).toBe(false);
@@ -285,7 +285,7 @@ describe('BillingMeterService unit tests:', () => {
 
   describe('attribute — calls incrementMeter directly (no outbox)', () => {
     test('applies attribution and returns applied=true with extrasConsumed from incrementMeter', async () => {
-      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { document: 1 } }));
       mockBillingUsageService.incrementMeter.mockResolvedValue({
         applied: true,
         meterUsed: 6000,
@@ -295,7 +295,7 @@ describe('BillingMeterService unit tests:', () => {
 
       const history = {
         _id: '507f1f77bcf86cd799439051',
-        costs: { scrap: 6 },
+        costs: { document: 6 },
         planId: 'pro',
         planVersion: '2026.05',
       };
@@ -305,14 +305,14 @@ describe('BillingMeterService unit tests:', () => {
       expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
         orgId,
         6000,
-        { scrap: 6000 },
+        { document: 6000 },
         '507f1f77bcf86cd799439051:initial',
       );
       expect(result).toEqual({ applied: true, meterUsed: 6000, extrasConsumed: 0 });
     });
 
     test('propagates extrasConsumed from incrementMeter result when extras overflow', async () => {
-      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { document: 1 } }));
       mockBillingUsageService.incrementMeter.mockResolvedValue({
         applied: true,
         meterUsed: 6000,
@@ -322,7 +322,7 @@ describe('BillingMeterService unit tests:', () => {
 
       const history = {
         _id: '507f1f77bcf86cd799439052',
-        costs: { scrap: 6 },
+        costs: { document: 6 },
         planId: 'pro',
         planVersion: '2026.05',
       };
@@ -336,7 +336,7 @@ describe('BillingMeterService unit tests:', () => {
   describe('attribute — maxUnitsPerOperation cap', () => {
     test('caps metered units when computed units exceed config cap', async () => {
       const warnSpy = mockLogger.warn;
-      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { document: 1 } }));
       mockBillingUsageService.incrementMeter.mockResolvedValue({
         applied: true,
         meterUsed: 10000,
@@ -346,7 +346,7 @@ describe('BillingMeterService unit tests:', () => {
 
       const history = {
         _id: '507f1f77bcf86cd799439033',
-        costs: { scrap: 20 },
+        costs: { document: 20 },
         planId: 'pro',
         planVersion: '2026.05',
       };
@@ -356,7 +356,7 @@ describe('BillingMeterService unit tests:', () => {
       expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
         orgId,
         10000,
-        { scrap: 10000 },
+        { document: 10000 },
         '507f1f77bcf86cd799439033:initial',
       );
       expect(warnSpy).toHaveBeenCalledWith(
@@ -367,7 +367,7 @@ describe('BillingMeterService unit tests:', () => {
 
     test('does not clamp when units are within the configured cap', async () => {
       const warnSpy = mockLogger.warn;
-      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { document: 1 } }));
       mockBillingUsageService.incrementMeter.mockResolvedValue({
         applied: true,
         meterUsed: 5000,
@@ -377,7 +377,7 @@ describe('BillingMeterService unit tests:', () => {
 
       const history = {
         _id: '507f1f77bcf86cd799439034',
-        costs: { scrap: 5 },
+        costs: { document: 5 },
         planId: 'pro',
         planVersion: '2026.05',
       };
@@ -387,7 +387,7 @@ describe('BillingMeterService unit tests:', () => {
       expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
         orgId,
         5000,
-        { scrap: 5000 },
+        { document: 5000 },
         '507f1f77bcf86cd799439034:initial',
       );
       expect(warnSpy).not.toHaveBeenCalled();
@@ -396,7 +396,7 @@ describe('BillingMeterService unit tests:', () => {
     test('does not clamp when maxUnitsPerOperation is undefined', async () => {
       const warnSpy = mockLogger.warn;
       delete mockConfig.billing.meter.maxUnitsPerOperation;
-      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { document: 1 } }));
       mockBillingUsageService.incrementMeter.mockResolvedValue({
         applied: true,
         meterUsed: 20000,
@@ -406,7 +406,7 @@ describe('BillingMeterService unit tests:', () => {
 
       const history = {
         _id: '507f1f77bcf86cd799439035',
-        costs: { scrap: 20 },
+        costs: { document: 20 },
         planId: 'pro',
         planVersion: '2026.05',
       };
@@ -416,7 +416,7 @@ describe('BillingMeterService unit tests:', () => {
       expect(mockBillingUsageService.incrementMeter).toHaveBeenCalledWith(
         orgId,
         20000,
-        { scrap: 20000 },
+        { document: 20000 },
         '507f1f77bcf86cd799439035:initial',
       );
       expect(warnSpy).not.toHaveBeenCalled();
@@ -428,7 +428,7 @@ describe('BillingMeterService unit tests:', () => {
       mockBillingUsageService.incrementMeter.mockResolvedValue({ applied: true, meterUsed: 0, extrasConsumed: 0, alertCrossed: null });
       const history = {
         _id: '507f1f77bcf86cd799439044',
-        costs: { scrap: 1 },
+        costs: { document: 1 },
         planId: 'pro',
         planVersion: '2026.05',
       };
@@ -460,7 +460,7 @@ describe('BillingMeterService unit tests:', () => {
         .mockResolvedValueOnce({ applied: false, meterUsed: 0, extrasConsumed: 0, alertCrossed: null });
       const history = {
         _id: '507f1f77bcf86cd799439055',
-        costs: { scrap: 1 },
+        costs: { document: 1 },
         planId: 'pro',
         planVersion: '2026.05',
       };
@@ -479,7 +479,7 @@ describe('BillingMeterService unit tests:', () => {
     });
 
     test('costsOverride charges only the override delta', async () => {
-      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { scrap: 1, digest: 2 } }));
+      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { document: 1, digest: 2 } }));
       mockBillingUsageService.incrementMeter.mockResolvedValue({
         applied: true,
         meterUsed: 1000,
@@ -489,7 +489,7 @@ describe('BillingMeterService unit tests:', () => {
 
       const history = {
         _id: '507f1f77bcf86cd799439045',
-        costs: { scrap: 10 },
+        costs: { document: 10 },
         planId: 'pro',
         planVersion: '2026.05',
       };
@@ -519,7 +519,7 @@ describe('BillingMeterService unit tests:', () => {
 
       const history = {
         _id: '507f1f77bcf86cd799439047',
-        costs: { scrap: 10 },
+        costs: { document: 10 },
         planId: 'pro',
         planVersion: '2026.05',
       };
@@ -594,14 +594,14 @@ describe('BillingMeterService unit tests:', () => {
     });
 
     test('same history attributed twice with default stepKey: 2nd is no-op (regression)', async () => {
-      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { document: 1 } }));
       mockBillingUsageService.incrementMeter
         .mockResolvedValueOnce({ applied: true, meterUsed: 1000, extrasConsumed: 0, alertCrossed: null })
         .mockResolvedValueOnce({ applied: false, meterUsed: 1000, extrasConsumed: 0, alertCrossed: null });
 
       const history = {
         _id: '507f1f77bcf86cd799439040',
-        costs: { scrap: 1 },
+        costs: { document: 1 },
         planId: 'pro',
         planVersion: '2026.05',
       };
@@ -621,7 +621,7 @@ describe('BillingMeterService unit tests:', () => {
     });
 
     test('same history attributed with {stepKey:"initial"} then {stepKey:"digest"}: both charged', async () => {
-      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { document: 1 } }));
       mockBillingUsageService.incrementMeter.mockResolvedValue({
         applied: true,
         meterUsed: 500,
@@ -631,7 +631,7 @@ describe('BillingMeterService unit tests:', () => {
 
       const history = {
         _id: '507f1f77bcf86cd799439041',
-        costs: { scrap: 0.5 },
+        costs: { document: 0.5 },
         planId: 'pro',
         planVersion: '2026.05',
       };
@@ -653,7 +653,7 @@ describe('BillingMeterService unit tests:', () => {
     test('invalid stepKey (special chars) throws instead of silently falling back to "initial"', async () => {
       const history = {
         _id: '507f1f77bcf86cd799439099',
-        costs: { scrap: 0.1 },
+        costs: { document: 0.1 },
         planId: 'pro',
         planVersion: '2026.05',
       };
@@ -666,7 +666,7 @@ describe('BillingMeterService unit tests:', () => {
     });
 
     test('null and undefined stepKey fall back to initial while invalid values throw', async () => {
-      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { document: 1 } }));
       mockBillingUsageService.incrementMeter.mockResolvedValue({
         applied: true,
         meterUsed: 100,
@@ -675,7 +675,7 @@ describe('BillingMeterService unit tests:', () => {
       });
       const history = {
         _id: '507f1f77bcf86cd799439098',
-        costs: { scrap: 0.1 },
+        costs: { document: 0.1 },
         planId: 'pro',
         planVersion: '2026.05',
       };
@@ -707,14 +707,14 @@ describe('BillingMeterService unit tests:', () => {
     });
 
     test('replay of {stepKey:"digest"} is blocked (idempotent)', async () => {
-      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { scrap: 1 } }));
+      mockBillingPlanService.getPlanByVersion.mockReturnValue(makePlan({ ratios: { document: 1 } }));
       mockBillingUsageService.incrementMeter
         .mockResolvedValueOnce({ applied: true, meterUsed: 300, extrasConsumed: 0, alertCrossed: null })
         .mockResolvedValueOnce({ applied: false, meterUsed: 300, extrasConsumed: 0, alertCrossed: null });
 
       const history = {
         _id: '507f1f77bcf86cd799439043',
-        costs: { scrap: 0.3 },
+        costs: { document: 0.3 },
         planId: 'pro',
         planVersion: '2026.05',
       };
@@ -737,11 +737,11 @@ describe('BillingMeterService unit tests:', () => {
       const mod = await import('../services/billing.meter.service.js');
       const { capBreakdown } = mod.default;
 
-      const result = capBreakdown({ scrap: 6000, autofix: 4000 }, 5000, 10000);
+      const result = capBreakdown({ document: 6000, export: 4000 }, 5000, 10000);
 
-      expect(result.scrap).toBe(3000);
-      expect(result.autofix).toBe(2000);
-      expect(result.scrap + result.autofix).toBe(5000);
+      expect(result.document).toBe(3000);
+      expect(result.export).toBe(2000);
+      expect(result.document + result.export).toBe(5000);
     });
 
     test('distributes floor remainder to the largest bucket first', async () => {

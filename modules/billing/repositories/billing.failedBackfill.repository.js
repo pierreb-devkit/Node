@@ -9,7 +9,6 @@ import mongoose from 'mongoose';
  *              Deferred to keep unit tests importable before model registration.
  * @returns {import('mongoose').Model} The registered BillingFailedBackfill model.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const BillingFailedBackfill = () => mongoose.model('BillingFailedBackfill');
 
 /**
@@ -23,7 +22,6 @@ const BillingFailedBackfill = () => mongoose.model('BillingFailedBackfill');
  * @param {Date}   [opts.failedAt]      - Timestamp of the failure (defaults to now).
  * @returns {Promise<import('mongoose').Document>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js repository, not Qwik
 const record = ({ paymentIntentId, stripeSessionId, error = null, failedAt = new Date() }) =>
   BillingFailedBackfill().create({ paymentIntentId, stripeSessionId, error, failedAt });
 

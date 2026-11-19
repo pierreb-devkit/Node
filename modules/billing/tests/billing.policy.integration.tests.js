@@ -20,7 +20,6 @@ import config from '../../../config/index.js';
 describe('Billing policy — owner/admin only pay routes:', () => {
   let app;
   let UserService;
-  let MembershipService;
   let MembershipRepository;
   let OrganizationsRepository;
 
@@ -69,10 +68,9 @@ describe('Billing policy — owner/admin only pay routes:', () => {
   };
 
   beforeAll(async () => {
-    config.organizations = { ...config.organizations, enabled: true, autoCreate: true, domainMatching: false };
+    config.organizations = { ...config.organizations, enabled: true, domainMatching: false };
     app = (await bootstrap()).app;
     UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
-    MembershipService = (await import(path.resolve('./modules/organizations/services/organizations.membership.service.js'))).default;
     MembershipRepository = (await import(path.resolve('./modules/organizations/repositories/organizations.membership.repository.js'))).default;
     OrganizationsRepository = (await import(path.resolve('./modules/organizations/repositories/organizations.repository.js'))).default;
 
@@ -89,8 +87,8 @@ describe('Billing policy — owner/admin only pay routes:', () => {
     }
 
     orgId = String(users.owner.currentOrganization);
-    await MembershipService.create({ userId: users.admin.id || users.admin._id, organizationId: orgId, role: 'admin' });
-    await MembershipService.create({ userId: users.member.id || users.member._id, organizationId: orgId, role: 'member' });
+    await MembershipRepository.create({ userId: users.admin.id || users.admin._id, organizationId: orgId, role: 'admin' });
+    await MembershipRepository.create({ userId: users.member.id || users.member._id, organizationId: orgId, role: 'member' });
 
     // Billing routes act on the caller's current organization: move admin and member into the owner's.
     for (const key of ['admin', 'member']) {

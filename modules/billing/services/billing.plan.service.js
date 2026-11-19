@@ -12,7 +12,6 @@ import logger from '../../../lib/services/logger.js';
  * @returns {Object|null} Plan object with meterQuota, ratios, version, and optional
  *          signupGrant / oneShot fields (N2 signup-grant feature), or null.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const getPlanFromConfig = (planId) => {
   const definitions = config?.billing?.planDefinitions ?? [];
   const def = definitions.find((d) => d.planId === planId);
@@ -57,7 +56,6 @@ const getPlanFromConfig = (planId) => {
  * @param {string} planId - The logical plan identifier (e.g. "pro").
  * @returns {Object|null} The plan object, or null.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const getActivePlan = (planId) => getPlanFromConfig(planId);
 
 /**
@@ -69,7 +67,6 @@ const getActivePlan = (planId) => getPlanFromConfig(planId);
  * @param {string} version - The specific version string.
  * @returns {Object|null} The plan object if the version matches, or null.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const getPlanByVersion = (planId, version) => {
   const plan = getPlanFromConfig(planId);
   if (!plan) return null;
@@ -77,22 +74,7 @@ const getPlanByVersion = (planId, version) => {
   return plan;
 };
 
-/**
- * @desc Get the signup grant amount for a given planId (N2 Free Tier Grant feature).
- *       Returns the signupGrant value if the plan definition has it, or undefined.
- *       Callers must handle undefined as "no grant configured for this plan".
- *
- * @param {string} planId - The logical plan identifier (e.g. "free").
- * @returns {number|undefined} The signupGrant value, or undefined.
- */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
-const getSignupGrant = (planId) => {
-  const plan = getPlanFromConfig(planId);
-  return plan?.signupGrant;
-};
-
 export default {
   getActivePlan,
   getPlanByVersion,
-  getSignupGrant,
 };

@@ -75,7 +75,7 @@ describe('Organizations domain join E2E tests:', () => {
     });
 
     test('first user signs up with domain email — creates org, is owner', async () => {
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: true, publicDomains: ['gmail.com'] };
+      config.organizations = { enabled: true, domainMatching: true, publicDomains: ['gmail.com'] };
       agentOwner = request.agent(agent.app);
 
       try {
@@ -119,7 +119,7 @@ describe('Organizations domain join E2E tests:', () => {
     test('second user signs up with same domain — always gets own workspace + suggestedJoin hint (spec D5)', async () => {
       // Spec D5: signup always provisions a workspace. Domain-match no longer creates a pending
       // join request — instead, a suggestedJoin hint is returned alongside the user's new org.
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: true, publicDomains: ['gmail.com'] };
+      config.organizations = { enabled: true, domainMatching: true, publicDomains: ['gmail.com'] };
       agentMember = request.agent(agent.app);
 
       try {
@@ -153,8 +153,7 @@ describe('Organizations domain join E2E tests:', () => {
         expect(activeMemberships[0].role).toBe('owner');
 
         // suggestedJoin hint (name-only shape) pointing to owner's org — wired in A2b
-        // controller still emits suggestedOrganization (always null post-footgun-removal)
-        expect(result.body.suggestedOrganization).toBeNull();
+        expect(result.body).not.toHaveProperty('suggestedOrganization');
         expect(result.body.suggestedJoin).toBeDefined();
         expect(result.body.suggestedJoin).toEqual(
           expect.objectContaining({

@@ -11,9 +11,7 @@ import InvitationSchema from '../models/invitations.schema.js';
 
 /**
  * Register the canonical signup-invitation routes on the Express application.
- * Public verify + admin CRUD, mounted at `/api/invitations`. The legacy
- * `/api/auth/invitations*` alias is kept in auth.routes.js (before the greedy
- * `/api/auth/:strategy` wildcard) and points at this same moved controller.
+ * Public verify + admin CRUD, mounted at `/api/invitations`.
  * @param {Object} app - Express application instance
  * @returns {void}
  */

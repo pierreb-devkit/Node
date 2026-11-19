@@ -50,15 +50,10 @@ describe('Uploads createFromBuffer unit tests:', () => {
       default: mockConfig,
     }));
 
-    jest.unstable_mockModule('../../../lib/services/multer.js', () => ({
-      default: { generateFileName: jest.fn() },
-    }));
-
     jest.unstable_mockModule('../repositories/uploads.repository.js', () => ({
       default: {
         get: jest.fn(),
         getStream: jest.fn(),
-        update: jest.fn(),
         remove: jest.fn(),
       },
     }));

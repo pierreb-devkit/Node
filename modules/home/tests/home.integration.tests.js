@@ -228,7 +228,7 @@ describe('Home integration tests:', () => {
     test('should report warning when JWT secret is the default value', async () => {
       const origJwt = config.jwt.secret;
       try {
-        config.jwt.secret = 'WaosSecretKeyExampleToChnageAbsolutely';
+        config.jwt.secret = 'DevkitSecretKeyExampleToChangeAbsolutely';
         const result = await agent.get('/api/admin/readiness').set('Cookie', `TOKEN=${adminToken}`).expect(200);
         const secCheck = result.body.data.find((c) => c.category === 'security');
         expect(secCheck.status).toBe('warning');

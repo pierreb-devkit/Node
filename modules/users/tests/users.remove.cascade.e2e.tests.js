@@ -49,7 +49,7 @@ describe('users.service.remove cascade (#3709):', () => {
     let agentB;
 
     beforeAll(async () => {
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
+      config.organizations = { enabled: true, domainMatching: false };
       agentA = request.agent(agent.app);
       agentB = request.agent(agent.app);
     });
@@ -110,8 +110,7 @@ describe('users.service.remove cascade (#3709):', () => {
       // Step 3: Directly create an ACTIVE membership for User B on Org X + set currentOrganization
       // (bypassing invite flow for test speed)
       try {
-        const MembershipService = (await import(path.resolve('./modules/organizations/services/organizations.membership.service.js'))).default;
-        await MembershipService.create({
+        await MembershipRepository.create({
           userId: userB._id || userB.id,
           organizationId: orgX._id,
           role: 'member',

@@ -158,7 +158,6 @@ const getUsage = async (req, res) => {
  * @param {Object} res - Express response object
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const extrasCheckout = async (req, res) => {
   try {
     const { packId, successUrl, cancelUrl, intentId } = req.body;
@@ -186,7 +185,6 @@ const extrasCheckout = async (req, res) => {
  * @param {Object} res - Express response object
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const extrasBalance = async (req, res) => {
   try {
     const balance = await BillingExtraService.getOrgBalanceContext(req.organization._id.toString());
@@ -203,7 +201,6 @@ const extrasBalance = async (req, res) => {
  * @param {Object} res - Express response object
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const extrasLedger = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);

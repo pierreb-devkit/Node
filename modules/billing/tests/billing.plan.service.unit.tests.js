@@ -19,8 +19,8 @@ describe('BillingPlanService unit tests:', () => {
         meterMode: true,
         planDefinitions: [
           { planId: 'free', meterQuota: 0, ratios: { default: 1 }, version: '2026.05' },
-          { planId: 'growth', meterQuota: 1600, ratios: { scrap: 1, autofix: 2 }, version: '2026.05' },
-          { planId: 'pro', meterQuota: 8000, ratios: { scrap: 1, autofix: 2 }, version: '2026.05' },
+          { planId: 'growth', meterQuota: 1600, ratios: { document: 1, export: 2 }, version: '2026.05' },
+          { planId: 'pro', meterQuota: 8000, ratios: { document: 1, export: 2 }, version: '2026.05' },
         ],
         meter: {
           ratioVersion: '2026.05',
@@ -53,7 +53,7 @@ describe('BillingPlanService unit tests:', () => {
       expect(result.planId).toBe('pro');
       expect(result.meterQuota).toBe(8000);
       expect(result.version).toBe('2026.05');
-      expect(result.ratios).toEqual({ scrap: 1, autofix: 2 });
+      expect(result.ratios).toEqual({ document: 1, export: 2 });
     });
 
     test('returns null for unknown planId', () => {
@@ -162,29 +162,6 @@ describe('BillingPlanService unit tests:', () => {
       const result = BillingPlanService.getActivePlan('free');
       expect(result.signupGrant).toBeUndefined();
       expect(result.oneShot).toBeUndefined();
-    });
-  });
-
-  describe('getSignupGrant', () => {
-    test('returns signupGrant for a plan with both signupGrant and oneShot set', () => {
-      mockConfig.billing.planDefinitions = [
-        { planId: 'free', meterQuota: 0, signupGrant: 500, oneShot: true, ratios: {} },
-      ];
-      const grant = BillingPlanService.getSignupGrant('free');
-      expect(grant).toBe(500);
-    });
-
-    test('returns undefined for plans without signupGrant', () => {
-      mockConfig.billing.planDefinitions = [
-        { planId: 'pro', meterQuota: 8000, ratios: {} },
-      ];
-      const grant = BillingPlanService.getSignupGrant('pro');
-      expect(grant).toBeUndefined();
-    });
-
-    test('returns undefined for unknown planId', () => {
-      const grant = BillingPlanService.getSignupGrant('nonexistent');
-      expect(grant).toBeUndefined();
     });
   });
 

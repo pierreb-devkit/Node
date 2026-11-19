@@ -3,10 +3,21 @@
  */
 import request from 'supertest';
 import path from 'path';
+import mongoose from 'mongoose';
 
 import { beforeAll, afterAll, beforeEach, afterEach, describe, test, expect } from '@jest/globals';
 import { bootstrap } from '../../../lib/app.js';
 import config from '../../../config/index.js';
+
+/**
+ * Read an org's extras ledger straight from the model (null when the org has no doc yet).
+ * @param {string} orgId - Organization id.
+ * @returns {Promise<Object[]|null>} Ledger entries or null.
+ */
+const findLedger = async (orgId) => {
+  const doc = await mongoose.model('BillingExtraBalance').findOne({ organization: orgId }, { ledger: 1 }).lean();
+  return doc?.ledger ?? null;
+};
 
 /**
  * Billing referral grant integration tests (#3842).
@@ -124,7 +135,7 @@ describe('Billing referral grant (#3842):', () => {
   async function waitForLedgerEntry(orgId, refId, timeoutMs = 5000) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
-      const ledger = await BillingExtraBalanceRepository.findLedgerByOrg(orgId);
+      const ledger = await findLedger(orgId);
       const entry = (ledger ?? []).find((e) => e.refId === refId);
       if (entry) return entry;
       await new Promise((resolve) => { setTimeout(resolve, 100); });
@@ -202,9 +213,9 @@ describe('Billing referral grant (#3842):', () => {
     expect(await BillingExtraBalanceRepository.getBalance(refereeOrgId)).toBe(refereeBalanceAfter);
 
     // 6. Exactly ONE entry per key on each ledger (no duplicates slipped through).
-    const inviterLedger = await BillingExtraBalanceRepository.findLedgerByOrg(inviterOrgId);
+    const inviterLedger = await findLedger(inviterOrgId);
     expect(inviterLedger.filter((e) => e.refId === referrerKey)).toHaveLength(1);
-    const refereeLedger = await BillingExtraBalanceRepository.findLedgerByOrg(refereeOrgId);
+    const refereeLedger = await findLedger(refereeOrgId);
     expect(refereeLedger.filter((e) => e.refId === refereeKey)).toHaveLength(1);
 
     // 7. The reconcile diff helper sees both keys as granted (cron would skip this invite).
@@ -266,7 +277,7 @@ describe('Billing referral grant (#3842):', () => {
     expect(replay.referrer).toMatchObject({ applied: false, reason: 'duplicate_grant' });
 
     // 6. Exactly ONE referee entry — listener + replay never double-credited.
-    const refereeLedger = await BillingExtraBalanceRepository.findLedgerByOrg(refereeOrgId);
+    const refereeLedger = await findLedger(refereeOrgId);
     expect(refereeLedger.filter((e) => e.refId === refereeKey)).toHaveLength(1);
   }, 30000);
 
@@ -314,9 +325,9 @@ describe('Billing referral grant (#3842):', () => {
     // Exactly one ledger entry per key — the race never double-credited.
     const inviterOrgId = String(admin.currentOrganization._id || admin.currentOrganization);
     const refereeOrgId = String(guest.currentOrganization._id || guest.currentOrganization);
-    const inviterLedger = await BillingExtraBalanceRepository.findLedgerByOrg(inviterOrgId);
+    const inviterLedger = await findLedger(inviterOrgId);
     expect(inviterLedger.filter((e) => e.refId === `referral:${invitationId}:referrer`)).toHaveLength(1);
-    const refereeLedger = await BillingExtraBalanceRepository.findLedgerByOrg(refereeOrgId);
+    const refereeLedger = await findLedger(refereeOrgId);
     expect(refereeLedger.filter((e) => e.refId === `referral:${invitationId}:referee`)).toHaveLength(1);
   }, 30000);
 

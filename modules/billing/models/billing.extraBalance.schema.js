@@ -115,25 +115,6 @@ const BillingExtraBalance = z.object({
 });
 
 /**
- * Schema for creditPack input.
- */
-const ExtraBalanceCreditPack = z.object({
-  orgId: z.string().trim().regex(objectIdRegex, 'orgId must be a valid ObjectId'),
-  amount: z.number().int().min(1, 'amount must be >= 1'),
-  stripeSessionId: z.string().trim().min(1, 'stripeSessionId is required'),
-  expiresAt: z.coerce.date().optional().nullable(),
-});
-
-/**
- * Schema for debit input.
- */
-const ExtraBalanceDebit = z.object({
-  orgId: z.string().trim().regex(objectIdRegex, 'orgId must be a valid ObjectId'),
-  amount: z.number().int().min(1, 'amount must be >= 1'),
-  refId: z.string().trim().min(1, 'refId is required'),
-});
-
-/**
  * Schema for creditGrant input.
  * Unlike creditPack, no stripeSessionId is required — idempotency is
  * derived from `source + orgId` (synthetic key stored as refId) UNLESS the
@@ -154,7 +135,5 @@ export default {
   GrantSource,
   LedgerEntry,
   BillingExtraBalance,
-  ExtraBalanceCreditPack,
-  ExtraBalanceDebit,
   ExtraBalanceCreditGrant,
 };

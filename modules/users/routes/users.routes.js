@@ -26,7 +26,6 @@ export default (app) => {
 
   app.route('/api/users/me').get(passport.authenticate('jwt', { session: false }), policy.isAllowed, users.me);
 
-  app.route('/api/users/terms').get(passport.authenticate('jwt', { session: false }), policy.isAllowed, users.terms);
 
   app
     .route('/api/users')

@@ -64,7 +64,7 @@ function mockCommonDeps({ config, eligibility, create }) {
       handleSignupOrganization: jest.fn().mockResolvedValue({
         organization: null, joined: false, pendingJoin: false,
         abilities: [], organizationSetupRequired: false,
-        emailVerificationRequired: false, suggestedOrganization: null,
+        emailVerificationRequired: false,
       }),
     },
   }));

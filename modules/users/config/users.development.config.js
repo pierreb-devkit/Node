@@ -4,8 +4,7 @@ const config = {
       users: 'User',
     },
   },
-  // Data filter whitelist & Blacklist
-  blacklists: {},
+  // Data filter whitelist
   whitelists: {
     users: {
       default: [

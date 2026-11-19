@@ -340,14 +340,6 @@ const searchByDomain = async (userEmail) => {
 };
 
 /**
- * @function removeById
- * @description Service to delete an organization by ID without cascading cleanup.
- * @param {String} id - The ID of the organization to delete.
- * @returns {Promise<Object>} A confirmation of the deletion.
- */
-const removeById = (id) => OrganizationsRepository.remove({ _id: id });
-
-/**
  * @desc Admin stats: total organizations + organizations created per week over the last weeks
  * @returns {Promise<{total: number, weeks: Array<{week: string, count: number}>}>} stats
  */
@@ -368,5 +360,4 @@ export default {
   switchOrganization,
   autoSetCurrentOrganization,
   searchByDomain,
-  removeById,
 };

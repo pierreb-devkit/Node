@@ -18,7 +18,7 @@ const config = {
   },
   // jwt is for token authentication
   jwt: {
-    secret: 'WaosSecretKeyExampleToChnageAbsolutely', // secret for hash
+    secret: 'DevkitSecretKeyExampleToChangeAbsolutely', // secret for hash
     expiresIn: 7 * 24 * 60 * 60, // token expire in x sec
   },
   oAuth: {

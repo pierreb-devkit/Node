@@ -150,7 +150,6 @@ const syncOrganizationPlan = async (organizationId, plan) => {
  *          { skipped: true, reason: 'duplicate_event_or_dead_letter' }, or
  *          dead-letter sentinel { deadLettered: true, eventId, eventType, attempts }.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const withIdempotency = async (event, handler, { requestId } = {}) => {
   const eventId = event.id;
   const eventType = event.type;
@@ -203,7 +202,6 @@ const withIdempotency = async (event, handler, { requestId } = {}) => {
  * @param {Object} event - Full Stripe event (data.object is the session)
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleCheckoutSessionCompleted = async (event) => {
   const session = event.data.object;
   if (session.mode === 'payment') {
@@ -223,7 +221,6 @@ const handleCheckoutSessionCompleted = async (event) => {
  * @param {Object} event - Full Stripe event (for event-ordering guard)
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleCheckoutCompleted = async (session, event) => {
   const { customer: stripeCustomerId, subscription: stripeSubscriptionId, metadata } = session;
   let organizationId = metadata?.organizationId;
@@ -346,7 +343,6 @@ const handleCheckoutCompleted = async (session, event) => {
  * @param {Object} session - Stripe checkout session object (mode='payment')
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleCheckoutPaymentCompleted = async (session) => {
   if (session.payment_status !== 'paid') return;
 
@@ -426,7 +422,6 @@ const handleCheckoutPaymentCompleted = async (session) => {
  * @param {Object} event - Full Stripe event (with data.previous_attributes for plan/period change detection)
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleSubscriptionUpdated = async (subscription, event) => {
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(subscription.id);
   if (!existing) return;
@@ -594,7 +589,6 @@ const handleSubscriptionUpdated = async (subscription, event) => {
  * @param {Object} subscription - Stripe subscription object
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleSubscriptionDeleted = async (subscription, event) => {
   const existing = await SubscriptionRepository.findByStripeSubscriptionId(subscription.id);
   if (!existing) return;
@@ -643,7 +637,6 @@ const handleSubscriptionDeleted = async (subscription, event) => {
  * @param {Object} invoice - Stripe invoice object
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleInvoicePaymentFailed = async (invoice, event) => {
   const { subscription: stripeSubscriptionId } = invoice;
   if (!stripeSubscriptionId) return;
@@ -701,7 +694,6 @@ const handleInvoicePaymentFailed = async (invoice, event) => {
  * @param {Object} event - Full Stripe event (with event.created and event.id for ordering)
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleInvoicePaymentSucceeded = async (invoice, event) => {
   const { subscription: stripeSubscriptionId } = invoice;
   if (!stripeSubscriptionId) return;
@@ -805,7 +797,6 @@ const handleInvoicePaymentSucceeded = async (invoice, event) => {
  * @param {Object} charge - Stripe charge object
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleChargeRefunded = async (charge) => {
   const { metadata, payment_intent: paymentIntentId } = charge;
 
@@ -893,7 +884,6 @@ const handleChargeRefunded = async (charge) => {
  * @param {Object} event - Full Stripe event (for ordering / event-newer guard).
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleCustomerDeleted = async (customer, event) => {
   const stripeCustomerId = customer?.id;
   if (!stripeCustomerId) return;
@@ -957,7 +947,6 @@ const handleCustomerDeleted = async (customer, event) => {
  * @param {Object} event - Full Stripe event.
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleChargeDisputeCreated = async (dispute, event) => {
   const chargeId = dispute?.charge;
   const disputeId = dispute?.id;
@@ -1053,7 +1042,6 @@ const handleChargeDisputeCreated = async (dispute, event) => {
  * @param {Object} event - Full Stripe event (for traceability).
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleChargeDisputeFundsWithdrawn = async (dispute, event) => {
   const chargeId = dispute?.charge;
   const disputeId = dispute?.id;
@@ -1220,7 +1208,6 @@ const handleChargeDisputeFundsWithdrawn = async (dispute, event) => {
  *          E11000 duplicate-key error on create — graceful no-op, does not dead-letter.
  *          Returns void in all other cases (including stale-event skip via updateIfEventNewer).
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleSubscriptionCreated = async (subscription, event) => {
   const rawPeriodStart = subscription.items?.data?.[0]?.current_period_start ?? subscription.current_period_start;
   const newPeriodStart = rawPeriodStart ? new Date(rawPeriodStart * 1000) : undefined;
@@ -1346,7 +1333,6 @@ const handleSubscriptionCreated = async (subscription, event) => {
  * @param {Object} event - Full Stripe event
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const handleChargeDisputeFundsReinstated = async (dispute, event) => {
   const chargeId = dispute?.charge;
   const disputeId = dispute?.id;

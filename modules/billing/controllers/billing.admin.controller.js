@@ -17,7 +17,6 @@ import logger from '../../../lib/services/logger.js';
  * @param {Object} res - Express response object
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const adminRefundCharge = async (req, res) => {
   try {
     const { chargeId, amountCents, reason, refundRequestId } = req.body;
@@ -82,7 +81,6 @@ const adminRefundCharge = async (req, res) => {
  * @param {Object} res - Express response object
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const adminBumpPlan = async (req, res) => {
   try {
     const { orgId, planId } = req.body;
@@ -103,7 +101,6 @@ const adminBumpPlan = async (req, res) => {
  * @param {Object} res - Express response object
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const adminGetCustomerStatus = async (req, res) => {
   try {
     const parsed = AdminOrgIdParam.safeParse(req.params);
@@ -127,7 +124,6 @@ const adminGetCustomerStatus = async (req, res) => {
  * @param {Object} res - Express response object
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const adminSyncFromStripe = async (req, res) => {
   try {
     const parsed = AdminOrgIdParam.safeParse(req.params);
@@ -155,7 +151,6 @@ const adminSyncFromStripe = async (req, res) => {
  * @param {Object} res - Express response object
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const adminReplayWebhook = async (req, res) => {
   try {
     const { eventId } = req.body;
@@ -175,7 +170,6 @@ const adminReplayWebhook = async (req, res) => {
  * @param {Object} res - Express response object
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const adminListDeadLetters = async (req, res) => {
   try {
     const parsed = AdminDeadLettersQuery.safeParse(req.query);
@@ -199,7 +193,6 @@ const adminListDeadLetters = async (req, res) => {
  * @param {Object} res - Express response object
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const adminPurgeDeadLetter = async (req, res) => {
   try {
     const parsed = AdminEventIdParam.safeParse(req.params);
@@ -224,7 +217,6 @@ const adminPurgeDeadLetter = async (req, res) => {
  * @param {Object} res - Express response object
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const adminCancelSubscription = async (req, res) => {
   try {
     const parsed = AdminOrgIdParam.safeParse(req.params);
@@ -249,7 +241,6 @@ const adminCancelSubscription = async (req, res) => {
  * @param {Object} res - Express response object
  * @returns {Promise<void>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js controller, not Qwik
 const adminDisputeCredit = async (req, res) => {
   try {
     const parsedParams = AdminOrgIdParam.safeParse(req.params);

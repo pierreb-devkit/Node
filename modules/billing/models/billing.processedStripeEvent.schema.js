@@ -17,12 +17,6 @@ const ProcessedStripeEvent = z.object({
   deadLetter: z.boolean().default(false),
 });
 
-const ProcessedStripeEventCreate = z.object({
-  eventId: z.string().trim().min(1, 'eventId is required'),
-  type: z.string().trim().min(1, 'type is required'),
-});
-
 export default {
   ProcessedStripeEvent,
-  ProcessedStripeEventCreate,
 };

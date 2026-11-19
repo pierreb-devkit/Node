@@ -11,6 +11,16 @@ import config from '../../../config/index.js';
 import { encodeReferralCode } from '../../users/utils/referralCode.js';
 
 /**
+ * Read an org's extras ledger straight from the model (null when the org has no doc yet).
+ * @param {string} orgId - Organization id.
+ * @returns {Promise<Object[]|null>} Ledger entries or null.
+ */
+const findLedger = async (orgId) => {
+  const doc = await mongoose.model('BillingExtraBalance').findOne({ organization: orgId }, { ledger: 1 }).lean();
+  return doc?.ledger ?? null;
+};
+
+/**
  * Billing referral LINK grant integration tests (#4214), through the real Express app +
  * Mongo: with `billing.referral.link` on, a signup carrying a referral code credits both
  * organizations once (via the `organization.provisioned` listener), the reconcile path
@@ -55,7 +65,7 @@ describe('Billing referral link grant (#4214):', () => {
   const waitForEntry = async (orgId, refId) => {
     const start = Date.now();
     while (Date.now() - start < 5000) {
-      const ledger = await BillingExtraBalanceRepository.findLedgerByOrg(orgId);
+      const ledger = await findLedger(orgId);
       const entry = (ledger ?? []).find((e) => e.refId === refId);
       if (entry) return entry;
       await new Promise((resolve) => { setTimeout(resolve, 100); });
@@ -70,7 +80,7 @@ describe('Billing referral link grant (#4214):', () => {
    * @returns {Promise<number>} Number of matching entries.
    */
   const countEntries = async (orgId, refId) => {
-    const ledger = await BillingExtraBalanceRepository.findLedgerByOrg(orgId);
+    const ledger = await findLedger(orgId);
     return (ledger ?? []).filter((e) => e.refId === refId).length;
   };
 

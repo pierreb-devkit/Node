@@ -104,7 +104,7 @@ describe('BillingUsageRepository — meter extensions unit tests:', () => {
         orgId,
         weekKey,
         100,
-        { scrap: 100 },
+        { document: 100 },
         'hist_001',
         { meterQuota: 500000, planVersion: 'v1', resetAt: new Date(), month: '2026-05' },
       );
@@ -137,13 +137,13 @@ describe('BillingUsageRepository — meter extensions unit tests:', () => {
         orgId,
         weekKey,
         150,
-        { scrap: 100, autofix: 50 },
+        { document: 100, export: 50 },
         'hist_002',
         {},
       );
 
-      expect(capturedUpdate.$inc['meterBreakdown.scrap']).toBe(100);
-      expect(capturedUpdate.$inc['meterBreakdown.autofix']).toBe(50);
+      expect(capturedUpdate.$inc['meterBreakdown.document']).toBe(100);
+      expect(capturedUpdate.$inc['meterBreakdown.export']).toBe(50);
       expect(capturedUpdate.$setOnInsert.meterBreakdown).toBeUndefined();
     });
 

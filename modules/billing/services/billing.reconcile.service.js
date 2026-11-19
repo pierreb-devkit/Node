@@ -29,7 +29,6 @@ const RECONCILE_STATUSES = ['active', 'past_due', 'trialing', 'unpaid'];
  * @param {Object} subscription - Stripe subscription object.
  * @returns {string|null} plan name, or null when unresolved.
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const resolveStripePlan = (subscription) =>
   resolvePlanFromSubscription(subscription, { logPrefix: '[billing.reconcile]' });
 
@@ -44,7 +43,6 @@ const resolveStripePlan = (subscription) =>
  *
  * @returns {Promise<{checked: number, divergences: number, errors: number}>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const runReconciliation = async () => {
   if (!config?.billing?.meterMode) {
     logger.info('[billing.reconcile] meterMode disabled — skipping reconciliation');
@@ -109,7 +107,6 @@ const runReconciliation = async () => {
  * @param {number} limit - Page size.
  * @returns {Promise<Array>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const _fetchPage = async (SubscriptionRepository, lastSeenId, limit) => {
   return SubscriptionRepository.findPageForReconciliation(
     RECONCILE_STATUSES,
@@ -137,7 +134,6 @@ const _fetchPage = async (SubscriptionRepository, lastSeenId, limit) => {
  * @param {string} orgId
  * @returns {Promise<{diverged: boolean, expectedExtrasUsage: number, actualExtrasDebits: number}>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const _checkMeterExtrasMismatch = async (orgId) => {
   // Lazy imports — deferred to keep unit tests importable before model registration.
   const { default: BillingUsageRepository } = await import('../repositories/billing.usage.repository.js');
@@ -190,7 +186,6 @@ const _isMissingInStripe = (err) => err?.code === 'resource_missing' || err?.raw
  * @param {Object} sub - DB subscription (lean).
  * @returns {Promise<{diverged: boolean}>}
  */
-// biome-ignore lint/correctness/useQwikValidLexicalScope: false positive — Node.js service, not Qwik
 const _reconcileOne = async (stripe, sub) => {
   const orgId = String(sub.organization?._id || sub.organization);
   const subId = sub.stripeSubscriptionId;

@@ -80,7 +80,7 @@ describe('Organizations owner_add decline E2E tests:', () => {
     });
 
     test('owner adds → invite visible → owner cannot decline → invitee declines → invitee can request to join', async () => {
-      config.organizations = { enabled: true, autoCreate: true, domainMatching: false };
+      config.organizations = { enabled: true, domainMatching: false };
       agentOwner = request.agent(agent.app);
       agentInvitee = request.agent(agent.app);
 

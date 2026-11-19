@@ -208,8 +208,8 @@ describe('auth.controller getConfig:', () => {
   test('data.billing.equivalences is returned verbatim when set in config (authenticated)', async () => {
     const equivalences = {
       plans: {
-        growth: { scrapsPerMonth: 200, typicalScrapsPerMonth: 50, features: ['alerts', 'export'] },
-        pro: { scrapsPerMonth: 1000, typicalScrapsPerMonth: 200, features: ['alerts', 'export', 'api'] },
+        growth: { documentsPerMonth: 200, typicalDocumentsPerMonth: 50, features: ['alerts', 'export'] },
+        pro: { documentsPerMonth: 1000, typicalDocumentsPerMonth: 200, features: ['alerts', 'export', 'api'] },
       },
     };
     mockConfig.billing = { enabled: true, meterMode: true, equivalences };
