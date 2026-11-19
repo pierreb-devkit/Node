@@ -12,6 +12,7 @@ import mails from '../../../lib/helpers/mailer/index.js';
 import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
 import logger from '../../../lib/services/logger.js';
 import AppError from '../../../lib/helpers/AppError.js';
+import isGlobalAdmin from '../../../lib/helpers/isGlobalAdmin.js';
 import AnalyticsService from '../../../lib/services/analytics.js';
 
 /**
@@ -384,7 +385,7 @@ const list = (user) => {
   // not the authorization itself (CASL is). It is what keeps a non-admin scoped to their own
   // rows once the referral phase widens the Invitation abilities — any such widening MUST be
   // reviewed against this seam so the unscoped branch is never reachable by a regular user.
-  if (Array.isArray(user?.roles) && user.roles.includes('admin')) return InvitationRepository.list();
+  if (isGlobalAdmin(user)) return InvitationRepository.list();
   const userId = user?.id || user?._id;
   if (!userId) return Promise.resolve([]);
   return InvitationRepository.list({ invitedBy: userId });

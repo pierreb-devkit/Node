@@ -27,6 +27,7 @@ import { effectivePlanOf, failClosedStatuses } from '../lib/constants.js';
 import { getDefaultPlanId, getGracePeriodDays } from '../lib/billing.constants.js';
 import config from '../../../config/index.js';
 import AppError from '../../../lib/helpers/AppError.js';
+import isGlobalAdmin from '../../../lib/helpers/isGlobalAdmin.js';
 
 /**
  * @typedef {Object} QuotaDenyReason
@@ -64,7 +65,7 @@ import AppError from '../../../lib/helpers/AppError.js';
  */
 async function assertCanExecute({ orgId, organization, user, resource, action }) {
   // ── Admin bypass ──────────────────────────────────────────────────────────
-  if (user?.roles?.includes('admin')) return { degraded: false };
+  if (isGlobalAdmin(user)) return { degraded: false };
 
   // ── meterExempt bypass ────────────────────────────────────────────────────
   if (organization?.meterExempt === true) return { degraded: false };

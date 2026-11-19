@@ -24,12 +24,7 @@ import MembershipService from '../../organizations/services/organizations.member
 import AnalyticsService from '../../../lib/services/analytics.js';
 import logger from '../../../lib/services/logger.js';
 import getBaseUrl from '../../../lib/helpers/getBaseUrl.js';
-
-const tokenCookieOptions = {
-  httpOnly: true,
-  secure: config.cookie.secure,
-  sameSite: config.cookie.sameSite,
-};
+import tokenCookieOptions from '../../../lib/helpers/tokenCookieOptions.js';
 
 /**
  * @desc Endpoint to ask the service to create a user. Business logic lives in

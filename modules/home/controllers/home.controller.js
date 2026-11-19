@@ -6,6 +6,7 @@ import path from 'path';
 
 import AppError from '../../../lib/helpers/AppError.js';
 import errors from '../../../lib/helpers/errors.js';
+import isGlobalAdmin from '../../../lib/helpers/isGlobalAdmin.js';
 import responses from '../../../lib/helpers/responses.js';
 import HomeService from '../services/home.service.js';
 
@@ -65,7 +66,7 @@ const pageByName = async (req, res, next, name) => {
  */
 const health = (req, res) => {
   const data = HomeService.getHealthStatus();
-  const isAdmin = req.user?.roles?.includes('admin');
+  const isAdmin = isGlobalAdmin(req.user);
   const payload = isAdmin ? data : { status: data.status };
   if (data.status !== 'ok') {
     // responses.error(...)(x) reads `x.details`, not `x` itself (issue

@@ -14,12 +14,7 @@ import OrganizationsService from '../services/organizations.crud.service.js';
 import MembershipService from '../services/organizations.membership.service.js';
 import AnalyticsService from '../../../lib/services/analytics.js';
 import UserService from '../../users/services/users.service.js';
-
-const tokenCookieOptions = {
-  httpOnly: true,
-  secure: config.cookie.secure,
-  sameSite: config.cookie.sameSite,
-};
+import tokenCookieOptions from '../../../lib/helpers/tokenCookieOptions.js';
 
 /**
  * @function list

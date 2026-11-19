@@ -1,18 +1,12 @@
 /**
  * Module dependencies
  */
+import _ from 'lodash';
 import AppError from '../../../lib/helpers/AppError.js';
 import { assertEmailVerified } from '../../../lib/helpers/emailVerification.js';
 import config from '../../../config/index.js';
 import logger from '../../../lib/services/logger.js';
 import { weeklyWindowStart, fillWeeks } from '../../../lib/helpers/weeklyStats.js';
-
-/**
- * @desc Escape regex-special characters in a user-provided string.
- * @param {String} str - The raw string to escape.
- * @returns {String} The escaped string safe for use in a RegExp.
- */
-const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * Normalize a domain string by trimming whitespace and lowercasing.
@@ -26,6 +20,7 @@ import MembershipRepository from '../repositories/organizations.membership.repos
 import UserService from '../../users/services/users.service.js';
 import organizationEvents from '../lib/events.js';
 import { slugify } from '../helpers/organizations.slug.js';
+import { uniqueSlug } from '../../../lib/helpers/slug.js';
 import { MEMBERSHIP_STATUSES, MEMBERSHIP_ROLES } from '../lib/constants.js';
 import { runOrganizationRemovedHandlers } from '../lib/orgRemoval.registry.js';
 
@@ -39,7 +34,7 @@ import { runOrganizationRemovedHandlers } from '../lib/orgRemoval.registry.js';
  */
 const list = async (search, page, perPage) => {
   const filter = search
-    ? { $or: [{ name: { $regex: escapeRegex(search), $options: 'i' } }, { domain: { $regex: escapeRegex(search), $options: 'i' } }] }
+    ? { $or: [{ name: { $regex: _.escapeRegExp(search), $options: 'i' } }, { domain: { $regex: _.escapeRegExp(search), $options: 'i' } }] }
     : {};
   const result = await OrganizationsRepository.list(filter, page, perPage);
   return result;
@@ -77,12 +72,8 @@ const create = async (body, user) => {
   assertEmailVerified(user);
 
   // Auto-generate slug from name if not provided
-  let slug = body.slug || slugify(body.name);
-  let counter = 1;
-  while (await OrganizationsRepository.findOne({ slug })) {
-    slug = `${slugify(body.name)}-${counter}`;
-    counter += 1;
-  }
+  const base = slugify(body.name);
+  const slug = await uniqueSlug(base, (candidate) => OrganizationsRepository.findOne({ slug: candidate }), body.slug || base);
 
   const domain = normalizeDomain(body.domain);
 

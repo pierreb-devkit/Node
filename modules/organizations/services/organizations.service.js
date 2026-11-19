@@ -11,6 +11,7 @@ import OrganizationsRepository from '../repositories/organizations.repository.js
 import MembershipRepository from '../repositories/organizations.membership.repository.js';
 import UserService from '../../users/services/users.service.js';
 import { slugify, generateOrganizationSlug } from '../helpers/organizations.slug.js';
+import { uniqueSlug } from '../../../lib/helpers/slug.js';
 import { MEMBERSHIP_ROLES, MEMBERSHIP_STATUSES } from '../lib/constants.js';
 import organizationEvents from '../lib/events.js';
 import { isPublicDomain, normalizeEmailDomain } from './organizations.domain.js';
@@ -34,13 +35,7 @@ const nameFromDomain = (domain) => {
  */
 const generateSlugFromDomain = async (domain) => {
   const base = slugify(domain.split('.')[0]);
-  let candidate = base;
-  let counter = 1;
-  while (await OrganizationsRepository.exists({ slug: candidate })) {
-    candidate = `${base}-${counter}`;
-    counter += 1;
-  }
-  return candidate;
+  return uniqueSlug(base, (slug) => OrganizationsRepository.exists({ slug }));
 };
 
 /**

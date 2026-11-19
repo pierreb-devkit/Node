@@ -11,12 +11,7 @@ import errors from '../../../lib/helpers/errors.js';
 import responses from '../../../lib/helpers/responses.js';
 import config from '../../../config/index.js';
 import logger from '../../../lib/services/logger.js';
-
-const tokenCookieOptions = {
-  httpOnly: true,
-  secure: config.cookie.secure,
-  sameSite: config.cookie.sameSite,
-};
+import tokenCookieOptions from '../../../lib/helpers/tokenCookieOptions.js';
 
 /**
  * @desc Endpoint to init password reset mail

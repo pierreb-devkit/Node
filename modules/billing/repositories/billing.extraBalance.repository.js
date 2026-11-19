@@ -3,6 +3,7 @@
  */
 import mongoose from 'mongoose';
 import AppError from '../../../lib/helpers/AppError.js';
+import { isObjectId } from '../../../lib/helpers/zod.js';
 import BillingExtraBalanceSchema from '../models/billing.extraBalance.schema.js';
 import { computeExpiryRemovals } from '../lib/billing.packExpiry.js';
 
@@ -647,7 +648,7 @@ const findExistingRefIds = async (refIds) => {
  * @returns {Promise<number>} Number of link referrer grants for that referrer (0 for an invalid id).
  */
 const countLinkReferrerGrants = async (referrerId) => {
-  if (!/^[0-9a-f]{24}$/i.test(String(referrerId))) return 0;
+  if (!isObjectId(referrerId)) return 0;
   const pattern = new RegExp(`^referral:link:[^:]+:referrer:${String(referrerId)}$`);
   const [row] = await BillingExtraBalance().aggregate([
     { $match: { 'ledger.refId': { $regex: pattern } } },

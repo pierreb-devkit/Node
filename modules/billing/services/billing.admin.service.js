@@ -3,6 +3,7 @@
  */
 import getStripe from '../lib/stripe.js';
 import logger from '../../../lib/services/logger.js';
+import { isObjectId } from '../../../lib/helpers/zod.js';
 import { bumpEventMarkers } from '../lib/billing.markerBump.js';
 import SubscriptionRepository from '../repositories/billing.subscription.repository.js';
 import ProcessedStripeEventRepository from '../repositories/billing.processedStripeEvent.repository.js';
@@ -20,7 +21,7 @@ import { resolvePlanFromSubscription } from '../lib/billing.planResolver.js';
  * @returns {Promise<{db: Object|null, stripe: Object|null}>}
  */
 const getCustomerStatus = async (orgId) => {
-  if (!/^[0-9a-fA-F]{24}$/.test(orgId)) {
+  if (!isObjectId(orgId)) {
     throw Object.assign(new Error('invalid argument: orgId must be a valid ObjectId'), { status: 422 });
   }
 
@@ -67,7 +68,7 @@ const getCustomerStatus = async (orgId) => {
  * @returns {Promise<{previous: Object, updated: Object}>}
  */
 const syncOrgFromStripe = async (orgId) => {
-  if (!/^[0-9a-fA-F]{24}$/.test(orgId)) {
+  if (!isObjectId(orgId)) {
     throw Object.assign(new Error('invalid argument: orgId must be a valid ObjectId'), { status: 422 });
   }
 
@@ -234,7 +235,7 @@ const purgeDeadLetter = async (eventId) => {
  * @returns {Promise<{previous: Object, updated: Object, stripeStatus: string}>}
  */
 const cancelSubscription = async (orgId) => {
-  if (!/^[0-9a-fA-F]{24}$/.test(orgId)) {
+  if (!isObjectId(orgId)) {
     throw Object.assign(new Error('invalid argument: orgId must be a valid ObjectId'), { status: 422 });
   }
 
@@ -338,7 +339,7 @@ const cancelSubscription = async (orgId) => {
  * @returns {Promise<{applied: boolean, ledgerEntry: Object|null}>}
  */
 const creditDisputeReinstated = async (chargeId, amountCents, reason, refundRequestId, orgId, adminUserId) => {
-  if (!/^[0-9a-fA-F]{24}$/.test(orgId)) {
+  if (!isObjectId(orgId)) {
     throw Object.assign(new Error('invalid argument: orgId must be a valid ObjectId'), { status: 422 });
   }
   if (typeof chargeId !== 'string' || !/^ch_/.test(chargeId)) {
@@ -480,7 +481,7 @@ const dispatchWebhookEvent = (event) => {
  * @returns {Promise<Object>} Updated subscription document.
  */
 const bumpOrgPlan = async (orgId, newPlanId, adminUserId) => {
-  if (!/^[0-9a-fA-F]{24}$/.test(orgId)) {
+  if (!isObjectId(orgId)) {
     throw Object.assign(new Error('invalid argument: orgId must be a valid ObjectId'), { status: 422 });
   }
   if (!adminUserId) {

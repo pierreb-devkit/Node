@@ -3,12 +3,11 @@
  */
 import { z } from 'zod';
 import config from '../../../config/index.js';
+import { objectId, objectIdRegex, pageQuery } from '../../../lib/helpers/zod.js';
 
 /**
  *  Data Schema
  */
-const objectIdRegex = /^[a-f\d]{24}$/i;
-
 const optionalStripeId = z
   .string()
   .trim()
@@ -94,7 +93,7 @@ const AdminRefundRequest = z
 
 const AdminBumpPlanRequest = z
   .object({
-    orgId: z.string().regex(/^[a-f0-9]{24}$/i, 'orgId must be a valid ObjectId'),
+    orgId: objectId('orgId must be a valid ObjectId'),
     planId: z.enum(config.billing.plans),
   })
   .strict();
@@ -112,12 +111,7 @@ const AdminWebhookReplayRequest = z
 /**
  * Dead-letters list query schema (GET parameters — all optional).
  */
-const AdminDeadLettersQuery = z
-  .object({
-    page: z.coerce.number().int().min(1).optional().default(1),
-    limit: z.coerce.number().int().min(1).max(100).optional().default(20),
-  })
-  .strict();
+const AdminDeadLettersQuery = pageQuery({ sizeKey: 'limit', defaultSize: 20 }).strict();
 
 /**
  * Dispute credit request body schema.
@@ -144,7 +138,7 @@ const AdminDisputeCreditRequest = z
  * eventId: Stripe event ID (evt_ prefix).
  */
 const AdminOrgIdParam = z.object({
-  orgId: z.string().regex(/^[a-f0-9]{24}$/i, 'orgId must be a valid ObjectId'),
+  orgId: objectId('orgId must be a valid ObjectId'),
 });
 
 const AdminEventIdParam = z.object({
