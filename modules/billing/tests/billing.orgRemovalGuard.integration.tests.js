@@ -159,6 +159,17 @@ describe('Billing org-removal guard (#4321):', () => {
     expect(await Organization.exists({ _id: endingOrgId })).toBeFalsy();
   });
 
+  test('a subscription cancelled at a set date (cancelAt, portal cancel, cancelAtPeriodEnd false) counts as cancelled: DELETE /api/organizations/:id removes the organization', async () => {
+    const portalOrgId = await createPaidOrg('Portal cancel workspace', {
+      cancelAtPeriodEnd: false,
+      cancelAt: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+    });
+
+    await agent.delete(`/api/organizations/${portalOrgId}`).expect(200);
+
+    expect(await Organization.exists({ _id: portalOrgId })).toBeFalsy();
+  });
+
   test('once the subscription is canceled, DELETE /api/organizations/:id removes the organization', async () => {
     await Subscription.updateOne({ organization: paidOrgId }, { $set: { status: 'canceled' } });
 
