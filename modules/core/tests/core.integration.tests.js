@@ -327,6 +327,15 @@ describe('Core integration tests:', () => {
     });
   });
 
+  describe('Security headers', () => {
+    it('lets helmet own the headers: X-XSS-Protection is 0 and no P3P header', async () => {
+      const res = await request(app).get('/api/auth/config').expect(200);
+      expect(res.headers['x-xss-protection']).toBe('0');
+      expect(res.headers['x-frame-options']).toBe('SAMEORIGIN');
+      expect(res.headers.p3p).toBeUndefined();
+    });
+  });
+
   // Mongoose disconnect
   afterAll(async () => {
     try {

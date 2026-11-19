@@ -11,7 +11,6 @@ const config = {
     title: 'Devkit Node - Development Environment',
     description: 'Node - Boilerplate Back : Express, Jwt, Mongo',
     keywords: 'node, express, mongo, jwt, stack, boilerplate',
-    googleAnalyticsTrackingID: 'DEVKIT_NODE_app_googleAnalyticsTrackingID',
     contact: 'contact@example.com',
     version: '', // app release version — overridden at build via DEVKIT_NODE_app_version (Layer 4 env override); getConfig falls back to package.json version
   },
@@ -118,13 +117,6 @@ const config = {
     // clobber a module's own extension of the same key (Layer 1: module
     // config) instead of unioning with it. An omitted key lets a Layer-1
     // value pass through untouched to redactUrl.js.
-  },
-  csrf: {
-    csrf: false,
-    csp: false,
-    xframe: 'SAMEORIGIN',
-    p3p: 'ABCDEF',
-    xssProtection: true,
   },
   // errors: {
   //   Whitelist extension point (optional — intentionally OMITTED here, same
