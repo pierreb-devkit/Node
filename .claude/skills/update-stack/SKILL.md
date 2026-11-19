@@ -116,12 +116,14 @@ EOF_PROJECTS
 }
 
 # True when the stack loads the path by glob or runs it by path (config/assets.js
-# globs, config/index.js module configs, the migration runner, CronJobs) — such a file is live without any import.
+# globs, config/index.js module configs, mail templates and env configs loaded by
+# name, the migration runner, CronJobs) — such a file is live without any import.
 glob_registered() {
   case "$1" in
     modules/*/routes/*.js|modules/*/models/*.mongoose.js|modules/*/*.init.js|\
     modules/*/policies/*.js|modules/*/doc/*.yml|modules/*/doc/guides/*.md|\
-    modules/*/crons/*.js|modules/*/migrations/*.js|modules/*/config/*.config.js) return 0 ;;
+    modules/*/crons/*.js|modules/*/migrations/*.js|modules/*/config/*.config.js|\
+    config/templates/*|config/defaults/*) return 0 ;;
   esac
   return 1
 }
@@ -179,7 +181,7 @@ echo "3ter: no drift — OK"
 - Block on ANY shared-file divergence. No "declare and skip" path — the `DOWNSTREAM_PATCHES.md` ledger model was abandoned 2026-06-02 (memory `feedback_no_dev_in_shared_modules`).
 - Scan source is `git diff --name-only devkit-node/master HEAD` (bidirectional) — catches both files that differ AND files present upstream but missing locally (deleted downstream). The previous `git ls-files` approach only saw locally-present files.
 - Test files (paths containing `/tests/` or `/__tests__/`, or filenames ending `.test.{js,jsx,ts,tsx}` / `.spec.{js,jsx,ts,tsx}`) are excluded — downstream test adaptations are acceptable.
-- Downstream-only files never block; they **warn** when they break the ownership rule (see `CLAUDE.md` § Stack vs downstream ownership): (a) a file in `lib/`, `config/` or a stack module folder that does not carry the project name; (b) a file the stack deleted. List every warning in the report. Act only on a dead copy (stack deleted it, nothing imports it, and no glob in `config/assets.js` or `config/index.js`, the migration runner or a CronJob loads it): delete it. A file loaded by glob (routes, preroutes, `*.mongoose.js` models, `*.init.js`, policies, doc yml, crons, module config files) is live with no import — move it, never delete it. Never delete a file something imports, never a module a downstream router or `*.init.js` registers, and never move a migration file (migrations are recorded by path — a moved one re-runs).
+- Downstream-only files never block; they **warn** when they break the ownership rule (see `CLAUDE.md` § Stack vs downstream ownership): (a) a file in `lib/`, `config/` or a stack module folder that does not carry the project name; (b) a file the stack deleted. List every warning in the report. Act only on a dead copy (stack deleted it, nothing imports it, and no glob in `config/assets.js` or `config/index.js`, the migration runner or a CronJob loads it): delete it. A file loaded by glob (routes, preroutes, `*.mongoose.js` models, `*.init.js`, policies, doc yml, crons, module config files, mail templates and env configs loaded by name) is live with no import — move it, never delete it. Never delete a file something imports, never a module a downstream router or `*.init.js` registers, and never move a migration file (migrations are recorded by path — a moved one re-runs).
 - This gate runs **after** `/verify` (never blocks on transient verify failures) and **before** Phase 2 (failure is recoverable — no merge commit yet).
 
 ---

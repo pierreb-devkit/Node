@@ -250,7 +250,7 @@ const resetAllDue = async () => {
     try {
       // A removed organization's subscription is kept under a tombstone id (org-removal
       // cleanup): no organization exists for it, so it gets no new week and no settlement
-      // credit — its usage stays deleted and its ledger stays as it was at removal.
+      // credit — its usage stays deleted and its ledger is never credited again (only expiry rows may still be added).
       if (!(await OrganizationsService.exists(String(sub.organization)))) continue;
       // Derive the week anchor from lastResetAt + 7d (or now when no prior reset exists).
       // Using currentPeriodStart would derive the same weekKey every run within the same
