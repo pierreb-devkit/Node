@@ -129,7 +129,7 @@ const userByPage = async (req, res, next, params) => {
   try {
     if (!params) responses.error(res, 404, 'Not Found', 'No users with that params has been found')();
     const request = params.split('&');
-    if (request.length > 3) responses.error(res, 422, 'Not Found', 'That search countain more than 3 params')();
+    if (request.length > 3) responses.error(res, 404, 'Not Found', 'That search countain more than 3 params')();
     else {
       if (request.length === 3) {
         req.page = Number(request[0]);

@@ -85,7 +85,7 @@ const me = (req, res) => {
  * session and no page. Responds the same way (200/400) whether the token was
  * tampered with, expired in format, or simply never existed — nothing here
  * lets a caller distinguish those cases — barring an unexpected server error
- * (422).
+ * (500).
  * @param {Object} req - Express request object (req.params.token)
  * @param {Object} res - Express response object
  */
