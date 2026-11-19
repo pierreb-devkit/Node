@@ -5,7 +5,7 @@ import { jest, describe, test, beforeEach, expect } from '@jest/globals';
 import { PassThrough } from 'stream';
 
 /**
- * Unit tests for lib/services/gridfs.js
+ * Unit tests for modules/uploads/repositories/uploads.gridfs.repository.js
  *
  * The bucket mock is shaped like the real MongoDB 7 driver: `delete(id, options)`
  * returns a promise and never calls a callback passed to it.
@@ -34,7 +34,7 @@ describe('gridfs service unit tests:', () => {
       },
     }));
 
-    gridfs = (await import('../gridfs.js')).default;
+    gridfs = (await import('../repositories/uploads.gridfs.repository.js')).default;
   });
 
   describe('_removeFile', () => {

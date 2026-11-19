@@ -5,7 +5,7 @@ import {
   RATIOS,
   STRIPE_PRICE_CENTS,
   STRIPE_PACK_CENTS,
-} from '../../../config/defaults/billing.pricing.constants.js';
+} from '../lib/billing.pricing.constants.js';
 
 describe('billing.pricing.constants — devkit contract:', () => {
   test('PRICING_VERSION is the safe default 0.0.0', () => {

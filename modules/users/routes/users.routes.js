@@ -3,7 +3,7 @@
  */
 import passport from 'passport';
 
-import multer from '../../../lib/services/multer.js';
+import multer from '../../uploads/middlewares/uploads.multer.js';
 import model from '../../../lib/middlewares/model.js';
 import config from '../../../config/index.js';
 import policy from '../../../lib/middlewares/policy.js';

@@ -10,8 +10,8 @@
  * Why ship from devkit:
  * - Every downstream running billing wants the same export shape.
  * - Migrations + contract tests + costs service all benefit from a single import path.
- * - Previously lived per-project at `modules/billing/config/billing.pricing.constants.js`
- *   with several importers — promoted upstream to a single import path.
+ * - Lives in the billing module (`modules/billing/lib/`); the billing module config
+ *   (`billing.development.config.js`) wires it into `config.billing.pricing`.
  *
  * @module billing.pricing.constants
  */

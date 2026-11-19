@@ -42,7 +42,7 @@ describe('Uploads createFromBuffer unit tests:', () => {
       },
     };
 
-    jest.unstable_mockModule('../../../lib/services/gridfs.js', () => ({
+    jest.unstable_mockModule('../repositories/uploads.gridfs.repository.js', () => ({
       default: mockGridfs,
     }));
 

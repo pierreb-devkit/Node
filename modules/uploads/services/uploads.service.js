@@ -5,7 +5,7 @@ import crypto from 'crypto';
 
 import config from '../../../config/index.js';
 import AppError from '../../../lib/helpers/AppError.js';
-import gridfs from '../../../lib/services/gridfs.js';
+import gridfs from '../repositories/uploads.gridfs.repository.js';
 import UploadRepository from '../repositories/uploads.repository.js';
 
 const MIME_TO_EXT = {

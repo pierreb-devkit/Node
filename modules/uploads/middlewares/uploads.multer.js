@@ -3,7 +3,7 @@
  */
 import _ from 'lodash';
 import multer from 'multer';
-import gridfsService from './gridfs.js';
+import gridfsService from '../repositories/uploads.gridfs.repository.js';
 
 // import AppError from '../helpers/AppError.js';
 

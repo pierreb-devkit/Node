@@ -1,3 +1,11 @@
+import {
+  PRICING_VERSION,
+  PLAN_QUOTAS,
+  RATIOS,
+  STRIPE_PRICE_CENTS,
+  STRIPE_PACK_CENTS,
+} from '../lib/billing.pricing.constants.js';
+
 const config = {
   audit: {
     routeTypeMap: {
@@ -6,6 +14,14 @@ const config = {
   },
   billing: {
     activated: true,
+    /**
+     * Pricing constants contract — safe devkit defaults.
+     * Downstream projects override these values in their own config file.
+     * These values are also directly importable from
+     * `modules/billing/lib/billing.pricing.constants.js` for migrations and
+     * standalone tooling that cannot import the full config object.
+     */
+    pricing: { PRICING_VERSION, PLAN_QUOTAS, RATIOS, STRIPE_PRICE_CENTS, STRIPE_PACK_CENTS },
     enabled: true,
     // Quotas — downstream projects override these per plan:
     // quotas: {
