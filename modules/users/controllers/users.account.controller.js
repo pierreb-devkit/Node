@@ -27,20 +27,6 @@ const update = async (req, res) => {
 };
 
 /**
- * @desc Endpoint to ask the service to update the terms sign of the user
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- */
-const terms = async (req, res) => {
-  try {
-    const user = await UserService.terms(req.user);
-    responses.success(res, 'user terms signed')(user);
-  } catch (err) {
-    responses.error(res, 422, 'Unprocessable Entity', errors.getMessage(err))(err);
-  }
-};
-
-/**
  * @desc Endpoint to ask the service to remove the user connected
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
@@ -133,7 +119,6 @@ const stats = async (req, res) => {
 
 export default {
   update,
-  terms,
   remove,
   me,
   stats,
