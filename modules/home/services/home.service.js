@@ -104,12 +104,16 @@ const getReadinessStatus = () => {
     message: mailConfigured ? 'Mail provider configured' : 'No mail provider configured — users register without email verification',
   });
 
-  // billing — Stripe
+  // billing — Stripe (a switched-off billing module is never `ok`, so the boot never probes Stripe)
+  const billingOn = config.billing?.enabled !== false;
   const stripeConfigured = isSet(config.stripe?.secretKey);
+  let billingMessage = 'Stripe not configured';
+  if (!billingOn) billingMessage = 'Billing is switched off';
+  else if (stripeConfigured) billingMessage = 'Stripe configured';
   checks.push({
     category: 'billing',
-    status: stripeConfigured ? 'ok' : 'warning',
-    message: stripeConfigured ? 'Stripe configured' : 'Stripe not configured',
+    status: billingOn && stripeConfigured ? 'ok' : 'warning',
+    message: billingMessage,
   });
 
   // analytics — PostHog

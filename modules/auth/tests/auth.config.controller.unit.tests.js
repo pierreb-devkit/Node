@@ -185,6 +185,26 @@ describe('auth.controller getConfig:', () => {
     expect(Object.keys(data.invitations)).toEqual(['userFacing']);
   });
 
+  test('data.audit.enabled defaults to false when config.audit is undefined, exposed unauthenticated', async () => {
+    const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
+
+    await AuthController.getConfig({}, {});
+
+    const [data] = mockResponses.successCb.mock.calls[0];
+    expect(data.audit).toEqual({ enabled: false });
+  });
+
+  test('data.audit.enabled reflects config.audit.enabled:true (only the boolean is exposed)', async () => {
+    mockConfig.audit = { enabled: true, ttlDays: 90, captureIp: true };
+
+    const { default: AuthController } = await import('../../../modules/auth/controllers/auth.controller.js');
+
+    await AuthController.getConfig({}, {});
+
+    const [data] = mockResponses.successCb.mock.calls[0];
+    expect(data.audit).toEqual({ enabled: true });
+  });
+
   test('data.billing.equivalences is returned verbatim when set in config (authenticated)', async () => {
     const equivalences = {
       plans: {

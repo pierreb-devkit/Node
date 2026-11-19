@@ -735,6 +735,10 @@ const getConfig = async (req, res) => {
       invitations: {
         userFacing: !!config.invitations?.userFacing,
       },
+      // Lets a front hide its audit views when audit is off (`audit.activated: false` forces it false).
+      audit: {
+        enabled: !!config.audit?.enabled,
+      },
     };
 
     // Authenticated users get extended org config and billing config
