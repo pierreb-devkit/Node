@@ -159,10 +159,6 @@ describe('Billing usage header integration tests:', () => {
       default: mockBillingExtraBalanceRepository,
     }));
 
-    jest.unstable_mockModule('../lib/billing.statuses.js', () => ({
-      activeStatuses: ['active', 'trialing'],
-    }));
-
     // Mock logger to avoid real winston initialisation (requires full config.log)
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
       default: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },

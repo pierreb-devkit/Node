@@ -136,7 +136,7 @@ describe('Billing admin toolkit integration tests:', () => {
         adminUpdatePlanOnly: jest.fn().mockResolvedValue({ plan: 'pro' }),
       },
     }));
-    jest.unstable_mockModule('../../organizations/repositories/organizations.repository.js', () => ({
+    jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({
       default: { setPlan: jest.fn().mockResolvedValue({}) },
     }));
     jest.unstable_mockModule('../../../lib/services/logger.js', () => ({
