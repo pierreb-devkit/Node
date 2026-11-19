@@ -32,6 +32,26 @@ describe('Migrations unit tests:', () => {
         expect(prev.localeCompare(curr)).toBeLessThanOrEqual(0);
       }
     });
+
+    it('should skip the migrations of a module switched off with activated:false', async () => {
+      const files = await migrations.discoverMigrationFiles({ billing: { activated: false } });
+      expect(files.length).toBeGreaterThan(0);
+      expect(files.some((f) => f.startsWith('modules/billing/'))).toBe(false);
+      expect(files.some((f) => f.startsWith('modules/organizations/'))).toBe(true);
+    });
+
+    it('should keep the migrations of a module with activated:true or no activated key', async () => {
+      const on = await migrations.discoverMigrationFiles({ billing: { activated: true } });
+      const unset = await migrations.discoverMigrationFiles({});
+      expect(on.some((f) => f.startsWith('modules/billing/'))).toBe(true);
+      expect(unset).toEqual(on);
+    });
+
+    it('should never skip the migrations of a core module, even with activated:false', async () => {
+      const files = await migrations.discoverMigrationFiles({ organizations: { activated: false }, users: { activated: false } });
+      expect(files.some((f) => f.startsWith('modules/organizations/'))).toBe(true);
+      expect(files.some((f) => f.startsWith('modules/users/'))).toBe(true);
+    });
   });
 
   describe('runMigration', () => {
