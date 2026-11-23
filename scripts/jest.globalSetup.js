@@ -29,6 +29,7 @@
 import mongoose from 'mongoose';
 import path from 'path';
 import { pathToFileURL } from 'url';
+import dbNameOf from './jest.dbName.js';
 
 /**
  * Jest global setup entry point.
@@ -38,8 +39,7 @@ export default async () => {
   // Guard: resolve the DB first and abort the whole run on a non-test name.
   // Deliberately outside any try/catch so the throw reaches jest.
   const config = (await import('../config/index.js')).default;
-  // Regex, not `new URL`: the WHATWG parser rejects valid multi-host Mongo URIs.
-  const dbName = /^mongodb(?:\+srv)?:\/\/[^/]*\/([^?]*)/.exec(config.db.uri ?? '')?.[1] ?? '';
+  const dbName = dbNameOf(config.db.uri);
   if (!/test/i.test(dbName)) {
     throw new Error(
       `[jest.globalSetup] jest refuses to run against "${dbName}": the database name must contain "test"; run through the npm test scripts (cross-env NODE_ENV=test).`,

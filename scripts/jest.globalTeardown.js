@@ -15,6 +15,7 @@
  * developer killed it manually) must not fail the jest exit code.
  */
 import mongoose from 'mongoose';
+import dbNameOf from './jest.dbName.js';
 
 /**
  * Jest global teardown entry point — drops the test DB resolved from config.
@@ -31,7 +32,7 @@ export default async () => {
   }
   try {
     const config = (await import('../config/index.js')).default;
-    const dbName = new URL(config.db.uri).pathname.replace(/^\//, '');
+    const dbName = dbNameOf(config.db.uri);
     if (!/test/i.test(dbName)) {
       console.warn(
         `[jest.globalTeardown] Refusing to drop "${dbName}": name does not match /test/i. Aborting.`,
