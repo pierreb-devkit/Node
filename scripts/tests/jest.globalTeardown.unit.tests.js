@@ -80,6 +80,20 @@ describe('scripts/jest.globalTeardown safety guards', () => {
     expect(disconnect).toHaveBeenCalledTimes(1);
   });
 
+  test('drops a multi-host test DB (same name parsing as globalSetup)', async () => {
+    process.env.NODE_ENV = 'test';
+    const uri = 'mongodb://m1:27017,m2:27017/NodeTest_7?replicaSet=rs0';
+    jest.unstable_mockModule('../../config/index.js', () => ({
+      default: { db: { uri } },
+    }));
+    const { default: globalTeardown } = await import('../jest.globalTeardown.js');
+
+    await globalTeardown();
+
+    expect(connect).toHaveBeenCalledWith(uri);
+    expect(dropDatabase).toHaveBeenCalledTimes(1);
+  });
+
   test('swallows errors when MongoDB is unreachable (no failed exit code)', async () => {
     process.env.NODE_ENV = 'test';
     connect.mockRejectedValueOnce(new Error('ECONNREFUSED'));

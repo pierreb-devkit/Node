@@ -4,6 +4,16 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Jest aborts on a non-test database (2026-11-23)
+
+- Running jest with a non-test DB now fails instead of running: `scripts/jest.globalSetup.js` throws when the resolved database name does not contain `test`, so no suite runs (before, only the drop was skipped and suites could wipe that database). `globalTeardown` keeps warning and skipping. Run tests through the npm `test*` scripts (`cross-env NODE_ENV=test`).
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the change. Nothing else, unless a test config points at a database whose name lacks `test`: rename it.
+
+---
+
 ## Organization removal refused while a paid subscription is live (2026-11-19)
 
 - Removing an organization whose paid subscription is still `active`, `trialing` or `past_due` now answers **409** with `errorCode: ORGANIZATION_HAS_LIVE_SUBSCRIPTION` and the description `Cancel the subscription of "<organization name>" before removing it.` Nothing is deleted and nothing is cancelled at the provider. A free organization (no provider subscription), a canceled subscription and a subscription already set to end (at period end, `cancelAtPeriodEnd`, or at a set date, `cancelAt`, as a customer-portal cancel writes) are not affected.

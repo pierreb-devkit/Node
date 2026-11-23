@@ -5,7 +5,8 @@
  * orphan `NodeTest_<pid>` database on the local mongod and they accumulate
  * indefinitely.
  *
- * Safety guards mirror globalSetup:
+ * Safety guards mirror globalSetup, but only warn and skip (a teardown never
+ * throws; globalSetup already aborts a run on a non-test DB name, #4335):
  *   1. Refuse to drop anything when `NODE_ENV !== 'test'`.
  *   2. Refuse when the resolved DB name does not contain `test`
  *      (case-insensitive).
@@ -14,6 +15,7 @@
  * developer killed it manually) must not fail the jest exit code.
  */
 import mongoose from 'mongoose';
+import dbNameOf from './jest.dbName.js';
 
 /**
  * Jest global teardown entry point — drops the test DB resolved from config.
@@ -30,7 +32,7 @@ export default async () => {
   }
   try {
     const config = (await import('../config/index.js')).default;
-    const dbName = new URL(config.db.uri).pathname.replace(/^\//, '');
+    const dbName = dbNameOf(config.db.uri);
     if (!/test/i.test(dbName)) {
       console.warn(
         `[jest.globalTeardown] Refusing to drop "${dbName}": name does not match /test/i. Aborting.`,

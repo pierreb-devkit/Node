@@ -15,26 +15,37 @@
  *   initialisation — they land in the "protected" set and survive all
  *   per-suite teardown cycles unchanged.
  *
- * Safety guards (#3476):
- *   1. Refuse to drop anything when `NODE_ENV !== 'test'`. Protects downstream
- *      projects that export `NODE_ENV=<project>` in their shell and invoke
- *      jest directly (e.g. `npx jest`, IDE runners) bypassing the
- *      `cross-env NODE_ENV=test` wrapper used by the npm `test*` scripts.
- *   2. Belt-and-suspenders: also refuse when the resolved DB name does not
- *      contain `test` (case-insensitive). Catches leaked overrides of
- *      `config.db.uri` that point at a non-test database.
- *
- * Both checks log a clear refusal reason and exit without connecting.
+ * Safety guards (#3476, #4335):
+ *   1. Abort the whole run (throw) when the resolved DB name does not contain
+ *      `test` (case-insensitive). Integration suites clean collections in
+ *      their hooks, so skipping only our own drop is not enough: a run started
+ *      with `NODE_ENV=<project>` (e.g. `npx jest`, IDE runners) bypassing the
+ *      `cross-env NODE_ENV=test` wrapper of the npm `test*` scripts would let
+ *      every suite wipe that env's database. The check runs outside the
+ *      MongoDB-unreachable catch below so it can never be swallowed.
+ *   2. When the name is a test DB but `NODE_ENV !== 'test'`, skip the drop and
+ *      the migrations pre-run (log a warning) and let the run go on.
  */
 import mongoose from 'mongoose';
 import path from 'path';
 import { pathToFileURL } from 'url';
+import dbNameOf from './jest.dbName.js';
 
 /**
  * Jest global setup entry point.
  * @returns {Promise<void>}
  */
 export default async () => {
+  // Guard: resolve the DB first and abort the whole run on a non-test name.
+  // Deliberately outside any try/catch so the throw reaches jest.
+  const config = (await import('../config/index.js')).default;
+  const dbName = dbNameOf(config.db.uri);
+  if (!/test/i.test(dbName)) {
+    throw new Error(
+      `[jest.globalSetup] jest refuses to run against "${dbName}": the database name must contain "test"; run through the npm test scripts (cross-env NODE_ENV=test).`,
+    );
+  }
+
   if (process.env.NODE_ENV !== 'test') {
     console.warn(
       `[jest.globalSetup] Refusing to drop DB: NODE_ENV is "${process.env.NODE_ENV}", expected "test". Skipping drop.`,
@@ -44,14 +55,6 @@ export default async () => {
 
   // 1. Drop the test database (clean-slate guard)
   try {
-    const config = (await import('../config/index.js')).default;
-    const dbName = new URL(config.db.uri).pathname.replace(/^\//, '');
-    if (!/test/i.test(dbName)) {
-      console.warn(
-        `[jest.globalSetup] Refusing to drop "${dbName}": name does not match /test/i. Aborting.`,
-      );
-      return;
-    }
     await mongoose.connect(config.db.uri, config.db.options);
     try {
       await mongoose.connection.dropDatabase();
@@ -68,7 +71,6 @@ export default async () => {
   //    Keys set on process.env HERE (before vm contexts) are included in jest's
   //    protectProperties() pass and survive per-suite GlobalProxy teardown.
   try {
-    const config = (await import('../config/index.js')).default;
     if (!Array.isArray(config.files?.mongooseModels)) {
       console.warn('[jest.globalSetup] migrations pre-run skipped: config.files.mongooseModels is absent or not an array.');
       return;

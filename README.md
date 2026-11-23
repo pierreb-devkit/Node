@@ -95,6 +95,8 @@ npm run test:coverage               # Legacy alias: all suites + coverage (local
 npm run test:parallel-smoke         # Regression gate for per-pid test DB isolation (#3515)
 ```
 
+Always run tests through the npm `test*` scripts (they set `cross-env NODE_ENV=test`). Jest refuses to start when the resolved database name does not contain `test`, so a bare `npx jest` under a project `NODE_ENV` aborts instead of letting suites wipe that env's database.
+
 Tests are organized per module in `modules/*/tests/`. In CI the test job runs as a 3-way matrix (`unit` / `integration` / `e2e`) in parallel: `unit` and `integration` each upload a Codecov flag, and Codecov merges them server-side to compute combined coverage. e2e tests run as a pure pass/fail gate without coverage upload — they verify product-critical flows, not coverage. The `test:parallel-smoke` script spawns N concurrent jest children against the same mongod and asserts none of them trample each other — gates against accidental regression of the per-pid `NodeTest_${pid}` default in `config/defaults/test.config.js`. Off the critical path in CI (own job), so it never blocks merges.
 
 ### Code Quality
