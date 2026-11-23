@@ -117,6 +117,17 @@ describe('scripts/jest.globalSetup safety guards', () => {
     expect(disconnect.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
+  test('accepts a multi-host URI: skips the drop outside NODE_ENV=test without throwing', async () => {
+    process.env.NODE_ENV = 'development';
+    jest.unstable_mockModule('../../config/index.js', () => ({
+      default: { db: { uri: 'mongodb://m1:27017,m2:27017/NodeTest?replicaSet=rs0' }, files: { mongooseModels: [] } },
+    }));
+    const { default: globalSetup } = await import('../jest.globalSetup.js');
+
+    await expect(globalSetup()).resolves.toBeUndefined();
+    expect(dropDatabase).not.toHaveBeenCalled();
+  });
+
   test('swallows errors when MongoDB is unreachable', async () => {
     process.env.NODE_ENV = 'test';
     connect.mockRejectedValueOnce(new Error('ECONNREFUSED'));
