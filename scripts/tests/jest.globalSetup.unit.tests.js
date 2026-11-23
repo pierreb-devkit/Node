@@ -1,5 +1,5 @@
 /**
- * Unit tests for jest globalSetup safety guards (#3476).
+ * Unit tests for jest globalSetup safety guards (#3476, #4335).
  *
  * The globalSetup runs BEFORE any test suite, so its own behaviour can't be
  * observed from inside a test. These tests exercise the module as a plain
@@ -47,40 +47,55 @@ describe('scripts/jest.globalSetup safety guards', () => {
     jest.resetModules();
   });
 
-  test('refuses to drop when NODE_ENV is not "test" (project env leak)', async () => {
+  test('throws (aborts the run) when NODE_ENV is a project env resolving a non-test DB', async () => {
     process.env.NODE_ENV = 'myproject';
-    const { default: globalSetup } = await import('../jest.globalSetup.js');
-
-    await globalSetup();
-
-    expect(connect).not.toHaveBeenCalled();
-    expect(dropDatabase).not.toHaveBeenCalled();
-    expect(disconnect).not.toHaveBeenCalled();
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('NODE_ENV is "myproject"'));
-  });
-
-  test('refuses to drop when NODE_ENV is undefined', async () => {
-    delete process.env.NODE_ENV;
-    const { default: globalSetup } = await import('../jest.globalSetup.js');
-
-    await globalSetup();
-
-    expect(dropDatabase).not.toHaveBeenCalled();
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('NODE_ENV is "undefined"'));
-  });
-
-  test('refuses to drop when resolved DB name does not contain "test"', async () => {
-    process.env.NODE_ENV = 'test';
     jest.unstable_mockModule('../../config/index.js', () => ({
-      default: { db: { uri: 'mongodb://localhost:27017/ProductionDb' } },
+      default: { db: { uri: 'mongodb://localhost:27017/MyProjectDev' } },
     }));
     const { default: globalSetup } = await import('../jest.globalSetup.js');
 
-    await globalSetup();
-
+    await expect(globalSetup()).rejects.toThrow(
+      'jest refuses to run against "MyProjectDev": the database name must contain "test"',
+    );
     expect(connect).not.toHaveBeenCalled();
     expect(dropDatabase).not.toHaveBeenCalled();
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Refusing to drop "ProductionDb"'));
+  });
+
+  test('throws when NODE_ENV=test but the resolved DB name does not contain "test"', async () => {
+    process.env.NODE_ENV = 'test';
+    jest.unstable_mockModule('../../config/index.js', () => ({
+      default: { db: { uri: 'mongodb://localhost:27017/ProductionDb' }, files: { mongooseModels: [] } },
+    }));
+    const { default: globalSetup } = await import('../jest.globalSetup.js');
+
+    await expect(globalSetup()).rejects.toThrow('"ProductionDb"');
+    expect(connect).not.toHaveBeenCalled();
+    expect(dropDatabase).not.toHaveBeenCalled();
+  });
+
+  test('skips the drop but lets the run go on when NODE_ENV is not "test" and the DB is a test DB', async () => {
+    process.env.NODE_ENV = 'myproject';
+    jest.unstable_mockModule('../../config/index.js', () => ({
+      default: { db: { uri: 'mongodb://localhost:27017/MyProjectTest' } },
+    }));
+    const { default: globalSetup } = await import('../jest.globalSetup.js');
+
+    await expect(globalSetup()).resolves.toBeUndefined();
+    expect(connect).not.toHaveBeenCalled();
+    expect(dropDatabase).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('NODE_ENV is "myproject"'));
+  });
+
+  test('skips the drop when NODE_ENV is undefined and the DB is a test DB', async () => {
+    delete process.env.NODE_ENV;
+    jest.unstable_mockModule('../../config/index.js', () => ({
+      default: { db: { uri: 'mongodb://localhost:27017/NodeTest' } },
+    }));
+    const { default: globalSetup } = await import('../jest.globalSetup.js');
+
+    await expect(globalSetup()).resolves.toBeUndefined();
+    expect(dropDatabase).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('NODE_ENV is "undefined"'));
   });
 
   test('drops database when NODE_ENV=test and DB name contains "test" (case-insensitive)', async () => {

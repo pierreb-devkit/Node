@@ -5,7 +5,8 @@
  * orphan `NodeTest_<pid>` database on the local mongod and they accumulate
  * indefinitely.
  *
- * Safety guards mirror globalSetup:
+ * Safety guards mirror globalSetup, but only warn and skip (a teardown never
+ * throws; globalSetup already aborts a run on a non-test DB name, #4335):
  *   1. Refuse to drop anything when `NODE_ENV !== 'test'`.
  *   2. Refuse when the resolved DB name does not contain `test`
  *      (case-insensitive).
