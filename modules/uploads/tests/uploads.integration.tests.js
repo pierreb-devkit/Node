@@ -3,6 +3,7 @@
  */
 import request from 'supertest';
 import path from 'path';
+import fs from 'fs';
 
 import { jest, beforeAll } from '@jest/globals';
 import { bootstrap } from '../../../lib/app.js';
@@ -319,6 +320,117 @@ describe('Uploads integration tests:', () => {
         await authAgent.delete(`/api/uploads/${publicUpload}`);
         const UserService = (await import(path.resolve('./modules/users/services/users.service.js'))).default;
         await UserService.remove(publicUser);
+      } catch (err) {
+        console.log(err);
+      }
+    });
+  });
+
+  describe('Read by kind (guestRead)', () => {
+    const PASSWORD = 'W@os.jsI$Aw3$0m3';
+    let app;
+    let jwt;
+    let config;
+    let User;
+    let Organization;
+    let MembershipRepository;
+    let owner; // member of orgA, owns the private upload
+    let outsider; // member of orgB
+    let ownerAgent;
+    let outsiderAgent;
+    let avatarName;
+    let privateFile;
+    let orgA;
+    let orgB;
+
+    /**
+     * Sign up a user and return its agent and user.
+     * @param {string} email - user email
+     * @returns {Promise<{agent: Object, user: Object}>} the logged-in agent and user
+     */
+    const signup = async (email) => {
+      const signupAgent = request.agent(app);
+      const res = await signupAgent.post('/api/auth/signup').send({ firstName: 'Kind', lastName: 'Test', email, password: PASSWORD, provider: 'local' }).expect(200);
+      return { agent: signupAgent, user: res.body.user };
+    };
+
+    beforeAll(async () => {
+      app = (await bootstrap()).app;
+      jwt = (await import('jsonwebtoken')).default;
+      config = (await import(path.resolve('./config/index.js'))).default;
+      orgA = new mongoose.Types.ObjectId();
+      orgB = new mongoose.Types.ObjectId();
+      User = mongoose.model('User');
+      Organization = mongoose.model('Organization');
+      MembershipRepository = (await import(path.resolve('./modules/organizations/repositories/organizations.membership.repository.js'))).default;
+
+      ({ agent: ownerAgent, user: owner } = await signup('upload-kind-owner@test.com'));
+      ({ agent: outsiderAgent, user: outsider } = await signup('upload-kind-outsider@test.com'));
+
+      await Organization.create({ _id: orgA, name: 'Uploads Kind A', slug: 'uploads-kind-a', plan: 'free' });
+      await Organization.create({ _id: orgB, name: 'Uploads Kind B', slug: 'uploads-kind-b', plan: 'free' });
+      await MembershipRepository.create({ userId: owner.id, organizationId: orgA, role: 'owner' });
+      await MembershipRepository.create({ userId: outsider.id, organizationId: orgB, role: 'owner' });
+      await User.updateOne({ _id: owner.id }, { $set: { currentOrganization: orgA } });
+      await User.updateOne({ _id: outsider.id }, { $set: { currentOrganization: orgB } });
+
+      const avatarRes = await ownerAgent.post('/api/users/avatar').attach('avatar', './modules/users/tests/img/default.jpeg').expect(200);
+      avatarName = avatarRes.body.data.avatar;
+      privateFile = await UploadsService.createFromBuffer(fs.readFileSync('./modules/users/tests/img/default.jpeg'), 'image/jpeg', 'privateTestKind', {
+        organizationId: String(orgA),
+        user: String(owner.id),
+      });
+    });
+
+    test('a guest reads an avatar', async () => {
+      await request(app).get(`/api/uploads/images/${avatarName}`).expect(200);
+    });
+
+    test('a guest cannot read an upload of a kind without guestRead', async () => {
+      const res = await request(app).get(`/api/uploads/images/${privateFile.filename}`).expect(403);
+      expect(res.body.description).toBe('User is not authorized');
+    });
+
+    test('a member of the owning organization reads its private kind', async () => {
+      await ownerAgent.get(`/api/uploads/images/${privateFile.filename}`).expect(200);
+    });
+
+    test('a logged-in user reads another user avatar', async () => {
+      await outsiderAgent.get(`/api/uploads/images/${avatarName}`).expect(200);
+    });
+
+    test('a user of another organization cannot read a private kind', async () => {
+      await outsiderAgent.get(`/api/uploads/images/${privateFile.filename}`).expect(403);
+    });
+
+    test('a garbage TOKEN cookie is read as a guest, never 401', async () => {
+      await request(app).get(`/api/uploads/images/${avatarName}`).set('Cookie', 'TOKEN=garbage').expect(200);
+      await request(app).get(`/api/uploads/images/${privateFile.filename}`).set('Cookie', 'TOKEN=garbage').expect(403);
+    });
+
+    test('an expired TOKEN cookie is read as a guest, never 401', async () => {
+      const expired = jwt.sign({ userId: owner.id, exp: Math.floor(Date.now() / 1000) - 60 }, config.jwt.secret);
+      await request(app).get(`/api/uploads/images/${avatarName}`).set('Cookie', `TOKEN=${expired}`).expect(200);
+      await request(app).get(`/api/uploads/images/${privateFile.filename}`).set('Cookie', `TOKEN=${expired}`).expect(403);
+    });
+
+    test('a stale current organization still reads guest kinds, never 403/404', async () => {
+      await User.updateOne({ _id: outsider.id }, { $set: { currentOrganization: new mongoose.Types.ObjectId() } });
+      try {
+        await outsiderAgent.get(`/api/uploads/images/${avatarName}`).expect(200);
+        await outsiderAgent.get(`/api/uploads/images/${privateFile.filename}`).expect(403);
+      } finally {
+        await User.updateOne({ _id: outsider.id }, { $set: { currentOrganization: orgB } });
+      }
+    });
+
+    afterAll(async () => {
+      try {
+        if (privateFile) await UploadsService.remove({ _id: privateFile._id });
+        if (avatarName) await ownerAgent.delete(`/api/uploads/${avatarName}`);
+        await MembershipRepository.deleteMany({ organizationId: { $in: [orgA, orgB] } });
+        await Organization.deleteMany({ _id: { $in: [orgA, orgB] } });
+        for (const u of [owner, outsider]) if (u) await UserService.remove(u);
       } catch (err) {
         console.log(err);
       }

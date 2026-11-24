@@ -4,6 +4,21 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## ⚠️ Image links read only guest-readable upload kinds (2026-11-24)
+
+- `GET /api/uploads/images/:imageName` no longer serves every upload to anyone holding the link. A guest reads an upload only when its kind sets `guestRead: true` in `config.uploads.<kind>`; absent means false. The stack sets it on `avatar` only (module base config, every env).
+- Login is now optional on that route: a valid `TOKEN` cookie lets the user also read their own uploads, or their current organization's. A missing, bad or expired cookie answers as a guest (never 401); a stale current organization reads as no membership (never 403/404).
+- Uploads whose `metadata.kind` is empty, or matches no `guestRead` kind, are now private on that route.
+- The stack has no banner kind: a project with banners (or any image shown to people who are not logged in) sets `guestRead: true` on that kind itself.
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the change.
+2. Set `guestRead: true` on every upload kind meant to be public (e.g. banners, public logos) in the module config.
+3. Check every page that shows a private kind through `<img src="/api/uploads/images/...">`: the browser sends the `TOKEN` cookie only when the API is same-site with the page, otherwise those images now answer 403.
+
+---
+
 ## Jest aborts on a non-test database (2026-11-23)
 
 - Running jest with a non-test DB now fails instead of running: `scripts/jest.globalSetup.js` throws when the resolved database name does not contain `test`, so no suite runs (before, only the drop was skipped and suites could wipe that database). `globalTeardown` keeps warning and skipping. Run tests through the npm `test*` scripts (`cross-env NODE_ENV=test`).

@@ -4,8 +4,12 @@ const config = {
       // default sharp settings for all uploads
       blur: 8,
     },
+    // Each kind may set `guestRead: true` to let anyone holding an image link read it
+    // through /api/uploads/images (no login). Absent = false: only the owner, or a
+    // member of the owning organization, reads it.
     avatar: {
       kind: 'avatar',
+      guestRead: true,
       formats: ['image/png', 'image/jpeg', 'image/jpg', 'image/gif'],
       limits: {
         fileSize: 1 * 1024 * 1024, // Max file size in bytes (1 MB)
