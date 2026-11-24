@@ -19,13 +19,12 @@ import logger from '../../../lib/services/logger.js';
  * @returns {void}
  */
 const optionalAuth = (req, res, next) =>
-  passport.authenticate('jwt', { session: false }, async (err, user) => {
-    if (!err && user) {
+  passport.authenticate('jwt', { session: false }, async (_err, user) => {
+    if (user) {
       req.user = user;
-      const organizationId = user.currentOrganization?._id || user.currentOrganization;
-      if (organizationId) {
+      if (user.currentOrganization) {
         try {
-          const membership = await MembershipService.resolveMembership(user, organizationId);
+          const membership = await MembershipService.resolveMembership(user, user.currentOrganization);
           if (membership) req.membership = membership;
         } catch (lookupErr) {
           logger.warn(`uploads.optionalAuth - membership lookup failed: ${lookupErr.message}`);
