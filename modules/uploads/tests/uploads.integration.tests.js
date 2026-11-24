@@ -378,7 +378,8 @@ describe('Uploads integration tests:', () => {
       avatarName = avatarRes.body.data.avatar;
       privateFile = await UploadsService.createFromBuffer(fs.readFileSync('./modules/users/tests/img/default.jpeg'), 'image/jpeg', 'privateTestKind', {
         organizationId: String(orgA),
-        user: String(owner.id),
+        // another user's file: the owner reads it through the org membership only
+        user: String(new mongoose.Types.ObjectId()),
       });
     });
 

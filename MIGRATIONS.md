@@ -7,7 +7,7 @@ Breaking changes and upgrade notes for downstream projects.
 ## ⚠️ Image links read only guest-readable upload kinds (2026-11-24)
 
 - `GET /api/uploads/images/:imageName` no longer serves every upload to anyone holding the link. A guest reads an upload only when its kind sets `guestRead: true` in `config.uploads.<kind>`; absent means false. The stack sets it on `avatar` only (module base config, every env).
-- Login is now optional on that route: a valid `TOKEN` cookie lets the user also read their own uploads, or their current organization's. A missing, bad or expired cookie answers as a guest (never 401); a stale current organization reads as no membership (never 403/404).
+- Login is now optional on that route: a valid `TOKEN` cookie also lets the user read private kinds: a user with a current organization membership reads uploads whose `metadata.organizationId` is that organization; a user without one reads uploads whose `metadata.user` is them. Private kinds shown to an organization must carry its id. A missing, bad or expired cookie answers as a guest (never 401); a stale current organization reads as no membership (never 403/404).
 - Uploads whose `metadata.kind` is empty, or matches no `guestRead` kind, are now private on that route.
 - The stack has no banner kind: a project with banners (or any image shown to people who are not logged in) sets `guestRead: true` on that kind itself.
 
