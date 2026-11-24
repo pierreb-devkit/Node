@@ -57,6 +57,11 @@ const config = {
         fileSize: Math.floor(0.05 * 1024 * 1024), // Max file size in bytes (~52 KB)
       },
     },
+    // A private kind (no guestRead) to test that guests cannot read it.
+    privateTestKind: {
+      kind: 'privateTestKind',
+      formats: ['image/png', 'image/jpeg'],
+    },
   },
 };
 

@@ -1,6 +1,25 @@
 /**
  * Upload ability definitions for CASL document-level authorization.
  */
+import config from '../../../config/index.js';
+
+/**
+ * Upload kinds anyone may read (config `uploads.<kind>.guestRead === true`).
+ * Both the config key and the entry's `kind` field are listed: the multer path
+ * stores `kind`, `createFromBuffer` stores the key.
+ * A kind that a non-guestRead entry also uses (as key or `kind`) stays private,
+ * so a public entry can never expose another entry's uploads.
+ * @returns {string[]} the guest-readable kinds
+ */
+const guestReadKinds = () => {
+  const entries = Object.entries(config.uploads || {}).filter(([, entry]) => entry && typeof entry === 'object');
+  const kindsOf = ([key, entry]) => [key, entry.kind].filter((k) => typeof k === 'string');
+  const priv = new Set(entries.filter(([, entry]) => entry.guestRead !== true).flatMap(kindsOf));
+  return entries
+    .filter(([, entry]) => entry.guestRead === true)
+    .flatMap(kindsOf)
+    .filter((k) => !priv.has(k));
+};
 
 /**
  * Register upload-related subjects for document-level and path-level resolution.
@@ -16,10 +35,11 @@ export function uploadSubjectRegistration({ registerDocumentSubject, registerPat
 
 /**
  * Define upload-related abilities for an authenticated user.
- * Platform admins get full access. Regular users can read any upload
- * and delete their own uploads (ownership via metadata.user).
+ * Platform admins get full access. Regular users read guest-readable kinds,
+ * plus their organization's uploads (or their own without a membership), and
+ * delete their own uploads (ownership via metadata.user).
  * @param {Object} user - The authenticated user
- * @param {Object|null} membership - Optional organization membership (reserved for future use)
+ * @param {Object|null} membership - Optional organization membership (set on the image route by optionalAuth)
  * @param {Object} builder - CASL AbilityBuilder helpers
  * @param {Function} builder.can - Grant an ability
  */
@@ -28,6 +48,7 @@ export function uploadAbilities(user, membership, { can }) {
     can('manage', 'all');
     return;
   }
+  can('read', 'Upload', { 'metadata.kind': { $in: guestReadKinds() } });
   if (membership && membership.organizationId) {
     const orgId = String(membership.organizationId._id || membership.organizationId);
     can('read', 'Upload', { 'metadata.organizationId': orgId });
@@ -41,10 +62,10 @@ export function uploadAbilities(user, membership, { can }) {
 
 /**
  * Define upload-related abilities for unauthenticated guests.
- * Guests can only read uploads (public image access).
+ * Guests read only uploads of a guest-readable kind (`guestRead: true`).
  * @param {Object} builder - CASL AbilityBuilder helpers
  * @param {Function} builder.can - Grant an ability
  */
 export function uploadGuestAbilities({ can }) {
-  can('read', 'Upload');
+  can('read', 'Upload', { 'metadata.kind': { $in: guestReadKinds() } });
 }
