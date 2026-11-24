@@ -19,7 +19,8 @@ import logger from '../../../lib/services/logger.js';
  * @returns {void}
  */
 const optionalAuth = (req, res, next) =>
-  passport.authenticate('jwt', { session: false }, async (_err, user) => {
+  passport.authenticate('jwt', { session: false }, async (err, user) => {
+    if (err) logger.warn(`uploads.optionalAuth - user lookup failed: ${err.message}`);
     if (user) {
       req.user = user;
       if (user.currentOrganization) {

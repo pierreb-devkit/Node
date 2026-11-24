@@ -32,7 +32,7 @@ export function uploadSubjectRegistration({ registerDocumentSubject, registerPat
  * plus their organization's uploads (or their own without a membership), and
  * delete their own uploads (ownership via metadata.user).
  * @param {Object} user - The authenticated user
- * @param {Object|null} membership - Optional organization membership (reserved for future use)
+ * @param {Object|null} membership - Optional organization membership (set on the image route by optionalAuth)
  * @param {Object} builder - CASL AbilityBuilder helpers
  * @param {Function} builder.can - Grant an ability
  */
