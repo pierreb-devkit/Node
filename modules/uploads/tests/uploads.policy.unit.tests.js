@@ -66,6 +66,17 @@ describe('Uploads policy unit tests:', () => {
     expect(ability.can('read', upload({ kind: 'picture' }))).toBe(true);
   });
 
+  test('a guestRead entry never exposes a kind a private entry also uses', () => {
+    config.uploads = {
+      invoice: { kind: 'invoice' },
+      publicPhoto: { kind: 'invoice', guestRead: true },
+      photo: { kind: 'photo', guestRead: true },
+    };
+    const ability = guest();
+    expect(ability.can('read', upload({ kind: 'invoice' }))).toBe(false);
+    expect(ability.can('read', upload({ kind: 'photo' }))).toBe(true);
+  });
+
   test('a logged-in user reads guest kinds of others and only its own private kinds', () => {
     const ability = logged({ _id: 'u1', roles: ['user'] });
     expect(ability.can('read', upload({ kind: 'avatar', user: 'u2' }))).toBe(true);

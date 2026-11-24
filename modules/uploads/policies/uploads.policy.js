@@ -7,12 +7,19 @@ import config from '../../../config/index.js';
  * Upload kinds anyone may read (config `uploads.<kind>.guestRead === true`).
  * Both the config key and the entry's `kind` field are listed: the multer path
  * stores `kind`, `createFromBuffer` stores the key.
+ * A kind that a non-guestRead entry also uses (as key or `kind`) stays private,
+ * so a public entry can never expose another entry's uploads.
  * @returns {string[]} the guest-readable kinds
  */
-const guestReadKinds = () =>
-  Object.entries(config.uploads || {}).flatMap(([key, entry]) =>
-    entry && typeof entry === 'object' && entry.guestRead === true ? [key, entry.kind].filter((k) => typeof k === 'string') : [],
-  );
+const guestReadKinds = () => {
+  const entries = Object.entries(config.uploads || {}).filter(([, entry]) => entry && typeof entry === 'object');
+  const kindsOf = ([key, entry]) => [key, entry.kind].filter((k) => typeof k === 'string');
+  const priv = new Set(entries.filter(([, entry]) => entry.guestRead !== true).flatMap(kindsOf));
+  return entries
+    .filter(([, entry]) => entry.guestRead === true)
+    .flatMap(kindsOf)
+    .filter((k) => !priv.has(k));
+};
 
 /**
  * Register upload-related subjects for document-level and path-level resolution.
