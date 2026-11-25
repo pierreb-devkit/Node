@@ -15,11 +15,11 @@ const mockFindByUserAndOrganization = jest.fn();
 const mockResolveMembership = jest.fn(async (user, organizationId) =>
   (user?.roles?.includes('admin') ? { role: 'owner', organizationId } : mockFindByUserAndOrganization(user._id, organizationId)));
 jest.unstable_mockModule('../services/organizations.membership.service.js', () => ({
-  default: { resolveMembership: mockResolveMembership },
+  default: { resolveMembership: mockResolveMembership, findByUserAndOrganization: mockFindByUserAndOrganization },
 }));
 
 const { default: organizationsMiddleware } = await import('../middlewares/organizations.middleware.js');
-const { resolveOrganization } = organizationsMiddleware;
+const { resolveOrganization, loadMembership } = organizationsMiddleware;
 
 /**
  * Unit tests for the resolveOrganization middleware.
@@ -148,5 +148,53 @@ describe('resolveOrganization middleware unit tests:', () => {
     expect(next).toHaveBeenCalledTimes(1);
     expect(req.organization).toEqual(fakeOrganization);
     expect(req.membership).toEqual(fakeMembership);
+  });
+});
+
+/**
+ * Unit tests for the loadMembership middleware.
+ */
+describe('loadMembership middleware unit tests:', () => {
+  const mockReq = (overrides = {}) => ({
+    user: { _id: 'u1', id: 'u1', roles: ['user'] },
+    organization: { _id: 'org1', id: 'org1' },
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('should attach the membership and call next() once', async () => {
+    const membership = { role: 'member' };
+    mockFindByUserAndOrganization.mockResolvedValueOnce(membership);
+    const req = mockReq();
+    const next = jest.fn();
+    await loadMembership(req, {}, next);
+    expect(mockFindByUserAndOrganization).toHaveBeenCalledWith('u1', 'org1');
+    expect(req.membership).toBe(membership);
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith();
+  });
+
+  test('should hand a DB error to next(err) once instead of swallowing it', async () => {
+    const dbErr = new Error('db down');
+    mockFindByUserAndOrganization.mockRejectedValueOnce(dbErr);
+    const req = mockReq();
+    const next = jest.fn();
+    await loadMembership(req, {}, next);
+    expect(req.membership).toBeUndefined();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith(dbErr);
+  });
+
+  test('should skip the lookup when a membership is already set', async () => {
+    const membership = { role: 'owner' };
+    const req = mockReq({ membership });
+    const next = jest.fn();
+    await loadMembership(req, {}, next);
+    expect(mockFindByUserAndOrganization).not.toHaveBeenCalled();
+    expect(req.membership).toBe(membership);
+    expect(next).toHaveBeenCalledWith();
   });
 });

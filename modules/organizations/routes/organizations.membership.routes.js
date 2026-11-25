@@ -5,7 +5,7 @@ import passport from 'passport';
 
 import model from '../../../lib/middlewares/model.js';
 import policy from '../../../lib/middlewares/policy.js';
-import organizations from '../controllers/organizations.controller.js';
+import organizationsMiddleware from '../middlewares/organizations.middleware.js';
 import members from '../controllers/organizations.membership.controller.js';
 import membershipSchema from '../models/organizations.membership.schema.js';
 
@@ -19,7 +19,7 @@ export default (app) => {
   //   CASL subject via the `/members` path segment (policy.isAllowed).
   app
     .route('/api/organizations/:organizationId/members')
-    .all(passport.authenticate('jwt', { session: false }), organizations.loadMembership, policy.isAllowed)
+    .all(passport.authenticate('jwt', { session: false }), organizationsMiddleware.loadMembership, policy.isAllowed)
     .get(members.list)
     .post(model.isValid(membershipSchema.MembershipAdd), members.addMember);
 
@@ -27,12 +27,12 @@ export default (app) => {
   // Registered BEFORE /members/:memberId so 'search' is not captured as :memberId.
   app
     .route('/api/organizations/:organizationId/members/search')
-    .all(passport.authenticate('jwt', { session: false }), organizations.loadMembership, policy.isAllowed)
+    .all(passport.authenticate('jwt', { session: false }), organizationsMiddleware.loadMembership, policy.isAllowed)
     .get(members.findUserByEmail);
 
   app
     .route('/api/organizations/:organizationId/members/:memberId')
-    .all(passport.authenticate('jwt', { session: false }), organizations.loadMembership, policy.isAllowed)
+    .all(passport.authenticate('jwt', { session: false }), organizationsMiddleware.loadMembership, policy.isAllowed)
     .put(model.isValid(membershipSchema.MembershipUpdate), members.updateRole)
     .delete(members.remove);
 

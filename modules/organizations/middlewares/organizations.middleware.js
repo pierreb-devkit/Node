@@ -51,6 +51,33 @@ async function resolveOrganization(req, res, next) {
   }
 }
 
+/**
+ * @function loadMembership
+ * @description Middleware to load the user's membership for the current organization.
+ * Intended to run after passport authentication on routes where the organizationByID
+ * param middleware may have run before req.user was available.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ * @returns {Promise<void>}
+ */
+async function loadMembership(req, res, next) {
+  if (req.organization && req.user && !req.membership) {
+    try {
+      req.membership = await MembershipService.findByUserAndOrganization(
+        req.user._id || req.user.id,
+        req.organization._id || req.organization.id,
+      );
+    } catch (err) {
+      // A DB failure is a server error, not a missing membership: hand it to the
+      // error handler (500) instead of letting the policy answer 403.
+      return next(err);
+    }
+  }
+  next();
+}
+
 export default {
   resolveOrganization,
+  loadMembership,
 };
