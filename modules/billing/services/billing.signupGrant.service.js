@@ -6,14 +6,32 @@ import BillingExtraBalanceRepository from '../repositories/billing.extraBalance.
 import BillingPlanService from './billing.plan.service.js';
 
 /**
- * @desc Service for crediting the one-shot signup grant to fresh organizations.
+ * @function creatorAlreadyGranted
+ * @description Whether the user who created `orgId` already got a signup grant on another
+ *              organization they created. The ledger is the proof: no stored flag.
+ *              A legacy org without `createdBy` → false (granted as before).
+ *              Lazy import keeps the organizations graph off billing's boot.
+ * @param {string} orgId - The organization ObjectId (string).
+ * @returns {Promise<boolean>} True when the grant must be skipped.
+ */
+const creatorAlreadyGranted = async (orgId) => {
+  const { default: OrganizationsService } = await import('../../organizations/services/organizations.crud.service.js');
+  const otherOrgIds = await OrganizationsService.listOtherIdsBySameCreator(orgId);
+  if (!otherOrgIds?.length) return false;
+  return BillingExtraBalanceRepository.hasSignupGrantInOrgs(otherOrgIds);
+};
+
+/**
+ * @desc Service for crediting the signup grant, once per user (the first organization they create).
  *       Wraps the repository call in a best-effort try/catch so billing failures
  *       never block the signup path (N2 spec: best-effort).
  */
 
 /**
  * @function grantOnSignup
- * @description Credit the configured signupGrant to a freshly-created organization.
+ * @description Credit the configured signupGrant to a freshly-created organization,
+ *              once per user: skipped when another organization created by the same user
+ *              already holds a signup grant (a user's second org starts at 0).
  *              - Looks up the plan definition via BillingPlanService.getActivePlan.
  *              - If the plan has a signupGrant field, delegates to
  *                BillingExtraBalanceRepository.creditGrant (idempotent via refId).
@@ -24,7 +42,8 @@ import BillingPlanService from './billing.plan.service.js';
  * @param {string} params.orgId  - The organization ObjectId (string).
  * @param {string} [params.planId='free'] - The plan identifier. Defaults to 'free' (the
  *   default fresh-signup plan — non-free signups don't flow through createOrganizationForUser).
- * @returns {Promise<Object|null>} Repository result or null (no-op / error swallowed).
+ * @returns {Promise<Object|null>} Repository result, `{doc:null, applied:false, reason:'creator_already_granted'}`,
+ *   or null (no-op / error swallowed).
  */
 const grantOnSignup = async ({ orgId, planId = 'free' }) => {
   try {
@@ -34,6 +53,11 @@ const grantOnSignup = async ({ orgId, planId = 'free' }) => {
       return null;
     }
     if (!plan.signupGrant) return null;
+
+    if (await creatorAlreadyGranted(orgId)) {
+      logger.info('[billing.signupGrant] creator already received a signup grant — skipped', { orgId, planId });
+      return { doc: null, applied: false, reason: 'creator_already_granted' };
+    }
 
     const result = await BillingExtraBalanceRepository.creditGrant(orgId, plan.signupGrant, 'signup_grant');
     if (result?.applied === false) {

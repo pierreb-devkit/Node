@@ -398,6 +398,20 @@ const exists = async (orgId) => Boolean(await OrganizationsRepository.exists({ _
  */
 const setPlan = (orgId, plan) => OrganizationsRepository.setPlan(orgId, plan);
 
+/**
+ * @function listOtherIdsBySameCreator
+ * @description Public read for other modules: the ids of the OTHER organizations created by
+ *   the user who created `orgId`. Returns null when the organization has no known creator
+ *   (legacy org without `createdBy`), so a caller never queries `{ createdBy: undefined }`.
+ * @param {String} orgId - The organization ID.
+ * @returns {Promise<Array|null>} The other organization ObjectIds, or null when no creator is known.
+ */
+const listOtherIdsBySameCreator = async (orgId) => {
+  const creatorId = await OrganizationsRepository.findCreatorId(orgId);
+  if (!creatorId) return null;
+  return OrganizationsRepository.listIdsByCreator(creatorId, orgId);
+};
+
 export default {
   list,
   adminStats,
@@ -413,4 +427,5 @@ export default {
   toMemberView,
   exists,
   setPlan,
+  listOtherIdsBySameCreator,
 };

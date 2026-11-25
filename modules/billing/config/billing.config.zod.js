@@ -13,7 +13,7 @@ import { z } from 'zod';
  *                `default` is the fallback ratio for any cost key not listed here
  *
  * Optional fields (N2 signup-grant):
- *   signupGrant — one-time credit granted to fresh orgs at signup (positive integer).
+ *   signupGrant — credit given once per user, to the first organization they create (positive integer).
  *                 Must be present when oneShot is set.
  *   oneShot     — when true the grant does not renew on weekly/monthly reset.
  *                 Must be present when signupGrant is set.

@@ -133,6 +133,14 @@ when your templates speak in another unit, so subject and body agree.
   tops up the same `cachedBalance`, "percent of grant remaining" is ambiguous, so this only
   applies when `meterQuota === 0` and the plan has a valid `signupGrant`. Copy always speaks
   in absolute credits left, never a percentage.
+- **The signup grant is given once per user** — to the first organization they create
+  (`billing.signupGrant.service.js`, proof read from the ledger: another org of the same
+  creator holding a `signup_grant` entry). Their next organizations start at 0 and, with
+  no grant to lose, never cross a level, so they get no credit-balance alert. Invited
+  members get no grant. Orgs without `createdBy` are granted as before; orgs granted
+  before this rule keep their grant. Accepted limits: removing an org and creating a new
+  one grants again (the removed org's balance is tombstoned), and two concurrent creates
+  by one user may both be granted.
 - **Accepted limitation — expiry and refunds don't alert.** A balance drop from a pack
   expiring (`crons/billing.extrasExpiration.js`) or a refund (`stripe.refunds.create` in
   `billing.admin.controller.js`; the standalone `billing.refund.service.js` was removed as

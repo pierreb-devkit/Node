@@ -4,6 +4,18 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Signup grant once per user, not once per organization (2026-11-25)
+
+- The plan `signupGrant` is now credited once per user: only the first organization a user creates (`createdBy`) gets it. A second or later organization of the same user starts at 0. The proof is an existing `signup_grant` ledger entry on another organization of that creator; no stored shape change, no migration.
+- Organizations that already received the grant keep it (no clawback). A legacy organization without `createdBy` is granted as before.
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the change.
+2. A project that lets one user create several organizations, or a test that expects a grant on every organization a user creates, should expect a 0 balance on the 2nd and later ones.
+
+---
+
 ## `loadMembership` moved to the organizations middleware (2026-11-25)
 
 - `loadMembership` now lives in `modules/organizations/middlewares/organizations.middleware.js` (default export, next to `resolveOrganization`); the organizations controller no longer exports it. Behaviour unchanged.

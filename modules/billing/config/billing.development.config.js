@@ -96,7 +96,7 @@ const config = {
      */
     planDefinitions: [
       /**
-       * signupGrant: one-time credit given to fresh orgs at signup (N2 feature).
+       * signupGrant: credit given once per user, to the first organization they create (N2 feature).
        * oneShot: true = grant does not renew on weekly/monthly reset.
        * DOWNSTREAM-OVERRIDE: set meterQuota + signupGrant per project's actual unit economics.
        */

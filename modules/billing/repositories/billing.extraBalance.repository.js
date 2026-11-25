@@ -660,6 +660,21 @@ const countLinkReferrerGrants = async (referrerId) => {
 };
 
 /**
+ * @function hasSignupGrantInOrgs
+ * @description Whether any of the given organizations holds a signup grant ledger entry
+ *              (`source: 'signup_grant'`, whatever its refId — runtime and backfill entries
+ *              both count). Filtered at the source: one `exists` read on the unique
+ *              `organization` index.
+ * @param {Array<string|Object>} orgIds - Organization ObjectIds.
+ * @returns {Promise<boolean>} True when one of them already got a signup grant.
+ */
+const hasSignupGrantInOrgs = async (orgIds) => {
+  const ids = (orgIds || []).filter((id) => isValidOrgId(id)).map((id) => new mongoose.Types.ObjectId(String(id)));
+  if (ids.length === 0) return false;
+  return Boolean(await BillingExtraBalance().exists({ organization: { $in: ids }, 'ledger.source': 'signup_grant' }));
+};
+
+/**
  * Sum absolute debit entries within a time window using a server-side aggregation.
  * Avoids loading the full ledger into memory — O(1) payload regardless of ledger size.
  *
@@ -717,6 +732,7 @@ export default {
   creditPack,
   creditGrant,
   creditCompensation,
+  hasSignupGrantInOrgs,
   debit,
   addExpirationEntries,
   refundPartial,
