@@ -261,7 +261,17 @@ describe('billing.init unit tests:', () => {
         invitationId: 'i9',
         invitedBy: 'x',
         acceptedUserId: 'u1',
+        organizationId: null,
       });
+    });
+
+    test('organization invite → organizationId passed through so the grant is skipped', async () => {
+      mockConfig.billing.referral = { enabled: true, referrerUnits: 1000, refereeUnits: 500 };
+      mockUserService.getBrut.mockResolvedValue({ _id: 'u1', referredBy: 'x' });
+      mockInvitationsService.findByAcceptedUserId.mockResolvedValue({ ...invitation, organizationId: 'org1' });
+      const handler = await getHandler();
+      await handler(payload);
+      expect(mockReferralService.grantForInvitation).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org1' }));
     });
 
     test('admin-created invite (invitedBy null) → grant called with invitedBy:null', async () => {
@@ -274,6 +284,7 @@ describe('billing.init unit tests:', () => {
         invitationId: 'i9',
         invitedBy: null,
         acceptedUserId: 'u1',
+        organizationId: null,
       });
     });
 

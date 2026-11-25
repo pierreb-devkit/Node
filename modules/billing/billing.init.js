@@ -138,6 +138,7 @@ export default async (app) => {
         invitationId: String(invitation._id),
         invitedBy: invitation.invitedBy ? String(invitation.invitedBy) : null,
         acceptedUserId: String(invitation.acceptedUserId),
+        organizationId: invitation.organizationId ? String(invitation.organizationId) : null, // org invite → skipped
       });
     } catch (err) {
       // ⚠️ MANDATORY self-guard (see organizations/lib/organizations.events.js): never let a rejection escape.
