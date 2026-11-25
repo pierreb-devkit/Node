@@ -4,6 +4,19 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Signing up through an organization invite joins the organization (2026-11-25)
+
+- A signup through an org invite (`organizationId` set) now joins that organization as an ACTIVE member with the invited role: no personal workspace, no `organization.created` (so no signup grant), `currentOrganization` = the org. Same for local signup, `verifyEmail` and the OAuth callback. With strict verification + a mailer the join happens at `verifyEmail`.
+- An org invite token is now always claimed at signup, also on open signup with `invitations.userFacing: false`. OAuth on open signup now honors an org invite matched by provider-verified email (a platform invite is still left untouched there).
+- New organizations seam: `registerSignupMembershipResolver(fn)` in `modules/organizations/lib/organizations.signup.registry.js`, asked by `handleSignupOrganization`. No stored shape change, no migration.
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the change.
+2. A project that patched `handleSignupOrganization` or reacts to `organization.created` at signup should check the org-invite path: it now converges on the joined org instead of creating one.
+
+---
+
 ## Invitations can target an organization (2026-11-25)
 
 - `Invitation` gains `organizationId` (ObjectId, default `null`) and `role` (`owner`/`admin`/`member`, default `null`) plus the index `{ organizationId: 1, status: 1 }`. `null`/`null` = a platform invite, unchanged.

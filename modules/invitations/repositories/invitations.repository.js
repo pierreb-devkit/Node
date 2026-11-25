@@ -161,6 +161,32 @@ const findByAcceptedUserId = (userId) =>
     : null);
 
 /**
+ * @desc The organization invite a signing-up user is joining through (signup join): the
+ * org invite this user ACCEPTED (verifyEmail / OAuth — finalize already ran), else the
+ * org invite THIS signup claimed (`inviteId`, local signup — finalize runs after
+ * provisioning), still in flight and pinned to this email. Matching the claim by id, not
+ * by email, keeps a stale or concurrent claim on the same address from joining a signup
+ * that never presented the token. Lean, `{ organizationId, role, invitedBy }` only.
+ * @param {String} userId - the user being provisioned
+ * @param {String} email - the user's (canonical, lowercased) email
+ * @param {String} [inviteId] - the invite this signup claimed, if any
+ * @returns {Promise<{organizationId: Object, role: (string|null), invitedBy: (Object|null)}|null>}
+ */
+const findOrganizationJoin = (userId, email, inviteId) => {
+  /** @type {Array<Object>} */
+  const branches = [];
+  if (mongoose.Types.ObjectId.isValid(userId)) branches.push({ status: 'accepted', acceptedUserId: userId });
+  if (email && mongoose.Types.ObjectId.isValid(inviteId)) {
+    branches.push({ _id: inviteId, email, status: 'pending', acceptedAt: null, consumingAt: { $ne: null } });
+  }
+  if (!branches.length) return Promise.resolve(null);
+  return Invitation.findOne(
+    { organizationId: { $ne: null }, $or: branches },
+    { organizationId: 1, role: 1, invitedBy: 1 },
+  ).sort('-createdAt').lean().exec();
+};
+
+/**
  * @desc Get one invitation by id
  * @param {String} id
  * @returns {Promise<Object|null>}
@@ -209,4 +235,4 @@ const revokeByOrganization = (organizationId) =>
     ).exec()
     : null);
 
-export default { create, findByToken, findByEmail, countByInvitedBy, claim, finalize, release, releaseStaleClaims, list, findAccepted, findByAcceptedUserId, get, revoke, revokeByOrganization };
+export default { create, findByToken, findByEmail, countByInvitedBy, claim, finalize, release, releaseStaleClaims, list, findAccepted, findByAcceptedUserId, findOrganizationJoin, get, revoke, revokeByOrganization };

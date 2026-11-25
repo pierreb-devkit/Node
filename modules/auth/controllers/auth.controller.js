@@ -79,6 +79,9 @@ const signup = async (req, res) => {
     if (err?.code === 'SIGNUP_DISABLED') {
       return responses.error(res, 404, 'Signup error', 'Registration is currently deactivated')();
     }
+    if (err?.code === 'INVITE_REVOKED') {
+      return responses.error(res, 403, 'Signup error', 'This invitation is no longer valid')();
+    }
     responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };
@@ -402,16 +405,15 @@ const checkOAuthUserProfile = async (profil, key, provider) => {
     // Eligibility via the generic hook (auth never imports invitation code). OAuth
     // carries no token through the redirect, so the invite is matched on the
     // provider-verified email — the checker honors it only when emailVerifiedByProvider.
-    // Skip the hook entirely when signup is open: a token/invite is presented but not
-    // required, and resolving one would silently burn it (preserves prior short-circuit).
+    // `signupOpen` tells the checker an invite is not required: on open signup it only
+    // honors an invite that must be consumed anyway (an organization invite, which
+    // carries the org join) and leaves a platform invite untouched (never burned).
     // The checker returns `{ invite, finalize, release }` (opaque to auth); no synthetic req carrier.
-    let oauthEligibility = null;
-    if (!config.sign.up) {
-      oauthEligibility = await Eligibility.assertSignupEligible({
-        email: profil.email,
-        oauth: { emailVerifiedByProvider: hasVerifiedProviderEmail },
-      });
-    }
+    const oauthEligibility = await Eligibility.assertSignupEligible({
+      email: profil.email,
+      oauth: { emailVerifiedByProvider: hasVerifiedProviderEmail },
+      signupOpen: !!config.sign.up,
+    });
     const oauthInvite = oauthEligibility?.invite || null;
     if (capReached || (!config.sign.up && !oauthInvite)) {
       // Mirror the local signup endpoint's error shape so clients see the same
@@ -776,8 +778,11 @@ const verifyEmail = async (req, res) => {
     // Post-verification org setup — provision org/grant if not yet done (best-effort).
     // handleSignupOrganization is idempotent: if the org already exists it converges
     // without double-crediting. Failure must never block email verification success.
+    // Verification mode 'off': the signup already ran the invite join, so a member
+    // removed since then must not rejoin by clicking the verification link.
+    const verificationOff = (config.organizations?.emailVerification?.mode ?? 'strict') === 'off';
     try {
-      await AuthOrganizationService.handleSignupOrganization(user);
+      await AuthOrganizationService.handleSignupOrganization(user, verificationOff ? { join: false } : {});
     } catch (orgErr) {
       logger.warn('[auth.verifyEmail] org/grant provisioning failed (non-fatal)', {
         userId: user.id,

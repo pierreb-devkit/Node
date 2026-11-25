@@ -11,6 +11,11 @@ Organizations, memberships and the current-organization switch.
   organization and role (see `modules/invitations/README.md` § Organization invites). There is
   no membership row without a user: the invite lives on the `Invitation`, never on a membership.
   The dependency is one way — invitations imports organizations, never the reverse.
+  Signing up through that invite joins the organization: `handleSignupOrganization` asks the
+  resolvers registered with `registerSignupMembershipResolver` (`lib/organizations.signup.registry.js`)
+  just before its A4 guard; a resolved, still-existing organization gets an ACTIVE membership
+  (resolved role, `addedBy`) and becomes the current one — no personal workspace, no signup
+  grant. No resolver registered (invitations off) = today's behaviour.
 
 Both use the same rights: owner/admin of the organization or a platform admin
 (`canManageMembers`), and the same role ceiling — default `member`, only an owner or a

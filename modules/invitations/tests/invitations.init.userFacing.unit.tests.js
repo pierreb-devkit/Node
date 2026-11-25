@@ -17,6 +17,7 @@ const mockService = {
   accept: jest.fn(),
   release: jest.fn(),
   sweepStaleClaims: jest.fn(),
+  resolveSignupMembership: jest.fn(),
 };
 const mockLogger = { error: jest.fn(), warn: jest.fn(), info: jest.fn() };
 const mockConfig = { invitations: { userFacing: false } };

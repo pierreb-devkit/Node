@@ -40,9 +40,24 @@ org name, brand) links to `/signup?inviteToken=…`.
 - `invitation.accepted` carries `organizationId` + `role` (`null` for a platform invite).
 - Org removal revokes the org's pending invites (`onOrganizationRemoved`, `invitations.init.js`).
 
-Joining the organization at signup is a separate step (the signup join, tracked in #4344): until it ships, a
-person signing up through an org invite gets a normal account. An existing account is added
-with the organizations `addMember` flow instead (the invitee accepts).
+Signup join: a person signing up through an org invite JOINS that organization as an ACTIVE
+member with the invited role (`addedBy` = the inviter): no personal workspace, no signup grant,
+current organization = the org. An existing account is added with the organizations
+`addMember` flow instead (the invitee accepts).
+
+- The signup gate always CLAIMS an org invite token (two-phase, E2), on closed AND open signup,
+  whatever `invitations.userFacing` says; it opens a closed/capped signup and counts against the
+  cap. On open signup a lost claim race still downgrades to a plain signup (never blocks it).
+- OAuth resolves the invite by the provider-verified email (E7). On open signup only an org
+  invite is honored there; a platform invite is left untouched, as before.
+- The join itself happens in organizations' `handleSignupOrganization`, which asks the resolver
+  this module registers (`registerSignupMembershipResolver`, `organizations.signup.registry.js`):
+  the org invite this user accepted (verifyEmail, OAuth), else the one claimed in flight for their
+  email (local signup — the invite is finalized after provisioning). An unclaimed pending invite
+  never counts.
+- Never auto-verify (E6): with strict verification + a mailer, nothing joins at signup; the join
+  happens at `verifyEmail`. With verification `off` or no mailer, the join happens at signup.
+- Org removed or invite revoked before the join → the usual personal workspace.
 
 ## The referral substrate (what the reward grants hook into)
 

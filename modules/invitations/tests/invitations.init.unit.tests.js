@@ -24,6 +24,7 @@ const mockService = {
   release: jest.fn(),
   sweepStaleClaims: jest.fn(),
   revokeForOrganization: jest.fn(),
+  resolveSignupMembership: jest.fn(),
 };
 const mockLogger = { error: jest.fn(), warn: jest.fn(), info: jest.fn() };
 
@@ -34,6 +35,7 @@ const Eligibility = (await import('../../auth/services/auth.eligibility.js')).de
 const invitationEvents = (await import('../lib/invitations.events.js')).default;
 const init = (await import('../invitations.init.js')).default;
 const RemovalRegistry = (await import('../../organizations/lib/organizations.removal.registry.js')).default;
+const SignupRegistry = (await import('../../organizations/lib/organizations.signup.registry.js')).default;
 
 beforeEach(async () => {
   jest.clearAllMocks();
@@ -153,5 +155,44 @@ describe('invitations.init — organization removal', () => {
     expect(mockService.revokeForOrganization).toHaveBeenCalledTimes(1);
     expect(mockService.revokeForOrganization).toHaveBeenCalledWith('org1');
     RemovalRegistry._reset();
+  });
+});
+
+describe('invitations.init — signup join', () => {
+  test('registers the signup membership resolver with organizations', async () => {
+    SignupRegistry._reset();
+    await init();
+    const target = { organizationId: 'org1', role: 'admin', invitedBy: 'u0' };
+    mockService.resolveSignupMembership.mockResolvedValue(target);
+    await expect(SignupRegistry.resolveSignupMembership({ id: 'u1', email: 'a@b.co' }, { inviteId: 'i1' })).resolves.toEqual(target);
+    expect(mockService.resolveSignupMembership).toHaveBeenCalledWith({ id: 'u1', email: 'a@b.co' }, { inviteId: 'i1' });
+    SignupRegistry._reset();
+  });
+
+  test('OPEN signup: an ORGANIZATION invite token is CLAIMED even with userFacing off', async () => {
+    const invite = { id: 'i9', email: 'a@b.co', organizationId: 'org1' };
+    mockService.assertInvited.mockResolvedValue(invite);
+    const req = { query: { inviteToken: 'tok' }, body: { email: 'a@b.co' } };
+    const result = await Eligibility.assertSignupEligible({ email: 'a@b.co', body: req.body, req, signupOpen: true });
+    expect(mockService.claim).toHaveBeenCalledWith('tok');
+    expect(result.claimed).toBe(true);
+    expect(result.invite).toBe(invite);
+  });
+
+  test('OPEN signup: a lost claim race on an org invite downgrades to unclaimed (never blocks open signup)', async () => {
+    mockService.assertInvited.mockResolvedValue({ id: 'i9', email: 'a@b.co', organizationId: 'org1' });
+    mockService.claim.mockRejectedValue(Object.assign(new Error('gone'), { status: 422 }));
+    const req = { query: { inviteToken: 'tok' }, body: { email: 'a@b.co' } };
+    const result = await Eligibility.assertSignupEligible({ email: 'a@b.co', body: req.body, req, signupOpen: true });
+    expect(result.claimed).toBe(false);
+  });
+
+  test('OAuth on OPEN signup: an organization invite resolves, a platform invite does not (never burned)', async () => {
+    mockService.assertInvitedByEmail.mockResolvedValue({ id: 'i3', email: 'v@b.co', organizationId: 'org1' });
+    const orgResult = await Eligibility.assertSignupEligible({ email: 'v@b.co', oauth: { emailVerifiedByProvider: true }, signupOpen: true });
+    expect(orgResult.invite.id).toBe('i3');
+    mockService.assertInvitedByEmail.mockResolvedValue({ id: 'i4', email: 'v@b.co', organizationId: null });
+    const platformResult = await Eligibility.assertSignupEligible({ email: 'v@b.co', oauth: { emailVerifiedByProvider: true }, signupOpen: true });
+    expect(platformResult).toBeNull();
   });
 });
