@@ -490,6 +490,22 @@ const findAccepted = () => InvitationRepository.findAccepted();
 const findByAcceptedUserId = (userId) => InvitationRepository.findByAcceptedUserId(userId);
 
 /**
+ * @desc Signup membership resolver (registered with organizations at boot): the
+ * organization a signing-up user joins through an org invite — accepted by this user, or
+ * claimed in flight for their email — or null. Whether the org still exists is the
+ * organizations module's check.
+ * @param {Object} user - the user being provisioned (id/_id, email)
+ * @returns {Promise<{organizationId: Object, role: (string|null), invitedBy: (Object|null)}|null>}
+ */
+const resolveSignupMembership = async (user) => {
+  const userId = user?.id || user?._id;
+  const email = typeof user?.email === 'string' ? user.email.toLowerCase().trim() : null;
+  const invite = await InvitationRepository.findOrganizationJoin(userId ? String(userId) : null, email);
+  if (!invite) return null;
+  return { organizationId: invite.organizationId, role: invite.role || null, invitedBy: invite.invitedBy || null };
+};
+
+/**
  * @desc E8 — soft-delete (revoke) an invitation by id (status:'revoked' + revokedAt,
  * NOT a hard delete), preserving invitedBy/acceptedUserId for the referral phase.
  * @param {String} id
@@ -557,4 +573,5 @@ export default {
   resend,
   findAccepted,
   findByAcceptedUserId,
+  resolveSignupMembership,
 };

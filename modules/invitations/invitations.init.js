@@ -3,6 +3,7 @@
  */
 import { registerSignupEligibility } from '../auth/services/auth.eligibility.js';
 import { onOrganizationRemoved } from '../organizations/lib/organizations.removal.registry.js';
+import { registerSignupMembershipResolver } from '../organizations/lib/organizations.signup.registry.js';
 import InvitationsService from './services/invitations.service.js';
 import invitationEvents from './lib/invitations.events.js';
 import logger from '../../lib/services/logger.js';
@@ -65,11 +66,14 @@ export default async () => {
       if (ctx.oauth.emailVerifiedByProvider) {
         invite = await InvitationsService.assertInvitedByEmail({ email: ctx.email });
       }
+      // Open signup: only an ORGANIZATION invite is honored (it carries the org join); a
+      // platform invite is presented-but-not-required there, and resolving it would burn it.
+      if (invite && ctx.signupOpen && !invite.organizationId) invite = null;
       // OAuth has no token to claim; the consumingAt exclusion on findValidByEmail
       // already hides a claimed-but-unfinalized invite. No two-phase claim here —
       // `claimed` stays false, but auth's OAuth controller path (checkOAuthUserProfile)
       // finalizes unconditionally on a resolved OAuth invite regardless (unaffected by
-      // #3981 — OAuth's eligibility check only ever runs under closed signup today).
+      // #3981 — on open signup only an organization invite resolves, see above).
     } else {
       const carrier = ctx.req;
       if (!carrier) return undefined;
@@ -90,7 +94,9 @@ export default async () => {
         // decision on this path).
         await InvitationsService.claim(token); // throws AppError(422) if not claimable
         claimed = true;
-      } else if (invite && config.invitations?.userFacing) {
+      } else if (invite && (config.invitations?.userFacing || invite.organizationId)) {
+        // An ORGANIZATION invite is always claimed on open signup too, whatever
+        // `userFacing` says: without the claim it is never accepted and nothing joins.
         // #3981: public signup is OPEN, but userFacing opts a deployment INTO honoring a
         // presented token anyway (the open-signup hole documented in this module's
         // README point 3 — a presented token used to resolve but never claim/finalize
@@ -147,6 +153,11 @@ export default async () => {
       release: () => InvitationsService.release(invite.id),
     };
   });
+
+  // Signup join: an org invite makes the signup join that organization (no personal
+  // workspace). organizations asks this resolver from handleSignupOrganization, for all
+  // three callers (local signup, verifyEmail, OAuth callback); it never imports us.
+  registerSignupMembershipResolver(InvitationsService.resolveSignupMembership);
 
   // Org removal: revoke the removed organization's pending invitations, so a link already
   // emailed can no longer open signup into an org that is gone (invitations → organizations;
