@@ -287,7 +287,7 @@ describe('Organizations integration tests:', () => {
     });
   });
 
-  describe('creator details and internal flags by role (list + get)', () => {
+  describe('creator details and internal flags by role (list, get, switch)', () => {
     const users = {};
     const agents = {};
     let org;
