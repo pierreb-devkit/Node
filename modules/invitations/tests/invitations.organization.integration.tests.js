@@ -256,6 +256,26 @@ describe('Organization invitations:', () => {
     });
   });
 
+  describe('referral invite limits (#4355)', () => {
+    test('org invites are neither capped nor counted by maxLifetime; platform invites still are', async () => {
+      // The platform admin is the one fixture allowed on both route families. Other tests
+      // may already have sent platform invites with it: leave room for exactly one more.
+      const platformSent = await Invitation.countDocuments({ invitedBy: users.platform.id, organizationId: null });
+      config.invitations = { ...config.invitations, maxLifetime: platformSent + 1 };
+      try {
+        await agents.platform.post(orgPath(orgA)).send({ email: email('cap-org1') }).expect(200);
+        // Past the cap through org invites alone: still allowed.
+        await agents.platform.post(orgPath(orgA)).send({ email: email('cap-org2') }).expect(200);
+        // The two org invites did not count: one more platform invite passes ...
+        await agents.platform.post('/api/invitations').send({ email: email('cap-platform1') }).expect(200);
+        // ... and the platform cap still holds.
+        await agents.platform.post('/api/invitations').send({ email: email('cap-platform2') }).expect(422);
+      } finally {
+        config.invitations = { ...savedInvitations };
+      }
+    });
+  });
+
   describe('verify + referrals list', () => {
     test('public verify returns the org name (name only) for an org invite', async () => {
       const invite = await createInvite('vf1');

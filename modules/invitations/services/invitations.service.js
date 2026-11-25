@@ -67,14 +67,14 @@ const inviteMailPayload = (invitation, { organization, inviter } = {}) => {
  * With `target.organization`, the invite is an ORGANIZATION invite: it stores
  * `organizationId` + `role` (default member) and sends the `org-invite` email. Every
  * guard above/below applies unchanged (one live invite per email platform-wide, E9,
- * self-invite, maxLifetime). The caller (org route) owns the rights + role ceiling.
+ * self-invite) except `maxLifetime`, which caps platform invites only (#4355). The caller (org route) owns the rights + role ceiling.
  * @param {String} email - invitee email (any case)
  * @param {Object} invitedBy - the user creating the invite
  * @param {Object} [target] - organization target (omit for a platform invite)
  * @param {Object} [target.organization] - the organization the invitee will join
  * @param {String} [target.role] - role granted on join (default member)
  * @returns {Promise<Object>} created invitation
- * @throws {AppError} 409 when a pending invitation already exists for the email; 422 when the invitee email is the inviter's own, a user already exists for this email, or the inviter has reached `config.invitations.maxLifetime` (if set)
+ * @throws {AppError} 409 when a pending invitation already exists for the email; 422 when the invitee email is the inviter's own, a user already exists for this email, or the inviter has reached `config.invitations.maxLifetime` (if set, platform invites only)
  */
 const create = async (email, invitedBy, { organization, role } = {}) => {
   const normalizedEmail = String(email).toLowerCase().trim();
@@ -96,8 +96,8 @@ const create = async (email, invitedBy, { organization, role } = {}) => {
   }
   // #3986: config-gated lifetime cap per inviter. Absent/null = disabled (stack default,
   // mirrors billing.referral) — no behavior change until a downstream consumer opts in
-  // with a number. DB-backed, not a rate window: counts ALL invitations ever created by
-  // this inviter (any status), so the cap cannot be reset by letting invites expire or
+  // with a number. DB-backed, not a rate window: counts every PLATFORM invitation ever
+  // created by this inviter (any status), so the cap cannot be reset by letting invites expire or
   // revoking them. Bounds cumulative volume — the exposure that matters when
   // billing.referral rewards are enabled (credit farming via fake referrer/referee
   // pairs) — as a complement to rateLimit.invitationsCreate (bounds burst rate only).
@@ -106,10 +106,11 @@ const create = async (email, invitedBy, { organization, role } = {}) => {
   // check and both land, admitting the cap by a document or two. Acceptable for an
   // admin/owner surface already bounded by rateLimit.invitationsCreate — turning this
   // into a hard ceiling needs an atomically-incremented counter (a schema change), out
-  // of this fix's scope.
+  // of this fix's scope. #4355: an organization invite earns no referral reward, so it
+  // is neither capped nor counted (team admins never hit the referral cap).
   const inviterId = invitedBy?.id || invitedBy?._id || null;
   const maxLifetime = config.invitations?.maxLifetime;
-  if (typeof maxLifetime === 'number' && inviterId) {
+  if (typeof maxLifetime === 'number' && inviterId && !organization) {
     const lifetimeCount = await InvitationRepository.countByInvitedBy(inviterId);
     if (lifetimeCount >= maxLifetime) {
       throw new AppError('You have reached the maximum number of invitations you can send', {

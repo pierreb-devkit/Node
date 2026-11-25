@@ -24,6 +24,9 @@ export default (app) => {
   // `invitationsCreate` profile is absent from config (mirrors every other named
   // limiter in this stack).
   const createLimiter = limiters.invitationsCreate;
+  // #4355: organization invites (create + resend) use their own bucket, so team invites
+  // never consume the platform (referral) one.
+  const organizationCreateLimiter = limiters.organizationInvitationsCreate;
 
   // Public: report whether a token is a valid invite (+ prefill email).
   app.route('/api/invitations/verify/:token').get(authLimiter, invitations.verify);
@@ -62,16 +65,16 @@ export default (app) => {
     .route('/api/organizations/:organizationId/invitations')
     .all(...orgGate)
     .get(invitations.organizationList)
-    .post(createLimiter, model.isValid(InvitationSchema.OrganizationInvitation), invitations.organizationCreate);
+    .post(organizationCreateLimiter, model.isValid(InvitationSchema.OrganizationInvitation), invitations.organizationCreate);
 
   app
     .route('/api/organizations/:organizationId/invitations/:invitationId')
     .all(...orgGate, invitations.invitationInOrganization)
     .delete(invitations.remove);
 
-  // Resend sends an email too — same limiter as create.
+  // Resend sends an email too — same limiter as the org create.
   app
     .route('/api/organizations/:organizationId/invitations/:invitationId/resend')
     .all(...orgGate, invitations.invitationInOrganization)
-    .post(createLimiter, invitations.organizationResend);
+    .post(organizationCreateLimiter, invitations.organizationResend);
 };

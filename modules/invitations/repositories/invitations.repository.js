@@ -51,15 +51,17 @@ const findByEmail = (email) =>
     .exec();
 
 /**
- * @desc #3986 — count ALL invitations ever created by a given inviter, across every
- * status (pending, accepted, revoked, expired). Unlike findByEmail (pending-only,
+ * @desc #3986 — count every PLATFORM invitation ever created by a given inviter, across
+ * every status (pending, accepted, revoked, expired). Unlike findByEmail (pending-only,
  * gate-opening), this is the cumulative-volume signal for the maxLifetime cap: a
  * status filter here would let the cap reset by letting invites expire or revoking
- * them, defeating the guard.
+ * them, defeating the guard. Organization invites are left out (#4355): they earn no
+ * referral reward, so they never count toward the cap (`organizationId: null` also
+ * matches older documents without the key).
  * @param {String} invitedBy - the inviter's user id
  * @returns {Promise<Number>}
  */
-const countByInvitedBy = (invitedBy) => Invitation.countDocuments({ invitedBy }).exec();
+const countByInvitedBy = (invitedBy) => Invitation.countDocuments({ invitedBy, organizationId: null }).exec();
 
 /**
  * @desc E2 — atomically CLAIM a pending, unclaimed invite by token. Stamps

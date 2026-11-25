@@ -4,6 +4,18 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Team invites outside the referral invite limits (2026-11-25)
+
+- `invitations.maxLifetime` now counts and caps **platform** invites only. An organization invite (`POST /api/organizations/:organizationId/invitations`) is never capped and no longer counts toward an inviter's total. No stored shape change, no migration: the count filters on the existing `organizationId: null`.
+- Organization invite create + resend now use their own rate-limit profile `rateLimit.organizationInvitationsCreate` (same shape and defaults as `invitationsCreate`, 20 per 15 min in production), so team invites no longer consume the platform `invitationsCreate` bucket.
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the change.
+2. A project that tuned `rateLimit.invitationsCreate` in its own config should set `rateLimit.organizationInvitationsCreate` too, or the org routes run on the stack defaults.
+
+---
+
 ## Signup grant once per user, not once per organization (2026-11-25)
 
 - The plan `signupGrant` is now credited once per user: only the first organization a user creates (`createdBy`) gets it. A second or later organization of the same user starts at 0. The proof is an existing `signup_grant` ledger entry on another organization of that creator; no stored shape change, no migration.

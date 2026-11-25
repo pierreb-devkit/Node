@@ -71,6 +71,15 @@ const config = {
       standardHeaders: true,
       legacyHeaders: false,
     },
+    // Organization invite create + resend (#4355): own bucket, same prod cap, so team
+    // invites never consume the platform `invitationsCreate` one.
+    organizationInvitationsCreate: {
+      windowMs: 15 * 60 * 1000,
+      max: 20,
+      message: { message: 'Too many requests, please try again later.' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    },
     // Public POST /api/users/unsubscribe/:token (#4162, RFC 8058 one-click).
     // Unlike the profiles above, this is NOT tightened for prod — prod is exactly
     // where mail providers' shared egress IPs send these POSTs from, so the cap

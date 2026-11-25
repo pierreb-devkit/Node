@@ -30,9 +30,10 @@ const config = {
     userFacing: false,
     /**
      * Lifetime cap per inviter (#3986) — stack default OFF (absent/null = disabled,
-     * no behavior change). DB-backed: InvitationsService.create() counts ALL
-     * invitations (any status) already sent by the same `invitedBy` and rejects
-     * (422) once the count reaches this value. Bounds cumulative volume — the
+     * no behavior change). DB-backed: InvitationsService.create() counts every
+     * PLATFORM invitation (any status) already sent by the same `invitedBy` and
+     * rejects (422) once the count reaches this value. Organization invites are
+     * neither capped nor counted (#4355): they earn no referral reward. Bounds cumulative volume — the
      * exposure that matters when `billing.referral` rewards are enabled (credit
      * farming via fake referrer/referee pairs) — as a complement to
      * `rateLimit.invitationsCreate` (bounds burst rate, not lifetime volume).
@@ -53,6 +54,17 @@ const config = {
   // no-op limiter. Stricter cap applied in config/defaults/production.config.js.
   rateLimit: {
     invitationsCreate: {
+      windowMs: 15 * 60 * 1000, // 15 min
+      max: 200, // lenient in dev; production overrides to a stricter cap
+      message: { message: 'Too many requests, please try again later.' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    },
+    // #4355: organization invites (create + resend under
+    // /api/organizations/:organizationId/invitations) get their own bucket, so team
+    // invites never consume the platform (referral) one. Same shape and defaults;
+    // production overrides it in config/defaults/production.config.js.
+    organizationInvitationsCreate: {
       windowMs: 15 * 60 * 1000, // 15 min
       max: 200, // lenient in dev; production overrides to a stricter cap
       message: { message: 'Too many requests, please try again later.' },
