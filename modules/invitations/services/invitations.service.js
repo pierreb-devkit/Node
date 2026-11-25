@@ -497,12 +497,11 @@ const findByAcceptedUserId = (userId) => InvitationRepository.findByAcceptedUser
  * @param {Object} user - the user being provisioned (id/_id, email)
  * @returns {Promise<{organizationId: Object, role: (string|null), invitedBy: (Object|null)}|null>}
  */
-const resolveSignupMembership = async (user) => {
+const resolveSignupMembership = (user) => {
   const userId = user?.id || user?._id;
   const email = typeof user?.email === 'string' ? user.email.toLowerCase().trim() : null;
-  const invite = await InvitationRepository.findOrganizationJoin(userId ? String(userId) : null, email);
-  if (!invite) return null;
-  return { organizationId: invite.organizationId, role: invite.role || null, invitedBy: invite.invitedBy || null };
+  // The repository projects exactly `{ organizationId, role, invitedBy }` (lean), or null.
+  return InvitationRepository.findOrganizationJoin(userId ? String(userId) : null, email);
 };
 
 /**
