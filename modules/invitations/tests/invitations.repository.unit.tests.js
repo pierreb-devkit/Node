@@ -137,11 +137,12 @@ describe('InvitationRepository', () => {
     expect(chain.sort).toHaveBeenCalledWith('-createdAt');
   });
 
-  test('countByInvitedBy counts across ALL statuses for a given inviter (#3986)', async () => {
+  test('countByInvitedBy counts platform invites across ALL statuses for a given inviter (#3986, #4355)', async () => {
     exec.mockResolvedValue(5);
     const result = await InvitationRepository.countByInvitedBy('u1');
-    // No status filter — the lifetime cap must not reset on expire/revoke.
-    expect(InvitationModel.countDocuments).toHaveBeenCalledWith({ invitedBy: 'u1' });
+    // No status filter — the lifetime cap must not reset on expire/revoke. Org invites
+    // are left out (#4355): they earn no referral reward.
+    expect(InvitationModel.countDocuments).toHaveBeenCalledWith({ invitedBy: 'u1', organizationId: null });
     expect(result).toBe(5);
   });
 

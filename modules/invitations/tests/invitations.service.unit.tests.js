@@ -465,6 +465,16 @@ describe('InvitationService.create — #3986 lifetime cap per inviter', () => {
     expect(InvitationRepository.create).not.toHaveBeenCalled();
   });
 
+  test('#4355: an organization invite is never capped — the inviter at the cap still invites (cap+1th passes)', async () => {
+    config.invitations.maxLifetime = 5;
+    InvitationRepository.countByInvitedBy.mockResolvedValue(5); // == cap: a platform invite would 422
+    InvitationRepository.create.mockImplementation((doc) => Promise.resolve({ ...doc, id: '1' }));
+    const inv = await InvitationService.create('teammate@example.com', { id: 'admin1' }, { organization: { _id: 'org1' } });
+    expect(inv.organizationId).toBe('org1');
+    expect(InvitationRepository.countByInvitedBy).not.toHaveBeenCalled();
+    expect(InvitationRepository.create).toHaveBeenCalledTimes(1);
+  });
+
   test('an inviter with no resolvable id (defensive) skips the cap entirely, even when configured', async () => {
     config.invitations.maxLifetime = 1;
     InvitationRepository.create.mockImplementation((doc) => Promise.resolve({ ...doc, id: '1' }));

@@ -31,8 +31,10 @@ org name, brand) links to `/signup?inviteToken=…`.
 - Role: defaults to `member`; only an owner or a platform admin may invite an `admin`/`owner`
   (the same ceiling as adding a member — `organizations/lib/organizations.rights.js`).
 - Create keeps every platform guard: an existing account → 422 (add them as a member instead),
-  self-invite → 422, one live invite per email **platform-wide** → 409, `maxLifetime`
-  (counts org invites too), `rateLimit.invitationsCreate` (also on resend). No per-org cap.
+  self-invite → 422, one live invite per email **platform-wide** → 409, no per-org cap.
+  Org invites stay outside the referral limits: `maxLifetime` neither caps nor counts them
+  (platform invites only), and create + resend use their own limiter
+  `rateLimit.organizationInvitationsCreate` (not the platform `invitationsCreate` bucket).
 - `GET /api/invitations/verify/:token` also returns `organization: { name }` for an org invite.
 - Not a referral: an org invite never stamps `referredBy`, earns no referral reward (the billing
   rule source `expectedGrantKeys` drops it — listener and reconcile cron alike) and never shows
