@@ -128,4 +128,3 @@ describe('BillingUsage credit-balance alert integration tests:', () => {
     expect(emitSpy.mock.calls.filter(([name]) => name === 'billing.extras.balance_threshold_crossed')).toHaveLength(0);
   });
 });
-
