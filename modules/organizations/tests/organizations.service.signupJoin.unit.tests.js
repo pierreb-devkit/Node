@@ -117,6 +117,13 @@ describe('handleSignupOrganization — signup join', () => {
     expect(mockOrgCreate).toHaveBeenCalledTimes(1);
   });
 
+  test('the signup context reaches the resolvers as is', async () => {
+    const resolver = jest.fn(async () => null);
+    SignupRegistry.registerSignupMembershipResolver(resolver);
+    await OrganizationsService.handleSignupOrganization(user, { inviteId: 'inv-1' });
+    expect(resolver).toHaveBeenCalledWith(user, { inviteId: 'inv-1' });
+  });
+
   test('resolved org → ACTIVE membership with role + addedBy, current org set, A4 converges, no new org', async () => {
     SignupRegistry.registerSignupMembershipResolver(async () => ({ organizationId: invitedOrg._id, role: 'admin', invitedBy: inviterId }));
     const joined = { _id: new mongoose.Types.ObjectId(), organizationId: invitedOrg, role: 'admin', status: 'active' };

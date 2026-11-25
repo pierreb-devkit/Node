@@ -16,8 +16,9 @@ const resolvers = [];
  * @function registerSignupMembershipResolver
  * @description Register a resolver asked at signup provisioning. De-duped by identity
  *   (a module init running twice registers once).
- * @param {(user: Object) => (Promise<{organizationId: *, role?: string, invitedBy?: *}|null|undefined>)} fn
- *   Receives the user being provisioned; returns the organization to join, or nothing.
+ * @param {(user: Object, ctx: Object) => (Promise<{organizationId: *, role?: string, invitedBy?: *}|null|undefined>)} fn
+ *   Receives the user being provisioned and the signup context (opaque, e.g. `{ inviteId }`
+ *   of the invite THIS signup claimed); returns the organization to join, or nothing.
  * @returns {void}
  */
 export const registerSignupMembershipResolver = (fn) => {
@@ -30,11 +31,12 @@ export const registerSignupMembershipResolver = (fn) => {
  * @description Ask every resolver in registration order; return the first non-null answer.
  *   A resolver error propagates to the caller (signup rolls back and the invite is released).
  * @param {Object} user - The user being provisioned.
+ * @param {Object} [ctx={}] - Signup context, passed through to every resolver as is.
  * @returns {Promise<{organizationId: *, role?: string, invitedBy?: *}|null>}
  */
-export const resolveSignupMembership = async (user) => {
+export const resolveSignupMembership = async (user, ctx = {}) => {
   for (const fn of resolvers) {
-    const result = await fn(user);
+    const result = await fn(user, ctx);
     if (result != null) return result;
   }
   return null;

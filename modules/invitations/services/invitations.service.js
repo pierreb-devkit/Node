@@ -492,16 +492,19 @@ const findByAcceptedUserId = (userId) => InvitationRepository.findByAcceptedUser
 /**
  * @desc Signup membership resolver (registered with organizations at boot): the
  * organization a signing-up user joins through an org invite — accepted by this user, or
- * claimed in flight for their email — or null. Whether the org still exists is the
+ * the invite this very signup claimed (`ctx.inviteId`, local signup, finalize still to
+ * come) — or null. Whether the org still exists is the
  * organizations module's check.
  * @param {Object} user - the user being provisioned (id/_id, email)
+ * @param {Object} [ctx={}] - signup context; `inviteId` = the invite this signup claimed
  * @returns {Promise<{organizationId: Object, role: (string|null), invitedBy: (Object|null)}|null>}
  */
-const resolveSignupMembership = (user) => {
+const resolveSignupMembership = (user, ctx = {}) => {
   const userId = user?.id || user?._id;
   const email = typeof user?.email === 'string' ? user.email.toLowerCase().trim() : null;
   // The repository projects exactly `{ organizationId, role, invitedBy }` (lean), or null.
-  return InvitationRepository.findOrganizationJoin(userId ? String(userId) : null, email);
+  const inviteId = ctx?.inviteId != null ? String(ctx.inviteId) : null;
+  return InvitationRepository.findOrganizationJoin(userId ? String(userId) : null, email, inviteId);
 };
 
 /**

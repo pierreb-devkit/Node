@@ -197,6 +197,30 @@ describe('Invitations signup join:', () => {
       await expectPersonalWorkspace('notoken');
       expect((await Invitation.findById(inv._id)).status).toBe('pending');
     });
+
+    test('a claim left in flight on the email (stale, or another request) never joins a no-token signup', async () => {
+      const inv = await invite('foreignclaim', 'admin');
+      await InvitationRepository.claim(inv.token);
+      const res = await signup('foreignclaim');
+      expect(res.status).toBe(200);
+      await expectPersonalWorkspace('foreignclaim');
+      const after = await Invitation.findById(inv._id);
+      expect(after.status).toBe('pending');
+      expect(after.acceptedUserId ?? null).toBeNull();
+    });
+
+    test('provisioning fails after the join → account and membership rolled back, claim released', async () => {
+      const inv = await invite('joinfail', 'admin');
+      const membersBefore = (await MembershipRepository.list({ organizationId: orgId })).length;
+      jest.spyOn(UserService, 'updateById').mockRejectedValueOnce(new Error('boom'));
+      const res = await signup('joinfail', inv.token);
+      expect(res.status).toBeGreaterThanOrEqual(400);
+      expect(await UserService.getBrut({ email: email('joinfail') })).toBeFalsy();
+      expect(await MembershipRepository.list({ organizationId: orgId })).toHaveLength(membersBefore);
+      const after = await Invitation.findById(inv._id);
+      expect(after.status).toBe('pending');
+      expect(after.consumingAt ?? null).toBeNull();
+    });
   });
 
   describe('local signup, strict verification + mailer', () => {
@@ -291,9 +315,19 @@ describe('Invitations signup join:', () => {
       const inv = await invite('midrevoke');
       await InvitationRepository.claim(inv.token);
       const fakeUser = { id: String(new mongoose.Types.ObjectId()), email: email('midrevoke') };
-      expect(await InvitationsService.resolveSignupMembership(fakeUser)).toMatchObject({ role: 'member' });
+      const ctx = { inviteId: String(inv._id) };
+      expect(await InvitationsService.resolveSignupMembership(fakeUser, ctx)).toMatchObject({ role: 'member' });
       await InvitationsService.revokeForOrganization(String(orgId));
+      expect(await InvitationsService.resolveSignupMembership(fakeUser, ctx)).toBeNull();
+    });
+
+    test('a claimed invite resolves only for the signup that claimed it (its id), never by email alone', async () => {
+      const inv = await invite('claimbound');
+      await InvitationRepository.claim(inv.token);
+      const fakeUser = { id: String(new mongoose.Types.ObjectId()), email: email('claimbound') };
       expect(await InvitationsService.resolveSignupMembership(fakeUser)).toBeNull();
+      expect(await InvitationsService.resolveSignupMembership(fakeUser, { inviteId: String(new mongoose.Types.ObjectId()) })).toBeNull();
+      expect(await InvitationsService.resolveSignupMembership(fakeUser, { inviteId: String(inv._id) })).toMatchObject({ role: 'member' });
     });
 
     test('an unclaimed pending invite for the email never resolves', async () => {

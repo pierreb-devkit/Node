@@ -181,10 +181,11 @@ const sendWelcomeEmail = (user, orgName, orgId) => {
  * when no resolver answers, the organization no longer exists, or the user already has a
  * membership row for it (a retried call — A4 converges on an active one).
  * @param {Object} user - The user being provisioned.
+ * @param {Object} ctx - Signup context for the resolvers (see handleSignupOrganization).
  * @returns {Promise<void>}
  */
-const joinResolvedOrganization = async (user) => {
-  const target = await resolveSignupMembership(user);
+const joinResolvedOrganization = async (user, ctx) => {
+  const target = await resolveSignupMembership(user, ctx);
   if (!target?.organizationId) return;
   const organization = await OrganizationsRepository.get(String(target.organizationId));
   if (!organization) return; // removed between invite and join → personal workspace
@@ -227,12 +228,14 @@ const joinResolvedOrganization = async (user) => {
  * grant asynchronously, best-effort, never throwing back into this flow.
  *
  * @param {Object} user - The user object returned by UserService.create (with id, email, firstName, lastName).
+ * @param {Object} [ctx={}] - Signup context handed as is to the membership resolvers, e.g.
+ *   `{ inviteId }` of the invite this local signup claimed (only that claim can join).
  * @returns {Promise<{organization: Object|null, membership: Object|null, abilities: Array, emailVerificationRequired?: boolean, suggestedJoin?: {orgId: string, orgName: string}}>}
  *   An object containing the organization context for the signup response.
  *   `organization` and `membership` are null when `emailVerificationRequired` is true (mailer path).
  *   NEVER returns `organizationSetupRequired` or `pendingJoin`.
  */
-const handleSignupOrganization = async (user) => {
+const handleSignupOrganization = async (user, ctx = {}) => {
   const orgConfig = config.organizations || {};
 
   // Email-verification policy gate (config.organizations.emailVerification.mode).
@@ -301,7 +304,7 @@ const handleSignupOrganization = async (user) => {
   // Signup join (e.g. an organization invitation): membership resolvers registered by
   // optional modules may name an organization to join. The join lands as an ACTIVE
   // membership, so the A4 guard right below converges on it.
-  await joinResolvedOrganization(user);
+  await joinResolvedOrganization(user, ctx);
 
   const userId = user.id || user._id;
   const existingMembership = await MembershipRepository.findOne({ userId, status: MEMBERSHIP_STATUSES.ACTIVE });

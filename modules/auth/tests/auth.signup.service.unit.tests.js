@@ -401,7 +401,8 @@ describe('auth.signup.service — invite finalize ordering (#3995)', () => {
     // Same gap, same fix: handleSignupOrganization is also only tracked by
     // `order` above — a wrong/undefined user reaching org provisioning would
     // still pass without this.
-    expect(handleSignupOrganization).toHaveBeenCalledWith(expect.objectContaining({ id: 'u1' }));
+    // The claimed invite's id rides along: the signup join matches THIS claim only.
+    expect(handleSignupOrganization).toHaveBeenCalledWith(expect.objectContaining({ id: 'u1' }), { inviteId: 'inv1' });
     // The response block reads the organization result — not just {user, invite}.
     expect(orgResult.organization).toEqual({ id: 'org1' });
     expect(user.id).toBe('u1');

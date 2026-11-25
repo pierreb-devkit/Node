@@ -321,7 +321,10 @@ const signup = async (req) => {
   // If org creation fails, rollback the just-created user
   let orgResult;
   try {
-    orgResult = await AuthOrganizationService.handleSignupOrganization(user);
+    // The invite THIS request claimed (finalize runs below, after provisioning): the
+    // membership resolver joins through this claim only, never through another claim
+    // on the same email (a stale or concurrent one).
+    orgResult = await AuthOrganizationService.handleSignupOrganization(user, inviteHonored ? { inviteId } : {});
   } catch (orgErr) {
     // Manual rollback: delete the user we just created
     await removeUser(user, 'organization provisioning');

@@ -164,8 +164,8 @@ describe('invitations.init — signup join', () => {
     await init();
     const target = { organizationId: 'org1', role: 'admin', invitedBy: 'u0' };
     mockService.resolveSignupMembership.mockResolvedValue(target);
-    await expect(SignupRegistry.resolveSignupMembership({ id: 'u1', email: 'a@b.co' })).resolves.toEqual(target);
-    expect(mockService.resolveSignupMembership).toHaveBeenCalledWith({ id: 'u1', email: 'a@b.co' });
+    await expect(SignupRegistry.resolveSignupMembership({ id: 'u1', email: 'a@b.co' }, { inviteId: 'i1' })).resolves.toEqual(target);
+    expect(mockService.resolveSignupMembership).toHaveBeenCalledWith({ id: 'u1', email: 'a@b.co' }, { inviteId: 'i1' });
     SignupRegistry._reset();
   });
 
