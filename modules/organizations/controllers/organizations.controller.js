@@ -60,12 +60,13 @@ const create = async (req, res) => {
 /**
  * @function get
  * @description Endpoint to fetch the current organization loaded by the param middleware.
+ *   A plain member gets it without `createdBy` and `meterExempt` (see toMemberView).
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  * @returns {void}
  */
 const get = (req, res) => {
-  const organization = req.organization ? req.organization.toJSON() : {};
+  const organization = req.organization ? OrganizationsService.toMemberView(req.organization, req.user, req.membership?.role) : {};
   responses.success(res, 'organization get')(organization);
 };
 
