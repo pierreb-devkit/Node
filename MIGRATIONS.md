@@ -4,6 +4,18 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## `loadMembership` moved to the organizations middleware (2026-11-25)
+
+- `loadMembership` now lives in `modules/organizations/middlewares/organizations.middleware.js` (default export, next to `resolveOrganization`); the organizations controller no longer exports it. Behaviour unchanged.
+- `GET /api/organizations/:organizationId/invitations` no longer returns expired pending invites (`expiresAt` in the past).
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the change.
+2. A project route or test that uses `organizations.controller.js`'s `loadMembership` (import or `jest.unstable_mockModule`) should take it from the middleware instead.
+
+---
+
 ## Signing up through an organization invite joins the organization (2026-11-25)
 
 - A signup through an org invite (`organizationId` set) now joins that organization as an ACTIVE member with the invited role: no personal workspace, no `organization.created` (so no signup grant), `currentOrganization` = the org. Same for local signup, `verifyEmail` and the OAuth callback. With strict verification + a mailer the join happens at `verifyEmail`.
