@@ -287,7 +287,7 @@ describe('Organizations integration tests:', () => {
     });
   });
 
-  describe('creator details and internal flags by role (list + get)', () => {
+  describe('creator details and internal flags by role (list, get, switch)', () => {
     const users = {};
     const agents = {};
     let org;
@@ -356,6 +356,24 @@ describe('Organizations integration tests:', () => {
       }
       expect(fromList.role).toBe('member');
       expect(JSON.stringify(body)).not.toContain('org-view-owner@test.com');
+    });
+
+    test('plain member switch reply: currentOrganization has neither createdBy nor meterExempt (#4353)', async () => {
+      const { body } = await agents.member.post(`/api/organizations/${orgId}/switch`).expect(200);
+      const current = body.data.user.currentOrganization;
+      expect(String(current._id)).toBe(orgId);
+      expect(current.name).toBe('Org View Roles');
+      expect(current).not.toHaveProperty('createdBy');
+      expect(current).not.toHaveProperty('meterExempt');
+      expect(JSON.stringify(body)).not.toContain('org-view-owner@test.com');
+    });
+
+    test('owner switch reply: currentOrganization keeps createdBy and meterExempt (#4353)', async () => {
+      const { body } = await agents.owner.post(`/api/organizations/${orgId}/switch`).expect(200);
+      const current = body.data.user.currentOrganization;
+      expect(String(current._id)).toBe(orgId);
+      expect(current).toHaveProperty('createdBy');
+      expect(current.meterExempt).toBe(true);
     });
 
     afterAll(async () => {
