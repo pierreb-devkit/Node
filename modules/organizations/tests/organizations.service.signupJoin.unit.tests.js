@@ -107,6 +107,7 @@ describe('handleSignupOrganization — signup join', () => {
     const result = await OrganizationsService.handleSignupOrganization(user);
     expect(mockOrgCreate).toHaveBeenCalledTimes(1);
     expect(mockOrgGet).not.toHaveBeenCalled();
+    expect(result.joined).toBeUndefined();
     expect(result.organization).toBeTruthy();
     expect(emitted('organization.created')).toHaveLength(1);
   });
@@ -143,6 +144,7 @@ describe('handleSignupOrganization — signup join', () => {
     expect(mockOrgCreate).not.toHaveBeenCalled();
     expect(emitted('organization.created')).toHaveLength(0);
     expect(result.organization).toBe(invitedOrg);
+    expect(result.joined).toBe(true);
     expect(result.membership).toBe(joined);
   });
 

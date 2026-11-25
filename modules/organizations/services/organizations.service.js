@@ -182,16 +182,16 @@ const sendWelcomeEmail = (user, orgName, orgId) => {
  * membership row for it (a retried call — A4 converges on an active one).
  * @param {Object} user - The user being provisioned.
  * @param {Object} ctx - Signup context for the resolvers (see handleSignupOrganization).
- * @returns {Promise<void>}
+ * @returns {Promise<boolean>} true when this call created the membership (the user joined)
  */
 const joinResolvedOrganization = async (user, ctx) => {
   const target = await resolveSignupMembership(user, ctx);
-  if (!target?.organizationId) return;
+  if (!target?.organizationId) return false;
   const organization = await OrganizationsRepository.get(String(target.organizationId));
-  if (!organization) return; // removed between invite and join → personal workspace
+  if (!organization) return false; // removed between invite and join → personal workspace
   const userId = user.id || user._id;
   const existing = await MembershipRepository.findOne({ userId, organizationId: organization._id });
-  if (existing) return;
+  if (existing) return false;
   // status EXPLICIT (never the schema default): the join is an active membership.
   const membership = await MembershipRepository.create({
     userId,
@@ -206,6 +206,7 @@ const joinResolvedOrganization = async (user, ctx) => {
     await MembershipRepository.deleteMany({ _id: membership._id }).catch((e) => logger.error('organizations.service.joinResolvedOrganization: rollback membership failed', { message: e?.message, stack: e?.stack }));
     throw err;
   }
+  return true;
 };
 
 /**
@@ -230,7 +231,7 @@ const joinResolvedOrganization = async (user, ctx) => {
  * @param {Object} user - The user object returned by UserService.create (with id, email, firstName, lastName).
  * @param {Object} [ctx={}] - Signup context handed as is to the membership resolvers, e.g.
  *   `{ inviteId }` of the invite this local signup claimed (only that claim can join).
- * @returns {Promise<{organization: Object|null, membership: Object|null, abilities: Array, emailVerificationRequired?: boolean, suggestedJoin?: {orgId: string, orgName: string}}>}
+ * @returns {Promise<{organization: Object|null, membership: Object|null, abilities: Array, joined?: boolean, emailVerificationRequired?: boolean, suggestedJoin?: {orgId: string, orgName: string}}>}
  *   An object containing the organization context for the signup response.
  *   `organization` and `membership` are null when `emailVerificationRequired` is true (mailer path).
  *   NEVER returns `organizationSetupRequired` or `pendingJoin`.
@@ -304,7 +305,8 @@ const handleSignupOrganization = async (user, ctx = {}) => {
   // Signup join (e.g. an organization invitation): membership resolvers registered by
   // optional modules may name an organization to join. The join lands as an ACTIVE
   // membership, so the A4 guard right below converges on it.
-  await joinResolvedOrganization(user, ctx);
+  // `joined` reaches the signup response so the client says "joined", not "created".
+  const joined = await joinResolvedOrganization(user, ctx);
 
   const userId = user.id || user._id;
   const existingMembership = await MembershipRepository.findOne({ userId, status: MEMBERSHIP_STATUSES.ACTIVE });
@@ -312,7 +314,8 @@ const handleSignupOrganization = async (user, ctx = {}) => {
     // organizationId is populated (name+slug+_id) via MembershipRepository.findOne defaultPopulate — trusted shape, same contract as autoSetCurrentOrganization
     const existingOrg = existingMembership.organizationId;
     emitProvisioned(existingOrg);
-    return buildResult(existingOrg, existingMembership);
+    const result = await buildResult(existingOrg, existingMembership);
+    return joined ? { ...result, joined: true } : result;
   }
 
   // Case 1: Organizations disabled — create a silent default org

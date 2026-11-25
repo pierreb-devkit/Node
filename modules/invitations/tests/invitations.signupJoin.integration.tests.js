@@ -174,6 +174,7 @@ describe('Invitations signup join:', () => {
       const res = await signup('closed', inv.token);
       expect(res.status).toBe(200);
       expect(String(res.body.organization._id || res.body.organization.id)).toBe(String(orgId));
+      expect(res.body.joined).toBe(true);
       expect(res.body.user.currentOrganization).toBeDefined();
       const user = await expectJoined('closed', 'admin');
       const after = await Invitation.findById(inv._id);
@@ -194,6 +195,7 @@ describe('Invitations signup join:', () => {
       const inv = await invite('notoken');
       const res = await signup('notoken');
       expect(res.status).toBe(200);
+      expect(res.body.joined).toBe(false);
       await expectPersonalWorkspace('notoken');
       expect((await Invitation.findById(inv._id)).status).toBe('pending');
     });
