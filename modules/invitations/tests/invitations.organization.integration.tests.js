@@ -119,6 +119,12 @@ describe('Organization invitations:', () => {
     } catch (_) { /* cleanup */ }
   });
 
+  // Each test creates the invitation it needs (own email) so it runs alone and in any order.
+  const createInvite = async (key, agent = agents.owner) => {
+    await agent.post(orgPath(orgA)).send({ email: email(key) }).expect(200);
+    return Invitation.findOne({ email: email(key) });
+  };
+
   describe('rights matrix', () => {
     test('owner invites an email into the org (default member, no token returned)', async () => {
       const res = await agents.owner.post(orgPath(orgA)).send({ email: email('inv1') });
@@ -180,7 +186,8 @@ describe('Organization invitations:', () => {
     });
 
     test('one live invite per email platform-wide → 409, even from another org', async () => {
-      const res = await agents.outsider.post(orgPath(orgB)).send({ email: email('inv1') });
+      await createInvite('dup1');
+      const res = await agents.outsider.post(orgPath(orgB)).send({ email: email('dup1') });
       expect(res.status).toBe(409);
     });
 
@@ -192,29 +199,31 @@ describe('Organization invitations:', () => {
 
   describe('list / resend / revoke by any owner or admin', () => {
     test('an org admin lists every pending invite of the org, tokens stripped, no other org', async () => {
+      await createInvite('ls1');
       await agents.outsider.post(orgPath(orgB)).send({ email: email('b1') }).expect(200);
       const res = await agents.admin.get(orgPath(orgA));
       expect(res.status).toBe(200);
       const emails = res.body.data.map((i) => i.email);
-      expect(emails).toEqual(expect.arrayContaining([email('inv1'), email('inv2'), email('inv3'), email('inv4')]));
+      expect(emails).toEqual(expect.arrayContaining([email('ls1')]));
       expect(emails).not.toContain(email('b1'));
       expect(res.body.data.every((i) => i.token === undefined)).toBe(true);
     });
 
     test('a second org admin resends the owner\'s invite (org-invite email, existing token)', async () => {
-      const invite = await Invitation.findOne({ email: email('inv1') });
+      const invite = await createInvite('rs1');
       mails.sendMail.mockClear();
       const res = await agents.admin.post(orgPath(orgA, `/${invite.id}/resend`));
       expect(res.status).toBe(200);
       expect(res.body.data.token).toBeUndefined();
       expect(mails.sendMail).toHaveBeenCalledWith(expect.objectContaining({
         template: 'org-invite',
-        to: email('inv1'),
+        to: email('rs1'),
         params: expect.objectContaining({ orgName: orgA.name, url: expect.stringContaining(`inviteToken=${invite.token}`) }),
       }));
     });
 
     test('another org\'s invitation (or a platform invite) through this org → 404', async () => {
+      await agents.outsider.post(orgPath(orgB)).send({ email: email('b1') });
       const other = await Invitation.findOne({ email: email('b1') });
       expect((await agents.owner.delete(orgPath(orgA, `/${other.id}`))).status).toBe(404);
       expect((await agents.owner.post(orgPath(orgA, `/${other.id}/resend`))).status).toBe(404);
@@ -223,14 +232,14 @@ describe('Organization invitations:', () => {
     });
 
     test('a second org admin revokes the owner\'s invite; revoking again → 409', async () => {
-      const invite = await Invitation.findOne({ email: email('inv1') });
+      const invite = await createInvite('rv1');
       expect((await agents.admin.delete(orgPath(orgA, `/${invite.id}`))).status).toBe(200);
       expect((await Invitation.findById(invite.id)).status).toBe('revoked');
       expect((await agents.admin.delete(orgPath(orgA, `/${invite.id}`))).status).toBe(409);
     });
 
     test('a plain member cannot revoke or resend → 403', async () => {
-      const invite = await Invitation.findOne({ email: email('inv2') });
+      const invite = await createInvite('mv1');
       expect((await agents.member.delete(orgPath(orgA, `/${invite.id}`))).status).toBe(403);
       expect((await agents.member.post(orgPath(orgA, `/${invite.id}/resend`))).status).toBe(403);
     });
@@ -238,21 +247,22 @@ describe('Organization invitations:', () => {
 
   describe('verify + referrals list', () => {
     test('public verify returns the org name (name only) for an org invite', async () => {
-      const invite = await Invitation.findOne({ email: email('inv2') });
+      const invite = await createInvite('vf1');
       const res = await request(app).get(`/api/invitations/verify/${invite.token}`);
       expect(res.status).toBe(200);
-      expect(res.body.data).toEqual({ valid: true, email: email('inv2'), organization: { name: orgA.name } });
+      expect(res.body.data).toEqual({ valid: true, email: email('vf1'), organization: { name: orgA.name } });
     });
 
     test('the user-facing Referrals list never shows org invites', async () => {
       config.invitations = { ...config.invitations, userFacing: true };
       try {
+        await createInvite('ref1-org');
         await agents.owner.post('/api/invitations').send({ email: email('ref1') }).expect(200);
         const res = await agents.owner.get('/api/invitations');
         expect(res.status).toBe(200);
         const emails = res.body.data.map((i) => i.email);
         expect(emails).toContain(email('ref1'));
-        expect(emails).not.toContain(email('inv4'));
+        expect(emails).not.toContain(email('ref1-org'));
       } finally {
         config.invitations = { ...savedInvitations };
       }

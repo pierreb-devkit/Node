@@ -40,7 +40,7 @@ org name, brand) links to `/signup?inviteToken=…`.
 - `invitation.accepted` carries `organizationId` + `role` (`null` for a platform invite).
 - Org removal revokes the org's pending invites (`onOrganizationRemoved`, `invitations.init.js`).
 
-Joining the organization at signup is a separate step (the signup join): until it ships, a
+Joining the organization at signup is a separate step (the signup join, tracked in #4344): until it ships, a
 person signing up through an org invite gets a normal account. An existing account is added
 with the organizations `addMember` flow instead (the invitee accepts).
 
