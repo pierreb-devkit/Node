@@ -114,4 +114,18 @@ describe('BillingUsage credit-balance alert integration tests:', () => {
     const balanceAfterSecond = await BillingExtraBalance.findOne({ organization: organizationId }).lean();
     expect(balanceAfterSecond.cachedBalance).toBe(49);
   });
+
+  test('an org with no signup grant (balance 0, e.g. a user\'s second org) gets no credit-balance alert', async () => {
+    const organizationId = new mongoose.Types.ObjectId();
+
+    await Subscription.create({ organization: organizationId, plan: 'free', status: 'active' });
+    await BillingExtraBalance.create({ organization: organizationId, ledger: [], cachedBalance: 0 });
+
+    const emitSpy = jest.spyOn(billingEvents, 'emit');
+
+    await BillingUsageService.incrementMeter(organizationId.toString(), 10, { document: 10 }, 'step-credit-alert-nogrant');
+
+    expect(emitSpy.mock.calls.filter(([name]) => name === 'billing.extras.balance_threshold_crossed')).toHaveLength(0);
+  });
 });
+

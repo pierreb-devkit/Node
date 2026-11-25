@@ -126,6 +126,31 @@ const setPlan = (orgId, plan) => {
   return Organization.findByIdAndUpdate(orgId, { plan }, { returnDocument: 'after', runValidators: true }).exec();
 };
 
+/**
+ * @function findCreatorId
+ * @description Read only the creator (`createdBy`) of one organization, unpopulated.
+ * @param {String} id - The organization ID.
+ * @returns {Promise<Object|null>} The creator user ObjectId, or null (invalid id, unknown org, or no creator).
+ */
+const findCreatorId = async (id) => {
+  if (!mongoose.Types.ObjectId.isValid(id)) return null;
+  const org = await Organization.findById(id).select('createdBy').lean().exec();
+  return org?.createdBy ?? null;
+};
+
+/**
+ * @function listIdsByCreator
+ * @description List the ids of the organizations created by one user, optionally excluding one.
+ * @param {Object|String} userId - The creator user ObjectId.
+ * @param {String} [excludeId] - An organization ID to leave out.
+ * @returns {Promise<Array>} The organization ObjectIds.
+ */
+const listIdsByCreator = (userId, excludeId) => {
+  const filter = { createdBy: userId };
+  if (excludeId && mongoose.Types.ObjectId.isValid(excludeId)) filter._id = { $ne: excludeId };
+  return Organization.distinct('_id', filter).exec();
+};
+
 export default {
   list,
   create,
@@ -138,4 +163,6 @@ export default {
   setPlan,
   count,
   weeklyCreated,
+  findCreatorId,
+  listIdsByCreator,
 };
