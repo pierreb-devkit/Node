@@ -123,12 +123,14 @@ describe('Invitations signup join:', () => {
     config.sign.cap = null;
     config.invitations = { ...savedInvitations, userFacing: false };
 
+    const mailerSpy = jest.spyOn(mails, 'isConfigured').mockReturnValue(false);
     ownerAgent = request.agent(app);
     userKeys.add('owner');
     const res = await ownerAgent
       .post('/api/auth/signup')
       .send({ firstName: 'owner', lastName: 'Tester', email: email('owner'), password, provider: 'local' })
       .expect(200);
+    mailerSpy.mockRestore();
     owner = res.body.user;
     org = res.body.organization;
     orgId = org.id || org._id;
@@ -255,6 +257,17 @@ describe('Invitations signup join:', () => {
       expect(res.status).toBe(200);
       const user = await expectJoined('modeoff', 'member');
       expect(user.emailVerified).toBe(false);
+    });
+
+    test('invite revoked while the signup runs (finalize lands nothing) → signup fails, no account, no membership', async () => {
+      config.organizations.emailVerification = { mode: 'off' };
+      const inv = await invite('revoking');
+      jest.spyOn(InvitationRepository, 'finalize').mockResolvedValue(null);
+      const res = await signup('revoking', inv.token);
+      expect(res.status).toBe(403);
+      expect(await UserService.getBrut({ email: email('revoking') })).toBeFalsy();
+      const members = await MembershipRepository.list({ organizationId: orgId });
+      expect(members.some((m) => m.userId?.email === email('revoking'))).toBe(false);
     });
 
     test('org removed between signup and verifyEmail → personal workspace at verification, no crash', async () => {

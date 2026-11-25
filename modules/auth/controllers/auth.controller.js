@@ -79,6 +79,9 @@ const signup = async (req, res) => {
     if (err?.code === 'SIGNUP_DISABLED') {
       return responses.error(res, 404, 'Signup error', 'Registration is currently deactivated')();
     }
+    if (err?.code === 'INVITE_REVOKED') {
+      return responses.error(res, 403, 'Signup error', 'This invitation is no longer valid')();
+    }
     responses.error(res, undefined, undefined, errors.getMessage(err))(err);
   }
 };

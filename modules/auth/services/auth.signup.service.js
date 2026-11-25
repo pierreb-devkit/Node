@@ -383,8 +383,16 @@ const signup = async (req) => {
   // is still ours to burn. finalize itself is best-effort (see catch below).
   if (inviteHonored) {
     try {
-      await eligibility?.finalize?.(user._id || user.id);
+      const accepted = await eligibility?.finalize?.(user._id || user.id);
+      // A null result = the claim was revoked while this signup ran. When the signup
+      // already joined the invited organization that membership is unauthorized: roll
+      // the account back (membership included) and fail, never return success.
+      if (!accepted && orgResult?.joined) {
+        await removeUser(user, 'invite finalize (revoked)');
+        throw new AppError('Signup error', { status: 403, code: 'INVITE_REVOKED', details: { message: 'This invitation is no longer valid' } });
+      }
     } catch (finalizeErr) {
+      if (finalizeErr?.code === 'INVITE_REVOKED') throw finalizeErr;
       // Best-effort: the account exists and the response is about to succeed —
       // a finalize DB hiccup must not convert a created account into an error.
       // The claim stays stamped and the 15-min lazy sweep releases it; the
