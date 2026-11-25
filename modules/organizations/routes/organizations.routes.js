@@ -6,6 +6,7 @@ import passport from 'passport';
 import model from '../../../lib/middlewares/model.js';
 import policy from '../../../lib/middlewares/policy.js';
 import organizations from '../controllers/organizations.controller.js';
+import organizationsMiddleware from '../middlewares/organizations.middleware.js';
 import organizationsSchema from '../models/organizations.schema.js';
 
 /**
@@ -28,7 +29,7 @@ export default (app) => {
 
   app
     .route('/api/organizations/:organizationId')
-    .all(passport.authenticate('jwt', { session: false }), organizations.loadMembership, policy.isAllowed)
+    .all(passport.authenticate('jwt', { session: false }), organizationsMiddleware.loadMembership, policy.isAllowed)
     .get(organizations.get)
     .put(model.isValid(organizationsSchema.OrganizationUpdate), organizations.update)
     .delete(organizations.remove);
@@ -36,13 +37,13 @@ export default (app) => {
   // Organization switch
   app
     .route('/api/organizations/:organizationId/switch')
-    .all(passport.authenticate('jwt', { session: false }), organizations.loadMembership, policy.isAllowed)
+    .all(passport.authenticate('jwt', { session: false }), organizationsMiddleware.loadMembership, policy.isAllowed)
     .post(organizations.switchOrganization);
 
   // Leave organization
   app
     .route('/api/organizations/:organizationId/leave')
-    .all(passport.authenticate('jwt', { session: false }), organizations.loadMembership, policy.isAllowed)
+    .all(passport.authenticate('jwt', { session: false }), organizationsMiddleware.loadMembership, policy.isAllowed)
     .post(organizations.leave);
 
   // Bind param middleware

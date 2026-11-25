@@ -7,7 +7,7 @@ import limiters from '../../../lib/middlewares/rateLimiter.js';
 import model from '../../../lib/middlewares/model.js';
 import policy from '../../../lib/middlewares/policy.js';
 import invitations from '../controllers/invitations.controller.js';
-import organizations from '../../organizations/controllers/organizations.controller.js';
+import organizationsMiddleware from '../../organizations/middlewares/organizations.middleware.js';
 import InvitationSchema from '../models/invitations.schema.js';
 
 /**
@@ -57,7 +57,7 @@ export default (app) => {
   // `:organizationId` is loaded by the organizations module's global param loader (404
   // when missing), then its membership loader sets req.membership. The rights gate is
   // requireOrganizationManager, not CASL (see its docblock).
-  const orgGate = [passport.authenticate('jwt', { session: false }), organizations.loadMembership, invitations.requireOrganizationManager];
+  const orgGate = [passport.authenticate('jwt', { session: false }), organizationsMiddleware.loadMembership, invitations.requireOrganizationManager];
   app
     .route('/api/organizations/:organizationId/invitations')
     .all(...orgGate)

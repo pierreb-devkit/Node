@@ -653,10 +653,10 @@ describe('InvitationService — organization invites', () => {
     });
   });
 
-  test('listForOrganization reads the org pending invites', async () => {
+  test('listForOrganization reads the org pending invites that have not expired', async () => {
     InvitationRepository.list.mockResolvedValue([]);
     await InvitationService.listForOrganization('org1');
-    expect(InvitationRepository.list).toHaveBeenCalledWith({ organizationId: 'org1', status: 'pending' });
+    expect(InvitationRepository.list).toHaveBeenCalledWith({ organizationId: 'org1', status: 'pending', expiresAt: { $gt: expect.any(Date) } });
   });
 
   test('revokeForOrganization delegates to the repository bulk revoke', async () => {
