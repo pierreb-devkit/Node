@@ -76,7 +76,7 @@ export default async (app) => {
    * would surface as an unhandledRejection. It never does: everything is wrapped, a
    * failed grant is logged and left to the reconcile cron (the listener is latency;
    * crons/billing.referralReconcile.js is truth).
-   * @param {{invitationId: string, email: string, invitedBy: (string|null), acceptedUserId: string}} payload - Accepted invitation event payload.
+   * @param {{invitationId: string, email: string, invitedBy: (string|null), acceptedUserId: string, organizationId: (string|null), role: (string|null)}} payload - Accepted invitation event payload (an org invite, organizationId set, earns nothing).
    * @returns {Promise<void>} settles when the grant attempt completes (never rejects)
    */
   invitationEvents.on('invitation.accepted', async (payload) => {
@@ -138,6 +138,7 @@ export default async (app) => {
         invitationId: String(invitation._id),
         invitedBy: invitation.invitedBy ? String(invitation.invitedBy) : null,
         acceptedUserId: String(invitation.acceptedUserId),
+        organizationId: invitation.organizationId ? String(invitation.organizationId) : null, // org invite → skipped
       });
     } catch (err) {
       // ⚠️ MANDATORY self-guard (see organizations/lib/organizations.events.js): never let a rejection escape.

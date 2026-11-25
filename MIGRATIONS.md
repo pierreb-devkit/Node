@@ -4,6 +4,23 @@ Breaking changes and upgrade notes for downstream projects.
 
 ---
 
+## Invitations can target an organization (2026-11-25)
+
+- `Invitation` gains `organizationId` (ObjectId, default `null`) and `role` (`owner`/`admin`/`member`, default `null`) plus the index `{ organizationId: 1, status: 1 }`. `null`/`null` = a platform invite, unchanged.
+- New routes for an org owner/admin (or platform admin): `GET|POST /api/organizations/:organizationId/invitations`, `DELETE …/invitations/:invitationId`, `POST …/invitations/:invitationId/resend`. New shared email template `config/templates/org-invite.html`.
+- `GET /api/invitations/verify/:token` now also returns `organization` (`{ name }` for an org invite, else `null`).
+- `invitation.accepted` now also carries `organizationId` and `role`. An org invite never sets `referredBy` and earns no referral reward (`expectedGrantKeys` drops it; `grantForInvitation` returns `skipped: 'organization_invite'`). A non-admin `GET /api/invitations` (the Referrals list) returns only `organizationId: null` rows.
+- Removing an organization revokes its pending invitations.
+
+### Action for downstream
+
+1. Run `/update-stack` to pull the change.
+2. Run the migrations (`modules/invitations/migrations/20261125120000-invitation-org-target.js`): it backfills `organizationId: null` + `role: null` on existing invitations and builds the index. Idempotent.
+3. A project listener on `invitation.accepted` that rewards referrals must skip a payload with `organizationId` set (the stack's billing listener already does).
+4. A project that edited `config/templates/` should check it has no own `org-invite.html` (the name is now a shared Devkit template).
+
+---
+
 ## ⚠️ Image links read only guest-readable upload kinds (2026-11-24)
 
 - `GET /api/uploads/images/:imageName` no longer serves every upload to anyone holding the link. A guest reads an upload only when its kind sets `guestRead: true` in `config.uploads.<kind>`; absent means false. The stack sets it on `avatar` only (module base config, every env).

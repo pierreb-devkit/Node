@@ -4,6 +4,7 @@
 import mongoose from 'mongoose';
 
 import { INVITATION_STATUSES } from '../lib/invitations.constants.js';
+import { MEMBERSHIP_ROLES } from '../../organizations/lib/organizations.constants.js';
 
 const Schema = mongoose.Schema;
 
@@ -41,6 +42,11 @@ const InvitationMongoose = new Schema(
     // instead of hard-deleting; a revoked invite never re-opens the gate.
     revokedAt: { type: Date, default: null },
     status: { type: String, enum: Object.values(INVITATION_STATUSES), default: INVITATION_STATUSES.PENDING },
+    // Organization target — an org owner/admin invited this email INTO their organization
+    // with `role`. Both null for a platform (beta-gate / referral) invite, which behaves
+    // exactly as before. An org invite never stamps referredBy and earns no referral reward.
+    organizationId: { type: Schema.ObjectId, ref: 'Organization', default: null },
+    role: { type: String, enum: [...Object.values(MEMBERSHIP_ROLES), null], default: null },
   },
   { timestamps: true },
 );
@@ -49,6 +55,8 @@ InvitationMongoose.index({ token: 1 }, { unique: true });
 InvitationMongoose.index({ email: 1 });
 // #3842 — referral queries hit invitedBy (reconcile cron + future referral lists).
 InvitationMongoose.index({ invitedBy: 1 });
+// An organization's pending invites (org members dialog) + the org-removal revoke.
+InvitationMongoose.index({ organizationId: 1, status: 1 });
 
 /**
  * @desc Return document id as hex string

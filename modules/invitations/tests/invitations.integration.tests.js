@@ -179,7 +179,7 @@ describe('Signup invitations:', () => {
 
       const ok = await request(app).get(`/api/invitations/verify/${token}`);
       expect(ok.status).toBe(200);
-      expect(ok.body.data).toEqual({ valid: true, email: 'verify@example.com' });
+      expect(ok.body.data).toEqual({ valid: true, email: 'verify@example.com', organization: null });
 
       const bad = await request(app).get('/api/invitations/verify/deadbeef');
       expect(bad.status).toBe(200);

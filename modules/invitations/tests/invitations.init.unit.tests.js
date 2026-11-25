@@ -23,6 +23,7 @@ const mockService = {
   accept: jest.fn(),
   release: jest.fn(),
   sweepStaleClaims: jest.fn(),
+  revokeForOrganization: jest.fn(),
 };
 const mockLogger = { error: jest.fn(), warn: jest.fn(), info: jest.fn() };
 
@@ -32,6 +33,7 @@ jest.unstable_mockModule('../../../lib/services/logger.js', () => ({ default: mo
 const Eligibility = (await import('../../auth/services/auth.eligibility.js')).default;
 const invitationEvents = (await import('../lib/invitations.events.js')).default;
 const init = (await import('../invitations.init.js')).default;
+const RemovalRegistry = (await import('../../organizations/lib/organizations.removal.registry.js')).default;
 
 beforeEach(async () => {
   jest.clearAllMocks();
@@ -139,5 +141,17 @@ describe('invitations.init', () => {
     expect(result).toBeNull();
     expect(mockService.assertInvited).not.toHaveBeenCalled();
     expect(mockService.assertInvitedByEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe('invitations.init — organization removal', () => {
+  test('registers an org-removal handler that revokes the org pending invitations', async () => {
+    RemovalRegistry._reset();
+    await init();
+    mockService.revokeForOrganization.mockResolvedValue({ modifiedCount: 1 });
+    await RemovalRegistry.runOrganizationRemovedHandlers({ organizationId: 'org1', organization: { _id: 'org1' } });
+    expect(mockService.revokeForOrganization).toHaveBeenCalledTimes(1);
+    expect(mockService.revokeForOrganization).toHaveBeenCalledWith('org1');
+    RemovalRegistry._reset();
   });
 });

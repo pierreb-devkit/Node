@@ -16,13 +16,15 @@ import mongoose from 'mongoose';
  * @property {import('mongoose').Types.ObjectId|null} acceptedUserId
  * @property {Date|null} revokedAt
  * @property {'pending'|'accepted'|'revoked'} status
+ * @property {import('mongoose').Types.ObjectId|null} organizationId - organization target (null = platform invite)
+ * @property {'owner'|'admin'|'member'|null} role - role granted in organizationId (null = platform invite)
  */
 
 const Invitation = /** @type {import('mongoose').Model<InvitationDoc>} */ (mongoose.model('Invitation'));
 
 /**
  * @desc Create an invitation document
- * @param {Object} doc - { email, token, expiresAt, invitedBy }
+ * @param {Object} doc - { email, token, expiresAt, invitedBy, organizationId?, role? }
  * @returns {Promise<Object>} created invitation
  */
 const create = (doc) => new Invitation(doc).save();
@@ -138,10 +140,11 @@ const list = (filter = {}) => Invitation.find(filter).select('-token').populate(
  * back-fills misses. Scans all accepted (not just `invitedBy:{$ne:null}`): referee
  * grants exist even when invitedBy is null, so a referrer-only scan would miss
  * referee-only back-fills.
- * @returns {Promise<Array<{_id: Object, invitedBy: (Object|null), acceptedUserId: (Object|null)}>>}
+ * `organizationId` rides along so the billing rule source can skip org invites.
+ * @returns {Promise<Array<{_id: Object, invitedBy: (Object|null), acceptedUserId: (Object|null), organizationId: (Object|null)}>>}
  */
 const findAccepted = () =>
-  Invitation.find({ status: 'accepted' }, { invitedBy: 1, acceptedUserId: 1 }).lean().exec();
+  Invitation.find({ status: 'accepted' }, { invitedBy: 1, acceptedUserId: 1, organizationId: 1 }).lean().exec();
 
 /**
  * @desc Find the accepted invitation consumed by a given user (#3844) — the instant
@@ -150,11 +153,11 @@ const findAccepted = () =>
  * minimal projection (same shape as findAccepted). One row max in practice: an
  * invite is single-use and burns on accept.
  * @param {String} userId - the accepted (invited) user's id
- * @returns {Promise<{_id: Object, invitedBy: (Object|null), acceptedUserId: Object}|null>}
+ * @returns {Promise<{_id: Object, invitedBy: (Object|null), acceptedUserId: Object, organizationId: (Object|null)}|null>}
  */
 const findByAcceptedUserId = (userId) =>
   (mongoose.Types.ObjectId.isValid(userId)
-    ? Invitation.findOne({ status: 'accepted', acceptedUserId: userId }, { invitedBy: 1, acceptedUserId: 1 }).lean().exec()
+    ? Invitation.findOne({ status: 'accepted', acceptedUserId: userId }, { invitedBy: 1, acceptedUserId: 1, organizationId: 1 }).lean().exec()
     : null);
 
 /**
@@ -191,4 +194,19 @@ const revoke = (id) =>
     { returnDocument: 'after' },
   ).exec();
 
-export default { create, findByToken, findByEmail, countByInvitedBy, claim, finalize, release, releaseStaleClaims, list, findAccepted, findByAcceptedUserId, get, revoke };
+/**
+ * @desc Revoke every PENDING invitation of an organization (org removal). Same soft
+ * revoke as revoke(): accepted rows are untouched. An invalid id is a no-op — a
+ * null/undefined organizationId would otherwise match every platform invite.
+ * @param {String} organizationId
+ * @returns {Promise<Object>|null} bulk update result, or null for an invalid id
+ */
+const revokeByOrganization = (organizationId) =>
+  (mongoose.Types.ObjectId.isValid(organizationId)
+    ? Invitation.updateMany(
+      { organizationId, status: 'pending' },
+      { $set: { status: 'revoked', revokedAt: new Date() } },
+    ).exec()
+    : null);
+
+export default { create, findByToken, findByEmail, countByInvitedBy, claim, finalize, release, releaseStaleClaims, list, findAccepted, findByAcceptedUserId, get, revoke, revokeByOrganization };

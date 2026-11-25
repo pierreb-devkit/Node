@@ -2,6 +2,7 @@
  * Module dependencies
  */
 import { registerSignupEligibility } from '../auth/services/auth.eligibility.js';
+import { onOrganizationRemoved } from '../organizations/lib/organizations.removal.registry.js';
 import InvitationsService from './services/invitations.service.js';
 import invitationEvents from './lib/invitations.events.js';
 import logger from '../../lib/services/logger.js';
@@ -145,6 +146,13 @@ export default async () => {
       finalize: finalizeInvite,
       release: () => InvitationsService.release(invite.id),
     };
+  });
+
+  // Org removal: revoke the removed organization's pending invitations, so a link already
+  // emailed can no longer open signup into an org that is gone (invitations → organizations;
+  // organizations never imports us). Throws on failure — the registry isolates + logs it.
+  onOrganizationRemoved(async ({ organizationId }) => {
+    await InvitationsService.revokeForOrganization(organizationId);
   });
 
   // Mandatory: an unhandled 'error' emit would crash the process (mirrors billing.init.js).

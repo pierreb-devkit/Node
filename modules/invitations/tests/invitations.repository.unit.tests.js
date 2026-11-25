@@ -149,7 +149,7 @@ describe('InvitationRepository', () => {
     exec.mockResolvedValue([{ _id: 'i1', invitedBy: 'u1', acceptedUserId: 'u2' }]);
     const result = await InvitationRepository.findAccepted();
     // Scans ALL accepted (not invitedBy:{$ne:null}) — referee grants exist without an inviter.
-    expect(InvitationModel.find).toHaveBeenCalledWith({ status: 'accepted' }, { invitedBy: 1, acceptedUserId: 1 });
+    expect(InvitationModel.find).toHaveBeenCalledWith({ status: 'accepted' }, { invitedBy: 1, acceptedUserId: 1, organizationId: 1 });
     expect(chain.lean).toHaveBeenCalled();
     expect(result).toEqual([{ _id: 'i1', invitedBy: 'u1', acceptedUserId: 'u2' }]);
   });
@@ -159,7 +159,7 @@ describe('InvitationRepository', () => {
     const result = await InvitationRepository.findByAcceptedUserId('u2');
     expect(InvitationModel.findOne).toHaveBeenCalledWith(
       { status: 'accepted', acceptedUserId: 'u2' },
-      { invitedBy: 1, acceptedUserId: 1 },
+      { invitedBy: 1, acceptedUserId: 1, organizationId: 1 },
     );
     expect(chain.lean).toHaveBeenCalled();
     expect(result).toEqual({ _id: 'i1', invitedBy: 'u1', acceptedUserId: 'u2' });

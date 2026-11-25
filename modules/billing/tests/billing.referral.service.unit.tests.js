@@ -109,6 +109,14 @@ describe('billing.referral.service unit tests:', () => {
       expect(BillingReferralService.expectedGrantKeys({ invitationId, invitedBy: inviterId, acceptedUserId: refereeId }, cfg)).toEqual(expected);
     });
 
+    test('organization invite → no side at all (doc or accepted payload)', () => {
+      const cfg = mockConfig.billing.referral;
+      expect(BillingReferralService.expectedGrantKeys({ _id: invitationId, invitedBy: inviterId, acceptedUserId: refereeId, organizationId: 'org1' }, cfg)).toEqual([]);
+      expect(BillingReferralService.expectedGrantKeys({ invitationId, invitedBy: inviterId, acceptedUserId: refereeId, organizationId: 'org1' }, cfg)).toEqual([]);
+      // A platform invite stored with organizationId:null keeps both sides.
+      expect(BillingReferralService.expectedGrantKeys({ _id: invitationId, invitedBy: inviterId, acceptedUserId: refereeId, organizationId: null }, cfg)).toHaveLength(2);
+    });
+
     test('side rules: zero units / null invitedBy / self-referral / disabled / no id drop entries', () => {
       const cfg = mockConfig.billing.referral;
       const invite = { _id: invitationId, invitedBy: inviterId, acceptedUserId: refereeId };
@@ -262,6 +270,13 @@ describe('billing.referral.service unit tests:', () => {
     expect(result.referrer).toMatchObject({ applied: false, reason: 'duplicate_grant' });
     // Two guarded calls happened, both no-ops — the atomic refId guard did the dedup.
     expect(mockRepository.creditGrant).toHaveBeenCalledTimes(2);
+  });
+
+  test('organization invite → skipped, nothing credited (a teammate joining is not a referral)', async () => {
+    const result = await BillingReferralService.grantForInvitation({ invitationId, invitedBy: inviterId, acceptedUserId: refereeId, organizationId: 'org1' });
+
+    expect(result).toEqual({ skipped: 'organization_invite' });
+    expect(mockRepository.creditGrant).not.toHaveBeenCalled();
   });
 
   test('missing invitationId → skipped (no idempotency root, never grant unkeyed)', async () => {
