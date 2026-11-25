@@ -277,6 +277,16 @@ const switchOrganization = async (req, res) => {
     const ability = await policy.defineAbilityFor(updatedUser, membership);
     const abilities = serializeAbilities(ability);
 
+    // updatedUser comes straight off an unselected findByIdAndUpdate().populate()
+    // (users.repository.js) and carries password/providerData/reset+verification
+    // tokens — sanitize before serializing (#3963). The populated organization is
+    // trimmed to the requester's view: a plain member does not get its creator nor
+    // internal flags (#4353).
+    const user = UserService.removeSensitive(updatedUser);
+    if (user?.currentOrganization && typeof user.currentOrganization === 'object') {
+      user.currentOrganization = OrganizationsService.toMemberView(user.currentOrganization, req.user, membership?.role);
+    }
+
     return res
       .status(200)
       .cookie('TOKEN', token, tokenCookieOptions)
@@ -284,10 +294,7 @@ const switchOrganization = async (req, res) => {
         type: 'success',
         message: 'organization switched',
         data: {
-          // updatedUser comes straight off an unselected findByIdAndUpdate().populate()
-          // (users.repository.js) and carries password/providerData/reset+verification
-          // tokens — sanitize before serializing (#3963).
-          user: UserService.removeSensitive(updatedUser),
+          user,
           abilities,
           tokenExpiresIn: Date.now() + config.jwt.expiresIn * 1000,
         },
