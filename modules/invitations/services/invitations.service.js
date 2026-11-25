@@ -18,6 +18,14 @@ import isGlobalAdmin from '../../../lib/helpers/isGlobalAdmin.js';
 import AnalyticsService from '../../../lib/services/analytics.js';
 
 /**
+ * @desc The organization an invitation targets (null for a platform invite or a removed org).
+ * @param {Object} invitation - invitation document
+ * @returns {Promise<Object|null>} the organization, or null
+ */
+const targetOrganization = (invitation) =>
+  (invitation.organizationId ? OrganizationsCrudService.get(invitation.organizationId) : Promise.resolve(null));
+
+/**
  * @desc Build the invite email payload for an invitation. Shared by create()
  * (fire-and-forget) and resend() (awaited) so the template, subject and link format
  * can never drift between the two send sites. A platform invite gets `signup-invite`;
@@ -455,7 +463,7 @@ const revokeForOrganization = (organizationId) => InvitationRepository.revokeByO
 const verify = async (token) => {
   const invite = await findValid(token);
   if (!invite) return { valid: false, email: null, organization: null };
-  const organization = invite.organizationId ? await OrganizationsCrudService.get(invite.organizationId) : null;
+  const organization = await targetOrganization(invite);
   return { valid: true, email: invite.email, organization: organization ? { name: organization.name } : null };
 };
 
@@ -524,7 +532,7 @@ const resend = async (id, inviter) => {
       details: { message: 'Email sending is not configured on this server.' },
     });
   }
-  const organization = invitation.organizationId ? await OrganizationsCrudService.get(invitation.organizationId) : null;
+  const organization = await targetOrganization(invitation);
   await mails.sendMail(inviteMailPayload(invitation, { organization, inviter }));
   return invitation;
 };
