@@ -4,6 +4,7 @@
 import _ from 'lodash';
 import AppError from '../../../lib/helpers/AppError.js';
 import { assertEmailVerified } from '../../../lib/helpers/emailVerification.js';
+import isGlobalAdmin from '../../../lib/helpers/isGlobalAdmin.js';
 import config from '../../../config/index.js';
 import logger from '../../../lib/services/logger.js';
 import { weeklyWindowStart, fillWeeks } from '../../../lib/helpers/weeklyStats.js';
@@ -41,6 +42,25 @@ const list = async (search, page, perPage) => {
 };
 
 /**
+ * @function toMemberView
+ * @description Serialize an organization for one requester. A plain member (role neither
+ *   owner nor admin) does not get the creator's details (`createdBy`) nor internal flags
+ *   (`meterExempt`); owners, admins and platform admins get the full organization.
+ * @param {Object} org - Organization document or plain object.
+ * @param {Object} user - The authenticated user (req.user).
+ * @param {String} [role] - The requester's membership role in this organization.
+ * @returns {Object} The organization as a plain object.
+ */
+const toMemberView = (org, user, role) => {
+  const obj = org.toJSON ? org.toJSON() : { ...org };
+  if (!isGlobalAdmin(user) && role !== MEMBERSHIP_ROLES.OWNER && role !== MEMBERSHIP_ROLES.ADMIN) {
+    delete obj.createdBy;
+    delete obj.meterExempt;
+  }
+  return obj;
+};
+
+/**
  * @function listByUser
  * @description Service to retrieve all organizations a user belongs to via memberships.
  * @param {Object} user - The authenticated user.
@@ -51,8 +71,8 @@ const listByUser = async (user) => {
   const organizationIds = memberships.map((m) => m.organizationId._id || m.organizationId);
   const orgs = await OrganizationsRepository.list({ _id: { $in: organizationIds } });
   return orgs.map((org) => {
-    const obj = org.toJSON ? org.toJSON() : { ...org };
-    const membership = memberships.find((m) => String(m.organizationId._id || m.organizationId) === String(obj._id || obj.id));
+    const membership = memberships.find((m) => String(m.organizationId._id || m.organizationId) === String(org._id || org.id));
+    const obj = toMemberView(org, user, membership?.role);
     if (membership) obj.role = membership.role;
     return obj;
   });
@@ -390,6 +410,7 @@ export default {
   switchOrganization,
   autoSetCurrentOrganization,
   searchByDomain,
+  toMemberView,
   exists,
   setPlan,
 };

@@ -287,6 +287,84 @@ describe('Organizations integration tests:', () => {
     });
   });
 
+  describe('creator details and internal flags by role (list + get)', () => {
+    const users = {};
+    const agents = {};
+    let org;
+    let orgId;
+
+    /**
+     * Sign up a user on its own agent.
+     * @param {string} key - Role key (owner, admin, member, platform).
+     * @returns {Promise<void>}
+     */
+    const signupAs = async (key) => {
+      agents[key] = request.agent((await bootstrap()).app);
+      const res = await agents[key]
+        .post('/api/auth/signup')
+        .send({ firstName: 'Role', lastName: key, email: `org-view-${key}@test.com`, password: 'W@os.jsI$Aw3$0m3', provider: 'local' })
+        .expect(200);
+      users[key] = res.body.user;
+    };
+
+    beforeAll(async () => {
+      config.organizations = { enabled: true, domainMatching: false };
+      for (const key of ['owner', 'admin', 'member', 'platform']) await signupAs(key);
+
+      org = await OrganizationsRepository.create({
+        name: 'Org View Roles',
+        slug: `org-view-roles-${Date.now()}`,
+        createdBy: users.owner.id || users.owner._id,
+        meterExempt: true,
+      });
+      orgId = String(org._id);
+      await MembershipRepository.create({ userId: users.owner.id || users.owner._id, organizationId: org._id, role: 'owner' });
+      await MembershipRepository.create({ userId: users.admin.id || users.admin._id, organizationId: org._id, role: 'admin' });
+      await MembershipRepository.create({ userId: users.member.id || users.member._id, organizationId: org._id, role: 'member' });
+      // A platform admin who is only a plain member of this org keeps the full view.
+      await MembershipRepository.create({ userId: users.platform.id || users.platform._id, organizationId: org._id, role: 'member' });
+      const brut = await UserService.getBrut({ id: users.platform.id || users.platform._id });
+      await UserService.update(brut, { roles: ['user', 'admin'] }, 'admin');
+    });
+
+    /**
+     * Find the role-test org in a GET /api/organizations response.
+     * @param {string} key - Role key.
+     * @returns {Promise<Object>} The organization as listed.
+     */
+    const listed = async (key) => {
+      const res = await agents[key].get('/api/organizations').expect(200);
+      return res.body.data.find((o) => String(o._id || o.id) === orgId);
+    };
+
+    test.each(['owner', 'admin', 'platform'])('%s sees createdBy and meterExempt on list and get', async (key) => {
+      const fromList = await listed(key);
+      const { body } = await agents[key].get(`/api/organizations/${orgId}`).expect(200);
+      for (const o of [fromList, body.data]) {
+        expect(o.createdBy.email).toBe('org-view-owner@test.com');
+        expect(o.meterExempt).toBe(true);
+      }
+    });
+
+    test('plain member gets neither createdBy nor meterExempt on list and get', async () => {
+      const fromList = await listed('member');
+      const { body } = await agents.member.get(`/api/organizations/${orgId}`).expect(200);
+      for (const o of [fromList, body.data]) {
+        expect(o.name).toBe('Org View Roles');
+        expect(o).not.toHaveProperty('createdBy');
+        expect(o).not.toHaveProperty('meterExempt');
+      }
+      expect(fromList.role).toBe('member');
+      expect(JSON.stringify(body)).not.toContain('org-view-owner@test.com');
+    });
+
+    afterAll(async () => {
+      await MembershipRepository.deleteMany({ organizationId: org?._id });
+      await OrganizationsRepository.deleteMany({ _id: org?._id });
+      for (const key of Object.keys(users)) await cleanupUser(users[key]);
+    });
+  });
+
   // Mongoose disconnect
   afterAll(async () => {
     config.organizations = { ...originalOrganizations };
