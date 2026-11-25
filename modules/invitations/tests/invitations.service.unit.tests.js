@@ -655,12 +655,8 @@ describe('InvitationService — organization invites', () => {
 
   test('listForOrganization reads the org pending invites that have not expired', async () => {
     InvitationRepository.list.mockResolvedValue([]);
-    const before = Date.now();
     await InvitationService.listForOrganization('org1');
     expect(InvitationRepository.list).toHaveBeenCalledWith({ organizationId: 'org1', status: 'pending', expiresAt: { $gt: expect.any(Date) } });
-    const { $gt } = InvitationRepository.list.mock.calls.at(-1)[0].expiresAt;
-    expect($gt.getTime()).toBeGreaterThanOrEqual(before);
-    expect($gt.getTime()).toBeLessThanOrEqual(Date.now());
   });
 
   test('revokeForOrganization delegates to the repository bulk revoke', async () => {

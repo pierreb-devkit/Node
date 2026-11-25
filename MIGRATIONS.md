@@ -12,7 +12,7 @@ Breaking changes and upgrade notes for downstream projects.
 ### Action for downstream
 
 1. Run `/update-stack` to pull the change.
-2. A project route or test that uses `organizations.controller.js`'s `loadMembership` (import or `jest.unstable_mockModule`) should take it from the middleware instead.
+2. A project route or test that uses `organizations.controller.js`'s `loadMembership` (import or `jest.unstable_mockModule`) should take it from the middleware instead. A test that mocks `organizations.middleware.js` and mounts the organizations or invitations routes must now also provide `loadMembership` in that mock.
 
 ---
 
