@@ -1,0 +1,6 @@
+<p>Hello,</p>
+<p>{{#if inviterName}}{{inviterName}} invited you{{else}}You've been invited{{/if}} to join <b>{{orgName}}</b> on {{appName}}.</p>
+<p>Click the button below to create your account and join:</p>
+{{> button url=url label="Create your account"}}
+<p style="font-size: 13px">Button not working? <a href="{{url}}">{{url}}</a></p>
+<p><i>If you weren't expecting this invitation you can ignore this email.</i></p>

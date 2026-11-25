@@ -6,6 +6,8 @@ import crypto from 'crypto';
 import InvitationRepository from '../repositories/invitations.repository.js';
 import { DEFAULT_INVITE_EXPIRES_IN_DAYS, STALE_CLAIM_MINUTES } from '../lib/invitations.constants.js';
 import UserService from '../../users/services/users.service.js';
+import OrganizationsCrudService from '../../organizations/services/organizations.crud.service.js';
+import { MEMBERSHIP_ROLES } from '../../organizations/lib/organizations.constants.js';
 import invitationEvents from '../lib/invitations.events.js';
 import config from '../../../config/index.js';
 import mails from '../../../lib/helpers/mailer/index.js';
@@ -16,20 +18,36 @@ import isGlobalAdmin from '../../../lib/helpers/isGlobalAdmin.js';
 import AnalyticsService from '../../../lib/services/analytics.js';
 
 /**
- * @desc Build the signup-invite email payload for an invitation. Shared by
- * create() (fire-and-forget) and resend() (awaited) so the template, subject
- * and link format can never drift between the two send sites.
+ * @desc Build the invite email payload for an invitation. Shared by create()
+ * (fire-and-forget) and resend() (awaited) so the template, subject and link format
+ * can never drift between the two send sites. A platform invite gets `signup-invite`;
+ * an organization invite (organization given) gets `org-invite`, naming the org and
+ * the inviter. Both link to `/signup?inviteToken=…`.
  * @param {Object} invitation - persisted invitation (email + token)
+ * @param {Object} [target] - organization invite context
+ * @param {Object} [target.organization] - the target organization (name read)
+ * @param {Object} [target.inviter] - the user sending the email (name read)
  * @returns {Object} sendMail arguments
  */
-const inviteMailPayload = (invitation) => ({
-  template: 'signup-invite',
-  to: invitation.email,
-  subject: `You're invited to ${mails.getBrand().name}`,
-  params: {
-    url: `${getBaseUrl()}/signup?inviteToken=${invitation.token}`,
-  },
-});
+const inviteMailPayload = (invitation, { organization, inviter } = {}) => {
+  const url = `${getBaseUrl()}/signup?inviteToken=${invitation.token}`;
+  const appName = mails.getBrand().name;
+  if (!organization) {
+    return {
+      template: 'signup-invite',
+      to: invitation.email,
+      subject: `You're invited to ${appName}`,
+      params: { url },
+    };
+  }
+  const inviterName = [inviter?.firstName, inviter?.lastName].filter(Boolean).join(' ');
+  return {
+    template: 'org-invite',
+    to: invitation.email,
+    subject: `You're invited to join ${organization.name} on ${appName}`,
+    params: { url, orgName: organization.name, inviterName },
+  };
+};
 
 /**
  * @desc Create an invitation for an email, generate a single-use token, persist,
@@ -37,12 +55,20 @@ const inviteMailPayload = (invitation) => ({
  *
  * E9: rejects (422) when a user with this email already exists — an existing user
  * should be added to the org directly, not re-invited through the signup gate.
+ *
+ * With `target.organization`, the invite is an ORGANIZATION invite: it stores
+ * `organizationId` + `role` (default member) and sends the `org-invite` email. Every
+ * guard above/below applies unchanged (one live invite per email platform-wide, E9,
+ * self-invite, maxLifetime). The caller (org route) owns the rights + role ceiling.
  * @param {String} email - invitee email (any case)
- * @param {Object} invitedBy - the admin user creating the invite
+ * @param {Object} invitedBy - the user creating the invite
+ * @param {Object} [target] - organization target (omit for a platform invite)
+ * @param {Object} [target.organization] - the organization the invitee will join
+ * @param {String} [target.role] - role granted on join (default member)
  * @returns {Promise<Object>} created invitation
  * @throws {AppError} 409 when a pending invitation already exists for the email; 422 when the invitee email is the inviter's own, a user already exists for this email, or the inviter has reached `config.invitations.maxLifetime` (if set)
  */
-const create = async (email, invitedBy) => {
+const create = async (email, invitedBy, { organization, role } = {}) => {
   const normalizedEmail = String(email).toLowerCase().trim();
   // #3833: explicit self-invite guard. The inviter's own email is by definition a
   // registered email, so E9 below would also reject it — but with a misleading
@@ -116,10 +142,12 @@ const create = async (email, invitedBy) => {
     token,
     expiresAt,
     invitedBy: inviterId,
+    organizationId: organization ? organization._id || organization.id : null,
+    role: organization ? role || MEMBERSHIP_ROLES.MEMBER : null,
   });
   if (mails.isConfigured()) {
     mails
-      .sendMail(inviteMailPayload(invitation))
+      .sendMail(inviteMailPayload(invitation, { organization, inviter: invitedBy }))
       .catch((err) => logger.warn('invitations: email failed', { message: err?.message }));
   }
   return invitation;
@@ -288,6 +316,10 @@ const finalize = async (id, userId) => {
  * in that case, but to SKIP the referredBy write when there is no inviter (leaving the
  * user's `referredBy` at its `default:null` — writing null is a redundant no-op).
  *
+ * An ORGANIZATION invite (`organizationId` set) is not a referral: referredBy is never
+ * stamped, and the event carries `organizationId` + `role` so consumers can tell (billing
+ * skips it; the org join reads it).
+ *
  * If finalize() returns null (duplicate-accept / revoked / missing invite), the method
  * returns null immediately — no referral side-effects fire for non-finalized invites.
  *
@@ -310,8 +342,10 @@ const accept = async (invite, userId) => {
     return null;
   }
   const invitedBy = invite.invitedBy || null;
-  // Stamp the referral link server-side (skip the redundant null write).
-  if (invitedBy) {
+  const organizationId = invite.organizationId || null;
+  // Stamp the referral link server-side (skip the redundant null write). An org invite
+  // is a teammate joining, not a referral: it never stamps referredBy.
+  if (invitedBy && !organizationId) {
     try {
       await UserService.updateById(userId, { referredBy: invitedBy });
     } catch (err) {
@@ -348,6 +382,8 @@ const accept = async (invite, userId) => {
       email: invite.email,
       invitedBy,
       acceptedUserId: userId,
+      organizationId,
+      role: invite.role || null,
     });
   } catch (err) {
     logger.warn('invitations: invitation.accepted listener threw', { message: err?.message });
@@ -377,6 +413,8 @@ const release = async (id) => {
  * routes admins to this today; the scoping ships FIRST so the referral phase can
  * widen the Invitation abilities without touching this seam again. A caller with
  * no resolvable id gets [] — never the { invitedBy: null } admin-created rows.
+ * A non-admin's list is their Referrals list: organization invites they sent are not
+ * referrals, so only `organizationId: null` rows are returned.
  * @param {Object} user - the authenticated caller (req.user)
  * @returns {Promise<Array>}
  */
@@ -388,7 +426,37 @@ const list = (user) => {
   if (isGlobalAdmin(user)) return InvitationRepository.list();
   const userId = user?.id || user?._id;
   if (!userId) return Promise.resolve([]);
-  return InvitationRepository.list({ invitedBy: userId });
+  return InvitationRepository.list({ invitedBy: userId, organizationId: null });
+};
+
+/**
+ * @desc An organization's PENDING invitations (any owner/admin of the org sees all of
+ * them, not only the ones they sent). Token stripped by the repository list.
+ * @param {String} organizationId
+ * @returns {Promise<Array>}
+ */
+const listForOrganization = (organizationId) =>
+  InvitationRepository.list({ organizationId, status: 'pending' });
+
+/**
+ * @desc Revoke every pending invitation of a removed organization (org-removal hook).
+ * @param {String} organizationId
+ * @returns {Promise<Object|null>} bulk update result, or null for an invalid id
+ */
+const revokeForOrganization = (organizationId) => InvitationRepository.revokeByOrganization(organizationId);
+
+/**
+ * @desc Public verify (`GET /api/invitations/verify/:token`): whether the token is a
+ * valid invite, its pinned email, and — for an organization invite — the org's NAME only
+ * (`organization: { name }`, else null). A removed org reads as null.
+ * @param {String} token
+ * @returns {Promise<{valid: boolean, email: (string|null), organization: ({name: string}|null)}>}
+ */
+const verify = async (token) => {
+  const invite = await findValid(token);
+  if (!invite) return { valid: false, email: null, organization: null };
+  const organization = invite.organizationId ? await OrganizationsCrudService.get(invite.organizationId) : null;
+  return { valid: true, email: invite.email, organization: organization ? { name: organization.name } : null };
 };
 
 /**
@@ -426,11 +494,14 @@ const revoke = (id) => InvitationRepository.revoke(id);
  * EXISTING token — never regenerated, so a previously emailed or copied link
  * stays valid. Unlike create()'s best-effort send, the email here IS the
  * operation: sendMail is awaited and a transport failure surfaces as an error.
+ * An organization invite is re-sent with the `org-invite` email, naming the caller as
+ * the inviter (whichever owner/admin resends it).
  * @param {String} id - invitation id
+ * @param {Object} [inviter] - the user re-sending the email
  * @returns {Promise<Object>} the (unchanged) invitation
  * @throws {AppError} 404 unknown id, 409 not pending, 422 mailer unconfigured
  */
-const resend = async (id) => {
+const resend = async (id, inviter) => {
   const invitation = await InvitationRepository.get(id);
   if (!invitation) {
     throw new AppError('No invitation with that identifier has been found', {
@@ -453,7 +524,8 @@ const resend = async (id) => {
       details: { message: 'Email sending is not configured on this server.' },
     });
   }
-  await mails.sendMail(inviteMailPayload(invitation));
+  const organization = invitation.organizationId ? await OrganizationsCrudService.get(invitation.organizationId) : null;
+  await mails.sendMail(inviteMailPayload(invitation, { organization, inviter }));
   return invitation;
 };
 
@@ -469,6 +541,9 @@ export default {
   release,
   sweepStaleClaims,
   list,
+  listForOrganization,
+  revokeForOrganization,
+  verify,
   get,
   revoke,
   resend,

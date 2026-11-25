@@ -65,6 +65,8 @@ const describeRecord = (record, cfg) => {
   }
   const invitationId = record?._id ?? record?.invitationId;
   if (!invitationId) return null;
+  // An organization invite (a teammate joining an org) is not a referral: no grant.
+  if (record.organizationId) return null;
   return { root: String(invitationId), referrerId: record.invitedBy, refereeId: record.acceptedUserId };
 };
 
@@ -74,6 +76,7 @@ const describeRecord = (record, cfg) => {
  *              (doc with `_id` or `invitation.accepted` payload with `invitationId`) or a
  *              link signup (`{ kind: 'link', userId, referredBy }`, only when `cfg.link`) and the referral
  *              config, return the grant sides the record implies as `[{ side, key }]`.
+ *              An organization invite (`organizationId` set) implies no side at all.
  *              A side with 0 configured units, a referrer-less record, and the cheap
  *              self-referral floor (referrer === referee; the full guard is #3833) produce
  *              NO entry. Pure — no I/O. `grantRecord` (grants) and
@@ -277,16 +280,19 @@ const grantRecord = async (record, referrerId, refereeId, cfg) => {
  * @param {string} [payload.invitationId] - The accepted invitation id (idempotency root); skipped (`no_invitation_id`) when missing.
  * @param {string|null} [payload.invitedBy] - The inviter user id, or null.
  * @param {string|null} [payload.acceptedUserId] - The referee (just-created user) id, or null for legacy/cron rows.
+ * @param {string|null} [payload.organizationId] - Set for an organization invite, which earns nothing.
  * @returns {Promise<{skipped?: string, referrer?: Object, referee?: Object}>}
  */
-const grantForInvitation = async ({ invitationId, invitedBy, acceptedUserId } = {}) => {
+const grantForInvitation = async ({ invitationId, invitedBy, acceptedUserId, organizationId = null } = {}) => {
   const cfg = config.billing?.referral;
   if (!cfg?.enabled) return { skipped: 'disabled' };
   if (!invitationId) return { skipped: 'no_invitation_id' };
+  // Label the org-invite case (expectedGrantKeys implies no side for it either).
+  if (organizationId) return { skipped: 'organization_invite' };
   // No guard against a link grant already made for acceptedUserId: invitation.accepted only
   // fires from signup finalize for a just-created account (invitations.service accept via
   // auth), and invitations.create rejects (422) an email that already has a user.
-  return grantRecord({ invitationId, invitedBy, acceptedUserId }, invitedBy, acceptedUserId, cfg);
+  return grantRecord({ invitationId, invitedBy, acceptedUserId, organizationId }, invitedBy, acceptedUserId, cfg);
 };
 
 /**

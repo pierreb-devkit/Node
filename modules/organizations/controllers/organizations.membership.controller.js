@@ -7,6 +7,7 @@ import isGlobalAdmin from '../../../lib/helpers/isGlobalAdmin.js';
 import MembershipService from '../services/organizations.membership.service.js';
 import MembershipSchema from '../models/organizations.membership.schema.js';
 import { MEMBERSHIP_ROLES } from '../lib/organizations.constants.js';
+import { canManageMembers, canGrantRole } from '../lib/organizations.rights.js';
 
 /**
  * @function list
@@ -45,12 +46,7 @@ const findUserByEmail = async (req, res) => {
     // CASL on the GET /members surface grants `read Membership` to plain members too,
     // which is too broad for a user-directory lookup. Restrict to owner/admin (or
     // global admin) explicitly — only roles that can actually add a member.
-    const isPlatformAdmin = isGlobalAdmin(req.user);
-    const actorRole = req.membership?.role;
-    const canEnumerate = isPlatformAdmin
-      || actorRole === MEMBERSHIP_ROLES.OWNER
-      || actorRole === MEMBERSHIP_ROLES.ADMIN;
-    if (!canEnumerate) {
+    if (!canManageMembers(req.user, req.membership)) {
       return responses.error(res, 403, 'Forbidden', 'Only owners or admins can look up users')();
     }
 
@@ -96,18 +92,12 @@ const addMember = async (req, res) => {
     // carry the `{organizationId}` org-scope condition, so a non-member / plain member
     // must be rejected here. Without this, the Organization-subject shadowing bug aside,
     // a plain member could still inject a membership into their own org.
-    const isPlatformAdmin = isGlobalAdmin(req.user);
-    const actorRole = req.membership?.role;
-    const canAdd = isPlatformAdmin
-      || actorRole === MEMBERSHIP_ROLES.OWNER
-      || actorRole === MEMBERSHIP_ROLES.ADMIN;
-    if (!canAdd) {
+    if (!canManageMembers(req.user, req.membership)) {
       return responses.error(res, 403, 'Forbidden', 'Insufficient organization role')();
     }
 
     // Elevated-role guard: only owners (or global admins) may invite an owner/admin.
-    const actorIsOwner = actorRole === MEMBERSHIP_ROLES.OWNER;
-    if (requestedRole !== MEMBERSHIP_ROLES.MEMBER && !isPlatformAdmin && !actorIsOwner) {
+    if (!canGrantRole(req.user, req.membership, requestedRole)) {
       return responses.error(res, 403, 'Forbidden', 'Only owners can add a member with an elevated role')();
     }
 

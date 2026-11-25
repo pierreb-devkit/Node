@@ -16,11 +16,15 @@ jest.unstable_mockModule('../repositories/invitations.repository.js', () => ({
     get: jest.fn(),
     findAccepted: jest.fn(),
     findByAcceptedUserId: jest.fn(),
+    revokeByOrganization: jest.fn(),
   },
 }));
 
 const mockUserService = { findByEmail: jest.fn(), updateById: jest.fn() };
 jest.unstable_mockModule('../../users/services/users.service.js', () => ({ default: mockUserService }));
+
+const mockOrganizationsService = { get: jest.fn() };
+jest.unstable_mockModule('../../organizations/services/organizations.crud.service.js', () => ({ default: mockOrganizationsService }));
 
 const mockMailer = {
   isConfigured: jest.fn(() => false),
@@ -245,6 +249,8 @@ describe('InvitationService.accept (P8a — referral substrate seam)', () => {
       email: 'a@b.co',
       invitedBy: 'inviter1',
       acceptedUserId: 'u1',
+      organizationId: null,
+      role: null,
     });
   });
 
@@ -259,6 +265,8 @@ describe('InvitationService.accept (P8a — referral substrate seam)', () => {
       email: 'c@d.co',
       invitedBy: null,
       acceptedUserId: 'u2',
+      organizationId: null,
+      role: null,
     });
   });
 
@@ -490,12 +498,12 @@ describe('InvitationService.list / get / revoke', () => {
   test('list(non-admin) → repository list scoped to { invitedBy: <caller id> } (#3833)', async () => {
     InvitationRepository.list.mockResolvedValue([]);
     await InvitationService.list({ id: 'u1', roles: ['user'] });
-    expect(InvitationRepository.list).toHaveBeenCalledWith({ invitedBy: 'u1' });
+    expect(InvitationRepository.list).toHaveBeenCalledWith({ invitedBy: 'u1', organizationId: null });
   });
   test('list(non-admin with _id only) → scoped on _id (mirrors create() id resolution)', async () => {
     InvitationRepository.list.mockResolvedValue([]);
     await InvitationService.list({ _id: 'u2', roles: ['user'] });
-    expect(InvitationRepository.list).toHaveBeenCalledWith({ invitedBy: 'u2' });
+    expect(InvitationRepository.list).toHaveBeenCalledWith({ invitedBy: 'u2', organizationId: null });
   });
   test('list with no resolvable caller id → empty list, repository untouched (never leaks the invitedBy:null admin rows)', async () => {
     expect(await InvitationService.list(undefined)).toEqual([]);
@@ -574,5 +582,119 @@ describe('InvitationService public reads (billing referral)', () => {
     InvitationRepository.findByAcceptedUserId.mockResolvedValue(null);
     await expect(InvitationService.findByAcceptedUserId('u2')).resolves.toBeNull();
     expect(InvitationRepository.findByAcceptedUserId).toHaveBeenCalledWith('u2');
+  });
+});
+
+describe('InvitationService — organization invites', () => {
+  const organization = { _id: 'org1', name: 'Acme Org' };
+  const inviter = { id: 'owner1', email: 'owner@acme.test', firstName: 'Olga', lastName: 'Owner' };
+  let emitSpy;
+
+  beforeEach(() => {
+    InvitationRepository.create.mockImplementation((doc) => Promise.resolve({ ...doc, id: 'oi1' }));
+    InvitationRepository.finalize.mockResolvedValue({ id: 'oi1', status: 'accepted' });
+    emitSpy = jest.spyOn(invitationEvents, 'emit');
+  });
+  afterEach(() => {
+    emitSpy.mockRestore();
+    mockMailer.isConfigured.mockReturnValue(false);
+  });
+
+  test('create with an organization stores organizationId + role (default member)', async () => {
+    await InvitationService.create('New@Acme.test', inviter, { organization });
+    expect(InvitationRepository.create).toHaveBeenCalledWith(expect.objectContaining({
+      email: 'new@acme.test', invitedBy: 'owner1', organizationId: 'org1', role: 'member',
+    }));
+  });
+
+  test('create with an organization keeps the requested role', async () => {
+    await InvitationService.create('new@acme.test', inviter, { organization, role: 'admin' });
+    expect(InvitationRepository.create).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org1', role: 'admin' }));
+  });
+
+  test('platform create stores organizationId:null + role:null (unchanged path)', async () => {
+    await InvitationService.create('plain@acme.test', inviter);
+    expect(InvitationRepository.create).toHaveBeenCalledWith(expect.objectContaining({ organizationId: null, role: null }));
+  });
+
+  test('create with an organization keeps the platform guards (one live invite per email → 409)', async () => {
+    InvitationRepository.findByEmail.mockResolvedValue({ id: 'other', organizationId: null });
+    await expect(InvitationService.create('new@acme.test', inviter, { organization })).rejects.toMatchObject({ status: 409 });
+    expect(InvitationRepository.create).not.toHaveBeenCalled();
+  });
+
+  test('create with an organization sends the org-invite email (inviter + org name, signup link)', async () => {
+    mockMailer.isConfigured.mockReturnValue(true);
+    mockMailer.sendMail.mockResolvedValue({});
+    await InvitationService.create('new@acme.test', inviter, { organization });
+    await Promise.resolve();
+    const mail = mockMailer.sendMail.mock.calls[0][0];
+    expect(mail.template).toBe('org-invite');
+    expect(mail.to).toBe('new@acme.test');
+    expect(mail.subject).toBe("You're invited to join Acme Org on Test App");
+    expect(mail.params).toEqual({
+      url: expect.stringMatching(/^http:\/\/localhost:3000\/signup\?inviteToken=[0-9a-f]+$/),
+      orgName: 'Acme Org',
+      inviterName: 'Olga Owner',
+    });
+  });
+
+  test('accept of an org invite never stamps referredBy and emits organizationId + role', async () => {
+    const invite = { id: 'oi1', email: 'new@acme.test', invitedBy: 'owner1', organizationId: 'org1', role: 'admin' };
+    await InvitationService.accept(invite, 'u9');
+    expect(mockUserService.updateById).not.toHaveBeenCalled();
+    expect(emitSpy).toHaveBeenCalledWith('invitation.accepted', {
+      invitationId: 'oi1',
+      email: 'new@acme.test',
+      invitedBy: 'owner1',
+      acceptedUserId: 'u9',
+      organizationId: 'org1',
+      role: 'admin',
+    });
+  });
+
+  test('listForOrganization reads the org pending invites', async () => {
+    InvitationRepository.list.mockResolvedValue([]);
+    await InvitationService.listForOrganization('org1');
+    expect(InvitationRepository.list).toHaveBeenCalledWith({ organizationId: 'org1', status: 'pending' });
+  });
+
+  test('revokeForOrganization delegates to the repository bulk revoke', async () => {
+    InvitationRepository.revokeByOrganization.mockResolvedValue({ modifiedCount: 2 });
+    await expect(InvitationService.revokeForOrganization('org1')).resolves.toEqual({ modifiedCount: 2 });
+    expect(InvitationRepository.revokeByOrganization).toHaveBeenCalledWith('org1');
+  });
+
+  test('resend of an org invite re-sends org-invite naming the caller, existing token', async () => {
+    mockMailer.isConfigured.mockReturnValue(true);
+    mockMailer.sendMail.mockResolvedValue({});
+    InvitationRepository.get.mockResolvedValue({ id: 'oi1', email: 'new@acme.test', token: 'tok-o', status: 'pending', organizationId: 'org1' });
+    mockOrganizationsService.get.mockResolvedValue(organization);
+    await InvitationService.resend('oi1', { firstName: 'Ada', lastName: 'Admin' });
+    expect(mockOrganizationsService.get).toHaveBeenCalledWith('org1');
+    const mail = mockMailer.sendMail.mock.calls[0][0];
+    expect(mail.template).toBe('org-invite');
+    expect(mail.params).toEqual({ url: 'http://localhost:3000/signup?inviteToken=tok-o', orgName: 'Acme Org', inviterName: 'Ada Admin' });
+  });
+});
+
+describe('InvitationService.verify', () => {
+  const future = new Date(Date.now() + 3600000);
+
+  test('platform invite → { valid, email, organization:null }, no org lookup', async () => {
+    InvitationRepository.findByToken.mockResolvedValue({ email: 'a@b.co', status: 'pending', expiresAt: future, organizationId: null });
+    await expect(InvitationService.verify('tok')).resolves.toEqual({ valid: true, email: 'a@b.co', organization: null });
+    expect(mockOrganizationsService.get).not.toHaveBeenCalled();
+  });
+
+  test('org invite → the org NAME only', async () => {
+    InvitationRepository.findByToken.mockResolvedValue({ email: 'a@b.co', status: 'pending', expiresAt: future, organizationId: 'org1' });
+    mockOrganizationsService.get.mockResolvedValue({ _id: 'org1', name: 'Acme Org', domain: 'acme.test' });
+    await expect(InvitationService.verify('tok')).resolves.toEqual({ valid: true, email: 'a@b.co', organization: { name: 'Acme Org' } });
+  });
+
+  test('invalid token → { valid:false, email:null, organization:null }', async () => {
+    InvitationRepository.findByToken.mockResolvedValue(null);
+    await expect(InvitationService.verify('nope')).resolves.toEqual({ valid: false, email: null, organization: null });
   });
 });

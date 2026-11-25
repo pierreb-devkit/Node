@@ -24,7 +24,7 @@ for the implementation — this guide follows what they actually do.
 
 ## Namespace rule
 
-Devkit owns every file directly under `config/templates/` (the 15 shared
+Devkit owns every file directly under `config/templates/` (the 16 shared
 mails) and every `config/templates/_*/` folder (`_layout/` today — the
 default layout + its partials). **A downstream project's own templates —
 new ones, or a customized copy of a shared one — always go under
@@ -166,7 +166,7 @@ export default {
 Resolution for a given key (`resolveTemplatePath()` in `index.js`): a
 `mailer.templates` entry wins; anything else falls back to
 `config/templates/<key>.html` — today's behavior, so a template that only
-ever existed in a downstream project (never one of the 15 shared mails)
+ever existed in a downstream project (never one of the 16 shared mails)
 keeps resolving with no config at all. That flat-fallback path is what
 customizing a **shared** template in place would silently rely on too,
 which is exactly what the namespace rule above says not to do.
@@ -179,7 +179,7 @@ leading whitespace allowed) is detected as a complete document and sent
 compiled on its own pristine handlebars instance, so it can't use
 `{{> header}}`/`{{> footer}}`/`{{> button}}` (those are only registered on
 the fragment/layout render path) — a legacy document that tries throws.
-None of the 15 shared Devkit mails use this path any more; it exists for a
+None of the 16 shared Devkit mails use this path any more; it exists for a
 project that wants to ship its own, fully self-designed HTML email outside
 the shared layout.
 

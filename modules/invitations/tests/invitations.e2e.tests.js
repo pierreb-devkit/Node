@@ -80,7 +80,7 @@ describe('Invitations E2E:', () => {
 
     // 2. Public verify reveals the prefilled email
     const verify = await request(app).get(`/api/invitations/verify/${token}`).expect(200);
-    expect(verify.body.data).toEqual({ valid: true, email: guestEmail });
+    expect(verify.body.data).toEqual({ valid: true, email: guestEmail, organization: null });
 
     // 3. Close public signup — only the invite token opens the gate now
     config.sign.up = false;

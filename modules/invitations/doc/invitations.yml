@@ -112,6 +112,146 @@ paths:
                           email:
                             type: string
                             nullable: true
+                          organization:
+                            type: object
+                            nullable: true
+                            description: Set only for an organization invite — the organization name, nothing else.
+                            properties:
+                              name:
+                                type: string
+
+  /api/organizations/{organizationId}/invitations:
+    parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags:
+        - Invitations
+      summary: List the organization's pending invitations (org owner/admin or platform admin — JWT cookie)
+      responses:
+        '200':
+          description: Pending invitations of the organization (token omitted)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/InvitationListItem'
+        '401':
+          description: Not authenticated
+        '403':
+          description: Not an owner/admin of this organization
+        '404':
+          description: Organization not found
+    post:
+      tags:
+        - Invitations
+      summary: Invite an email into the organization (org owner/admin or platform admin — JWT cookie)
+      description: >
+        Emails a signup link (`org-invite` template). Role defaults to `member`; only an owner
+        or a platform admin may invite an `admin`/`owner`. Same guards as a platform invite:
+        an existing account → 422 (add them as a member instead), one live invite per email
+        platform-wide → 409. The token is never returned on this route.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: teammate@example.com
+                role:
+                  type: string
+                  enum: [owner, admin, member]
+                  default: member
+      responses:
+        '200':
+          description: Invitation created (token omitted)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/InvitationListItem'
+        '401':
+          description: Not authenticated
+        '403':
+          description: Not an owner/admin of this organization, or role above the caller's ceiling
+        '404':
+          description: Organization not found
+        '409':
+          description: A pending invitation already exists for this email
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /api/organizations/{organizationId}/invitations/{invitationId}:
+    delete:
+      tags:
+        - Invitations
+      summary: Revoke a pending invitation of the organization (org owner/admin or platform admin — JWT cookie)
+      parameters:
+        - name: organizationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: invitationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invitation revoked
+        '403':
+          description: Not an owner/admin of this organization
+        '404':
+          description: Organization or invitation not found (an invitation of another organization reads as 404)
+        '409':
+          description: Invitation is no longer pending
+
+  /api/organizations/{organizationId}/invitations/{invitationId}/resend:
+    post:
+      tags:
+        - Invitations
+      summary: Re-send a pending invitation of the organization (org owner/admin or platform admin — JWT cookie)
+      parameters:
+        - name: organizationId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: invitationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invitation email re-sent with the existing link (token omitted)
+        '403':
+          description: Not an owner/admin of this organization
+        '404':
+          description: Organization or invitation not found (an invitation of another organization reads as 404)
+        '409':
+          description: Invitation is no longer pending
+        '422':
+          description: Email sending is not configured
 
 components:
   schemas:
@@ -134,6 +274,18 @@ components:
         invitedBy:
           type: string
           nullable: true
+        organizationId:
+          type: string
+          nullable: true
+          description: Organization the invitee joins (null for a platform invite)
+        role:
+          type: string
+          enum: [owner, admin, member]
+          nullable: true
+          description: Role granted in organizationId (null for a platform invite)
+        status:
+          type: string
+          enum: [pending, accepted, revoked]
         createdAt:
           type: string
           format: date-time

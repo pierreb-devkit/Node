@@ -5,8 +5,9 @@ const mockService = {
   list: jest.fn(),
   revoke: jest.fn(),
   resend: jest.fn(),
-  findValid: jest.fn(),
+  verify: jest.fn(),
   get: jest.fn(),
+  listForOrganization: jest.fn(),
 };
 
 const successInner = jest.fn();
@@ -103,7 +104,7 @@ describe('invitations.controller.resend', () => {
   test('resends via the service and responds success', async () => {
     mockService.resend.mockResolvedValue({ id: 'i1', status: 'pending' });
     await controller.resend({ invitation: { id: 'i1' }, user: admin }, makeRes());
-    expect(mockService.resend).toHaveBeenCalledWith('i1');
+    expect(mockService.resend).toHaveBeenCalledWith('i1', admin);
     expect(success).toHaveBeenCalledWith(expect.anything(), 'invitation resent');
     expect(successInner).toHaveBeenCalledWith({ id: 'i1', status: 'pending' });
   });
@@ -162,20 +163,15 @@ describe('invitations.controller.resend', () => {
 });
 
 describe('invitations.controller.verify', () => {
-  test('reports valid + email for a fresh token', async () => {
-    mockService.findValid.mockResolvedValue({ email: 'a@b.co' });
+  test('responds with the service verify result', async () => {
+    mockService.verify.mockResolvedValue({ valid: true, email: 'a@b.co', organization: { name: 'Acme' } });
     await controller.verify({ params: { token: 'tok' } }, makeRes());
-    expect(mockService.findValid).toHaveBeenCalledWith('tok');
-    expect(successInner).toHaveBeenCalledWith({ valid: true, email: 'a@b.co' });
-  });
-  test('reports invalid for an unknown token', async () => {
-    mockService.findValid.mockResolvedValue(null);
-    await controller.verify({ params: { token: 'nope' } }, makeRes());
-    expect(successInner).toHaveBeenCalledWith({ valid: false, email: null });
+    expect(mockService.verify).toHaveBeenCalledWith('tok');
+    expect(successInner).toHaveBeenCalledWith({ valid: true, email: 'a@b.co', organization: { name: 'Acme' } });
   });
   test('passes a thrown error through with no hard-coded status (500 when it has none)', async () => {
     const caughtError = new Error('db down');
-    mockService.findValid.mockRejectedValue(caughtError);
+    mockService.verify.mockRejectedValue(caughtError);
     await controller.verify({ params: { token: 'tok' } }, makeRes());
     expect(error).toHaveBeenCalledWith(expect.anything(), undefined, undefined, 'db down');
     expect(errorInner).toHaveBeenCalledWith(caughtError);
@@ -204,5 +200,115 @@ describe('invitations.controller.invitationByID', () => {
     const next = jest.fn();
     await controller.invitationByID({}, makeRes(), next, 'i1');
     expect(next).toHaveBeenCalledWith(boom);
+  });
+});
+
+describe('invitations.controller — organization routes', () => {
+  const org = { _id: 'org1', name: 'Acme Org' };
+  const owner = { id: 'u-owner', roles: ['user'] };
+  const ownerMembership = { role: 'owner', organizationId: 'org1' };
+  const adminMembership = { role: 'admin', organizationId: 'org1' };
+  const memberMembership = { role: 'member', organizationId: 'org1' };
+
+  describe('requireOrganizationManager', () => {
+    test.each([
+      ['owner', ownerMembership],
+      ['admin', adminMembership],
+    ])('lets an org %s through', (_label, membership) => {
+      const next = jest.fn();
+      controller.requireOrganizationManager({ organization: org, user: owner, membership }, makeRes(), next);
+      expect(next).toHaveBeenCalled();
+      expect(error).not.toHaveBeenCalled();
+    });
+    test('lets a platform admin through without a membership', () => {
+      const next = jest.fn();
+      controller.requireOrganizationManager({ organization: org, user: { roles: ['user', 'admin'] }, membership: null }, makeRes(), next);
+      expect(next).toHaveBeenCalled();
+    });
+    test.each([
+      ['a plain member', memberMembership],
+      ['a non-member', null],
+    ])('403s %s', (_label, membership) => {
+      const next = jest.fn();
+      controller.requireOrganizationManager({ organization: org, user: owner, membership }, makeRes(), next);
+      expect(next).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledWith(expect.anything(), 403, 'Forbidden', 'Insufficient organization role');
+    });
+    test('404s (fail closed) when no organization is loaded', () => {
+      const next = jest.fn();
+      controller.requireOrganizationManager({ user: { roles: ['admin'] } }, makeRes(), next);
+      expect(next).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledWith(expect.anything(), 404, 'Not Found', expect.any(String));
+    });
+  });
+
+  describe('invitationInOrganization', () => {
+    test('passes an invitation of this organization', () => {
+      const next = jest.fn();
+      controller.invitationInOrganization({ organization: org, invitation: { organizationId: 'org1' } }, makeRes(), next);
+      expect(next).toHaveBeenCalled();
+    });
+    test.each([
+      ['another organization', { organizationId: 'org2' }],
+      ['a platform invite', { organizationId: null }],
+    ])('404s an invitation of %s', (_label, invitation) => {
+      const next = jest.fn();
+      controller.invitationInOrganization({ organization: org, invitation }, makeRes(), next);
+      expect(next).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledWith(expect.anything(), 404, 'Not Found', expect.any(String));
+    });
+  });
+
+  describe('organizationCreate', () => {
+    test('creates a member invite by default and never returns the token', async () => {
+      mockService.create.mockResolvedValue({ toJSON: () => ({ id: 'i1', email: 'a@b.co', token: 'secret', role: 'member' }) });
+      const req = { body: { email: 'a@b.co' }, user: owner, membership: adminMembership, organization: org };
+      await controller.organizationCreate(req, makeRes());
+      expect(mockService.create).toHaveBeenCalledWith('a@b.co', owner, { organization: org, role: 'member' });
+      expect(successInner).toHaveBeenCalledWith({ id: 'i1', email: 'a@b.co', role: 'member' });
+    });
+    test('an org admin cannot invite an admin (role ceiling) — 403, no create', async () => {
+      const req = { body: { email: 'a@b.co', role: 'admin' }, user: owner, membership: adminMembership, organization: org };
+      await controller.organizationCreate(req, makeRes());
+      expect(error).toHaveBeenCalledWith(expect.anything(), 403, 'Forbidden', 'Only owners can invite with an elevated role');
+      expect(mockService.create).not.toHaveBeenCalled();
+    });
+    test('an owner can invite an admin', async () => {
+      mockService.create.mockResolvedValue({ id: 'i1', role: 'admin' });
+      const req = { body: { email: 'a@b.co', role: 'admin' }, user: owner, membership: ownerMembership, organization: org };
+      await controller.organizationCreate(req, makeRes());
+      expect(mockService.create).toHaveBeenCalledWith('a@b.co', owner, { organization: org, role: 'admin' });
+    });
+    test('passes a service error through', async () => {
+      const caughtError = Object.assign(new Error('A pending invitation already exists for this email'), { status: 409 });
+      mockService.create.mockRejectedValue(caughtError);
+      const req = { body: { email: 'a@b.co' }, user: owner, membership: ownerMembership, organization: org };
+      await controller.organizationCreate(req, makeRes());
+      expect(errorInner).toHaveBeenCalledWith(caughtError);
+    });
+  });
+
+  describe('organizationList', () => {
+    test('lists the org pending invites', async () => {
+      mockService.listForOrganization.mockResolvedValue([{ id: 'i1' }]);
+      await controller.organizationList({ organization: org }, makeRes());
+      expect(mockService.listForOrganization).toHaveBeenCalledWith('org1');
+      expect(successInner).toHaveBeenCalledWith([{ id: 'i1' }]);
+    });
+    test('passes a service error through', async () => {
+      const caughtError = new Error('db down');
+      mockService.listForOrganization.mockRejectedValue(caughtError);
+      await controller.organizationList({ organization: org }, makeRes());
+      expect(errorInner).toHaveBeenCalledWith(caughtError);
+    });
+  });
+
+  describe('organizationResend', () => {
+    test('resends for any org manager (no platform-admin gate) and strips the token', async () => {
+      mockService.resend.mockResolvedValue({ id: 'i1', token: 'secret', status: 'pending' });
+      await controller.organizationResend({ invitation: { id: 'i1' }, user: owner, organization: org }, makeRes());
+      expect(mockService.resend).toHaveBeenCalledWith('i1', owner);
+      expect(successInner).toHaveBeenCalledWith({ id: 'i1', status: 'pending' });
+    });
   });
 });

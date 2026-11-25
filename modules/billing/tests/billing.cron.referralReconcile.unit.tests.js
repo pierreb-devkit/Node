@@ -197,6 +197,21 @@ describe('billing.referralReconcile cron — logic:', () => {
     expect(diffedKeys).toEqual(['referral:inv1:referee', 'referral:inv2:referee', 'referral:inv3:referee']);
   });
 
+  test('organization invites are never candidates (no referral reward for a teammate joining)', async () => {
+    InvitationRepository.findAccepted.mockResolvedValue([
+      { _id: 'orgInv', invitedBy: inviterId, acceptedUserId: refereeId, organizationId: 'org1' },
+      { _id: 'plat', invitedBy: inviterId, acceptedUserId: refereeId, organizationId: null },
+    ]);
+    BillingReferralService.grantForInvitation.mockResolvedValue({ referee: { applied: true }, referrer: { applied: true } });
+
+    const { grantCalls } = await runReconcilePass();
+
+    expect(grantCalls).toBe(1);
+    expect(BillingReferralService.grantForInvitation).toHaveBeenCalledWith(expect.objectContaining({ invitationId: 'plat' }));
+    const diffedKeys = BillingExtraBalanceRepository.findExistingRefIds.mock.calls[0][0];
+    expect(diffedKeys).toEqual(['referral:plat:referee', 'referral:plat:referrer']);
+  });
+
   test('fully-granted invitations are skipped; only misses are back-filled', async () => {
     InvitationRepository.findAccepted.mockResolvedValue([
       { _id: 'done', invitedBy: inviterId, acceptedUserId: refereeId },

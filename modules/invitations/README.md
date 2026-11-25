@@ -1,17 +1,48 @@
 # Invitations module
 
-Optional, standalone module owning the **platform invitation** concept: invite a contact by
-email → single-use token + `invitedBy` + beta-gate eligibility. Depends only on `auth`
-(via the `registerSignupEligibility` hook — `auth` never imports this module). Knows nothing
-about organizations: getting an invited person into an org is the 2-step flow
-*platform invite → `org.addMember(userId)`*.
+Optional, standalone module owning the **invitation** concept: invite a contact by email →
+single-use token + `invitedBy` + beta-gate eligibility. Depends on `auth` (via the
+`registerSignupEligibility` hook — `auth` never imports this module) and, one way, on
+`organizations` (org-targeted invites below — `organizations` never imports this module).
 
 - Routes: `/api/invitations` (admin list/create + revoke via `DELETE /:invitationId` — no
-  update endpoint) + `/api/invitations/verify/:token` (public).
+  update endpoint) + `/api/invitations/verify/:token` (public) + the organization routes below.
 - Model `Invitation` → collection `invitations` (`email`, `token`, `invitedBy`, `status`,
-  `expiresAt`, `consumingAt`, `acceptedAt`, `acceptedUserId`, `revokedAt`, `usedAt`).
+  `expiresAt`, `consumingAt`, `acceptedAt`, `acceptedUserId`, `revokedAt`, `usedAt`,
+  `organizationId`, `role`).
 - Signup gate: two-phase claim/finalize (`consumingAt` CAS + lazy 15-min stale sweep),
   email pin, soft revoke. See `services/invitations.service.js`.
+
+## Organization invites
+
+An invitation can carry an **organization target**: `organizationId` + `role` (both `null`
+for a platform / referral invite, which behaves exactly as before). An org owner or admin
+invites an email that has no account yet; the email (`org-invite` template: inviter name,
+org name, brand) links to `/signup?inviteToken=…`.
+
+- Routes, mounted under the org (`:organizationId` loaded by the organizations module):
+  `GET|POST /api/organizations/:organizationId/invitations`,
+  `DELETE /api/organizations/:organizationId/invitations/:invitationId`,
+  `POST /api/organizations/:organizationId/invitations/:invitationId/resend`.
+- Rights: an ACTIVE owner/admin of that org, or a platform admin — independent of
+  `invitations.userFacing`. Any owner/admin lists, resends and revokes every pending invite of
+  the org (not only their own). Another org's invite (or a platform invite) on these routes → 404.
+  The token is never returned here; the invitee gets it by email only.
+- Role: defaults to `member`; only an owner or a platform admin may invite an `admin`/`owner`
+  (the same ceiling as adding a member — `organizations/lib/organizations.rights.js`).
+- Create keeps every platform guard: an existing account → 422 (add them as a member instead),
+  self-invite → 422, one live invite per email **platform-wide** → 409, `maxLifetime`
+  (counts org invites too), `rateLimit.invitationsCreate` (also on resend). No per-org cap.
+- `GET /api/invitations/verify/:token` also returns `organization: { name }` for an org invite.
+- Not a referral: an org invite never stamps `referredBy`, earns no referral reward (the billing
+  rule source `expectedGrantKeys` drops it — listener and reconcile cron alike) and never shows
+  in a user's own Referrals list (`GET /api/invitations` for a non-admin = `organizationId: null`).
+- `invitation.accepted` carries `organizationId` + `role` (`null` for a platform invite).
+- Org removal revokes the org's pending invites (`onOrganizationRemoved`, `invitations.init.js`).
+
+Joining the organization at signup is a separate step (the signup join): until it ships, a
+person signing up through an org invite gets a normal account. An existing account is added
+with the organizations `addMember` flow instead (the invitee accepts).
 
 ## The referral substrate (what the reward grants hook into)
 
@@ -34,6 +65,8 @@ the OAuth path (shared `accept(invite, userId)`):
      invitedBy,       // inviter userId — the admin API always stamps the creating admin;
                       // null only for actor-less inserts (legacy/scripted data)
      acceptedUserId,  // the REFEREE — double-sided rewards need no schema change
+     organizationId,  // set for an ORGANIZATION invite (not a referral) — null otherwise
+     role,            // role granted in organizationId — null otherwise
    });
    ```
 

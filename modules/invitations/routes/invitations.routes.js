@@ -7,6 +7,7 @@ import limiters from '../../../lib/middlewares/rateLimiter.js';
 import model from '../../../lib/middlewares/model.js';
 import policy from '../../../lib/middlewares/policy.js';
 import invitations from '../controllers/invitations.controller.js';
+import organizations from '../../organizations/controllers/organizations.controller.js';
 import InvitationSchema from '../models/invitations.schema.js';
 
 /**
@@ -50,4 +51,27 @@ export default (app) => {
     .route('/api/invitations/:invitationId/resend')
     .all(passport.authenticate('jwt', { session: false }), policy.isAllowed)
     .post(invitations.resend);
+
+  // Organization invitations — an org owner/admin (or platform admin) invites an email
+  // INTO the organization, and lists / revokes / resends the org's pending invites.
+  // `:organizationId` is loaded by the organizations module's global param loader (404
+  // when missing), then its membership loader sets req.membership. The rights gate is
+  // requireOrganizationManager, not CASL (see its docblock).
+  const orgGate = [passport.authenticate('jwt', { session: false }), organizations.loadMembership, invitations.requireOrganizationManager];
+  app
+    .route('/api/organizations/:organizationId/invitations')
+    .all(...orgGate)
+    .get(invitations.organizationList)
+    .post(createLimiter, model.isValid(InvitationSchema.OrganizationInvitation), invitations.organizationCreate);
+
+  app
+    .route('/api/organizations/:organizationId/invitations/:invitationId')
+    .all(...orgGate, invitations.invitationInOrganization)
+    .delete(invitations.remove);
+
+  // Resend sends an email too — same limiter as create.
+  app
+    .route('/api/organizations/:organizationId/invitations/:invitationId/resend')
+    .all(...orgGate, invitations.invitationInOrganization)
+    .post(createLimiter, invitations.organizationResend);
 };

@@ -2,6 +2,20 @@
 
 Organizations, memberships and the current-organization switch.
 
+## Bringing people in
+
+- **An existing account** — `POST /api/organizations/:organizationId/members` (`addMember`):
+  an owner/admin adds the user as a PENDING `owner_add` membership the user accepts.
+- **An email with no account** — the `invitations` module owns it:
+  `POST /api/organizations/:organizationId/invitations` sends a signup invite that carries the
+  organization and role (see `modules/invitations/README.md` § Organization invites). There is
+  no membership row without a user: the invite lives on the `Invitation`, never on a membership.
+  The dependency is one way — invitations imports organizations, never the reverse.
+
+Both use the same rights: owner/admin of the organization or a platform admin
+(`canManageMembers`), and the same role ceiling — default `member`, only an owner or a
+platform admin may grant `admin`/`owner` (`canGrantRole`), in `lib/organizations.rights.js`.
+
 ## Organization removal — the cleanup hook
 
 Removing an organization (`OrganizationsService.remove`, `organizations.crud.service.js`) first runs the before-removal guards (see below), then tears down what organizations owns — memberships, each affected user's `currentOrganization`, the organization document — then fires the org-removal hook so every other module cleans its own organization-scoped data.
@@ -32,6 +46,7 @@ Registered by the stack today:
 | --- | --- |
 | `tasks` | deletes the organization's tasks |
 | `billing` | keeps the subscription and the extras balance (ledger included: packs, grants, referral entries) anonymized: the organization reference is replaced with one fresh tombstone id per removal, nothing else changes (`modules/billing/STRIPE_SETUP.md` §4). Deletes the usage documents. |
+| `invitations` | revokes the organization's pending invitations |
 | `uploads` | deletes the organization's uploads (`metadata.organizationId`, stored as an ObjectId or a string), files and chunks |
 
 The stack does not call the payment provider on removal. A live paid subscription is never left charging: the billing guard below refuses the removal until the subscription is cancelled.
