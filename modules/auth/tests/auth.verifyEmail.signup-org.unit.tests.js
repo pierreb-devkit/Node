@@ -132,6 +132,7 @@ describe('auth.controller verifyEmail — handleSignupOrganization wiring:', () 
     // Must be called with a user that has emailVerified=true (marked before the call)
     expect(handleSignupOrganizationMock).toHaveBeenCalledWith(
       expect.objectContaining({ emailVerified: true }),
+      {},
     );
   });
 

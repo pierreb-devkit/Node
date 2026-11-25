@@ -259,6 +259,20 @@ describe('Invitations signup join:', () => {
       expect(user.emailVerified).toBe(false);
     });
 
+    test('verification mode off: a member removed after signup does not rejoin at verifyEmail', async () => {
+      config.organizations.emailVerification = { mode: 'off' };
+      const inv = await invite('removed', 'admin');
+      expect((await signup('removed', inv.token)).body.joined).toBe(true);
+      let user = await UserService.getBrut({ email: email('removed') });
+      const [membership] = await MembershipRepository.list({ userId: user._id });
+      await ownerAgent.delete(`/api/organizations/${orgId}/members/${membership._id}`).expect(200);
+
+      user = await UserService.getBrut({ email: email('removed') });
+      await request(app).post(`/api/auth/verify-email/${user.emailVerificationToken}`).expect(200);
+      const after = await MembershipRepository.list({ userId: user._id });
+      expect(after.some((m) => String(m.organizationId?._id || m.organizationId) === String(orgId))).toBe(false);
+    });
+
     test('invite revoked while the signup runs (finalize lands nothing) → signup fails, no account, no membership', async () => {
       config.organizations.emailVerification = { mode: 'off' };
       const inv = await invite('revoking');

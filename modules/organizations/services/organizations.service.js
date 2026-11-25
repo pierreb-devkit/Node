@@ -185,6 +185,7 @@ const sendWelcomeEmail = (user, orgName, orgId) => {
  * @returns {Promise<boolean>} true when this call created the membership (the user joined)
  */
 const joinResolvedOrganization = async (user, ctx) => {
+  if (ctx?.join === false) return false;
   const target = await resolveSignupMembership(user, ctx);
   if (!target?.organizationId) return false;
   const organization = await OrganizationsRepository.get(String(target.organizationId));
@@ -231,6 +232,7 @@ const joinResolvedOrganization = async (user, ctx) => {
  * @param {Object} user - The user object returned by UserService.create (with id, email, firstName, lastName).
  * @param {Object} [ctx={}] - Signup context handed as is to the membership resolvers, e.g.
  *   `{ inviteId }` of the invite this local signup claimed (only that claim can join).
+ *   `{ join: false }` skips the signup join (the caller already ran it earlier).
  * @returns {Promise<{organization: Object|null, membership: Object|null, abilities: Array, joined?: boolean, emailVerificationRequired?: boolean, suggestedJoin?: {orgId: string, orgName: string}}>}
  *   An object containing the organization context for the signup response.
  *   `organization` and `membership` are null when `emailVerificationRequired` is true (mailer path).

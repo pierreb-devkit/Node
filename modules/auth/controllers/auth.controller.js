@@ -778,8 +778,11 @@ const verifyEmail = async (req, res) => {
     // Post-verification org setup — provision org/grant if not yet done (best-effort).
     // handleSignupOrganization is idempotent: if the org already exists it converges
     // without double-crediting. Failure must never block email verification success.
+    // Verification mode 'off': the signup already ran the invite join, so a member
+    // removed since then must not rejoin by clicking the verification link.
+    const verificationOff = (config.organizations?.emailVerification?.mode ?? 'strict') === 'off';
     try {
-      await AuthOrganizationService.handleSignupOrganization(user);
+      await AuthOrganizationService.handleSignupOrganization(user, verificationOff ? { join: false } : {});
     } catch (orgErr) {
       logger.warn('[auth.verifyEmail] org/grant provisioning failed (non-fatal)', {
         userId: user.id,
