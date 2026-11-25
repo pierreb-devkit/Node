@@ -438,13 +438,14 @@ const list = (user) => {
 };
 
 /**
- * @desc An organization's PENDING invitations (any owner/admin of the org sees all of
- * them, not only the ones they sent). Token stripped by the repository list.
+ * @desc An organization's PENDING, unexpired invitations (any owner/admin of the org sees
+ * all of them, not only the ones they sent). An expired invite can no longer be accepted,
+ * so it is left out here, once, for every client. Token stripped by the repository list.
  * @param {String} organizationId
  * @returns {Promise<Array>}
  */
 const listForOrganization = (organizationId) =>
-  InvitationRepository.list({ organizationId, status: 'pending' });
+  InvitationRepository.list({ organizationId, status: 'pending', expiresAt: { $gt: new Date() } });
 
 /**
  * @desc Revoke every pending invitation of a removed organization (org-removal hook).

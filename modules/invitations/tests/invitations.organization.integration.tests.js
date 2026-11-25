@@ -209,6 +209,17 @@ describe('Organization invitations:', () => {
       expect(res.body.data.every((i) => i.token === undefined)).toBe(true);
     });
 
+    test('an expired pending invite is left out of the org list', async () => {
+      await createInvite('ls-live');
+      const expired = await createInvite('ls-expired');
+      await Invitation.updateOne({ _id: expired._id }, { $set: { expiresAt: new Date(Date.now() - 1000) } });
+      const res = await agents.admin.get(orgPath(orgA));
+      expect(res.status).toBe(200);
+      const emails = res.body.data.map((i) => i.email);
+      expect(emails).toContain(email('ls-live'));
+      expect(emails).not.toContain(email('ls-expired'));
+    });
+
     test('a second org admin resends the owner\'s invite (org-invite email, existing token)', async () => {
       const invite = await createInvite('rs1');
       mails.sendMail.mockClear();
